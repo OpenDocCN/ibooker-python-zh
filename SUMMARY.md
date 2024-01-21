@@ -1,1 +1,1 @@
-+   [Python 架构模式](docs/)
++   [Python 架构模式](docs/arch-ptn-py/README.md)
