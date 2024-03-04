@@ -1,4 +1,4 @@
-+   [Python3 Cookbook 中文版](py3cb_00.md)
++   [Python3 Cookbook 中文版](README.md)
 +   [Copyright](py3cb_01.md)
 +   [前言](py3cb_02.md)
 +   [第一章：数据结构和算法](py3cb_03.md)
