@@ -15,7 +15,7 @@ Python 提供了大量的内置数据结构，包括列表，集合以及字典�
 代码示例：
 
 ```py
-      >>> p = (4, 5)
+>>> p = (4, 5)
 >>> x, y = p
 >>> x
 4
@@ -46,7 +46,7 @@ Python 提供了大量的内置数据结构，包括列表，集合以及字典�
 代码示例：
 
 ```py
-      >>> p = (4, 5)
+>>> p = (4, 5)
 >>> x, y, z = p
 Traceback (most recent call last):
 File "<stdin>", line 1, in <module>
@@ -58,7 +58,7 @@ ValueError: need more than 2 values to unpack
 讨论 实际上，这种解压赋值可以用在任何可迭代对象上面，而不仅仅是列表或者元组。 包括字符串，文件对象，迭代器和生成器。 代码示例：
 
 ```py
-      >>> s = 'Hello'
+>>> s = 'Hello'
 >>> a, b, c, d, e = s
 >>> a
 'H'
@@ -75,7 +75,7 @@ ValueError: need more than 2 values to unpack
 代码示例：
 
 ```py
-      >>> data = [ 'ACME', 50, 91.1, (2012, 12, 21) ]
+>>> data = [ 'ACME', 50, 91.1, (2012, 12, 21) ]
 >>> _, shares, price, _ = data
 >>> shares
 50
@@ -98,7 +98,7 @@ ValueError: need more than 2 values to unpack
 Python 的星号表达式可以用来解决这个问题。比如，你在学习一门课程，在学期末的时候，你想统计下家庭作业的平均成绩，但是排除掉第一个和最后一个分数。如果只有四个分数，你可能就直接去简单的手动赋值，但如果有 24 个呢？这时候星号表达式就派上用场了：
 
 ```py
-      def drop_first_last(grades):
+def drop_first_last(grades):
     first, *middle, last = grades
     return avg(middle)
 
@@ -107,7 +107,7 @@ Python 的星号表达式可以用来解决这个问题。比如，你在学习�
 另外一种情况，假设你现在有一些用户的记录列表，每条记录包含一个名字、邮件，接着就是不确定数量的电话号码。你可以像下面这样分解这些记录：
 
 ```py
-      >>> record = ('Dave', 'dave@example.com', '773-555-1212', '847-555-1212')
+>>> record = ('Dave', 'dave@example.com', '773-555-1212', '847-555-1212')
 >>> name, email, *phone_numbers = record
 >>> name
 'Dave'
@@ -124,7 +124,7 @@ Python 的星号表达式可以用来解决这个问题。比如，你在学习�
 星号表达式也能用在列表的开始部分。比如，你有一个公司前 8 个月销售数据的序列，但是你想看下最近一个月数据和前面 7 个月的平均值的对比。你可以这样做：
 
 ```py
-      *trailing_qtrs, current_qtr = sales_record
+*trailing_qtrs, current_qtr = sales_record
 trailing_avg = sum(trailing_qtrs) / len(trailing_qtrs)
 return avg_comparison(trailing_avg, current_qtr)
 
@@ -133,7 +133,7 @@ return avg_comparison(trailing_avg, current_qtr)
 下面是在 Python 解释器中执行的结果：
 
 ```py
-      >>> *trailing, current = [10, 8, 7, 1, 9, 5, 10, 3]
+>>> *trailing, current = [10, 8, 7, 1, 9, 5, 10, 3]
 >>> trailing
 [10, 8, 7, 1, 9, 5, 10]
 >>> current
@@ -148,7 +148,7 @@ return avg_comparison(trailing_avg, current_qtr)
 值得注意的是，星号表达式在迭代元素为可变长元组的序列时是很有用的。比如，下面是一个带有标签的元组序列：
 
 ```py
-      records = [
+records = [
     ('foo', 1, 2),
     ('bar', 'hello'),
     ('foo', 3, 4),
@@ -173,7 +173,7 @@ for tag, *args in records:
 代码示例：
 
 ```py
-      >>> line = 'nobody:*:-2:-2:Unprivileged User:/var/empty:/usr/bin/false'
+>>> line = 'nobody:*:-2:-2:Unprivileged User:/var/empty:/usr/bin/false'
 >>> uname, *fields, homedir, sh = line.split(':')
 >>> uname
 'nobody'
@@ -190,7 +190,7 @@ for tag, *args in records:
 代码示例：
 
 ```py
-      >>> record = ('ACME', 50, 123.45, (12, 18, 2012))
+>>> record = ('ACME', 50, 123.45, (12, 18, 2012))
 >>> name, *_, (*_, year) = record
 >>> name
 'ACME'
@@ -203,7 +203,7 @@ for tag, *args in records:
 在很多函数式语言中，星号解压语法跟列表处理有许多相似之处。比如，如果你有一个列表，你可以很容易的将它分割成前后两部分：
 
 ```py
-      >>> items = [1, 10, 7, 4, 5, 9]
+>>> items = [1, 10, 7, 4, 5, 9]
 >>> head, *tail = items
 >>> head
 1
@@ -216,7 +216,7 @@ for tag, *args in records:
 如果你够聪明的话，还能用这种分割语法去巧妙的实现递归算法。比如：
 
 ```py
-      >>> def sum(items):
+>>> def sum(items):
 ... head, *tail = items
 ... return head + sum(tail) if tail else head
 ...
@@ -239,7 +239,7 @@ for tag, *args in records:
 保留有限历史记录正是 `collections.deque` 大显身手的时候。比如，下面的代码在多行上面做简单的文本匹配，并只返回在前 N 行中匹配成功的行：
 
 ```py
-      from collections import deque
+from collections import deque
 
 def search(lines, pattern, history=5):
     previous_lines = deque(maxlen=history)
@@ -268,7 +268,7 @@ if __name__ == '__main__':
 代码示例：
 
 ```py
-      >>> q = deque(maxlen=3)
+>>> q = deque(maxlen=3)
 >>> q.append(1)
 >>> q.append(2)
 >>> q.append(3)
@@ -290,7 +290,7 @@ deque([3, 4, 5], maxlen=3)
 代码示例：
 
 ```py
-      >>> q = deque()
+>>> q = deque()
 >>> q.append(1)
 >>> q.append(2)
 >>> q.append(3)
@@ -321,7 +321,7 @@ deque([4, 1, 2])
 heapq 模块有两个函数：`nlargest()` 和 `nsmallest()` 可以完美解决这个问题。
 
 ```py
-      import heapq
+import heapq
 nums = [1, 8, 2, 23, 7, -4, 18, 23, 42, 37, 2]
 print(heapq.nlargest(3, nums)) # Prints [42, 37, 23]
 print(heapq.nsmallest(3, nums)) # Prints [-4, 1, 2]
@@ -331,7 +331,7 @@ print(heapq.nsmallest(3, nums)) # Prints [-4, 1, 2]
 两个函数都能接受一个关键字参数，用于更复杂的数据结构中：
 
 ```py
-      portfolio = [
+portfolio = [
     {'name': 'IBM', 'shares': 100, 'price': 91.1},
     {'name': 'AAPL', 'shares': 50, 'price': 543.22},
     {'name': 'FB', 'shares': 200, 'price': 21.09},
@@ -351,7 +351,7 @@ expensive = heapq.nlargest(3, portfolio, key=lambda s: s['price'])
 如果你想在一个集合中查找最小或最大的 N 个元素，并且 N 小于集合元素数量，那么这些函数提供了很好的性能。因为在底层实现里面，首先会先将集合数据进行堆排序后放入一个列表中：
 
 ```py
-      >>> nums = [1, 8, 2, 23, 7, -4, 18, 23, 42, 37, 2]
+>>> nums = [1, 8, 2, 23, 7, -4, 18, 23, 42, 37, 2]
 >>> import heapq
 >>> heapq.heapify(nums)
 >>> nums
@@ -363,7 +363,7 @@ expensive = heapq.nlargest(3, portfolio, key=lambda s: s['price'])
 堆数据结构最重要的特征是 heap[0]永远是最小的元素。并且剩余的元素可以很容易的通过调用 heapq.heappop()方法得到，该方法会先将第一个元素弹出来，然后用下一个最小的元素来取代被弹出元素(这种操作时间复杂度仅仅是 O(N)，N 是堆大小)。比如，如果想要查找最小的 3 个元素，你可以这样做：
 
 ```py
-      >>> heapq.heappop(nums)
+>>> heapq.heappop(nums)
 -4
 >>> heapq.heappop(nums)
 1
@@ -387,7 +387,7 @@ expensive = heapq.nlargest(3, portfolio, key=lambda s: s['price'])
 下面的类利用 heapq 模块实现了一个简单的优先级队列：
 
 ```py
-      import heapq
+import heapq
 
 class PriorityQueue:
     def __init__(self):
@@ -406,7 +406,7 @@ class PriorityQueue:
 下面是它的使用方式：
 
 ```py
-      >>> class Item:
+>>> class Item:
 ...     def __init__(self, name):
 ...         self.name = name
 ...     def __repr__(self):
@@ -442,7 +442,7 @@ index 变量的作用是保证同等优先级元素的正确排序。通过保�
 为了阐明这些，先假定 Item 实例是不支持排序的：
 
 ```py
-      >>> a = Item('foo')
+>>> a = Item('foo')
 >>> b = Item('bar')
 >>> a < b
 Traceback (most recent call last):
@@ -455,7 +455,7 @@ TypeError: unorderable types: Item() < Item()
 如果你使用元组 `(priority, item)` ，只要两个元素的优先级不同就能比较。 但是如果两个元素优先级一样的话，那么比较操作就会跟之前一样出错：
 
 ```py
-      >>> a = (1, Item('foo'))
+>>> a = (1, Item('foo'))
 >>> b = (5, Item('bar'))
 >>> a < b
 True
@@ -471,7 +471,7 @@ TypeError: unorderable types: Item() < Item()
 通过引入另外的 index 变量组成三元组(priority, index, item)，就能很好的避免上面的错误，因为不可能有两个元素有相同的 index 值。Python 在做元组比较时候，如果前面的比较以及可以确定结果了，后面的比较操作就不会发生了：
 
 ```py
-      >>> a = (1, 0, Item('foo'))
+>>> a = (1, 0, Item('foo'))
 >>> b = (5, 1, Item('bar'))
 >>> c = (1, 2, Item('grok'))
 >>> a < b
@@ -497,7 +497,7 @@ heapq 模块的官方文档有更详细的例子程序以及对于堆理论及�
 一个字典就是一个键对应一个单值的映射。如果你想要一个键映射多个值，那么你就需要将这多个值放到另外的容器中，比如列表或者集合里面。比如，你可以像下面这样构造这样的字典：
 
 ```py
-      d = {
+d = {
     'a' : [1, 2, 3],
     'b' : [4, 5]
 }
@@ -513,7 +513,7 @@ e = {
 你可以很方便的使用 collections 模块中的 defaultdict 来构造这样的字典。defaultdict 的一个特征是它会自动初始化每个 key 刚开始对应的值，所以你只需要关注添加元素操作了。比如：
 
 ```py
-      from collections import defaultdict
+from collections import defaultdict
 
 d = defaultdict(list)
 d['a'].append(1)
@@ -530,7 +530,7 @@ d['b'].add(4)
 需要注意的是，defaultdict 会自动为将要访问的键(就算目前字典中并不存在这样的键)创建映射实体。如果你并不需要这样的特性，你可以在一个普通的字典上使用 setdefault()方法来代替。比如：
 
 ```py
-      d = {} # A regular dictionary
+d = {} # A regular dictionary
 d.setdefault('a', []).append(1)
 d.setdefault('a', []).append(2)
 d.setdefault('b', []).append(4)
@@ -544,7 +544,7 @@ d.setdefault('b', []).append(4)
 一般来讲，创建一个多值映射字典是很简单的。但是，如果你选择自己实现的话，那么对于值的初始化可能会有点麻烦，你可能会像下面这样来实现：
 
 ```py
-      d = {}
+d = {}
 for key, value in pairs:
     if key not in d:
         d[key] = []
@@ -555,7 +555,7 @@ for key, value in pairs:
 如果使用 defaultdict 的话代码就更加简洁了：
 
 ```py
-      d = defaultdict(list)
+d = defaultdict(list)
 for key, value in pairs:
     d[key].append(value)
 
@@ -574,7 +574,7 @@ for key, value in pairs:
 为了能控制一个字典中元素的顺序，你可以使用 collections 模块中的 OrderedDict 类。在迭代操作的时候它会保持元素被插入时的顺序，示例如下：
 
 ```py
-      from collections import OrderedDict
+from collections import OrderedDict
 def ordered_dict():
     d = OrderedDict()
     d['foo'] = 1
@@ -590,7 +590,7 @@ def ordered_dict():
 当你想要构建一个将来需要序列化或编码成其他格式的映射的时候，OrderedDict 是非常有用的。比如，你想精确控制以 JSON 编码后字段的顺序，你可以先使用 OrderedDict 来构建这样的数据：
 
 ```py
-      >>> import json
+>>> import json
 >>> json.dumps(d)
 '{"foo": 1, "bar": 2, "spam": 3, "grok": 4}'
 >>>
@@ -614,7 +614,7 @@ OrderedDict 内部维护着一个根据键插入顺序排序的双向链表。�
 考虑下面的股票名和价格映射字典：
 
 ```py
-      prices = {
+prices = {
     'ACME': 45.23,
     'AAPL': 612.78,
     'IBM': 205.55,
@@ -627,7 +627,7 @@ OrderedDict 内部维护着一个根据键插入顺序排序的双向链表。�
 为了对字典值执行计算操作，通常需要使用 zip()函数先将键和值反转过来。比如，下面是查找最小和最大股票价格和股票值的代码：
 
 ```py
-      min_price = min(zip(prices.values(), prices.keys()))
+min_price = min(zip(prices.values(), prices.keys()))
 # min_price is (10.75, 'FB')
 max_price = max(zip(prices.values(), prices.keys()))
 # max_price is (612.78, 'AAPL')
@@ -637,7 +637,7 @@ max_price = max(zip(prices.values(), prices.keys()))
 类似的，可以使用 zip()和 sorted()函数来排列字典数据：
 
 ```py
-      prices_sorted = sorted(zip(prices.values(), prices.keys()))
+prices_sorted = sorted(zip(prices.values(), prices.keys()))
 # prices_sorted is [(10.75, 'FB'), (37.2, 'HPQ'),
 #                   (45.23, 'ACME'), (205.55, 'IBM'),
 #                   (612.78, 'AAPL')]
@@ -647,7 +647,7 @@ max_price = max(zip(prices.values(), prices.keys()))
 执行这些计算的时候，需要注意的是 zip()函数创建的是一个只能访问一次的迭代器。比如，下面的代码就会产生错误：
 
 ```py
-      prices_and_names = zip(prices.values(), prices.keys())
+prices_and_names = zip(prices.values(), prices.keys())
 print(min(prices_and_names)) # OK
 print(max(prices_and_names)) # ValueError: max() arg is an empty sequence
 
@@ -658,7 +658,7 @@ print(max(prices_and_names)) # ValueError: max() arg is an empty sequence
 如果你在一个字典上执行普通的数学运算，你会发现它们仅仅作用于键，而不是值。比如：
 
 ```py
-      min(prices) # Returns 'AAPL'
+min(prices) # Returns 'AAPL'
 max(prices) # Returns 'IBM'
 
 ```
@@ -666,7 +666,7 @@ max(prices) # Returns 'IBM'
 这个结果并不是你想要的，因为你想要在字典的值集合上执行这些计算。或许你会尝试着使用字典的 values()方法来解决这个问题：
 
 ```py
-      min(prices.values()) # Returns 10.75
+min(prices.values()) # Returns 10.75
 max(prices.values()) # Returns 612.78
 
 ```
@@ -676,7 +676,7 @@ max(prices.values()) # Returns 612.78
 你可以在 min()和 max()函数中提供 key 函数参数来获取最小值或最大值对应的键的信息。比如：
 
 ```py
-      min(prices, key=lambda k: prices[k]) # Returns 'FB'
+min(prices, key=lambda k: prices[k]) # Returns 'FB'
 max(prices, key=lambda k: prices[k]) # Returns 'AAPL'
 
 ```
@@ -684,7 +684,7 @@ max(prices, key=lambda k: prices[k]) # Returns 'AAPL'
 但是，如果还想要得到最小值，你又得执行一次查找操作。比如：
 
 ```py
-      min_value = prices[min(prices, key=lambda k: prices[k])]
+min_value = prices[min(prices, key=lambda k: prices[k])]
 
 ```
 
@@ -693,7 +693,7 @@ max(prices, key=lambda k: prices[k]) # Returns 'AAPL'
 需要注意的是在计算操作中使用到了(值，键)对。当多个实体拥有相同的值的时候，键会决定返回结果。比如，在执行 min()和 max()操作的时候，如果恰巧最小或最大值有重复的，那么拥有最小或最大键的实体会返回：
 
 ```py
-      >>> prices = { 'AAA' : 45.23, 'ZZZ': 45.23 }
+>>> prices = { 'AAA' : 45.23, 'ZZZ': 45.23 }
 >>> min(zip(prices.values(), prices.keys()))
 (45.23, 'AAA')
 >>> max(zip(prices.values(), prices.keys()))
@@ -713,7 +713,7 @@ max(prices, key=lambda k: prices[k]) # Returns 'AAPL'
 考虑下面两个字典：
 
 ```py
-      a = {
+a = {
     'x' : 1,
     'y' : 2,
     'z' : 3
@@ -730,7 +730,7 @@ b = {
 为了寻找两个字典的相同点，可以简单的在两字典的 keys()或者 items()方法返回结果上执行集合操作。比如：
 
 ```py
-      # Find keys in common
+# Find keys in common
 a.keys() & b.keys() # { 'x', 'y' }
 # Find keys in a that are not in b
 a.keys() - b.keys() # { 'z' }
@@ -742,7 +742,7 @@ a.items() & b.items() # { ('y', 2) }
 这些操作也可以用于修改或者过滤字典元素。比如，假如你想以现有字典构造一个排除几个指定键的新字典。下面利用字典推导来实现这样的需求：
 
 ```py
-      # Make a new dictionary with certain keys removed
+# Make a new dictionary with certain keys removed
 c = {key:a[key] for key in a.keys() - {'z', 'w'}}
 # c is {'x': 1, 'y': 2}
 
@@ -767,7 +767,7 @@ c = {key:a[key] for key in a.keys() - {'z', 'w'}}
 如果序列上的值都是 hashable 类型，那么可以很简单的利用集合或者生成器来解决这个问题。比如：
 
 ```py
-      def dedupe(items):
+def dedupe(items):
     seen = set()
         for item in items:
             if item not in seen:
@@ -779,7 +779,7 @@ c = {key:a[key] for key in a.keys() - {'z', 'w'}}
 下面是使用上述函数的例子：
 
 ```py
-      >>> a = [1, 5, 2, 1, 9, 1, 5, 10]
+>>> a = [1, 5, 2, 1, 9, 1, 5, 10]
 >>> list(dedupe(a))
 [1, 5, 2, 9, 10]
 >>>
@@ -789,7 +789,7 @@ c = {key:a[key] for key in a.keys() - {'z', 'w'}}
 这个方法仅仅在序列中元素为 hashable 的时候才管用。如果你想消除元素不可哈希(比如 dict 类型)的序列中重复元素的话，你需要将上述代码稍微改变一下，就像这样：
 
 ```py
-      def dedupe(items, key=None):
+def dedupe(items, key=None):
     seen = set()
     for item in items:
         val = item if key is None else key(item)
@@ -802,7 +802,7 @@ c = {key:a[key] for key in a.keys() - {'z', 'w'}}
 这里的 key 参数指定了一个函数，将序列元素转换成 hashable 类型。下面是它的用法示例：
 
 ```py
-      >>> a = [ {'x':1, 'y':2}, {'x':1, 'y':3}, {'x':1, 'y':2}, {'x':2, 'y':4}]
+>>> a = [ {'x':1, 'y':2}, {'x':1, 'y':3}, {'x':1, 'y':2}, {'x':2, 'y':4}]
 >>> list(dedupe(a, key=lambda d: (d['x'],d['y'])))
 [{'x': 1, 'y': 2}, {'x': 1, 'y': 3}, {'x': 2, 'y': 4}]
 >>> list(dedupe(a, key=lambda d: d['x']))
@@ -818,7 +818,7 @@ c = {key:a[key] for key in a.keys() - {'z', 'w'}}
 如果你仅仅就是想消除重复元素，通常可以简单的构造一个集合。比如：
 
 ```py
-      >>> a
+>>> a
 [1, 5, 2, 1, 9, 1, 5, 10]
 >>> set(a)
 {1, 2, 10, 5, 9}
@@ -831,7 +831,7 @@ c = {key:a[key] for key in a.keys() - {'z', 'w'}}
 在本节中我们使用了生成器函数让我们的函数更加通用，不仅仅是局限于列表处理。比如，如果如果你想读取一个文件，消除重复行，你可以很容易像这样做：
 
 ```py
-      with open(somefile,'r') as f:
+with open(somefile,'r') as f:
 for line in dedupe(f):
     ...
 
@@ -850,7 +850,7 @@ for line in dedupe(f):
 假定你有一段代码要从一个记录字符串中几个固定位置提取出特定的数据字段(比如文件或类似格式)：
 
 ```py
-      ###### 0123456789012345678901234567890123456789012345678901234567890'
+###### 0123456789012345678901234567890123456789012345678901234567890'
 record = '....................100 .......513.25 ..........'
 cost = int(record[20:23]) * float(record[31:37])
 
@@ -859,7 +859,7 @@ cost = int(record[20:23]) * float(record[31:37])
 与其那样写，为什么不想这样命名切片呢：
 
 ```py
-      SHARES = slice(20, 23)
+SHARES = slice(20, 23)
 PRICE = slice(31, 37)
 cost = int(record[SHARES]) * float(record[PRICE])
 
@@ -874,7 +874,7 @@ cost = int(record[SHARES]) * float(record[PRICE])
 内置的 slice()函数创建了一个切片对象，可以被用在任何切片允许使用的地方。比如：
 
 ```py
-      >>> items = [0, 1, 2, 3, 4, 5, 6]
+>>> items = [0, 1, 2, 3, 4, 5, 6]
 >>> a = slice(2, 4)
 >>> items[2:4]
 [2, 3]
@@ -892,7 +892,7 @@ cost = int(record[SHARES]) * float(record[PRICE])
 如果你有一个切片对象 s，你可以分别调用它的 s.start, s.stop, s.step 属性来获取更多的信息。比如：
 
 ```py
-      >>> a = slice(5, 50, 2)
+>>> a = slice(5, 50, 2)
 >>> a.start
 5
 >>> a.stop
@@ -906,7 +906,7 @@ cost = int(record[SHARES]) * float(record[PRICE])
 另外，你还能通过调用切片的 indices(size)方法将它映射到一个确定大小的序列上，这个方法返回一个三元组(start,stop,step)，所有值都会被合适的缩小以满足边界限制，从而使用的时候避免出现 IndexError 异常。比如：
 
 ```py
-      >>> s = 'HelloWorld'
+>>> s = 'HelloWorld'
 >>> a.indices(len(s))
 (5, 10, 2)
 >>> for i in range(*a.indices(len(s))):
@@ -932,7 +932,7 @@ d
 为了演示，先假设你有一个单词列表并且想找出哪个单词出现频率最高。你可以这样做：
 
 ```py
-      words = [
+words = [
     'look', 'into', 'my', 'eyes', 'look', 'into', 'my', 'eyes',
     'the', 'eyes', 'the', 'eyes', 'the', 'eyes', 'not', 'around', 'the',
     'eyes', "don't", 'look', 'around', 'the', 'eyes', 'look', 'into',
@@ -952,7 +952,7 @@ print(top_three)
 作为输入，`Counter` 对象可以接受任意的 `hashable` 序列对象。在底层实现上，一个 `Counter` 对象就是一个字典，将元素映射到它出现的次数上。比如：
 
 ```py
-      >>> word_counts['not']
+>>> word_counts['not']
 1
 >>> word_counts['eyes']
 8
@@ -963,7 +963,7 @@ print(top_three)
 如果你想手动增加计数，可以简单的用加法：
 
 ```py
-      >>> morewords = ['why','are','you','not','looking','in','my','eyes']
+>>> morewords = ['why','are','you','not','looking','in','my','eyes']
 >>> for word in morewords:
 ... word_counts[word] += 1
 ...
@@ -976,7 +976,7 @@ print(top_three)
 或者你可以使用 update()方法：
 
 ```py
-      >>> word_counts.update(morewords)
+>>> word_counts.update(morewords)
 >>>
 
 ```
@@ -984,7 +984,7 @@ print(top_three)
 `Counter` 实例一个鲜为人知的特性是它们可以很容易的跟数学运算操作相结合。比如：
 
 ```py
-      >>> a = Counter(words)
+>>> a = Counter(words)
 >>> b = Counter(morewords)
 >>> a
 Counter({'eyes': 8, 'the': 5, 'look': 4, 'into': 3, 'my': 3, 'around': 2,
@@ -1020,7 +1020,7 @@ Counter({'eyes': 7, 'the': 5, 'look': 4, 'into': 3, 'my': 2, 'around': 2,
 通过使用 operator 模块的 itemgetter 函数，可以非常容易的排序这样的数据结构。假设你从数据库中检索出来网站会员信息列表，并且以下列的数据结构返回：
 
 ```py
-      rows = [
+rows = [
     {'fname': 'Brian', 'lname': 'Jones', 'uid': 1003},
     {'fname': 'David', 'lname': 'Beazley', 'uid': 1002},
     {'fname': 'John', 'lname': 'Cleese', 'uid': 1001},
@@ -1032,7 +1032,7 @@ Counter({'eyes': 7, 'the': 5, 'look': 4, 'into': 3, 'my': 2, 'around': 2,
 根据任意的字典字段来排序输入结果行是很容易实现的，代码示例：
 
 ```py
-      from operator import itemgetter
+from operator import itemgetter
 rows_by_fname = sorted(rows, key=itemgetter('fname'))
 rows_by_uid = sorted(rows, key=itemgetter('uid'))
 print(rows_by_fname)
@@ -1043,7 +1043,7 @@ print(rows_by_uid)
 代码的输出如下：
 
 ```py
-      [{'fname': 'Big', 'uid': 1004, 'lname': 'Jones'},
+[{'fname': 'Big', 'uid': 1004, 'lname': 'Jones'},
 {'fname': 'Brian', 'uid': 1003, 'lname': 'Jones'},
 {'fname': 'David', 'uid': 1002, 'lname': 'Beazley'},
 {'fname': 'John', 'uid': 1001, 'lname': 'Cleese'}]
@@ -1057,7 +1057,7 @@ print(rows_by_uid)
 itemgetter()函数也支持多个 keys，比如下面的代码
 
 ```py
-      rows_by_lfname = sorted(rows, key=itemgetter('lname','fname'))
+rows_by_lfname = sorted(rows, key=itemgetter('lname','fname'))
 print(rows_by_lfname)
 
 ```
@@ -1065,7 +1065,7 @@ print(rows_by_lfname)
 会产生如下的输出：
 
 ```py
-      [{'fname': 'David', 'uid': 1002, 'lname': 'Beazley'},
+[{'fname': 'David', 'uid': 1002, 'lname': 'Beazley'},
 {'fname': 'John', 'uid': 1001, 'lname': 'Cleese'},
 {'fname': 'Big', 'uid': 1004, 'lname': 'Jones'},
 {'fname': 'Brian', 'uid': 1003, 'lname': 'Jones'}]
@@ -1081,7 +1081,7 @@ print(rows_by_lfname)
 `itemgetter()` 有时候也可以用 lambda 表达式代替，比如：
 
 ```py
-      rows_by_fname = sorted(rows, key=lambda r: r['fname'])
+rows_by_fname = sorted(rows, key=lambda r: r['fname'])
 rows_by_lfname = sorted(rows, key=lambda r: (r['lname'],r['fname']))
 
 ```
@@ -1091,7 +1091,7 @@ rows_by_lfname = sorted(rows, key=lambda r: (r['lname'],r['fname']))
 最后，不要忘了这节中展示的技术也同样适用于 min()和 max()等函数。比如：
 
 ```py
-      >>> min(rows, key=itemgetter('uid'))
+>>> min(rows, key=itemgetter('uid'))
 {'fname': 'John', 'lname': 'Cleese', 'uid': 1001}
 >>> max(rows, key=itemgetter('uid'))
 {'fname': 'Big', 'lname': 'Jones', 'uid': 1004}
@@ -1110,7 +1110,7 @@ rows_by_lfname = sorted(rows, key=lambda r: (r['lname'],r['fname']))
 内置的 `sorted()` 函数有一个关键字参数 `key` ，可以传入一个 `callable` 对象给它，这个 `callable` 对象对每个传入的对象返回一个值，这个值会被 `sorted` 用来排序这些对象。比如，如果你在应用程序里面有一个 User 实例序列，并且你希望通过他们的 user_id 属性进行排序，你可以提供一个以 User 实例作为输入并输出对应 user_id 值的 `callable` 对象。比如：
 
 ```py
-      class User:
+class User:
     def __init__(self, user_id):
         self.user_id = user_id
 
@@ -1127,7 +1127,7 @@ def sort_notcompare():
 另外一种方式是使用 `operator.attrgetter()` 来代替 lambda 函数：
 
 ```py
-      >>> from operator import attrgetter
+>>> from operator import attrgetter
 >>> sorted(users, key=attrgetter('user_id'))
 [User(3), User(23), User(99)]
 >>>
@@ -1139,14 +1139,14 @@ def sort_notcompare():
 选择使用 lambda 函数或者是 `attrgetter()` 可能取决于个人喜好。但是，`attrgetter()` 函数通常会运行的快点，并且还能同时允许多个字段进行比较。这个跟 `operator.itemgetter()` 函数作用于字典类型很类似(参考 1.13 小节)。例如，如果 User 实例还有一个 first_name 和 last_name 属性，那么可以向下面这样排序：
 
 ```py
-      by_name = sorted(users, key=attrgetter('last_name', 'first_name'))
+by_name = sorted(users, key=attrgetter('last_name', 'first_name'))
 
 ```
 
 同样需要注意的是，这一小节用到的技术同样适用于像 `min()` 和 `max()` 之类的函数。比如：
 
 ```py
-      >>> min(users, key=attrgetter('user_id')
+>>> min(users, key=attrgetter('user_id')
 User(3)
 >>> max(users, key=attrgetter('user_id')
 User(99)
@@ -1165,7 +1165,7 @@ User(99)
 `itertools.groupby()` 函数对于这样的数据分组操作非常实用。为了演示，假设你已经有了下列的字典列表：
 
 ```py
-      rows = [
+rows = [
     {'address': '5412 N CLARK', 'date': '07/01/2012'},
     {'address': '5148 N CLARK', 'date': '07/04/2012'},
     {'address': '5800 E 58TH', 'date': '07/02/2012'},
@@ -1181,7 +1181,7 @@ User(99)
 现在假设你想在按 date 分组后的数据块上进行迭代。为了这样做，你首先需要按照指定的字段(这里就是 date)排序，然后调用 `itertools.groupby()` 函数：
 
 ```py
-      from operator import itemgetter
+from operator import itemgetter
 from itertools import groupby
 
 # Sort by the desired field first
@@ -1197,7 +1197,7 @@ for date, items in groupby(rows, key=itemgetter('date')):
 运行结果：
 
 ```py
-      07/01/2012
+07/01/2012
   {'date': '07/01/2012', 'address': '5412 N CLARK'}
   {'date': '07/01/2012', 'address': '4801 N BROADWAY'}
 07/02/2012
@@ -1221,7 +1221,7 @@ for date, items in groupby(rows, key=itemgetter('date')):
 如果你仅仅只是想根据 date 字段将数据分组到一个大的数据结构中去，并且允许随机访问，那么你最好使用 `defaultdict()` 来构建一个多值字典，关于多值字典已经在 1.6 小节有过详细的介绍。比如：
 
 ```py
-      from collections import defaultdict
+from collections import defaultdict
 rows_by_date = defaultdict(list)
 for row in rows:
     rows_by_date[row['date']].append(row)
@@ -1231,7 +1231,7 @@ for row in rows:
 这样的话你可以很轻松的就能对每个指定日期访问对应的记录：
 
 ```py
-      >>> for r in rows_by_date['07/01/2012']:
+>>> for r in rows_by_date['07/01/2012']:
 ... print(r)
 ...
 {'date': '07/01/2012', 'address': '5412 N CLARK'}
@@ -1253,7 +1253,7 @@ for row in rows:
 最简单的过滤序列元素的方法就是使用列表推导。比如：
 
 ```py
-      >>> mylist = [1, 4, -5, 10, -7, 2, 3, -1]
+>>> mylist = [1, 4, -5, 10, -7, 2, 3, -1]
 >>> [n for n in mylist if n > 0]
 [1, 4, 10, 2, 3]
 >>> [n for n in mylist if n < 0]
@@ -1265,7 +1265,7 @@ for row in rows:
 使用列表推导的一个潜在缺陷就是如果输入非常大的时候会产生一个非常大的结果集，占用大量内存。如果你对内存比较敏感，那么你可以使用生成器表达式迭代产生过滤的元素。比如：
 
 ```py
-      >>> pos = (n for n in mylist if n > 0)
+>>> pos = (n for n in mylist if n > 0)
 >>> pos
 <generator object <genexpr> at 0x1006a0eb0>
 >>> for x in pos:
@@ -1283,7 +1283,7 @@ for row in rows:
 有时候，过滤规则比较复杂，不能简单的在列表推导或者生成器表达式中表达出来。比如，假设过滤的时候需要处理一些异常或者其他复杂情况。这时候你可以将过滤代码放到一个函数中，然后使用内建的 `filter()` 函数。示例如下：
 
 ```py
-      values = ['1', '2', '-3', '-', '4', 'N/A', '5']
+values = ['1', '2', '-3', '-', '4', 'N/A', '5']
 def is_int(val):
     try:
         x = int(val)
@@ -1303,7 +1303,7 @@ print(ivals)
 列表推导和生成器表达式通常情况下是过滤数据最简单的方式。其实它们还能在过滤的时候转换数据。比如：
 
 ```py
-      >>> mylist = [1, 4, -5, 10, -7, 2, 3, -1]
+>>> mylist = [1, 4, -5, 10, -7, 2, 3, -1]
 >>> import math
 >>> [math.sqrt(n) for n in mylist if n > 0]
 [1.0, 2.0, 3.1622776601683795, 1.4142135623730951, 1.7320508075688772]
@@ -1314,7 +1314,7 @@ print(ivals)
 过滤操作的一个变种就是将不符合条件的值用新的值代替，而不是丢弃它们。比如，在一列数据中你可能不仅想找到正数，而且还想将不是正数的数替换成指定的数。通过将过滤条件放到条件表达式中去，可以很容易的解决这个问题，就像这样：
 
 ```py
-      >>> clip_neg = [n if n > 0 else 0 for n in mylist]
+>>> clip_neg = [n if n > 0 else 0 for n in mylist]
 >>> clip_neg
 [1, 4, 0, 10, 0, 2, 3, 0]
 >>> clip_pos = [n if n < 0 else 0 for n in mylist]
@@ -1327,7 +1327,7 @@ print(ivals)
 另外一个值得关注的过滤工具就是 `itertools.compress()` ，它以一个 `iterable` 对象和一个相对应的 Boolean 选择器序列作为输入参数。然后输出 `iterable` 对象中对应选择器为 True 的元素。当你需要用另外一个相关联的序列来过滤某个序列的时候，这个函数是非常有用的。比如，假如现在你有下面两列数据：
 
 ```py
-      addresses = [
+addresses = [
     '5412 N CLARK',
     '5148 N CLARK',
     '5800 E 58TH',
@@ -1344,7 +1344,7 @@ counts = [ 0, 3, 10, 4, 1, 7, 6, 1]
 现在你想将那些对应 count 值大于 5 的地址全部输出，那么你可以这样做：
 
 ```py
-      >>> from itertools import compress
+>>> from itertools import compress
 >>> more5 = [n > 5 for n in counts]
 >>> more5
 [False, False, True, False, False, True, True, False]
@@ -1369,7 +1369,7 @@ counts = [ 0, 3, 10, 4, 1, 7, 6, 1]
 最简单的方式是使用字典推导。比如：
 
 ```py
-      prices = {
+prices = {
     'ACME': 45.23,
     'AAPL': 612.78,
     'IBM': 205.55,
@@ -1389,7 +1389,7 @@ p2 = {key: value for key, value in prices.items() if key in tech_names}
 大多数情况下字典推导能做到的，通过创建一个元组序列然后把它传给 `dict()` 函数也能实现。比如：
 
 ```py
-      p1 = dict((key, value) for key, value in prices.items() if value > 200)
+p1 = dict((key, value) for key, value in prices.items() if value > 200)
 
 ```
 
@@ -1398,7 +1398,7 @@ p2 = {key: value for key, value in prices.items() if key in tech_names}
 有时候完成同一件事会有多种方式。比如，第二个例子程序也可以像这样重写：
 
 ```py
-      # Make a dictionary of tech stocks
+# Make a dictionary of tech stocks
 tech_names = { 'AAPL', 'IBM', 'HPQ', 'MSFT' }
 p2 = { key:prices[key] for key in prices.keys() & tech_names }
 
@@ -1417,7 +1417,7 @@ p2 = { key:prices[key] for key in prices.keys() & tech_names }
 `collections.namedtuple()` 函数通过使用一个普通的元组对象来帮你解决这个问题。这个函数实际上是一个返回 Python 中标准元组类型子类的一个工厂方法。你需要传递一个类型名和你需要的字段给它，然后它就会返回一个类，你可以初始化这个类，为你定义的字段传递值等。代码示例：
 
 ```py
-      >>> from collections import namedtuple
+>>> from collections import namedtuple
 >>> Subscriber = namedtuple('Subscriber', ['addr', 'joined'])
 >>> sub = Subscriber('jonesy@example.com', '2012-10-19')
 >>> sub
@@ -1433,7 +1433,7 @@ Subscriber(addr='jonesy@example.com', joined='2012-10-19')
 尽管 namedtuple 的实例看起来像一个普通的类实例，但是它跟元组类型是可交换的，支持所有的普通元组操作，比如索引和解压。比如：
 
 ```py
-      >>> len(sub)
+>>> len(sub)
 2
 >>> addr, joined = sub
 >>> addr
@@ -1449,7 +1449,7 @@ Subscriber(addr='jonesy@example.com', joined='2012-10-19')
 为了说明清楚，下面是使用普通元组的代码：
 
 ```py
-      def compute_cost(records):
+def compute_cost(records):
 total = 0.0
 for rec in records:
     total += rec[1] * rec[2]
@@ -1460,7 +1460,7 @@ return total
 下标操作通常会让代码表意不清晰，并且非常依赖记录的结构。下面是使用命名元组的版本：
 
 ```py
-      from collections import namedtuple
+from collections import namedtuple
 
 Stock = namedtuple('Stock', ['name', 'shares', 'price'])
 def compute_cost(records):
@@ -1477,7 +1477,7 @@ def compute_cost(records):
 命名元组另一个用途就是作为字典的替代，因为字典存储需要更多的内存空间。如果你需要构建一个非常大的包含字典的数据结构，那么使用命名元组会更加高效。但是需要注意的是，不像字典那样，一个命名元组是不可更改的。比如：
 
 ```py
-      >>> s = Stock('ACME', 100, 123.45)
+>>> s = Stock('ACME', 100, 123.45)
 >>> s
 Stock(name='ACME', shares=100, price=123.45)
 >>> s.shares = 75
@@ -1496,7 +1496,7 @@ AttributeError: can't set attribute
 `_replace()` 方法还有一个很有用的特性就是当你的命名元组拥有可选或者缺失字段时候，它是一个非常方便的填充数据的方法。你可以先创建一个包含缺省值的原型元组，然后使用 `_replace()` 方法创建新的值被更新过的实例。比如：
 
 ```py
-      from collections import namedtuple
+from collections import namedtuple
 
 Stock = namedtuple('Stock', ['name', 'shares', 'price', 'date', 'time'])
 
@@ -1512,7 +1512,7 @@ def dict_to_stock(s):
 下面是它的使用方法：
 
 ```py
-      >>> a = {'name': 'ACME', 'shares': 100, 'price': 123.45}
+>>> a = {'name': 'ACME', 'shares': 100, 'price': 123.45}
 >>> dict_to_stock(a)
 Stock(name='ACME', shares=100, price=123.45, date=None, time=None)
 >>> b = {'name': 'ACME', 'shares': 100, 'price': 123.45, 'date': '12/17/2012'}
@@ -1535,7 +1535,7 @@ Stock(name='ACME', shares=100, price=123.45, date='12/17/2012', time=None)
 一个非常优雅的方式去结合数据计算与转换就是使用一个生成器表达式参数。比如，如果你想计算平方和，可以像下面这样做：
 
 ```py
-      nums = [1, 2, 3, 4, 5]
+nums = [1, 2, 3, 4, 5]
 s = sum(x * x for x in nums)
 
 ```
@@ -1543,7 +1543,7 @@ s = sum(x * x for x in nums)
 下面是更多的例子：
 
 ```py
-      # Determine if any .py files exist in a directory
+# Determine if any .py files exist in a directory
 import os
 files = os.listdir('dirname')
 if any(name.endswith('.py') for name in files):
@@ -1569,7 +1569,7 @@ min_shares = min(s['shares'] for s in portfolio)
 上面的示例向你演示了当生成器表达式作为一个单独参数传递给函数时候的巧妙语法(你并不需要多加一个括号)。比如，下面这些语句是等效的：
 
 ```py
-      s = sum((x * x for x in nums)) # 显示的传递一个生成器表达式对象
+s = sum((x * x for x in nums)) # 显示的传递一个生成器表达式对象
 s = sum(x * x for x in nums) # 更加优雅的实现方式，省略了括号
 
 ```
@@ -1577,7 +1577,7 @@ s = sum(x * x for x in nums) # 更加优雅的实现方式，省略了括号
 使用一个生成器表达式作为参数会比先创建一个临时列表更加高效和优雅。比如，如果你不使用生成器表达式的话，你可能会考虑使用下面的实现方式：
 
 ```py
-      nums = [1, 2, 3, 4, 5]
+nums = [1, 2, 3, 4, 5]
 s = sum([x * x for x in nums])
 
 ```
@@ -1587,7 +1587,7 @@ s = sum([x * x for x in nums])
 在使用一些聚集函数比如 `min()` 和 `max()` 的时候你可能更加倾向于使用生成器版本，它们接受的一个 key 关键字参数或许对你很有帮助。比如，在上面的证券例子中，你可能会考虑下面的实现版本：
 
 ```py
-      # Original: Returns 20
+# Original: Returns 20
 min_shares = min(s['shares'] for s in portfolio)
 # Alternative: Returns {'name': 'AOL', 'shares': 20}
 min_shares = min(portfolio, key=lambda s: s['shares'])
@@ -1605,7 +1605,7 @@ min_shares = min(portfolio, key=lambda s: s['shares'])
 加入你有如下两个字典:
 
 ```py
-      a = {'x': 1, 'z': 3 }
+a = {'x': 1, 'z': 3 }
 b = {'y': 2, 'z': 4 }
 
 ```
@@ -1613,7 +1613,7 @@ b = {'y': 2, 'z': 4 }
 现在假设你必须在两个字典中执行查找操作(比如先从 a 中找，如果找不到再在 b 中找)。一个非常简单扼解决方案就是使用 collections 模块中的 ChainMap 类。比如：
 
 ```py
-      from collections import ChainMap
+from collections import ChainMap
 c = ChainMap(a,b)
 print(c['x']) # Outputs 1 (from a)
 print(c['y']) # Outputs 2 (from b)
@@ -1626,7 +1626,7 @@ print(c['z']) # Outputs 3 (from a)
 一个 ChainMap 接受多个字典并将它们在逻辑上变为一个字典。然后，这些字典并不是真的合并在一起了，ChainMap 类只是在内部创建了一个容纳这些字典的列表并重新定义了一些常见的字典操作来遍历这个列表。大部分字典操作都是可以正常使用的，比如：
 
 ```py
-      >>> len(c)
+>>> len(c)
 3
 >>> list(c.keys())
 ['x', 'y', 'z']
@@ -1641,7 +1641,7 @@ print(c['z']) # Outputs 3 (from a)
 对于字典的更新或删除操作总是影响的是列表中第一个字典。比如：
 
 ```py
-      >>> c['z'] = 10
+>>> c['z'] = 10
 >>> c['w'] = 40
 >>> del c['x']
 >>> a
@@ -1657,7 +1657,7 @@ KeyError: "Key not found in the first mapping: 'y'"
 ChainMap 对于编程语言中的作用范围变量(比如 globals, locals 等)是非常有用的。事实上，有一些方法可以使它变得简单：
 
 ```py
-      >>> values = ChainMap()
+>>> values = ChainMap()
 >>> values['x'] = 1
 >>> # Add a new mapping
 >>> values = values.new_child()
@@ -1686,7 +1686,7 @@ ChainMap({'x': 1})
 作为 ChainMap 的替代，你可能会考虑使用 update()方法将两个字典合并。比如：
 
 ```py
-      >>> a = {'x': 1, 'z': 3 }
+>>> a = {'x': 1, 'z': 3 }
 >>> b = {'y': 2, 'z': 4 }
 >>> merged = dict(b)
 >>> merged.update(a)
@@ -1703,7 +1703,7 @@ ChainMap({'x': 1})
 这样也能行得通，但是它需要你创建一个完全不同的字典对象(或者是破坏现有字典结构)。同时，如果原字典做了更新，这种改变不会反应到新的合并字典中去。比如：
 
 ```py
-      >>> a['x'] = 13
+>>> a['x'] = 13
 >>> merged['x']
 1
 
@@ -1712,7 +1712,7 @@ ChainMap({'x': 1})
 ChianMap 使用原来的字典，它自己不创建新的字典。所以它并不会产生上面所说的结果，比如：
 
 ```py
-      >>> a = {'x': 1, 'z': 3 }
+>>> a = {'x': 1, 'z': 3 }
 >>> b = {'y': 2, 'z': 4 }
 >>> merged = ChainMap(a, b)
 >>> merged['x']

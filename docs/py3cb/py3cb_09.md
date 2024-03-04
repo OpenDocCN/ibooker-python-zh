@@ -13,7 +13,7 @@
 为了能让一个函数接受任意数量的位置参数，可以使用一个*参数。例如：
 
 ```py
-      def avg(first, *rest):
+def avg(first, *rest):
     return (first + sum(rest)) / (1 + len(rest))
 
 # Sample use
@@ -27,7 +27,7 @@ avg(1, 2, 3, 4) # 2.5
 为了接受任意数量的关键字参数，使用一个以**开头的参数。比如：
 
 ```py
-      import html
+import html
 
 def make_element(name, value, **attrs):
     keyvals = [' %s="%s"' % item for item in attrs.items()]
@@ -52,7 +52,7 @@ make_element('p', '<spam>')
 如果你还希望某个函数能同时接受任意数量的位置参数和关键字参数，可以同时使用*和**。比如：
 
 ```py
-      def anyargs(*args, **kwargs):
+def anyargs(*args, **kwargs):
     print(args) # A tuple
     print(kwargs) # A dict
 
@@ -65,7 +65,7 @@ make_element('p', '<spam>')
 一个*参数只能出现在函数定义中最后一个位置参数后面，而 **参数只能出现在最后一个参数。有一点要注意的是，在*参数后面仍然可以定义其他参数。
 
 ```py
-      def a(x, *args, y):
+def a(x, *args, y):
     pass
 
 def b(x, *args, y, **kwargs):
@@ -86,7 +86,7 @@ def b(x, *args, y, **kwargs):
 将强制关键字参数放到某个*参数或者当个*后面就能达到这种效果。比如：
 
 ```py
-      def recv(maxsize, *, block):
+def recv(maxsize, *, block):
     'Receives a message'
     pass
 
@@ -98,7 +98,7 @@ recv(1024, block=True) # Ok
 利用这种技术，我们还能在接受任意多个位置参数的函数中指定关键字参数。比如：
 
 ```py
-      def mininum(*values, clip=None):
+def mininum(*values, clip=None):
     m = min(values)
     if clip is not None:
         m = clip if clip > m else m
@@ -114,21 +114,21 @@ minimum(1, 5, 2, -5, 10, clip=0) # Returns 0
 很多情况下，使用强制关键字参数会比使用位置参数表意更加清晰，程序也更加具有可读性。例如，考虑下如下一个函数调用：
 
 ```py
-      msg = recv(1024, False)
+msg = recv(1024, False)
 
 ```
 
 如果调用者对 recv 函数并不是很熟悉，那他肯定不明白那个 False 参数到底来干嘛用的。但是，如果代码变成下面这样子的话就清楚多了：
 
 ```py
-      msg = recv(1024, block=False)
+msg = recv(1024, block=False)
 
 ```
 
 另外，使用强制关键字参数也会比使用**kwargs 参数更好，因为在使用函数 help 的时候输出也会更容易理解：
 
 ```py
-      >>> help(recv)
+>>> help(recv)
 Help on function recv in module __main__:
 recv(maxsize, *, block)
     Receives a message
@@ -148,7 +148,7 @@ recv(maxsize, *, block)
 使用函数参数注解是一个很好的办法，它能提示程序员应该怎样正确使用这个函数。例如，下面有一个被注解了的函数：
 
 ```py
-      def add(x:int, y:int) -> int:
+def add(x:int, y:int) -> int:
     return x + y
 
 ```
@@ -156,7 +156,7 @@ recv(maxsize, *, block)
 python 解释器不会对这些注解添加任何的语义。它们不会被类型检查，运行时跟没有加注解之前的效果也没有任何差距。然而，对于那些阅读源码的人来讲就很有帮助啦。第三方工具和框架可能会对这些注解添加语义。同时它们也会出现在文档中。
 
 ```py
-      >>> help(add)
+>>> help(add)
 Help on function add in module __main__:
 add(x: int, y: int) -> int
 >>>
@@ -170,7 +170,7 @@ add(x: int, y: int) -> int
 函数注解只存储在函数的 `__annotations__` 属性中。例如：
 
 ```py
-      >>> add.__annotations__
+>>> add.__annotations__
 {'y': <class 'int'>, 'return': <class 'int'>, 'x': <class 'int'>}
 
 ```
@@ -190,7 +190,7 @@ add(x: int, y: int) -> int
 为了能返回多个值，函数直接 return 一个元组就行了。例如：
 
 ```py
-      >>> def myfun():
+>>> def myfun():
 ... return 1, 2, 3
 ...
 >>> a, b, c = myfun()
@@ -208,7 +208,7 @@ add(x: int, y: int) -> int
 尽管 myfun()看上去返回了多个值，实际上是先创建了一个元组然后返回的。这个语法看上去比较奇怪，实际上我们使用的是逗号来生成一个元组，而不是用括号。比如下面的：
 
 ```py
-      >>> a = (1, 2) # With parentheses
+>>> a = (1, 2) # With parentheses
 >>> a
 (1, 2)
 >>> b = 1, 2 # Without parentheses
@@ -221,7 +221,7 @@ add(x: int, y: int) -> int
 当我们调用返回一个元组的函数的时候 ，通常我们会将结果赋值给多个变量，就像上面的那样。其实这就是 1.1 小节中我们所说的元组解包。返回结果也可以赋值给单个变量，这时候这个变量值就是函数返回的那个元组本身了：
 
 ```py
-      >>> x = myfun()
+>>> x = myfun()
 >>> x
 (1, 2, 3)
 >>>
@@ -239,7 +239,7 @@ add(x: int, y: int) -> int
 定义一个有可选参数的函数是非常简单的，直接在函数定义中给参数指定一个默认值，并放到参数列表最后就行了。例如：
 
 ```py
-      def spam(a, b=42):
+def spam(a, b=42):
     print(a, b)
 
 spam(1) # Ok. a=1, b=42
@@ -250,7 +250,7 @@ spam(1, 2) # Ok. a=1, b=2
 如果默认参数是一个可修改的容器比如一个列表、集合或者字典，可以使用 None 作为默认值，就像下面这样：
 
 ```py
-      # Using a list as a default value
+# Using a list as a default value
 def spam(a, b=None):
     if b is None:
         b = []
@@ -261,7 +261,7 @@ def spam(a, b=None):
 如果你并不想提供一个默认值，而是想仅仅测试下某个默认参数是不是有传递进来，可以像下面这样写：
 
 ```py
-      _no_value = object()
+_no_value = object()
 
 def spam(a, b=_no_value):
     if b is _no_value:
@@ -273,7 +273,7 @@ def spam(a, b=_no_value):
 我们测试下这个函数：
 
 ```py
-      >>> spam(1)
+>>> spam(1)
 No b value supplied
 >>> spam(1, 2) # b = 2
 >>> spam(1, None) # b = None
@@ -290,7 +290,7 @@ No b value supplied
 首先，默认参数的值仅仅在函数定义的时候赋值一次。试着运行下面这个例子：
 
 ```py
-      >>> x = 42
+>>> x = 42
 >>> def spam(a, b=x):
 ...     print(a, b)
 ...
@@ -308,7 +308,7 @@ No b value supplied
 其次，默认参数的值应该是不可变的对象，比如 None、True、False、数字或字符串。特别的，千万不要像下面这样写代码：
 
 ```py
-      def spam(a, b=[]): # NO!
+def spam(a, b=[]): # NO!
     ...
 
 ```
@@ -316,7 +316,7 @@ No b value supplied
 如果你这么做了，当默认值在其他地方被修改后你将会遇到各种麻烦。这些修改会影响到下次调用这个函数时的默认值。比如：
 
 ```py
-      >>> def spam(a, b=[]):
+>>> def spam(a, b=[]):
 ...     print(b)
 ...     return b
 ...
@@ -338,7 +338,7 @@ No b value supplied
 在测试 None 值时使用 `is` 操作符是很重要的，也是这种方案的关键点。有时候大家会犯下下面这样的错误：
 
 ```py
-      def spam(a, b=None):
+def spam(a, b=None):
     if not b: # NO! Use 'b is None' instead
         b = []
     ...
@@ -348,7 +348,7 @@ No b value supplied
 这么写的问题在于尽管 None 值确实是被当成 False，但是还有其他的对象(比如长度为 0 的字符串、列表、元组、字典等)都会被当做 False。因此，上面的代码会误将一些其他输入也当成是没有输入。比如：
 
 ```py
-      >>> spam(1) # OK
+>>> spam(1) # OK
 >>> x = []
 >>> spam(1, x) # Silent error. x value overwritten by default
 >>> spam(1, 0) # Silent error. 0 ignored
@@ -374,7 +374,7 @@ No b value supplied
 当一些函数很简单，仅仅只是计算一个表达式的值的时候，就可以使用 lambda 表达式来代替了。比如：
 
 ```py
-      >>> add = lambda x, y: x + y
+>>> add = lambda x, y: x + y
 >>> add(2,3)
 5
 >>> add('hello', 'world')
@@ -386,7 +386,7 @@ No b value supplied
 这里使用的 lambda 表达式跟下面的效果是一样的：
 
 ```py
-      >>> def add(x, y):
+>>> def add(x, y):
 ...     return x + y
 ...
 >>> add(2,3)
@@ -398,7 +398,7 @@ No b value supplied
 lambda 表达式典型的使用场景是排序或数据 reduce 等：
 
 ```py
-      >>> names = ['David Beazley', 'Brian Jones',
+>>> names = ['David Beazley', 'Brian Jones',
 ...         'Raymond Hettinger', 'Ned Batchelder']
 >>> sorted(names, key=lambda name: name.split()[-1].lower())
 ['Ned Batchelder', 'David Beazley', 'Raymond Hettinger', 'Brian Jones']
@@ -423,7 +423,7 @@ lambda 表达式典型的使用场景是排序或数据 reduce 等：
 先看下下面代码的效果：
 
 ```py
-      >>> x = 10
+>>> x = 10
 >>> a = lambda y: x + y
 >>> x = 20
 >>> b = lambda y: x + y
@@ -434,7 +434,7 @@ lambda 表达式典型的使用场景是排序或数据 reduce 等：
 现在我问你，a(10)和 b(10)返回的结果是什么？如果你认为结果是 20 和 30，那么你就错了：
 
 ```py
-      >>> a(10)
+>>> a(10)
 30
 >>> b(10)
 30
@@ -445,7 +445,7 @@ lambda 表达式典型的使用场景是排序或数据 reduce 等：
 这其中的奥妙在于 lambda 表达式中的 x 是一个自由变量，在运行时绑定值，而不是定义时就绑定，这跟函数的默认值参数定义是不同的。因此，在调用这个 lambda 表达式的时候，x 的值是执行时的值。例如：
 
 ```py
-      >>> x = 15
+>>> x = 15
 >>> a(10)
 25
 >>> x = 3
@@ -458,7 +458,7 @@ lambda 表达式典型的使用场景是排序或数据 reduce 等：
 如果你想让某个匿名函数在定义时就捕获到值，可以将那个参数值定义成默认参数即可，就像下面这样：
 
 ```py
-      >>> x = 10
+>>> x = 10
 >>> a = lambda y, x=x: x + y
 >>> x = 20
 >>> b = lambda y, x=x: x + y
@@ -475,7 +475,7 @@ lambda 表达式典型的使用场景是排序或数据 reduce 等：
 在这里列出来的问题是新手很容易犯的错误，有些新手可能会不恰当的 lambda 表达式。比如，通过在一个循环或列表推导中创建一个 lambda 表达式列表，并期望函数能在定义时就记住每次的迭代值。例如：
 
 ```py
-      >>> funcs = [lambda x: x+n for n in range(5)]
+>>> funcs = [lambda x: x+n for n in range(5)]
 >>> for f in funcs:
 ... print(f(0))
 ...
@@ -491,7 +491,7 @@ lambda 表达式典型的使用场景是排序或数据 reduce 等：
 但是实际效果是运行是 n 的值为迭代的最后一个值。现在我们用另一种方式修改一下：
 
 ```py
-      >>> funcs = [lambda x, n=n: x+n for n in range(5)]
+>>> funcs = [lambda x, n=n: x+n for n in range(5)]
 >>> for f in funcs:
 ... print(f(0))
 ...
@@ -517,7 +517,7 @@ lambda 表达式典型的使用场景是排序或数据 reduce 等：
 如果需要减少某个函数的参数个数，你可以使用 `functools.partial()` 。`partial()` 函数允许你给一个或多个参数设置固定的值，减少接下来被调用时的参数个数。为了演示清楚，假设你有下面这样的函数：
 
 ```py
-      def spam(a, b, c, d):
+def spam(a, b, c, d):
     print(a, b, c, d)
 
 ```
@@ -525,7 +525,7 @@ lambda 表达式典型的使用场景是排序或数据 reduce 等：
 现在我们使用 `partial()` 函数来固定某些参数值：
 
 ```py
-      >>> from functools import partial
+>>> from functools import partial
 >>> s1 = partial(spam, 1) # a = 1
 >>> s1(2, 3, 4)
 1 2 3 4
@@ -556,7 +556,7 @@ lambda 表达式典型的使用场景是排序或数据 reduce 等：
 第一个例子是，假设你有一个点的列表来表示(x,y)坐标元组。你可以使用下面的函数来计算两点之间的距离：
 
 ```py
-      points = [ (1, 2), (3, 4), (5, 6), (7, 8) ]
+points = [ (1, 2), (3, 4), (5, 6), (7, 8) ]
 
 import math
 def distance(p1, p2):
@@ -569,7 +569,7 @@ def distance(p1, p2):
 现在假设你想以某个点为基点，根据点和基点之间的距离来排序所有的这些点。列表的 `sort()` 方法接受一个关键字参数来自定义排序逻辑，但是它只能接受一个单个参数的函数(distance()很明显是不符合条件的)。现在我们可以通过使用 `partial()` 来解决这个问题：
 
 ```py
-      >>> pt = (4, 3)
+>>> pt = (4, 3)
 >>> points.sort(key=partial(distance,pt))
 >>> points
 [(3, 4), (1, 2), (5, 6), (7, 8)]
@@ -580,7 +580,7 @@ def distance(p1, p2):
 更进一步，`partial()` 通常被用来微调其他库函数所使用的回调函数的参数。例如，下面是一段代码，使用 `multiprocessing` 来异步计算一个结果值，然后这个值被传递给一个接受一个 result 值和一个可选 logging 参数的回调函数：
 
 ```py
-      def output_result(result, log=None):
+def output_result(result, log=None):
     if log is not None:
         log.debug('Got: %r', result)
 
@@ -608,7 +608,7 @@ if __name__ == '__main__':
 作为一个类似的例子，考虑下编写网络服务器的问题，`socketserver` 模块让它变得很容易。下面是个简单的 echo 服务器：
 
 ```py
-      from socketserver import StreamRequestHandler, TCPServer
+from socketserver import StreamRequestHandler, TCPServer
 
 class EchoHandler(StreamRequestHandler):
     def handle(self):
@@ -623,7 +623,7 @@ serv.serve_forever()
 不过，假设你想给 EchoHandler 增加一个可以接受其他配置选项的 `__init__` 方法。比如：
 
 ```py
-      class EchoHandler(StreamRequestHandler):
+class EchoHandler(StreamRequestHandler):
     # ack is added keyword-only argument. *args, **kwargs are
     # any normal parameters supplied (which are passed on)
     def __init__(self, *args, ack, **kwargs):
@@ -639,7 +639,7 @@ serv.serve_forever()
 这么修改后，我们就不需要显式地在 TCPServer 类中添加前缀了。但是你再次运行程序后会报类似下面的错误：
 
 ```py
-      Exception happened during processing of request from ('127.0.0.1', 59834)
+Exception happened during processing of request from ('127.0.0.1', 59834)
 Traceback (most recent call last):
 ...
 TypeError: __init__() missing 1 required keyword-only argument: 'ack'
@@ -649,7 +649,7 @@ TypeError: __init__() missing 1 required keyword-only argument: 'ack'
 初看起来好像很难修正这个错误，除了修改 `socketserver` 模块源代码或者使用某些奇怪的方法之外。但是，如果使用 `partial()` 就能很轻松的解决——给它传递 `ack` 参数的值来初始化即可，如下：
 
 ```py
-      from functools import partial
+from functools import partial
 serv = TCPServer(('', 15000), partial(EchoHandler, ack=b'RECEIVED:'))
 serv.serve_forever()
 
@@ -660,7 +660,7 @@ serv.serve_forever()
 很多时候`partial()`能实现的效果，lambda 表达式也能实现。比如，之前的几个例子可以使用下面这样的表达式：
 
 ```py
-      points.sort(key=lambda p: distance(pt, p))
+points.sort(key=lambda p: distance(pt, p))
 p.apply_async(add, (3, 4), callback=lambda result: output_result(result,log))
 serv = TCPServer(('', 15000),
         lambda *args, **kwargs: EchoHandler(*args, ack=b'RECEIVED:', **kwargs))
@@ -680,7 +680,7 @@ serv = TCPServer(('', 15000),
 大多数情况下，可以使用闭包来将单个方法的类转换成函数。举个例子，下面示例中的类允许使用者根据某个模板方案来获取到 URL 链接地址。
 
 ```py
-      from urllib.request import urlopen
+from urllib.request import urlopen
 
 class UrlTemplate:
     def __init__(self, template):
@@ -699,7 +699,7 @@ for line in yahoo.open(names='IBM,AAPL,FB', fields='sl1c1v'):
 这个类可以被一个更简单的函数来代替：
 
 ```py
-      def urltemplate(template):
+def urltemplate(template):
     def opener(**kwargs):
         return urlopen(template.format_map(kwargs))
     return opener
@@ -730,7 +730,7 @@ for line in yahoo(names='IBM,AAPL,FB', fields='sl1c1v'):
 这一小节主要讨论的是那些出现在很多函数库和框架中的回调函数的使用——特别是跟异步处理有关的。为了演示与测试，我们先定义如下一个需要调用回调函数的函数：
 
 ```py
-      def apply_async(func, args, *, callback):
+def apply_async(func, args, *, callback):
     # Compute the result
     result = func(*args)
 
@@ -742,7 +742,7 @@ for line in yahoo(names='IBM,AAPL,FB', fields='sl1c1v'):
 实际上，这段代码可以做任何更高级的处理，包括线程、进程和定时器，但是这些都不是我们要关心的。我们仅仅只需要关注回调函数的调用。下面是一个演示怎样使用上述代码的例子：
 
 ```py
-      >>> def print_result(result):
+>>> def print_result(result):
 ...     print('Got:', result)
 ...
 >>> def add(x, y):
@@ -761,7 +761,7 @@ Got: helloworld
 为了让回调函数访问外部信息，一种方法是使用一个绑定方法来代替一个简单函数。比如，下面这个类会保存一个内部序列号，每次接收到一个 `result` 的时候序列号加 1：
 
 ```py
-      class ResultHandler:
+class ResultHandler:
 
     def __init__(self):
         self.sequence = 0
@@ -775,7 +775,7 @@ Got: helloworld
 使用这个类的时候，你先创建一个类的实例，然后用它的 `handler()` 绑定方法来做为回调函数：
 
 ```py
-      >>> r = ResultHandler()
+>>> r = ResultHandler()
 >>> apply_async(add, (2, 3), callback=r.handler)
 [1] Got: 5
 >>> apply_async(add, ('hello', 'world'), callback=r.handler)
@@ -787,7 +787,7 @@ Got: helloworld
 第二种方式，作为类的替代，可以使用一个闭包捕获状态值，例如：
 
 ```py
-      def make_handler():
+def make_handler():
     sequence = 0
     def handler(result):
         nonlocal sequence
@@ -800,7 +800,7 @@ Got: helloworld
 下面是使用闭包方式的一个例子：
 
 ```py
-      >>> handler = make_handler()
+>>> handler = make_handler()
 >>> apply_async(add, (2, 3), callback=handler)
 [1] Got: 5
 >>> apply_async(add, ('hello', 'world'), callback=handler)
@@ -812,7 +812,7 @@ Got: helloworld
 还有另外一个更高级的方法，可以使用协程来完成同样的事情：
 
 ```py
-      def make_handler():
+def make_handler():
     sequence = 0
     while True:
         result = yield
@@ -824,7 +824,7 @@ Got: helloworld
 对于协程，你需要使用它的 `send()` 方法作为回调函数，如下所示：
 
 ```py
-      >>> handler = make_handler()
+>>> handler = make_handler()
 >>> next(handler) # Advance to the yield
 >>> apply_async(add, (2, 3), callback=handler.send)
 [1] Got: 5
@@ -847,7 +847,7 @@ Got: helloworld
 如果你仅仅只需要给回调函数传递额外的值的话，还有一种使用 `partial()` 的方式也很有用。在没有使用 `partial()` 的时候，你可能经常看到下面这种使用 lambda 表达式的复杂代码：
 
 ```py
-      >>> apply_async(add, (2, 3), callback=lambda r: handler(r, seq))
+>>> apply_async(add, (2, 3), callback=lambda r: handler(r, seq))
 [1] Got: 5
 >>>
 
@@ -866,7 +866,7 @@ Got: helloworld
 通过使用生成器和协程可以使得回调函数内联在某个函数中。为了演示说明，假设你有如下所示的一个执行某种计算任务然后调用一个回调函数的函数(参考 7.10 小节)：
 
 ```py
-      def apply_async(func, args, *, callback):
+def apply_async(func, args, *, callback):
     # Compute the result
     result = func(*args)
 
@@ -878,7 +878,7 @@ Got: helloworld
 接下来让我们看一下下面的代码，它包含了一个 `Async` 类和一个 `inlined_async` 装饰器：
 
 ```py
-      from queue import Queue
+from queue import Queue
 from functools import wraps
 
 class Async:
@@ -906,7 +906,7 @@ def inlined_async(func):
 这两个代码片段允许你使用 `yield` 语句内联回调步骤。比如：
 
 ```py
-      def add(x, y):
+def add(x, y):
     return x + y
 
 @inlined_async
@@ -925,7 +925,7 @@ def test():
 如果你调用 `test()` ，你会得到类似如下的输出：
 
 ```py
-      5
+5
 helloworld
 0
 2
@@ -956,7 +956,7 @@ Goodbye
 这时候，是时候详细解释下到底发生了什么了。主循环立即返回顶部并在队列上执行 `get()` 操作。如果数据存在，它一定是 `put()` 回调存放的结果。如果没有数据，那么先暂停操作并等待结果的到来。这个具体怎样实现是由 `apply_async()` 函数来决定的。如果你不相信会有这么神奇的事情，你可以使用 `multiprocessing` 库来试一下，在单独的进程中执行异步计算操作，如下所示：
 
 ```py
-      if __name__ == '__main__':
+if __name__ == '__main__':
     import multiprocessing
     pool = multiprocessing.Pool()
     apply_async = pool.apply_async
@@ -981,7 +981,7 @@ Goodbye
 通常来讲，闭包的内部变量对于外界来讲是完全隐藏的。但是，你可以通过编写访问函数并将其作为函数属性绑定到闭包上来实现这个目的。例如：
 
 ```py
-      def sample():
+def sample():
     n = 0
     # Closure function
     def func():
@@ -1005,7 +1005,7 @@ Goodbye
 下面是使用的例子:
 
 ```py
-      >>> f = sample()
+>>> f = sample()
 >>> f()
 n= 0
 >>> f.set_n(10)
@@ -1024,7 +1024,7 @@ n= 10
 还可以进一步的扩展，让闭包模拟类的实例。你要做的仅仅是复制上面的内部函数到一个字典实例中并返回它即可。例如：
 
 ```py
-      import sys
+import sys
 class ClosureInstance:
     def __init__(self, locals=None):
         if locals is None:
@@ -1056,7 +1056,7 @@ def Stack():
 下面是一个交互式会话来演示它是如何工作的：
 
 ```py
-      >>> s = Stack()
+>>> s = Stack()
 >>> s
 <__main__.ClosureInstance object at 0x10069ed10>
 >>> s.push(10)
@@ -1077,7 +1077,7 @@ def Stack():
 有趣的是，这个代码运行起来会比一个普通的类定义要快很多。你可能会像下面这样测试它跟一个类的性能对比：
 
 ```py
-      class Stack2:
+class Stack2:
     def __init__(self):
         self.items = []
 
@@ -1095,7 +1095,7 @@ def Stack():
 如果这样做，你会得到类似如下的结果：
 
 ```py
-      >>> from timeit import timeit
+>>> from timeit import timeit
 >>> # Test involving closures
 >>> s = Stack()
 >>> timeit('s.push(1);s.pop()', 'from __main__ import s')

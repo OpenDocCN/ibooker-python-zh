@@ -65,7 +65,7 @@ def test2():with patch(‘example.patch1') as mock1, patch(‘example.patch2') a
 patch() works by taking an existing object with the fully qualified name that you pro‐vide and replacing it with a new value. The original value is then restored after thecompletion of the decorated function or context manager. By default, values are replacedwith MagicMock instances. For example:
 
 ```py
-      >>> x = 42
+>>> x = 42
 >>> with patch('__main__.x'):
 ...     print(x)
 ...
@@ -79,7 +79,7 @@ patch() works by taking an existing object with the fully qualified name that yo
 However, you can actually replace the value with anything that you wish by supplyingit as a second argument to patch():
 
 ```py
-      >>> x
+>>> x
 42
 >>> with patch('__main__.x', 'patched_value'):
 ...     print(x)
@@ -94,7 +94,7 @@ patched_value
 The MagicMock instances that are normally used as replacement values are meant tomimic callables and instances. They record information about usage and allow you tomake assertions. For example:
 
 ```py
-      >>> from unittest.mock import MagicMock
+>>> from unittest.mock import MagicMock
 >>> m = MagicMock(return_value = 10)
 >>> m(1, 2, debug=True)
 10
@@ -291,7 +291,7 @@ try:f = open(filename)except OSError as e:if e.errno == errno.ENOENT:logger.erro
 In this example, the e variable holds an instance of the raised OSError. This is useful ifyou need to inspect the exception further, such as processing it based on the value of anadditional status code.Be aware that except clauses are checked in the order listed and that the first matchexecutes. It may be a bit pathological, but you can easily create situations where multipleexcept clauses might match. For example:
 
 ```py
-      >>> f = open('missing')
+>>> f = open('missing')
 Traceback (most recent call last):
   File "<stdin>", line 1, in <module>
 FileNotFoundError: [Errno 2] No such file or directory: 'missing'
@@ -310,7 +310,7 @@ It failed
 Here the except FileNotFoundError clause doesn’t execute because the OSError ismore general, matches the FileNotFoundError exception, and was listed first.As a debugging tip, if you’re not entirely sure about the class hierarchy of a particularexception, you can quickly view it by inspecting the exception’s **mro** attribute. Forexample:
 
 ```py
-      >>> FileNotFoundError.__mro__
+>>> FileNotFoundError.__mro__
 (<class 'FileNotFoundError'>, <class 'OSError'>, <class 'Exception'>,
  <class 'BaseException'>, <class 'object'>)
 >>>
@@ -340,7 +340,7 @@ def parse_int(s):try:n = int(v)except Exception:print(“Couldn't parse”)
 If you try this function, it behaves like this:
 
 ```py
-      >>> parse_int('n/a')
+>>> parse_int('n/a')
 Couldn't parse
 >>> parse_int('42')
 Couldn't parse
@@ -354,7 +354,7 @@ def parse_int(s):try:n = int(v)except Exception as e:print(“Couldn't parse”)
 In this case, you get the following output, which indicates that a programming mistakehas been made:
 
 ```py
-      >>> parse_int('42')
+>>> parse_int('42')
 Couldn't parse
 Reason: global name 'v' is not defined
 >>>
@@ -394,7 +394,7 @@ class CustomError(Exception):def **init**(self, message, status):super().**init*
 This might look a little weird, but the default behavior of Exception is to accept allarguments passed and to store them in the .args attribute as a tuple. Various otherlibraries and parts of Python expect all exceptions to have the .args attribute, so if youskip this step, you might find that your new exception doesn’t behave quite right incertain contexts. To illustrate the use of .args, consider this interactive session with thebuilt-in RuntimeError exception, and notice how any number of arguments can be usedwith the raise statement:
 
 ```py
-      >>> try:
+>>> try:
 ...     raise RuntimeError('It failed')
 ... except RuntimeError as e:
 ...     print(e.args)
@@ -421,7 +421,7 @@ You want to raise an exception in response to catching a different exception, bu
 To chain exceptions, use the raise from statement instead of a simple raise statement.This will give you information about both errors. For example:
 
 ```py
-      >>> def example():
+>>> def example():
 ...     try:
 ...             int('N/A')
 ...     except ValueError as e:
@@ -450,7 +450,7 @@ if e.**cause**:print(‘Cause:', e.**cause**)
 An implicit form of chained exceptions occurs when another exception gets raised in‐side an except block. For example:
 
 ```py
-      >>> def example2():
+>>> def example2():
 ...     try:
 ...             int('N/A')
 ...     except ValueError as e:
@@ -472,7 +472,7 @@ NameError: global name ‘err' is not defined>>></stdin></module></stdin>
 In this example, you get information about both exceptions, but the interpretation is abit different. In this case, the NameError exception is raised as the result of a program‐ming error, not in direct response to the parsing error. For this case, the **cause**attribute of an exception is not set. Instead, a **context** attribute is set to the priorexception.If, for some reason, you want to suppress chaining, use raise from None:
 
 ```py
-      >>> def example3():
+>>> def example3():
 ...     try:
 ...             int('N/A')
 ...     except ValueError:
@@ -508,7 +508,7 @@ You caught an exception in an except block, but now you want to reraise it.
 Simply use the raise statement all by itself. For example:
 
 ```py
-      >>> def example():
+>>> def example():
 ...     try:
 ...             int('N/A')
 ...     except ValueError:
@@ -570,7 +570,7 @@ Normally, warnings just produce output messages on standard error. If you want t
 Issuing a warning message is often a useful technique for maintaining software andassisting users with issues that don’t necessarily rise to the level of being a full-fledgedexception. For example, if you’re going to change the behavior of a library or framework,you can start issuing warning messages for the parts that you’re going to change whilestill providing backward compatibility for a time. You can also warn users about prob‐lematic usage issues in their code.As another example of a warning in the built-in library, here is an example of a warningmessage generated by destroying a file without closing it:
 
 ```py
-      >>> import warnings
+>>> import warnings
 >>> warnings.simplefilter('always')
 >>> f = open('/etc/passwd')
 >>> del f
@@ -608,7 +608,7 @@ TypeError: Can't convert ‘int' object to str implicitly>>> func(10)20>>>
 If you don’t see anything obvious, a further step is to launch the Python debugger aftera crash. For example:
 
 ```py
-      >>> import pdb
+>>> import pdb
 >>> pdb.pm()
 > sample.py(4)func()
 -> return n + 10
@@ -632,7 +632,7 @@ try:func(arg)except:print(‘** **AN ERROR OCCURRED ****‘)traceback.print_exc(
 If your program isn’t crashing, but it’s producing wrong answers or you’re mystified byhow it works, there is often nothing wrong with just injecting a few print() calls inplaces of interest. However, if you’re going to do that, there are a few related techniquesof interest. First, the traceback.print_stack() function will create a stack track ofyour program immediately at that point. For example:
 
 ```py
-      >>> def sample(n):
+>>> def sample(n):
 ...     if n > 0:
 ...             sample(n-1)
 ...     else:
@@ -707,7 +707,7 @@ return wrapper
 To use this decorator, you simply place it in front of a function definition to get timingsfrom it. For example:
 
 ```py
-      >>> @timethis
+>>> @timethis
 ... def countdown(n):
 ...     while n > 0:
 ...             n -= 1
@@ -733,7 +733,7 @@ finally:end = time.perf_counter()print(‘{} : {}'.format(label, end - start))
 Here is an example of how the context manager works:
 
 ```py
-      >>> with timeblock('counting'):
+>>> with timeblock('counting'):
 ...     n = 10000000
 ...     while n > 0:
 ...             n -= 1
@@ -746,7 +746,7 @@ counting : 1.5551159381866455
 For studying the performance of small code fragments, the timeit module can be useful.For example:
 
 ```py
-      >>> from timeit import timeit
+>>> from timeit import timeit
 >>> timeit('math.sqrt(2)', 'import math')
 0.1432319980012835
 >>> timeit('sqrt(2)', 'from math import sqrt')
@@ -758,7 +758,7 @@ For studying the performance of small code fragments, the timeit module can be u
 timeit works by executing the statement specified in the first argument a million timesand measuring the time. The second argument is a setup string that is executed to setup the environment prior to running the test. If you need to change the number ofiterations, supply a number argument like this:
 
 ```py
-      >>> timeit('math.sqrt(2)', 'import math', number=10000000)
+>>> timeit('math.sqrt(2)', 'import math', number=10000000)
 1.434852126003534
 >>> timeit('sqrt(2)', 'from math import sqrt', number=10000000)
 1.0270336690009572
@@ -880,7 +880,7 @@ class A:def **init**(self, x, y):self.x = xself.y = y
 Now, try a simple timing test:
 
 ```py
-      >>> from timeit import timeit
+>>> from timeit import timeit
 >>> a = A(1,2)
 >>> timeit('a.x', 'from __main__ import a')
 0.07817923510447145

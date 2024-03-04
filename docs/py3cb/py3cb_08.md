@@ -15,7 +15,7 @@
 下面向你展示如何将这些数据读取为一个元组的序列：
 
 ```py
-      import csv
+import csv
 with open('stocks.csv') as f:
     f_csv = csv.reader(f)
     headers = next(f_csv)
@@ -30,7 +30,7 @@ with open('stocks.csv') as f:
 由于这种下标访问通常会引起混淆，你可以考虑使用命名元组。例如：
 
 ```py
-      from collections import namedtuple
+from collections import namedtuple
 with open('stock.csv') as f:
     f_csv = csv.reader(f)
     headings = next(f_csv)
@@ -47,7 +47,7 @@ with open('stock.csv') as f:
 另外一个选择就是将数据读取到一个字典序列中去。可以这样做：
 
 ```py
-      import csv
+import csv
 with open('stocks.csv') as f:
     f_csv = csv.DictReader(f)
     for row in f_csv:
@@ -61,7 +61,7 @@ with open('stocks.csv') as f:
 为了写入 CSV 数据，你仍然可以使用 csv 模块，不过这时候先创建一个 `writer` 对象。例如;
 
 ```py
-      headers = ['Symbol','Price','Date','Time','Change','Volume']
+headers = ['Symbol','Price','Date','Time','Change','Volume']
 rows = [('AA', 39.48, '6/11/2007', '9:36am', -0.18, 181800),
          ('AIG', 71.38, '6/11/2007', '9:36am', -0.15, 195500),
          ('AXP', 62.58, '6/11/2007', '9:36am', -0.46, 935000),
@@ -77,7 +77,7 @@ with open('stocks.csv','w') as f:
 如果你有一个字典序列的数据，可以像这样做：
 
 ```py
-      headers = ['Symbol', 'Price', 'Date', 'Time', 'Change', 'Volume']
+headers = ['Symbol', 'Price', 'Date', 'Time', 'Change', 'Volume']
 rows = [{'Symbol':'AA', 'Price':39.48, 'Date':'6/11/2007',
         'Time':'9:36am', 'Change':-0.18, 'Volume':181800},
         {'Symbol':'AIG', 'Price': 71.38, 'Date':'6/11/2007',
@@ -98,7 +98,7 @@ with open('stocks.csv','w') as f:
 你应该总是优先选择 csv 模块分割或解析 CSV 数据。例如，你可能会像编写类似下面这样的代码：
 
 ```py
-      with open('stocks.csv') as f:
+with open('stocks.csv') as f:
 for line in f:
     row = line.split(',')
     # process row
@@ -111,7 +111,7 @@ for line in f:
 默认情况下，`csv` 库可识别 Microsoft Excel 所使用的 CSV 编码规则。这或许也是最常见的形式，并且也会给你带来最好的兼容性。然而，如果你查看 csv 的文档，就会发现有很多种方法将它应用到其他编码格式上(如修改分割字符等)。例如，如果你想读取以 tab 分割的数据，可以这样做：
 
 ```py
-      # Example of reading tab-separated values
+# Example of reading tab-separated values
 with open('stock.tsv') as f:
     f_tsv = csv.reader(f, delimiter='\t')
     for row in f_tsv:
@@ -125,7 +125,7 @@ with open('stock.tsv') as f:
 这样最终会导致在创建一个命名元组时产生一个 `ValueError` 异常而失败。为了解决这问题，你可能不得不先去修正列标题。例如，可以像下面这样在非法标识符上使用一个正则表达式替换：
 
 ```py
-      import re
+import re
 with open('stock.csv') as f:
     f_csv = csv.reader(f)
     headers = [ re.sub('[^a-zA-Z_]', '_', h) for h in next(f_csv) ]
@@ -140,7 +140,7 @@ with open('stock.csv') as f:
 还有重要的一点需要强调的是，csv 产生的数据都是字符串类型的，它不会做任何其他类型的转换。如果你需要做这样的类型转换，你必须自己手动去实现。下面是一个在 CSV 数据上执行其他类型转换的例子：
 
 ```py
-      col_types = [str, float, str, str, float, int]
+col_types = [str, float, str, str, float, int]
 with open('stocks.csv') as f:
     f_csv = csv.reader(f)
     headers = next(f_csv)
@@ -154,7 +154,7 @@ with open('stocks.csv') as f:
 另外，下面是一个转换字典中特定字段的例子：
 
 ```py
-      print('Reading as dicts with type conversion')
+print('Reading as dicts with type conversion')
 field_types = [ ('Price', float),
                 ('Change', float),
                 ('Volume', int) ]
@@ -182,7 +182,7 @@ with open('stocks.csv') as f:
 `json` 模块提供了一种很简单的方式来编码和解码 JSON 数据。其中两个主要的函数是 `json.dumps()` 和 `json.loads()` ，要比其他序列化函数库如 pickle 的接口少得多。下面演示如何将一个 Python 数据结构转换为 JSON：
 
 ```py
-      import json
+import json
 
 data = {
     'name' : 'ACME',
@@ -197,14 +197,14 @@ json_str = json.dumps(data)
 下面演示如何将一个 JSON 编码的字符串转换回一个 Python 数据结构：
 
 ```py
-      data = json.loads(json_str)
+data = json.loads(json_str)
 
 ```
 
 如果你要处理的是文件而不是字符串，你可以使用 json.dump()和 json.load()来编码和解码 JSON 数据。例如：
 
 ```py
-      # Writing JSON data
+# Writing JSON data
 with open('data.json', 'w') as f:
     json.dump(data, f)
 
@@ -221,7 +221,7 @@ JSON 编码支持的基本数据类型为 None，bool，int，float 和 str，�
 JSON 编码的格式对于 Python 语法而已几乎是完全一样的，除了一些小的差异之外。比如，True 会被映射为 true，False 被映射为 false，而 None 会被映射为 null。下面是一个例子，演示了编码后的字符串效果：
 
 ```py
-      >>> json.dumps(False)
+>>> json.dumps(False)
 'false'
 >>> d = {'a': True,
 ...     'b': 'Hello',
@@ -235,7 +235,7 @@ JSON 编码的格式对于 Python 语法而已几乎是完全一样的，除了�
 如果你试着去检查 JSON 解码后的数据，你通常很难通过简单的打印来确定它的结构，特别是当数据的嵌套结构层次很深或者包含大量的字段时。为了解决这个问题，可以考虑使用 pprint 模块的 `pprint()` 函数来代替普通的 `print()` 函数。它会按照 key 的字母顺序并以一种更加美观的方式输出。下面是一个演示如何漂亮的打印输出 Twitter 上搜索结果的例子：
 
 ```py
-      >>> from urllib.request import urlopen
+>>> from urllib.request import urlopen
 >>> import json
 >>> u = urlopen('http://search.twitter.com/search.json?q=python&rpp=5')
 >>> resp = json.loads(u.read().decode('utf-8'))
@@ -273,7 +273,7 @@ JSON 编码的格式对于 Python 语法而已几乎是完全一样的，除了�
 一般来讲，JSON 解码会根据提供的数据创建 dicts 或 lists。如果你想要创建其他类型的对象，可以给 `json.loads()` 传递 object_pairs_hook 或 object_hook 参数。例如，下面是演示如何解码 JSON 数据并在一个 OrderedDict 中保留其顺序的例子：
 
 ```py
-      >>> s = '{"name": "ACME", "shares": 50, "price": 490.1}'
+>>> s = '{"name": "ACME", "shares": 50, "price": 490.1}'
 >>> from collections import OrderedDict
 >>> data = json.loads(s, object_pairs_hook=OrderedDict)
 >>> data
@@ -285,7 +285,7 @@ OrderedDict([('name', 'ACME'), ('shares', 50), ('price', 490.1)])
 下面是如何将一个 JSON 字典转换为一个 Python 对象例子：
 
 ```py
-      >>> class JSONObject:
+>>> class JSONObject:
 ...     def __init__(self, d):
 ...         self.__dict__ = d
 ...
@@ -306,7 +306,7 @@ OrderedDict([('name', 'ACME'), ('shares', 50), ('price', 490.1)])
 在编码 JSON 的时候，还有一些选项很有用。如果你想获得漂亮的格式化字符串后输出，可以使用 `json.dumps()` 的 indent 参数。它会使得输出和 pprint()函数效果类似。比如：
 
 ```py
-      >>> print(json.dumps(data))
+>>> print(json.dumps(data))
 {"price": 542.23, "name": "ACME", "shares": 100}
 >>> print(json.dumps(data, indent=4))
 {
@@ -321,7 +321,7 @@ OrderedDict([('name', 'ACME'), ('shares', 50), ('price', 490.1)])
 对象实例通常并不是 JSON 可序列化的。例如：
 
 ```py
-      >>> class Point:
+>>> class Point:
 ...     def __init__(self, x, y):
 ...         self.x = x
 ...         self.y = y
@@ -346,7 +346,7 @@ TypeError: <__main__.Point object at 0x1006f2650> is not JSON serializable
 如果你想序列化对象实例，你可以提供一个函数，它的输入是一个实例，返回一个可序列化的字典。例如：
 
 ```py
-      def serialize_instance(obj):
+def serialize_instance(obj):
     d = { '__classname__' : type(obj).__name__ }
     d.update(vars(obj))
     return d
@@ -356,7 +356,7 @@ TypeError: <__main__.Point object at 0x1006f2650> is not JSON serializable
 如果你想反过来获取这个实例，可以这样做：
 
 ```py
-      # Dictionary mapping names to known classes
+# Dictionary mapping names to known classes
 classes = {
     'Point' : Point
 }
@@ -377,7 +377,7 @@ def unserialize_object(d):
 下面是如何使用这些函数的例子：
 
 ```py
-      >>> p = Point(2,3)
+>>> p = Point(2,3)
 >>> s = json.dumps(p, default=serialize_instance)
 >>> s
 '{"__classname__": "Point", "y": 3, "x": 2}'
@@ -405,7 +405,7 @@ def unserialize_object(d):
 可以使用 `xml.etree.ElementTree` 模块从简单的 XML 文档中提取数据。为了演示，假设你想解析 Planet Python 上的 RSS 源。下面是相应的代码：
 
 ```py
-      from urllib.request import urlopen
+from urllib.request import urlopen
 from xml.etree.ElementTree import parse
 
 # Download the RSS feed and parse it
@@ -428,7 +428,7 @@ for item in doc.iterfind('channel/item'):
 运行上面的代码，输出结果类似这样：
 
 ```py
-      Steve Holden: Python for Data Analysis
+Steve Holden: Python for Data Analysis
 Mon, 19 Nov 2012 02:13:51 +0000
 http://holdenweb.blogspot.com/2012/11/python-for-data-analysis.html
 
@@ -459,7 +459,7 @@ http://feedproxy.google.com/~r/EmptysquarePython/~3/_DOZT2Kd0hQ/
 在很多情况下，当使用 XML 来仅仅存储数据的时候，对应的文档结构非常紧凑并且直观。例如，上面例子中的 RSS 订阅源类似于下面的格式：
 
 ```py
-      <?xml version="1.0"?>
+<?xml version="1.0"?>
 <rss version="2.0" >
     <channel>
         <title>Planet Python</title>
@@ -496,7 +496,7 @@ http://feedproxy.google.com/~r/EmptysquarePython/~3/_DOZT2Kd0hQ/
 `xml.etree.ElementTree.parse()` 函数解析整个 XML 文档并将其转换成一个文档对象。 然后，你就能使用 `find()` 、`iterfind()` 和 `findtext()` 等方法来搜索特定的 XML 元素了。 这些函数的参数就是某个指定的标签名，例如 `channel/item` 或 `title` 。 每次指定某个标签时，你需要遍历整个文档结构。每次搜索操作会从一个起始元素开始进行。 同样，每次操作所指定的标签名也是起始元素的相对路径。 例如，执行 `doc.iterfind('channel/item')` 来搜索所有在 `channel` 元素下面的 `item` 元素。 `doc` 代表文档的最顶层(也就是第一级的 `rss` 元素)。 然后接下来的调用 `item.findtext()` 会从已找到的 `item` 元素位置开始搜索。 `ElementTree` 模块中的每个元素有一些重要的属性和方法，在解析的时候非常有用。 `tag` 属性包含了标签的名字，`text` 属性包含了内部的文本，而 `get()` 方法能获取属性值。例如：
 
 ```py
-      >>> doc
+>>> doc
 <xml.etree.ElementTree.ElementTree object at 0x101339510>
 >>> e = doc.find('channel/title')
 >>> e
@@ -523,7 +523,7 @@ http://feedproxy.google.com/~r/EmptysquarePython/~3/_DOZT2Kd0hQ/
 任何时候只要你遇到增量式的数据处理时，第一时间就应该想到迭代器和生成器。下面是一个很简单的函数，只使用很少的内存就能增量式的处理一个大型 XML 文件：
 
 ```py
-      from xml.etree.ElementTree import iterparse
+from xml.etree.ElementTree import iterparse
 
 def parse_and_remove(filename, path):
     path_parts = path.split('/')
@@ -554,7 +554,7 @@ def parse_and_remove(filename, path):
 假设你想写一个脚本来按照坑洼报告数量排列邮编号码。你可以像这样做：
 
 ```py
-      from xml.etree.ElementTree import parse
+from xml.etree.ElementTree import parse
 from collections import Counter
 
 potholes_by_zip = Counter()
@@ -570,7 +570,7 @@ for zipcode, num in potholes_by_zip.most_common():
 这个脚本唯一的问题是它会先将整个 XML 文件加载到内存中然后解析。在我的机器上，为了运行这个程序需要用到 450MB 左右的内存空间。如果使用如下代码，程序只需要修改一点点：
 
 ```py
-      from collections import Counter
+from collections import Counter
 
 potholes_by_zip = Counter()
 
@@ -589,7 +589,7 @@ for zipcode, num in potholes_by_zip.most_common():
 这一节的技术会依赖 `ElementTree` 模块中的两个核心功能。第一，`iterparse()` 方法允许对 XML 文档进行增量操作。使用时，你需要提供文件名和一个包含下面一种或多种类型的事件列表：`start` , `end`, `start-ns` 和 `end-ns` 。由 `iterparse()` 创建的迭代器会产生形如 `(event, elem)` 的元组，其中 `event` 是上述事件列表中的某一个，而 `elem` 是相应的 XML 元素。例如：
 
 ```py
-      >>> data = iterparse('potholes.xml',('start','end'))
+>>> data = iterparse('potholes.xml',('start','end'))
 >>> next(data)
 ('start', <Element 'response' at 0x100771d60>)
 >>> next(data)
@@ -615,7 +615,7 @@ for zipcode, num in potholes_by_zip.most_common():
 在 `yield` 之后的下面这个语句才是使得程序占用极少内存的 ElementTree 的核心特性：
 
 ```py
-      elem_stack[-2].remove(elem)
+elem_stack[-2].remove(elem)
 
 ```
 
@@ -636,7 +636,7 @@ for zipcode, num in potholes_by_zip.most_common():
 尽管 `xml.etree.ElementTree` 库通常用来做解析工作，其实它也可以创建 XML 文档。例如，考虑如下这个函数：
 
 ```py
-      from xml.etree.ElementTree import Element
+from xml.etree.ElementTree import Element
 
 def dict_to_xml(tag, d):
 '''
@@ -654,7 +654,7 @@ return elem
 下面是一个使用例子：
 
 ```py
-      >>> s = { 'name': 'GOOG', 'shares': 100, 'price':490.1 }
+>>> s = { 'name': 'GOOG', 'shares': 100, 'price':490.1 }
 >>> e = dict_to_xml('stock', s)
 >>> e
 <Element 'stock' at 0x1004b64c8>
@@ -665,7 +665,7 @@ return elem
 转换结果是一个 `Element` 实例。对于 I/O 操作，使用 `xml.etree.ElementTree` 中的 `tostring()`函数很容易就能将它转换成一个字节字符串。例如：
 
 ```py
-      >>> from xml.etree.ElementTree import tostring
+>>> from xml.etree.ElementTree import tostring
 >>> tostring(e)
 b'<stock><price>490.1</price><shares>100</shares><name>GOOG</name></stock>'
 >>>
@@ -675,7 +675,7 @@ b'<stock><price>490.1</price><shares>100</shares><name>GOOG</name></stock>'
 如果你想给某个元素添加属性值，可以使用 `set()` 方法：
 
 ```py
-      >>> e.set('_id','1234')
+>>> e.set('_id','1234')
 >>> tostring(e)
 b'<stock _id="1234"><price>490.1</price><shares>100</shares><name>GOOG</name>
 </stock>'
@@ -690,7 +690,7 @@ b'<stock _id="1234"><price>490.1</price><shares>100</shares><name>GOOG</name>
 当创建 XML 的时候，你被限制只能构造字符串类型的值。例如：
 
 ```py
-      def dict_to_xml_str(tag, d):
+def dict_to_xml_str(tag, d):
     '''
     Turn a simple dict of key/value pairs into XML
     '''
@@ -705,7 +705,7 @@ b'<stock _id="1234"><price>490.1</price><shares>100</shares><name>GOOG</name>
 问题是如果你手动的去构造的时候可能会碰到一些麻烦。例如，当字典的值中包含一些特殊字符的时候会怎样呢？
 
 ```py
-      >>> d = { 'name' : '<spam>' }
+>>> d = { 'name' : '<spam>' }
 
 >>> # String creation
 >>> dict_to_xml_str('item',d)
@@ -724,7 +724,7 @@ b'<item><name>&lt;spam&gt;</name></item>'
 下面仅供参考，如果你需要手动去转换这些字符，可以使用 `xml.sax.saxutils` 中的 `escape()` 和 `unescape()` 函数。例如：
 
 ```py
-      >>> from xml.sax.saxutils import escape, unescape
+>>> from xml.sax.saxutils import escape, unescape
 >>> escape('<spam>')
 '&lt;spam&gt;'
 >>> unescape(_)
@@ -748,7 +748,7 @@ b'<item><name>&lt;spam&gt;</name></item>'
 下面是一个利用 `ElementTree` 来读取这个文档并对它做一些修改的例子：
 
 ```py
-      >>> from xml.etree.ElementTree import parse, Element
+>>> from xml.etree.ElementTree import parse, Element
 >>> doc = parse('pred.xml')
 >>> root = doc.getroot()
 >>> root
@@ -791,7 +791,7 @@ b'<item><name>&lt;spam&gt;</name></item>'
 如果你解析这个文档并执行普通的查询，你会发现这个并不是那么容易，因为所有步骤都变得相当的繁琐。
 
 ```py
-      >>> # Some queries that work
+>>> # Some queries that work
 >>> doc.findtext('author')
 'David Beazley'
 >>> doc.find('content')
@@ -814,7 +814,7 @@ b'<item><name>&lt;spam&gt;</name></item>'
 你可以通过将命名空间处理逻辑包装为一个工具类来简化这个过程：
 
 ```py
-      class XMLNamespaces:
+class XMLNamespaces:
     def __init__(self, **kwargs):
         self.namespaces = {}
         for name, uri in kwargs.items():
@@ -829,7 +829,7 @@ b'<item><name>&lt;spam&gt;</name></item>'
 通过下面的方式使用这个类：
 
 ```py
-      >>> ns = XMLNamespaces(html='http://www.w3.org/1999/xhtml')
+>>> ns = XMLNamespaces(html='http://www.w3.org/1999/xhtml')
 >>> doc.find(ns('content/{html}html'))
 <Element '{http://www.w3.org/1999/xhtml}html' at 0x1007767e0>
 >>> doc.findtext(ns('content/{html}html/{html}head/{html}title'))
@@ -845,7 +845,7 @@ b'<item><name>&lt;spam&gt;</name></item>'
 很不幸的是，在基本的 `ElementTree` 解析中没有任何途径获取命名空间的信息。但是，如果你使用 `iterparse()` 函数的话就可以获取更多关于命名空间处理范围的信息。例如：
 
 ```py
-      >>> from xml.etree.ElementTree import iterparse
+>>> from xml.etree.ElementTree import iterparse
 >>> for evt, elem in iterparse('ns2.xml', ('end', 'start-ns', 'end-ns')):
 ... print(evt, elem)
 ...
@@ -878,7 +878,7 @@ end <Element 'top' at 0x10110dd60>
 Python 中表示多行数据的标准方式是一个由元组构成的序列。例如：
 
 ```py
-      stocks = [
+stocks = [
     ('GOOG', 100, 490.1),
     ('AAPL', 50, 545.75),
     ('FB', 150, 7.45),
@@ -894,7 +894,7 @@ Python 中表示多行数据的标准方式是一个由元组构成的序列。�
 第一步是连接到数据库。通常你要执行 `connect()` 函数，给它提供一些数据库名、主机、用户名、密码和其他必要的一些参数。例如：
 
 ```py
-      >>> import sqlite3
+>>> import sqlite3
 >>> db = sqlite3.connect('database.db')
 >>>
 
@@ -903,7 +903,7 @@ Python 中表示多行数据的标准方式是一个由元组构成的序列。�
 为了处理数据，下一步你需要创建一个游标。一旦你有了游标，那么你就可以执行 SQL 查询语句了。比如：
 
 ```py
-      >>> c = db.cursor()
+>>> c = db.cursor()
 >>> c.execute('create table portfolio (symbol text, shares integer, price real)')
 <sqlite3.Cursor object at 0x10067a730>
 >>> db.commit()
@@ -914,7 +914,7 @@ Python 中表示多行数据的标准方式是一个由元组构成的序列。�
 为了向数据库表中插入多条记录，使用类似下面这样的语句：
 
 ```py
-      >>> c.executemany('insert into portfolio values (?,?,?)', stocks)
+>>> c.executemany('insert into portfolio values (?,?,?)', stocks)
 <sqlite3.Cursor object at 0x10067a730>
 >>> db.commit()
 >>>
@@ -924,7 +924,7 @@ Python 中表示多行数据的标准方式是一个由元组构成的序列。�
 为了执行某个查询，使用像下面这样的语句：
 
 ```py
-      >>> for row in db.execute('select * from portfolio'):
+>>> for row in db.execute('select * from portfolio'):
 ...     print(row)
 ...
 ('GOOG', 100, 490.1)
@@ -938,7 +938,7 @@ Python 中表示多行数据的标准方式是一个由元组构成的序列。�
 如果你想接受用户输入作为参数来执行查询操作，必须确保你使用下面这样的占位符?来进行引用参数：
 
 ```py
-      >>> min_price = 100
+>>> min_price = 100
 >>> for row in db.execute('select * from portfolio where price >= ?',
                           (min_price,)):
 ...     print(row)
@@ -972,7 +972,7 @@ Python 中表示多行数据的标准方式是一个由元组构成的序列。�
 如果你只是简单的解码或编码一个十六进制的原始字符串，可以使用　`binascii` 模块。例如：
 
 ```py
-      >>> # Initial byte string
+>>> # Initial byte string
 >>> s = b'hello'
 >>> # Encode as hex
 >>> import binascii
@@ -989,7 +989,7 @@ b'hello'
 类似的功能同样可以在 `base64` 模块中找到。例如：
 
 ```py
-      >>> import base64
+>>> import base64
 >>> h = base64.b16encode(s)
 >>> h
 b'68656C6C6F'
@@ -1006,7 +1006,7 @@ b'hello'
 还有一点需要注意的是编码函数所产生的输出总是一个字节字符串。如果想强制以 Unicode 形式输出，你需要增加一个额外的界面步骤。例如：
 
 ```py
-      >>> h = base64.b16encode(s)
+>>> h = base64.b16encode(s)
 >>> print(h)
 b'68656C6C6F'
 >>> print(h.decode('ascii'))
@@ -1028,7 +1028,7 @@ b'68656C6C6F'
 `base64` 模块中有两个函数 `b64encode()` and `b64decode()` 可以帮你解决这个问题。例如;
 
 ```py
-      >>> # Some byte data
+>>> # Some byte data
 >>> s = b'hello'
 >>> import base64
 
@@ -1049,7 +1049,7 @@ b'hello'
 Base64 编码仅仅用于面向字节的数据比如字节字符串和字节数组。此外，编码处理的输出结果总是一个字节字符串。如果你想混合使用 Base64 编码的数据和 Unicode 文本，你必须添加一个额外的解码步骤。例如：
 
 ```py
-      >>> a = base64.b64encode(s).decode('ascii')
+>>> a = base64.b64encode(s).decode('ascii')
 >>> a
 'aGVsbG8='
 >>>
@@ -1069,7 +1069,7 @@ Base64 编码仅仅用于面向字节的数据比如字节字符串和字节数�
 可以使用 `struct` 模块处理二进制数据。下面是一段示例代码将一个 Python 元组列表写入一个二进制文件，并使用 `struct` 将每个元组编码为一个结构体。
 
 ```py
-      from struct import Struct
+from struct import Struct
 def write_records(records, format, f):
     '''
     Write a sequence of tuples to a binary file of structures.
@@ -1091,7 +1091,7 @@ if __name__ == '__main__':
 有很多种方法来读取这个文件并返回一个元组列表。首先，如果你打算以块的形式增量读取文件，你可以这样做：
 
 ```py
-      from struct import Struct
+from struct import Struct
 
 def read_records(format, f):
     record_struct = Struct(format)
@@ -1110,7 +1110,7 @@ if __name__ == '__main__':
 如果你想将整个文件一次性读取到一个字节字符串中，然后在分片解析。那么你可以这样做：
 
 ```py
-      from struct import Struct
+from struct import Struct
 
 def unpack_records(format, data):
     record_struct = Struct(format)
@@ -1134,7 +1134,7 @@ if __name__ == '__main__':
 对于需要编码和解码二进制数据的程序而言，通常会使用 `struct` 模块。为了声明一个新的结构体，只需要像这样创建一个 `Struct` 实例即可：
 
 ```py
-      # Little endian 32-bit integer, two double precision floats
+# Little endian 32-bit integer, two double precision floats
 record_struct = Struct('<idd')
 
 ```
@@ -1144,7 +1144,7 @@ record_struct = Struct('<idd')
 产生的 `Struct` 实例有很多属性和方法用来操作相应类型的结构。`size` 属性包含了结构的字节数，这在 I/O 操作时非常有用。`pack()` 和 `unpack()` 方法被用来打包和解包数据。比如：
 
 ```py
-      >>> from struct import Struct
+>>> from struct import Struct
 >>> record_struct = Struct('<idd')
 >>> record_struct.size
 20
@@ -1159,7 +1159,7 @@ b'\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00@\x00\x00\x00\x00\x00\x00\x08@'
 有时候你还会看到 `pack()` 和 `unpack()` 操作以模块级别函数被调用，类似下面这样：
 
 ```py
-      >>> import struct
+>>> import struct
 >>> struct.pack('<idd', 1, 2.0, 3.0)
 b'\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00@\x00\x00\x00\x00\x00\x00\x08@'
 >>> struct.unpack('<idd', _)
@@ -1173,7 +1173,7 @@ b'\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00@\x00\x00\x00\x00\x00\x00\x08@'
 读取二进制结构的代码要用到一些非常有趣而优美的编程技巧。在函数　`read_records` 中，`iter()` 被用来创建一个返回固定大小数据块的迭代器，参考 5.8 小节。这个迭代器会不断的调用一个用户提供的可调用对象(比如 `lambda: f.read(record_struct.size)` )，直到它返回一个特殊的值(如 b'‘)，这时候迭代停止。例如：
 
 ```py
-      >>> f = open('data.b', 'rb')
+>>> f = open('data.b', 'rb')
 >>> chunks = iter(lambda: f.read(20), b'')
 >>> chunks
 <callable_iterator object at 0x10069e6d0>
@@ -1190,7 +1190,7 @@ b'\x0c\x00\x00\x00\xcd\xcc\xcc\xcc\xcc\xcc*@\x9a\x99\x99\x99\x99YL@'
 如你所见，创建一个可迭代对象的一个原因是它能允许使用一个生成器推导来创建记录。如果你不适用这种技术，那么代码可能会像下面这样：
 
 ```py
-      def read_records(format, f):
+def read_records(format, f):
     record_struct = Struct(format)
     while True:
         chk = f.read(record_struct.size)
@@ -1205,7 +1205,7 @@ b'\x0c\x00\x00\x00\xcd\xcc\xcc\xcc\xcc\xcc*@\x9a\x99\x99\x99\x99YL@'
 如果你使用 `unpack()` 来代替 `unpack_from()` ，你需要修改代码来构造大量的小的切片以及进行偏移量的计算。比如：
 
 ```py
-      def unpack_records(format, data):
+def unpack_records(format, data):
     record_struct = Struct(format)
     return (record_struct.unpack(data[offset:offset + record_struct.size])
             for offset in range(0, len(data), record_struct.size))
@@ -1217,7 +1217,7 @@ b'\x0c\x00\x00\x00\xcd\xcc\xcc\xcc\xcc\xcc*@\x9a\x99\x99\x99\x99YL@'
 在解包的时候，`collections` 模块中的命名元组对象或许是你想要用到的。它可以让你给返回元组设置属性名称。例如：
 
 ```py
-      from collections import namedtuple
+from collections import namedtuple
 
 Record = namedtuple('Record', ['kind','x','y'])
 
@@ -1232,7 +1232,7 @@ for r in records:
 如果你的程序需要处理大量的二进制数据，你最好使用 `numpy` 模块。例如，你可以将一个二进制数据读取到一个结构化数组中而不是一个元组列表中。就像下面这样：
 
 ```py
-      >>> import numpy as np
+>>> import numpy as np
 >>> f = open('data.b', 'rb')
 >>> records = np.fromfile(f, dtype='<i,<d,<d')
 >>> records
@@ -1261,7 +1261,7 @@ dtype=[('f0', '<i4'), ('f1', '<f8'), ('f2', '<f8')])
 现在假设这个数据被编码到一个以下列头部开始的二进制文件中去了：
 
 ```py
-      +------+--------+------------------------------------+
++------+--------+------------------------------------+
 |Byte  | Type   |  Description                       |
 +======+========+====================================+
 |0     | int    |  File code (0x1234, little endian) |
@@ -1282,7 +1282,7 @@ dtype=[('f0', '<i4'), ('f1', '<f8'), ('f2', '<f8')])
 紧跟着头部是一系列的多边形记录，编码格式如下：
 
 ```py
-      +------+--------+-------------------------------------------+
++------+--------+-------------------------------------------+
 |Byte  | Type   |  Description                              |
 +======+========+===========================================+
 |0     | int    |  Record length including length (N bytes) |
@@ -1295,7 +1295,7 @@ dtype=[('f0', '<i4'), ('f1', '<f8'), ('f2', '<f8')])
 为了写这样的文件，你可以使用如下的 Python 代码：
 
 ```py
-      import struct
+import struct
 import itertools
 
 def write_polys(filename, polys):
@@ -1321,7 +1321,7 @@ def write_polys(filename, polys):
 将数据读取回来的时候，可以利用函数 `struct.unpack()` ，代码很相似，基本就是上面写操作的逆序。如下：
 
 ```py
-      def read_polys(filename):
+def read_polys(filename):
     with open(filename, 'rb') as f:
         # Read the header
         header = f.read(40)
@@ -1346,7 +1346,7 @@ def write_polys(filename, polys):
 首先，当读取字节数据的时候，通常在文件开始部分会包含文件头和其他的数据结构。尽管 struct 模块可以解包这些数据到一个元组中去，另外一种表示这种信息的方式就是使用一个类。就像下面这样：
 
 ```py
-      import struct
+import struct
 
 class StructField:
     '''
@@ -1375,7 +1375,7 @@ class Structure:
 使用这个代码，你现在就能定义一个高层次的结构对象来表示上面表格信息所期望的文件格式。例如：
 
 ```py
-      class PolyHeader(Structure):
+class PolyHeader(Structure):
     file_code = StructField('<i', 0)
     min_x = StructField('<d', 4)
     min_y = StructField('<d', 12)
@@ -1388,7 +1388,7 @@ class Structure:
 下面的例子利用这个类来读取之前我们写入的多边形数据的头部数据：
 
 ```py
-      >>> f = open('polys.bin', 'rb')
+>>> f = open('polys.bin', 'rb')
 >>> phead = PolyHeader(f.read(40))
 >>> phead.file_code == 0x1234
 True
@@ -1411,7 +1411,7 @@ True
 任何时候只要你遇到了像这样冗余的类定义，你应该考虑下使用类装饰器或元类。元类有一个特性就是它能够被用来填充许多低层的实现细节，从而释放使用者的负担。下面我来举个例子，使用元类稍微改造下我们的 `Structure` 类：
 
 ```py
-      class StructureMeta(type):
+class StructureMeta(type):
     '''
     Metaclass that automatically creates StructField descriptors
     '''
@@ -1441,7 +1441,7 @@ class Structure(metaclass=StructureMeta):
 使用新的 `Structure` 类，你可以像下面这样定义一个结构：
 
 ```py
-      class PolyHeader(Structure):
+class PolyHeader(Structure):
     _fields_ = [
         ('<i', 'file_code'),
         ('d', 'min_x'),
@@ -1456,7 +1456,7 @@ class Structure(metaclass=StructureMeta):
 正如你所见，这样写就简单多了。我们添加的类方法 `from_file()`让我们在不需要知道任何数据的大小和结构的情况下就能轻松的从文件中读取数据。比如：
 
 ```py
-      >>> f = open('polys.bin', 'rb')
+>>> f = open('polys.bin', 'rb')
 >>> phead = PolyHeader.from_file(f)
 >>> phead.file_code == 0x1234
 True
@@ -1477,7 +1477,7 @@ True
 一旦你开始使用了元类，你就可以让它变得更加智能。例如，假设你还想支持嵌套的字节结构，下面是对前面元类的一个小的改进，提供了一个新的辅助描述器来达到想要的效果：
 
 ```py
-      class NestedStruct:
+class NestedStruct:
     '''
     Descriptor representing a nested structure
     '''
@@ -1527,7 +1527,7 @@ class StructureMeta(type):
 使用这个新的修正版，你就可以像下面这样编写：
 
 ```py
-      class Point(Structure):
+class Point(Structure):
     _fields_ = [
         ('<d', 'x'),
         ('d', 'y')
@@ -1546,7 +1546,7 @@ class PolyHeader(Structure):
 令人惊讶的是，它也能按照预期的正常工作，我们实际操作下：
 
 ```py
-      >>> f = open('polys.bin', 'rb')
+>>> f = open('polys.bin', 'rb')
 >>> phead = PolyHeader.from_file(f)
 >>> phead.file_code == 0x1234
 True
@@ -1571,7 +1571,7 @@ True
 一种方案是写一个类来表示字节数据，同时写一个工具函数来通过多少方式解析内容。跟 6.11 小节的代码很类似：
 
 ```py
-      class SizedRecord:
+class SizedRecord:
     def __init__(self, bytedata):
         self._buffer = memoryview(bytedata)
 
@@ -1599,7 +1599,7 @@ True
 类方法 `SizedRecord.from_file()` 是一个工具，用来从一个文件中读取带大小前缀的数据块，这也是很多文件格式常用的方式。作为输入，它接受一个包含大小编码的结构格式编码，并且也是自己形式。可选的 `includes_size` 参数指定了字节数是否包含头部大小。下面是一个例子教你怎样使用从多边形文件中读取单独的多边形数据：
 
 ```py
-      >>> f = open('polys.bin', 'rb')
+>>> f = open('polys.bin', 'rb')
 >>> phead = PolyHeader.from_file(f)
 >>> phead.num_polys
 3
@@ -1616,7 +1616,7 @@ True
 可以看出，`SizedRecord` 实例的内容还没有被解析出来。可以使用 `iter_as()` 方法来达到目的，这个方法接受一个结构格式化编码或者是 `Structure` 类作为输入。这样子可以很灵活的去解析数据，例如：
 
 ```py
-      >>> for n, poly in enumerate(polydata):
+>>> for n, poly in enumerate(polydata):
 ...     print('Polygon', n)
 ...     for p in poly.iter_as('<dd'):
 ...         print(p)
@@ -1661,7 +1661,7 @@ Polygon 2
 将所有这些结合起来，下面是一个 `read_polys()` 函数的另外一个修正版：
 
 ```py
-      class Point(Structure):
+class Point(Structure):
     _fields_ = [
         ('<d', 'x'),
         ('d', 'y')
@@ -1698,7 +1698,7 @@ def read_polys(filename):
 `StructureMeta` 的一个很微妙的地方就是它会固定字节数据顺序。也就是说，如果任意的属性指定了一个字节顺序(<表示低位优先 或者 >表示高位优先)，那后面所有字段的顺序都以这个顺序为准。这么做可以帮助避免额外输入，但是在定义的中间我们仍然可能切换顺序的。比如，你可能有一些比较复杂的结构，就像下面这样：
 
 ```py
-      class ShapeFile(Structure):
+class ShapeFile(Structure):
     _fields_ = [ ('>i', 'file_code'), # Big endian
         ('20s', 'unused'),
         ('i', 'file_length'),
@@ -1732,7 +1732,7 @@ def read_polys(filename):
 为了让你先体验下，下面是一个使用 Pandas 来分析芝加哥城市的[老鼠和啮齿类动物数据库](https://data.cityofchicago.org/Service-Requests/311-Service-Requests-Rodent-Baiting/97t6-zrhs) 的例子。在我写这篇文章的时候，这个数据库是一个拥有大概 74,000 行数据的 CSV 文件。
 
 ```py
-      >>> import pandas
+>>> import pandas
 
 >>> # Read a CSV file, skipping last line
 >>> rats = pandas.read_csv('rats.csv', skip_footer=1)

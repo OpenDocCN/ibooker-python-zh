@@ -148,7 +148,7 @@ A critical feature of Event objects is that they wake all waiting threads. If yo
 If you run this, a pool of threads will start, but nothing happens because they’re allblocked waiting to acquire the semaphore. Each time the semaphore is released, onlyone worker will wake up and run. For example:
 
 ```py
-      >>> sema.release()
+>>> sema.release()
 Working 0
 >>> sema.release()
 Working 1

@@ -13,7 +13,7 @@
 要改变一个实例的字符串表示，可重新定义它的 `__str__()` 和 `__repr__()` 方法。例如：
 
 ```py
-      class Pair:
+class Pair:
     def __init__(self, x, y):
         self.x = x
         self.y = y
@@ -29,7 +29,7 @@
 `__repr__()` 方法返回一个实例的代码表示形式，通常用来重新构造这个实例。内置的 `repr()` 函数返回这个字符串，跟我们使用交互式解释器显示的值是一样的。`__str__()` 方法将实例转换为一个字符串，使用 `str()` 或 `print()` 函数会输出这个字符串。比如：
 
 ```py
-      >>> p = Pair(3, 4)
+>>> p = Pair(3, 4)
 >>> p
 Pair(3, 4) # __repr__() output
 >>> print(p)
@@ -41,7 +41,7 @@ Pair(3, 4) # __repr__() output
 我们在这里还演示了在格式化的时候怎样使用不同的字符串表现形式。特别来讲，`!r` 格式化代码指明输出使用 `__repr__()` 来代替默认的 `__str__()` 。你可以用前面的类来试着测试下：
 
 ```py
-      >>> p = Pair(3, 4)
+>>> p = Pair(3, 4)
 >>> print('p is {0!r}'.format(p))
 p is Pair(3, 4)
 >>> print('p is {0}'.format(p))
@@ -57,7 +57,7 @@ p is (3, 4)
 `__repr__()` 生成的文本字符串标准做法是需要让 `eval(repr(x)) == x` 为真。如果实在不能这样子做，应该创建一个有用的文本表示，并使用 < 和 > 括起来。比如：
 
 ```py
-      >>> f = open('file.dat')
+>>> f = open('file.dat')
 >>> f
 <_io.TextIOWrapper name='file.dat' mode='r' encoding='UTF-8'>
 >>>
@@ -69,7 +69,7 @@ p is (3, 4)
 上面的 `format()` 方法的使用看上去很有趣，格式化代码 `{0.x}` 对应的是第 1 个参数的 x 属性。因此，在下面的函数中，0 实际上指的就是 `self` 本身：
 
 ```py
-      def __repr__(self):
+def __repr__(self):
     return 'Pair({0.x!r}, {0.y!r})'.format(self)
 
 ```
@@ -77,7 +77,7 @@ p is (3, 4)
 作为这种实现的一个替代，你也可以使用 `%` 操作符，就像下面这样：
 
 ```py
-      def __repr__(self):
+def __repr__(self):
     return 'Pair(%r, %r)' % (self.x, self.y)
 
 ```
@@ -93,7 +93,7 @@ p is (3, 4)
 为了自定义字符串的格式化，我们需要在类上面定义 `__format__()` 方法。例如：
 
 ```py
-      _formats = {
+_formats = {
     'ymd' : '{d.year}-{d.month}-{d.day}',
     'mdy' : '{d.month}/{d.day}/{d.year}',
     'dmy' : '{d.day}/{d.month}/{d.year}'
@@ -116,7 +116,7 @@ class Date:
 现在 `Date` 类的实例可以支持格式化操作了，如同下面这样：
 
 ```py
-      >>> d = Date(2012, 12, 21)
+>>> d = Date(2012, 12, 21)
 >>> format(d)
 '2012-12-21'
 >>> format(d, 'mdy')
@@ -134,7 +134,7 @@ class Date:
 `__format__()` 方法给 Python 的字符串格式化功能提供了一个钩子。这里需要着重强调的是格式化代码的解析工作完全由类自己决定。因此，格式化代码可以是任何值。例如，参考下面来自 `datetime` 模块中的代码：
 
 ```py
-      >>> from datetime import date
+>>> from datetime import date
 >>> d = date(2012, 12, 21)
 >>> format(d)
 '2012-12-21'
@@ -159,7 +159,7 @@ class Date:
 为了让一个对象兼容 `with` 语句，你需要实现 `__enter()__` 和 `__exit__()` 方法。例如，考虑如下的一个类，它能为我们创建一个网络连接：
 
 ```py
-      from socket import socket, AF_INET, SOCK_STREAM
+from socket import socket, AF_INET, SOCK_STREAM
 
 class LazyConnection:
     def __init__(self, address, family=AF_INET, type=SOCK_STREAM):
@@ -184,7 +184,7 @@ class LazyConnection:
 这个类的关键特点在于它表示了一个网络连接，但是初始化的时候并不会做任何事情(比如它并没有建立一个连接)。连接的建立和关闭是使用 `with` 语句自动完成的，例如：
 
 ```py
-      from functools import partial
+from functools import partial
 
 conn = LazyConnection(('www.python.org', 80))
 # Connection closed
@@ -207,7 +207,7 @@ with conn as s:
 还有一个细节问题就是 `LazyConnection` 类是否允许多个 `with` 语句来嵌套使用连接。很显然，上面的定义中一次只能允许一个 socket 连接，如果正在使用一个 socket 的时候又重复使用 `with` 语句，就会产生一个异常了。不过你可以像下面这样修改下上面的实现来解决这个问题：
 
 ```py
-      from socket import socket, AF_INET, SOCK_STREAM
+from socket import socket, AF_INET, SOCK_STREAM
 
 class LazyConnection:
     def __init__(self, address, family=AF_INET, type=SOCK_STREAM):
@@ -254,7 +254,7 @@ with conn as s1:
 对于主要是用来当成简单的数据结构的类而言，你可以通过给类添加 `__slots__` 属性来极大的减少实例所占的内存。比如：
 
 ```py
-      class Date:
+class Date:
     __slots__ = ['year', 'month', 'day']
     def __init__(self, year, month, day):
         self.year = year
@@ -284,7 +284,7 @@ with conn as s1:
 Python 程序员不去依赖语言特性去封装数据，而是通过遵循一定的属性和方法命名规约来达到这个效果。第一个约定是任何以单下划线 _ 开头的名字都应该是内部实现。比如：
 
 ```py
-      class A:
+class A:
     def __init__(self):
         self._internal = 0 # An internal attribute
         self.public = 1 # A public attribute
@@ -305,7 +305,7 @@ Python 并不会真的阻止别人访问内部名称。但是如果你这么做�
 你还可能会遇到在类定义中使用两个下划线(__)开头的命名。比如：
 
 ```py
-      class B:
+class B:
     def __init__(self):
         self.__private = 0
 
@@ -321,7 +321,7 @@ Python 并不会真的阻止别人访问内部名称。但是如果你这么做�
 使用双下划线开始会导致访问名称变成其他形式。比如，在前面的类 B 中，私有属性会被分别重命名为 `_B__private` 和 `_B__private_method` 。这时候你可能会问这样重命名的目的是什么，答案就是继承——这种属性通过继承是无法被覆盖的。比如：
 
 ```py
-      class C(B):
+class C(B):
     def __init__(self):
         super().__init__()
         self.__private = 1 # Does not override B.__private
@@ -341,7 +341,7 @@ Python 并不会真的阻止别人访问内部名称。但是如果你这么做�
 还有一点要注意的是，有时候你定义的一个变量和某个保留关键字冲突，这时候可以使用单下划线作为后缀，例如：
 
 ```py
-      lambda_ = 2.0 # Trailing _ to avoid clash with lambda keyword
+lambda_ = 2.0 # Trailing _ to avoid clash with lambda keyword
 
 ```
 
@@ -358,7 +358,7 @@ Python 并不会真的阻止别人访问内部名称。但是如果你这么做�
 自定义某个属性的一种简单方法是将它定义为一个 property。例如，下面的代码定义了一个 property，增加对一个属性简单的类型检查：
 
 ```py
-      class Person:
+class Person:
     def __init__(self, first_name):
         self.first_name = first_name
 
@@ -386,7 +386,7 @@ Python 并不会真的阻止别人访问内部名称。但是如果你这么做�
 property 的一个关键特征是它看上去跟普通的 attribute 没什么两样，但是访问它的时候会自动触发 `getter` 、`setter` 和 `deleter` 方法。例如：
 
 ```py
-      >>> a = Person('Guido')
+>>> a = Person('Guido')
 >>> a.first_name # Calls the getter
 'Guido'
 >>> a.first_name = 42 # Calls the setter
@@ -408,7 +408,7 @@ AttributeError: can't delete attribute
 还能在已存在的 get 和 set 方法基础上定义 property。例如：
 
 ```py
-      class Person:
+class Person:
     def __init__(self, first_name):
         self.set_first_name(first_name)
 
@@ -436,7 +436,7 @@ AttributeError: can't delete attribute
 一个 property 属性其实就是一系列相关绑定方法的集合。如果你去查看拥有 property 的类，就会发现 property 本身的 fget、fset 和 fdel 属性就是类里面的普通方法。比如：
 
 ```py
-      >>> Person.first_name.fget
+>>> Person.first_name.fget
 <function Person.first_name at 0x1006a60e0>
 >>> Person.first_name.fset
 <function Person.first_name at 0x1006a6170>
@@ -451,7 +451,7 @@ AttributeError: can't delete attribute
 只有当你确实需要对 attribute 执行其他额外的操作的时候才应该使用到 property。有时候一些从其他编程语言(比如 Java)过来的程序员总认为所有访问都应该通过 getter 和 setter，所以他们认为代码应该像下面这样写：
 
 ```py
-      class Person:
+class Person:
     def __init__(self, first_name):
         self.first_name = name
 
@@ -470,7 +470,7 @@ AttributeError: can't delete attribute
 Properties 还是一种定义动态计算 attribute 的方法。这种类型的 attributes 并不会被实际的存储，而是在需要的时候计算出来。比如：
 
 ```py
-      import math
+import math
 class Circle:
     def __init__(self, radius):
         self.radius = radius
@@ -492,7 +492,7 @@ class Circle:
 在这里，我们通过使用 properties，将所有的访问接口形式统一起来，对半径、直径、周长和面积的访问都是通过属性访问，就跟访问简单的 attribute 是一样的。如果不这样做的话，那么就要在代码中混合使用简单属性访问和方法调用。下面是使用的实例：
 
 ```py
-      >>> c = Circle(4.0)
+>>> c = Circle(4.0)
 >>> c.radius
 4.0
 >>> c.area  # Notice lack of ()
@@ -506,7 +506,7 @@ class Circle:
 尽管 properties 可以实现优雅的编程接口，但有些时候你还是会想直接使用 getter 和 setter 函数。例如：
 
 ```py
-      >>> p = Person('Guido')
+>>> p = Person('Guido')
 >>> p.get_first_name()
 'Guido'
 >>> p.set_first_name('Larry')
@@ -519,7 +519,7 @@ class Circle:
 最后一点，不要像下面这样写有大量重复代码的 property 定义：
 
 ```py
-      class Person:
+class Person:
     def __init__(self, first_name, last_name):
         self.first_name = first_name
         self.last_name = last_name
@@ -560,7 +560,7 @@ class Circle:
 为了调用父类(超类)的一个方法，可以使用 `super()` 函数，比如：
 
 ```py
-      class A:
+class A:
     def spam(self):
         print('A.spam')
 
@@ -574,7 +574,7 @@ class B(A):
 `super()``函数的一个常见用法是在 ``__init__()` 方法中确保父类被正确的初始化了：
 
 ```py
-      class A:
+class A:
     def __init__(self):
         self.x = 0
 
@@ -588,7 +588,7 @@ class B(A):
 `super()` 的另外一个常见用法出现在覆盖 Python 特殊方法的代码中，比如：
 
 ```py
-      class Proxy:
+class Proxy:
     def __init__(self, obj):
         self._obj = obj
 
@@ -612,7 +612,7 @@ class B(A):
 实际上，大家对于在 Python 中如何正确使用 `super()` 函数普遍都知之甚少。你有时候会看到像下面这样直接调用父类的一个方法：
 
 ```py
-      class Base:
+class Base:
     def __init__(self):
         print('Base.__init__')
 
@@ -626,7 +626,7 @@ class A(Base):
 尽管对于大部分代码而言这么做没什么问题，但是在更复杂的涉及到多继承的代码中就有可能导致很奇怪的问题发生。比如，考虑如下的情况：
 
 ```py
-      class Base:
+class Base:
     def __init__(self):
         print('Base.__init__')
 
@@ -651,7 +651,7 @@ class C(A,B):
 如果你运行这段代码就会发现 `Base.__init__()` 被调用两次，如下所示：
 
 ```py
-      >>> c = C()
+>>> c = C()
 Base.__init__
 A.__init__
 Base.__init__
@@ -664,7 +664,7 @@ C.__init__
 可能两次调用 `Base.__init__()` 没什么坏处，但有时候却不是。另一方面，假设你在代码中换成使用 `super()` ，结果就很完美了：
 
 ```py
-      class Base:
+class Base:
     def __init__(self):
         print('Base.__init__')
 
@@ -688,7 +688,7 @@ class C(A,B):
 运行这个新版本后，你会发现每个 `__init__()` 方法只会被调用一次了：
 
 ```py
-      >>> c = C()
+>>> c = C()
 Base.__init__
 B.__init__
 A.__init__
@@ -700,7 +700,7 @@ C.__init__
 为了弄清它的原理，我们需要花点时间解释下 Python 是如何实现继承的。对于你定义的每一个类而已，Python 会计算出一个所谓的方法解析顺序(MRO)列表。这个 MRO 列表就是一个简单的所有基类的线性顺序表。例如：
 
 ```py
-      >>> C.__mro__
+>>> C.__mro__
 (<class '__main__.C'>, <class '__main__.A'>, <class '__main__.B'>,
 <class '__main__.Base'>, <class 'object'>)
 >>>
@@ -722,7 +722,7 @@ C.__init__
 `super()` 有个令人吃惊的地方是它并不一定去查找某个类在 MRO 中下一个直接父类，你甚至可以在一个没有直接父类的类中使用它。例如，考虑如下这个类：
 
 ```py
-      class A:
+class A:
     def spam(self):
         print('A.spam')
         super().spam()
@@ -732,7 +732,7 @@ C.__init__
 如果你试着直接使用这个类就会出错：
 
 ```py
-      >>> a = A()
+>>> a = A()
 >>> a.spam()
 A.spam
 Traceback (most recent call last):
@@ -746,7 +746,7 @@ AttributeError: 'super' object has no attribute 'spam'
 但是，如果你使用多继承的话看看会发生什么：
 
 ```py
-      >>> class B:
+>>> class B:
 ...     def spam(self):
 ...         print('B.spam')
 ...
@@ -764,7 +764,7 @@ B.spam
 你可以看到在类 A 中使用 `super().spam()` 实际上调用的是跟类 A 毫无关系的类 B 中的 `spam()` 方法。这个用类 C 的 MRO 列表就可以完全解释清楚了：
 
 ```py
-      >>> C.__mro__
+>>> C.__mro__
 (<class '__main__.C'>, <class '__main__.A'>, <class '__main__.B'>,
 <class 'object'>)
 >>>
@@ -788,7 +788,7 @@ B.spam
 考虑如下的代码，它定义了一个 property：
 
 ```py
-      class Person:
+class Person:
     def __init__(self, name):
         self.name = name
 
@@ -814,7 +814,7 @@ B.spam
 下面是一个示例类，它继承自 Person 并扩展了 `name` 属性的功能：
 
 ```py
-      class SubPerson(Person):
+class SubPerson(Person):
     @property
     def name(self):
         print('Getting name')
@@ -835,7 +835,7 @@ B.spam
 接下来使用这个新类：
 
 ```py
-      >>> s = SubPerson('Guido')
+>>> s = SubPerson('Guido')
 Setting name to Guido
 >>> s.name
 Getting name
@@ -855,7 +855,7 @@ TypeError: Expected a string
 如果你仅仅只想扩展 property 的某一个方法，那么可以像下面这样写：
 
 ```py
-      class SubPerson(Person):
+class SubPerson(Person):
     @Person.name.getter
     def name(self):
         print('Getting name')
@@ -866,7 +866,7 @@ TypeError: Expected a string
 或者，你只想修改 setter 方法，就这么写：
 
 ```py
-      class SubPerson(Person):
+class SubPerson(Person):
     @Person.name.setter
     def name(self, value):
         print('Setting name to', value)
@@ -883,7 +883,7 @@ TypeError: Expected a string
 如果你只想重定义其中一个方法，那只使用 @property 本身是不够的。比如，下面的代码就无法工作：
 
 ```py
-      class SubPerson(Person):
+class SubPerson(Person):
     @property  # Doesn't work
     def name(self):
         print('Getting name')
@@ -894,7 +894,7 @@ TypeError: Expected a string
 如果你试着运行会发现 setter 函数整个消失了：
 
 ```py
-      >>> s = SubPerson('Guido')
+>>> s = SubPerson('Guido')
 Traceback (most recent call last):
     File "<stdin>", line 1, in <module>
     File "example.py", line 5, in __init__
@@ -907,7 +907,7 @@ AttributeError: can't set attribute
 你应该像之前说过的那样修改代码：
 
 ```py
-      class SubPerson(Person):
+class SubPerson(Person):
     @Person.getter
     def name(self):
         print('Getting name')
@@ -918,7 +918,7 @@ AttributeError: can't set attribute
 这么写后，property 之前已经定义过的方法会被复制过来，而 getter 函数被替换。然后它就能按照期望的工作了：
 
 ```py
-      >>> s = SubPerson('Guido')
+>>> s = SubPerson('Guido')
 >>> s.name
 Getting name
 'Guido'
@@ -941,7 +941,7 @@ TypeError: Expected a string
 值的注意的是上面演示的第一种技术还可以被用来扩展一个描述器(在 8.9 小节我们有专门的介绍)。比如：
 
 ```py
-      # A descriptor
+# A descriptor
 class String:
     def __init__(self, name):
         self.name = name
@@ -995,7 +995,7 @@ class SubPerson(Person):
 如果你想创建一个全新的实例属性，可以通过一个描述器类的形式来定义它的功能。下面是一个例子：
 
 ```py
-      # Descriptor attribute for an integer type-checked attribute
+# Descriptor attribute for an integer type-checked attribute
 class Integer:
     def __init__(self, name):
         self.name = name
@@ -1021,7 +1021,7 @@ class Integer:
 为了使用一个描述器，需将这个描述器的实例作为类属性放到一个类的定义中。例如：
 
 ```py
-      class Point:
+class Point:
     x = Integer('x')
     y = Integer('y')
 
@@ -1034,7 +1034,7 @@ class Integer:
 当你这样做后，所有队描述器属性(比如 x 或 y)的访问会被`__get__()` 、`__set__()` 和 `__delete__()` 方法捕获到。例如：
 
 ```py
-      >>> p = Point(2, 3)
+>>> p = Point(2, 3)
 >>> p.x # Calls Point.x.__get__(p,Point)
 2
 >>> p.y = 5 # Calls Point.y.__set__(p, 5)
@@ -1059,7 +1059,7 @@ TypeError: Expected an int
 描述器的一个比较困惑的地方是它只能在类级别被定义，而不能为每个实例单独定义。因此，下面的代码是无法工作的：
 
 ```py
-      # Does NOT work
+# Does NOT work
 class Point:
     def __init__(self, x, y):
         self.x = Integer('x') # No! Must be a class variable
@@ -1072,7 +1072,7 @@ class Point:
 同时，`__get__()` 方法实现起来比看上去要复杂得多：
 
 ```py
-      # Descriptor attribute for an integer type-checked attribute
+# Descriptor attribute for an integer type-checked attribute
 class Integer:
 
     def __get__(self, instance, cls):
@@ -1086,7 +1086,7 @@ class Integer:
 `__get__()` 看上去有点复杂的原因归结于实例变量和类变量的不同。如果一个描述器被当做一个类变量来访问，那么 `instance` 参数被设置成 `None` 。这种情况下，标准做法就是简单的返回这个描述器本身即可(尽管你还可以添加其他的自定义操作)。例如：
 
 ```py
-      >>> p = Point(2,3)
+>>> p = Point(2,3)
 >>> p.x # Calls Point.x.__get__(p, Point)
 2
 >>> Point.x # Calls Point.x.__get__(None, Point)
@@ -1098,7 +1098,7 @@ class Integer:
 描述器通常是那些使用到装饰器或元类的大型框架中的一个组件。同时它们的使用也被隐藏在后面。举个例子，下面是一些更高级的基于描述器的代码，并涉及到一个类装饰器：
 
 ```py
-      # Descriptor for a type-checked attribute
+# Descriptor for a type-checked attribute
 class Typed:
     def __init__(self, name, expected_type):
         self.name = name
@@ -1148,7 +1148,7 @@ class Stock:
 定义一个延迟属性的一种高效方法是通过使用一个描述器类，如下所示：
 
 ```py
-      class lazyproperty:
+class lazyproperty:
     def __init__(self, func):
         self.func = func
 
@@ -1165,7 +1165,7 @@ class Stock:
 你需要像下面这样在一个类中使用它：
 
 ```py
-      import math
+import math
 
 class Circle:
     def __init__(self, radius):
@@ -1186,7 +1186,7 @@ class Circle:
 下面在一个交互环境中演示它的使用：
 
 ```py
-      >>> c = Circle(4.0)
+>>> c = Circle(4.0)
 >>> c.radius
 4.0
 >>> c.area
@@ -1214,7 +1214,7 @@ Computing perimeter
 `lazyproperty` 类利用这一点，使用 `__get__()` 方法在实例中存储计算出来的值，这个实例使用相同的名字作为它的 property。这样一来，结果值被存储在实例字典中并且以后就不需要再去计算这个 property 了。你可以尝试更深入的例子来观察结果：
 
 ```py
-      >>> c = Circle(4.0)
+>>> c = Circle(4.0)
 >>> # Get instance variables
 >>> vars(c)
 {'radius': 4.0}
@@ -1244,7 +1244,7 @@ Computing area
 这种方案有一个小缺陷就是计算出的值被创建后是可以被修改的。例如：
 
 ```py
-      >>> c.area
+>>> c.area
 Computing area
 50.26548245743669
 >>> c.area = 25
@@ -1257,7 +1257,7 @@ Computing area
 如果你担心这个问题，那么可以使用一种稍微没那么高效的实现，就像下面这样：
 
 ```py
-      def lazyproperty(func):
+def lazyproperty(func):
     name = '_lazy_' + func.__name__
     @property
     def lazy(self):
@@ -1274,7 +1274,7 @@ Computing area
 如果你使用这个版本，就会发现现在修改操作已经不被允许了：
 
 ```py
-      >>> c = Circle(4.0)
+>>> c = Circle(4.0)
 >>> c.area
 Computing area
 50.26548245743669
@@ -1301,7 +1301,7 @@ AttributeError: can't set attribute
 可以在一个基类中写一个公用的 `__init__()` 函数：
 
 ```py
-      import math
+import math
 
 class Structure1:
     # Class variable that specifies expected fields
@@ -1319,7 +1319,7 @@ class Structure1:
 然后使你的类继承自这个基类:
 
 ```py
-      # Example class definitions
+# Example class definitions
 class Stock(Structure1):
     _fields = ['name', 'shares', 'price']
 
@@ -1337,7 +1337,7 @@ class Circle(Structure1):
 使用这些类的示例：
 
 ```py
-      >>> s = Stock('ACME', 50, 91.1)
+>>> s = Stock('ACME', 50, 91.1)
 >>> p = Point(2, 3)
 >>> c = Circle(4.5)
 >>> s2 = Stock('ACME', 50)
@@ -1352,7 +1352,7 @@ TypeError: Expected 3 arguments
 如果还想支持关键字参数，可以将关键字参数设置为实例属性：
 
 ```py
-      class Structure2:
+class Structure2:
     _fields = []
 
     def __init__(self, *args, **kwargs):
@@ -1385,7 +1385,7 @@ if __name__ == '__main__':
 你还能将不在 `_fields` 中的名称加入到属性中去：
 
 ```py
-      class Structure3:
+class Structure3:
     # Class variable that specifies expected fields
     _fields = []
 
@@ -1422,7 +1422,7 @@ if __name__ == '__main__':
 在上面的实现中我们使用了 `setattr()` 函数类设置属性值，你可能不想用这种方式，而是想直接更新实例字典，就像下面这样：
 
 ```py
-      class Structure:
+class Structure:
     # Class variable that specifies expected fields
     _fields= []
     def __init__(self, *args):
@@ -1439,7 +1439,7 @@ if __name__ == '__main__':
 这种方法唯一不好的地方就是对某些 IDE 而已，在显示帮助函数时可能不太友好。比如：
 
 ```py
-      >>> help(Stock)
+>>> help(Stock)
 Help on class Stock in module __main__:
 class Stock(Structure)
 ...
@@ -1465,7 +1465,7 @@ class Stock(Structure)
 使用 `abc` 模块可以很轻松的定义抽象基类：
 
 ```py
-      from abc import ABCMeta, abstractmethod
+from abc import ABCMeta, abstractmethod
 
 class IStream(metaclass=ABCMeta):
     @abstractmethod
@@ -1481,7 +1481,7 @@ class IStream(metaclass=ABCMeta):
 抽象类的一个特点是它不能直接被实例化，比如你想像下面这样做是不行的：
 
 ```py
-      a = IStream() # TypeError: Can't instantiate abstract class
+a = IStream() # TypeError: Can't instantiate abstract class
                 # IStream with abstract methods read, write
 
 ```
@@ -1489,7 +1489,7 @@ class IStream(metaclass=ABCMeta):
 抽象类的目的就是让别的类继承它并实现特定的抽象方法：
 
 ```py
-      class SocketStream(IStream):
+class SocketStream(IStream):
     def read(self, maxbytes=-1):
         pass
 
@@ -1501,7 +1501,7 @@ class IStream(metaclass=ABCMeta):
 抽象基类的一个主要用途是在代码中检查某些类是否为特定类型，实现了特定接口：
 
 ```py
-      def serialize(obj, stream):
+def serialize(obj, stream):
     if not isinstance(stream, IStream):
         raise TypeError('Expected an IStream')
     pass
@@ -1511,7 +1511,7 @@ class IStream(metaclass=ABCMeta):
 除了继承这种方式外，还可以通过注册方式来让某个类实现抽象基类：
 
 ```py
-      import io
+import io
 
 # Register the built-in I/O classes as supporting our interface
 IStream.register(io.IOBase)
@@ -1525,7 +1525,7 @@ isinstance(f, IStream) # Returns True
 `@abstractmethod` 还能注解静态方法、类方法和 `properties` 。你只需保证这个注解紧靠在函数定义前即可：
 
 ```py
-      class A(metaclass=ABCMeta):
+class A(metaclass=ABCMeta):
     @property
     @abstractmethod
     def name(self):
@@ -1555,7 +1555,7 @@ isinstance(f, IStream) # Returns True
 你可以使用预定义的抽象类来执行更通用的类型检查，例如：
 
 ```py
-      import collections
+import collections
 
 # Check if x is a sequence
 if isinstance(x, collections.Sequence):
@@ -1589,7 +1589,7 @@ if isinstance(x, collections.Mapping):
 下面的代码使用描述器实现了一个系统类型和赋值验证框架：
 
 ```py
-      # Base class. Uses a descriptor to set a value
+# Base class. Uses a descriptor to set a value
 class Descriptor:
     def __init__(self, name=None, **opts):
         self.name = name
@@ -1631,7 +1631,7 @@ class MaxSized(Descriptor):
 这些类就是你要创建的数据模型或类型系统的基础构建模块。下面就是我们实际定义的各种不同的数据类型：
 
 ```py
-      class Integer(Typed):
+class Integer(Typed):
     expected_type = int
 
 class UnsignedInteger(Integer, Unsigned):
@@ -1654,7 +1654,7 @@ class SizedString(String, MaxSized):
 然后使用这些自定义数据类型，我们定义一个类：
 
 ```py
-      class Stock:
+class Stock:
     # Specify constraints
     name = SizedString('name', size=8)
     shares = UnsignedInteger('shares')
@@ -1670,7 +1670,7 @@ class SizedString(String, MaxSized):
 然后测试这个类的属性赋值约束，可发现对某些属性的赋值违法了约束是不合法的：
 
 ```py
-      >>> s.name
+>>> s.name
 'ACME'
 >>> s.shares = 75
 >>> s.shares = -10
@@ -1702,7 +1702,7 @@ ValueError: size must be < 8
 还有一些技术可以简化上面的代码，其中一种是使用类装饰器：
 
 ```py
-      # Class decorator to apply constraints
+# Class decorator to apply constraints
 def check_attributes(**kwargs):
     def decorate(cls):
         for key, value in kwargs.items():
@@ -1730,7 +1730,7 @@ class Stock:
 另外一种方式是使用元类：
 
 ```py
-      # A metaclass that applies checking
+# A metaclass that applies checking
 class checkedmeta(type):
     def __new__(cls, clsname, bases, methods):
         # Attach attribute names to the descriptors
@@ -1765,7 +1765,7 @@ class Stock2(metaclass=checkedmeta):
 使用类装饰器和元类通常可以简化代码。上面两个例子中你会发现你只需要输入一次属性名即可了。
 
 ```py
-      # Normal
+# Normal
 class Point:
     x = Integer('x')
     y = Integer('y')
@@ -1782,7 +1782,7 @@ class Point(metaclass=checkedmeta):
 最后，装饰器还能作为混入类的替代技术来实现同样的效果;
 
 ```py
-      # Decorator for applying type checking
+# Decorator for applying type checking
 def Typed(expected_type, cls=None):
     if cls is None:
         return lambda cls: Typed(expected_type, cls)
@@ -1869,7 +1869,7 @@ class SizedString(String):
 `collections` 定义了很多抽象基类，当你想自定义容器类的时候它们会非常有用。比如你想让你的类支持迭代，那就让你的类继承 `collections.Iterable` 即可：
 
 ```py
-      import collections
+import collections
 class A(collections.Iterable):
     pass
 
@@ -1878,7 +1878,7 @@ class A(collections.Iterable):
 不过你需要实现 `collections.Iterable` 所有的抽象方法，否则会报错:
 
 ```py
-      >>> a = A()
+>>> a = A()
 Traceback (most recent call last):
     File "<stdin>", line 1, in <module>
 TypeError: Can't instantiate abstract class A with abstract methods __iter__
@@ -1891,7 +1891,7 @@ TypeError: Can't instantiate abstract class A with abstract methods __iter__
 你可以先试着去实例化一个对象，在错误提示中可以找到需要实现哪些方法：
 
 ```py
-      >>> import collections
+>>> import collections
 >>> collections.Sequence()
 Traceback (most recent call last):
     File "<stdin>", line 1, in <module>
@@ -1904,7 +1904,7 @@ __getitem__, __len__
 下面是一个简单扼示例，继承自上面 Sequence 抽象类，并且实现元素按照顺序存储：
 
 ```py
-      class SortedItems(collections.Sequence):
+class SortedItems(collections.Sequence):
     def __init__(self, initial=None):
         self._items = sorted(initial) if initial is not None else []
 
@@ -1936,7 +1936,7 @@ print(list(items))
 使用 `collections` 中的抽象基类可以确保你自定义的容器实现了所有必要的方法。并且还能简化类型检查。你的自定义容器会满足大部分类型检查需要，如下所示：
 
 ```py
-      >>> items = SortedItems()
+>>> items = SortedItems()
 >>> import collections
 >>> isinstance(items, collections.Iterable)
 True
@@ -1955,7 +1955,7 @@ False
 `collections` 中很多抽象类会为一些常见容器操作提供默认的实现，这样一来你只需要实现那些你最感兴趣的方法即可。假设你的类继承自 `collections.MutableSequence` ，如下：
 
 ```py
-      class Items(collections.MutableSequence):
+class Items(collections.MutableSequence):
     def __init__(self, initial=None):
         self._items = list(initial) if initial is not None else []
 
@@ -1985,7 +1985,7 @@ False
 如果你创建 `Items` 的实例，你会发现它支持几乎所有的核心列表方法(如 append()、remove()、count()等)。下面是使用演示：
 
 ```py
-      >>> a = Items([1, 2, 3])
+>>> a = Items([1, 2, 3])
 >>> len(a)
 Len
 3
@@ -2025,7 +2025,7 @@ Deleting: 2
 简单来说，代理是一种编程模式，它将某个操作转移给另外一个对象来实现。最简单的形式可能是像下面这样：
 
 ```py
-      class A:
+class A:
     def spam(self, x):
         pass
 
@@ -2054,7 +2054,7 @@ class B1:
 如果仅仅就两个方法需要代理，那么像这样写就足够了。但是，如果有大量的方法需要代理，那么使用 `__getattr__()` 方法或许或更好些：
 
 ```py
-      class B2:
+class B2:
     """使用 __getattr__ 的代理，代理方法比较多时候"""
 
     def __init__(self):
@@ -2075,7 +2075,7 @@ class B1:
 `__getattr__` 方法是在访问 attribute 不存在的时候被调用，使用演示：
 
 ```py
-      b = B()
+b = B()
 b.bar() # Calls B.bar() (exists on B)
 b.spam(42) # Calls B.__getattr__('spam') and delegates to A.spam
 
@@ -2084,7 +2084,7 @@ b.spam(42) # Calls B.__getattr__('spam') and delegates to A.spam
 另外一个代理例子是实现代理模式，例如：
 
 ```py
-      # A proxy class that wraps around another object, but
+# A proxy class that wraps around another object, but
 # exposes its public attributes
 class Proxy:
     def __init__(self, obj):
@@ -2116,7 +2116,7 @@ class Proxy:
 使用这个代理类时，你只需要用它来包装下其他类即可：
 
 ```py
-      class Spam:
+class Spam:
     def __init__(self, x):
         self.x = x
 
@@ -2141,7 +2141,7 @@ p.x = 37  # Changes s.x to 37
 代理类有时候可以作为继承的替代方案。例如，一个简单的继承如下：
 
 ```py
-      class A:
+class A:
     def spam(self, x):
         print('A.spam', x)
     def foo(self):
@@ -2159,7 +2159,7 @@ class B(A):
 使用代理的话，就是下面这样：
 
 ```py
-      class A:
+class A:
     def spam(self, x):
         print('A.spam', x)
     def foo(self):
@@ -2183,7 +2183,7 @@ class B:
 还有一点需要注意的是，`__getattr__()` 对于大部分以双下划线(__)开始和结尾的属性并不适用。比如，考虑如下的类：
 
 ```py
-      class ListLike:
+class ListLike:
     """__getattr__ 对于双下划线开始和结尾的方法是不能用的，需要一个个去重定义"""
 
     def __init__(self):
@@ -2197,7 +2197,7 @@ class B:
 如果是创建一个 ListLike 对象，会发现它支持普通的列表方法，如 append()和 insert()，但是却不支持 len()、元素查找等。例如：
 
 ```py
-      >>> a = ListLike()
+>>> a = ListLike()
 >>> a.append(2)
 >>> a.insert(0, 1)
 >>> a.sort()
@@ -2216,7 +2216,7 @@ TypeError: 'ListLike' object does not support indexing
 为了让它支持这些方法，你必须手动的实现这些方法代理：
 
 ```py
-      class ListLike:
+class ListLike:
     """__getattr__ 对于双下划线开始和结尾的方法是不能用的，需要一个个去重定义"""
 
     def __init__(self):
@@ -2253,7 +2253,7 @@ TypeError: 'ListLike' object does not support indexing
 为了实现多个构造器，你需要使用到类方法。例如：
 
 ```py
-      import time
+import time
 
 class Date:
     """方法一：使用类方法"""
@@ -2274,7 +2274,7 @@ class Date:
 直接调用类方法即可，下面是使用示例：
 
 ```py
-      a = Date(2012, 12, 21) # Primary
+a = Date(2012, 12, 21) # Primary
 b = Date.today() # Alternate
 
 ```
@@ -2284,7 +2284,7 @@ b = Date.today() # Alternate
 类方法的一个主要用途就是定义多个构造器。它接受一个 `class` 作为第一个参数(cls)。你应该注意到了这个类被用来创建并返回最终的实例。在继承时也能工作的很好：
 
 ```py
-      class NewDate(Date):
+class NewDate(Date):
     pass
 
 c = Date.today() # Creates an instance of Date (cls=Date)
@@ -2303,7 +2303,7 @@ d = NewDate.today() # Creates an instance of NewDate (cls=NewDate)
 可以通过 `__new__()` 方法创建一个未初始化的实例。例如考虑如下这个类：
 
 ```py
-      class Date:
+class Date:
     def __init__(self, year, month, day):
         self.year = year
         self.month = month
@@ -2314,7 +2314,7 @@ d = NewDate.today() # Creates an instance of NewDate (cls=NewDate)
 下面演示如何不调用 `__init__()` 方法来创建这个 Date 实例：
 
 ```py
-      >>> d = Date.__new__(Date)
+>>> d = Date.__new__(Date)
 >>> d
 <__main__.Date object at 0x1006716d0>
 >>> d.year
@@ -2328,7 +2328,7 @@ AttributeError: 'Date' object has no attribute 'year'
 结果可以看到，这个 Date 实例的属性 year 还不存在，所以你需要手动初始化：
 
 ```py
-      >>> data = {'year':2012, 'month':8, 'day':29}
+>>> data = {'year':2012, 'month':8, 'day':29}
 >>> for key, value in data.items():
 ...     setattr(d, key, value)
 ...
@@ -2345,7 +2345,7 @@ AttributeError: 'Date' object has no attribute 'year'
 当我们在反序列对象或者实现某个类方法构造函数时需要绕过 `__init__()` 方法来创建对象。例如，对于上面的 Date 来来讲，有时候你可能会像下面这样定义一个新的构造函数 `today()` ：
 
 ```py
-      from time import localtime
+from time import localtime
 
 class Date:
     def __init__(self, year, month, day):
@@ -2367,7 +2367,7 @@ class Date:
 同样，在你反序列化 JSON 数据时产生一个如下的字典对象：
 
 ```py
-      data = { 'year': 2012, 'month': 8, 'day': 29 }
+data = { 'year': 2012, 'month': 8, 'day': 29 }
 
 ```
 
@@ -2388,7 +2388,7 @@ class Date:
 假设你想扩展映射对象，给它们添加日志、唯一性设置、类型检查等等功能。下面是一些混入类：
 
 ```py
-      class LoggedMappingMixin:
+class LoggedMappingMixin:
     """
     Add logging to get/set/delete operations for debugging.
     """
@@ -2433,7 +2433,7 @@ class StringKeysMappingMixin:
 这些类单独使用起来没有任何意义，事实上如果你去实例化任何一个类，除了产生异常外没任何作用。它们是用来通过多继承来和其他映射对象混入使用的。例如：
 
 ```py
-      class LoggedDict(LoggedMappingMixin, dict):
+class LoggedDict(LoggedMappingMixin, dict):
     pass
 
 d = LoggedDict()
@@ -2460,7 +2460,7 @@ d['x'].append(3)
 混入类在标志库中很多地方都出现过，通常都是用来像上面那样扩展某些类的功能。它们也是多继承的一个主要用途。比如，当你编写网络代码时候，你会经常使用 `socketserver` 模块中的 `ThreadingMixIn` 来给其他网络相关类增加多线程支持。例如，下面是一个多线程的 XML-RPC 服务：
 
 ```py
-      from xmlrpc.server import SimpleXMLRPCServer
+from xmlrpc.server import SimpleXMLRPCServer
 from socketserver import ThreadingMixIn
 class ThreadedXMLRPCServer(ThreadingMixIn, SimpleXMLRPCServer):
     pass
@@ -2474,7 +2474,7 @@ class ThreadedXMLRPCServer(ThreadingMixIn, SimpleXMLRPCServer):
 还有一种实现混入类的方式就是使用类装饰器，如下所示：
 
 ```py
-      def LoggedMapping(cls):
+def LoggedMapping(cls):
     """第二种方式：使用类装饰器"""
     cls_getitem = cls.__getitem__
     cls_setitem = cls.__setitem__
@@ -2516,7 +2516,7 @@ class LoggedDict(dict):
 在很多程序中，有些对象会根据状态的不同来执行不同的操作。比如考虑如下的一个连接对象：
 
 ```py
-      class Connection:
+class Connection:
     """普通方案，好多个判断语句，效率低下~~"""
 
     def __init__(self):
@@ -2549,7 +2549,7 @@ class LoggedDict(dict):
 一个更好的办法是为每个状态定义一个对象：
 
 ```py
-      class Connection1:
+class Connection1:
     """新方案——对每个状态定义一个类"""
 
     def __init__(self):
@@ -2629,7 +2629,7 @@ class OpenConnectionState(ConnectionState):
 下面是使用演示：
 
 ```py
-      >>> c = Connection()
+>>> c = Connection()
 >>> c._state
 <class '__main__.ClosedConnectionState'>
 >>> c.read()
@@ -2673,7 +2673,7 @@ writing
 最简单的情况，可以使用 `getattr()` ：
 
 ```py
-      import math
+import math
 
 class Point:
     def __init__(self, x, y):
@@ -2694,7 +2694,7 @@ d = getattr(p, 'distance')(0, 0)  # Calls p.distance(0, 0)
 另外一种方法是使用 `operator.methodcaller()` ，例如：
 
 ```py
-      import operator
+import operator
 operator.methodcaller('distance', 0, 0)(p)
 
 ```
@@ -2702,7 +2702,7 @@ operator.methodcaller('distance', 0, 0)(p)
 当你需要通过相同的参数多次调用某个方法时，使用 `operator.methodcaller` 就很方便了。比如你需要排序一系列的点，就可以这样做：
 
 ```py
-      points = [
+points = [
     Point(1, 2),
     Point(3, 0),
     Point(10, -3),
@@ -2722,7 +2722,7 @@ points.sort(key=operator.methodcaller('distance', 0, 0))
 `operator.methodcaller()` 创建一个可调用对象，并同时提供所有必要参数，然后调用的时候只需要将实例对象传递给它即可，比如：
 
 ```py
-      >>> p = Point(3, 4)
+>>> p = Point(3, 4)
 >>> d = operator.methodcaller('distance', 0, 0)
 >>> d(p)
 5.0
@@ -2743,7 +2743,7 @@ points.sort(key=operator.methodcaller('distance', 0, 0))
 这里遇到的问题在编程领域中是很普遍的，有时候会构建一个由大量不同对象组成的数据结构。假设你要写一个表示数学表达式的程序，那么你可能需要定义如下的类：
 
 ```py
-      class Node:
+class Node:
     pass
 
 class UnaryOperator(Node):
@@ -2779,7 +2779,7 @@ class Number(Node):
 然后利用这些类构建嵌套数据结构，如下所示：
 
 ```py
-      # Representation of 1 + 2 * (3 - 4) / 5
+# Representation of 1 + 2 * (3 - 4) / 5
 t1 = Sub(Number(3), Number(4))
 t2 = Mul(Number(2), t1)
 t3 = Div(t2, Number(5))
@@ -2790,7 +2790,7 @@ t4 = Add(Number(1), t3)
 这样做的问题是对于每个表达式，每次都要重新定义一遍，有没有一种更通用的方式让它支持所有的数字和操作符呢。这里我们使用访问者模式可以达到这样的目的：
 
 ```py
-      class NodeVisitor:
+class NodeVisitor:
     def visit(self, node):
         methname = 'visit_' + type(node).__name__
         meth = getattr(self, methname, None)
@@ -2806,7 +2806,7 @@ t4 = Add(Number(1), t3)
 为了使用这个类，可以定义一个类继承它并且实现各种 `visit_Name()` 方法，其中 Name 是 node 类型。例如，如果你想求表达式的值，可以这样写：
 
 ```py
-      class Evaluator(NodeVisitor):
+class Evaluator(NodeVisitor):
     def visit_Number(self, node):
         return node.value
 
@@ -2830,7 +2830,7 @@ t4 = Add(Number(1), t3)
 使用示例：
 
 ```py
-      >>> e = Evaluator()
+>>> e = Evaluator()
 >>> e.visit(t4)
 0.6
 >>>
@@ -2840,7 +2840,7 @@ t4 = Add(Number(1), t3)
 作为一个不同的例子，下面定义一个类在一个栈上面将一个表达式转换成多个操作序列：
 
 ```py
-      class StackCode(NodeVisitor):
+class StackCode(NodeVisitor):
     def generate_code(self, node):
         self.instructions = []
         self.visit(node)
@@ -2878,7 +2878,7 @@ t4 = Add(Number(1), t3)
 使用示例：
 
 ```py
-      >>> s = StackCode()
+>>> s = StackCode()
 >>> s.generate_code(t4)
 [('PUSH', 1), ('PUSH', 2), ('PUSH', 3), ('PUSH', 4), ('SUB',),
 ('MUL',), ('PUSH', 5), ('DIV',), ('ADD',)]
@@ -2891,7 +2891,7 @@ t4 = Add(Number(1), t3)
 刚开始的时候你可能会写大量的 if/else 语句来实现，这里访问者模式的好处就是通过 `getattr()` 来获取相应的方法，并利用递归来遍历所有的节点：
 
 ```py
-      def binop(self, node, instruction):
+def binop(self, node, instruction):
     self.visit(node.left)
     self.visit(node.right)
     self.instructions.append((instruction,))
@@ -2901,7 +2901,7 @@ t4 = Add(Number(1), t3)
 还有一点需要指出的是，这种技术也是实现其他语言中 switch 或 case 语句的方式。比如，如果你正在写一个 HTTP 框架，你可能会写这样一个请求分发的控制器：
 
 ```py
-      class HTTPHandler:
+class HTTPHandler:
     def handle(self, request):
         methname = 'do_' + request.request_method
         getattr(self, methname)(request)
@@ -2931,7 +2931,7 @@ t4 = Add(Number(1), t3)
 通过巧妙的使用生成器可以在树遍历或搜索算法中消除递归。在 8.21 小节中，我们给出了一个访问者类。下面我们利用一个栈和生成器重新实现这个类：
 
 ```py
-      import types
+import types
 
 class Node:
     pass
@@ -2970,7 +2970,7 @@ class NodeVisitor:
 如果你使用这个类，也能达到相同的效果。事实上你完全可以将它作为上一节中的访问者模式的替代实现。考虑如下代码，遍历一个表达式的树：
 
 ```py
-      class UnaryOperator(Node):
+class UnaryOperator(Node):
     def __init__(self, operand):
         self.operand = operand
 
@@ -3033,7 +3033,7 @@ if __name__ == '__main__':
 如果嵌套层次太深那么上述的 Evaluator 就会失效：
 
 ```py
-      >>> a = Number(0)
+>>> a = Number(0)
 >>> for n in range(1, 100000):
 ... a = Add(a, Number(n))
 ...
@@ -3055,7 +3055,7 @@ def visit_Number(self, node):
 return node.value
 
 ```py
-          def visit_Add(self, node):
+    def visit_Add(self, node):
         yield (yield node.left) + (yield node.right)
 
     def visit_Sub(self, node):
@@ -3075,7 +3075,7 @@ return node.value
 再次运行，就不会报错了：
 
 ```py
-      >>> a = Number(0)
+>>> a = Number(0)
 >>> for n in range(1,100000):
 ...     a = Add(a, Number(n))
 ...
@@ -3089,7 +3089,7 @@ return node.value
 如果你还想添加其他自定义逻辑也没问题：
 
 ```py
-      class Evaluator(NodeVisitor):
+class Evaluator(NodeVisitor):
     ...
     def visit_Add(self, node):
         print('Add:', node)
@@ -3105,7 +3105,7 @@ return node.value
 下面是简单的测试：
 
 ```py
-      >>> e = Evaluator()
+>>> e = Evaluator()
 >>> e.visit(t4)
 Add: <__main__.Add object at 0x1006a8d90>
 left= 1
@@ -3122,14 +3122,14 @@ right= -0.4
 另外一个需要理解的就是生成器中 yield 语句。当碰到 yield 语句时，生成器会返回一个数据并暂时挂起。上面的例子使用这个技术来代替了递归。例如，之前我们是这样写递归：
 
 ```py
-      value = self.visit(node.left)
+value = self.visit(node.left)
 
 ```
 
 现在换成 yield 语句：
 
 ```py
-      value = yield node.left
+value = yield node.left
 
 ```
 
@@ -3148,7 +3148,7 @@ right= -0.4
 一个简单的循环引用数据结构例子就是一个树形结构，双亲节点有指针指向孩子节点，孩子节点又返回来指向双亲节点。这种情况下，可以考虑使用 `weakref` 库中的弱引用。例如：
 
 ```py
-      import weakref
+import weakref
 
 class Node:
     def __init__(self, value):
@@ -3177,7 +3177,7 @@ class Node:
 这种是想方式允许 parent 静默终止。例如：
 
 ```py
-      >>> root = Node('parent')
+>>> root = Node('parent')
 >>> c1 = Node('child')
 >>> root.add_child(c1)
 >>> print(c1.parent)
@@ -3194,7 +3194,7 @@ None
 循环引用的数据结构在 Python 中是一个很棘手的问题，因为正常的垃圾回收机制不能适用于这种情形。例如考虑如下代码：
 
 ```py
-      # Class just to illustrate when deletion occurs
+# Class just to illustrate when deletion occurs
 class Data:
     def __del__(self):
         print('Data.__del__')
@@ -3215,7 +3215,7 @@ class Node:
 下面我们使用这个代码来做一些垃圾回收试验：
 
 ```py
-      >>> a = Data()
+>>> a = Data()
 >>> del a # Immediately deleted
 Data.__del__
 >>> a = Node()
@@ -3233,7 +3233,7 @@ Data.__del__
 Python 有另外的垃圾回收器来专门针对循环引用的，但是你永远不知道它什么时候会触发。另外你还可以手动的触发它，但是代码看上去很挫：
 
 ```py
-      >>> import gc
+>>> import gc
 >>> gc.collect() # Force collection
 Data.__del__
 Data.__del__
@@ -3244,7 +3244,7 @@ Data.__del__
 如果循环引用的对象自己还定义了自己的 `__del__()` 方法，那么会让情况变得更糟糕。假设你像下面这样给 Node 定义自己的 `__del__()` 方法：
 
 ```py
-      # Node class involving a cycle
+# Node class involving a cycle
 class Node:
     def __init__(self):
         self.data = Data()
@@ -3267,7 +3267,7 @@ class Node:
 这种情况下，垃圾回收永远都不会去回收这个对象的，还会导致内存泄露。如果你试着去运行它会发现，`Data.__del__` 消息永远不会出现了,甚至在你强制内存回收时：
 
 ```py
-      >>> a = Node()
+>>> a = Node()
 >>> a.add_child(Node()
 >>> del a # No message (not collected)
 >>> import gc
@@ -3279,7 +3279,7 @@ class Node:
 弱引用消除了引用循环的这个问题，本质来讲，弱引用就是一个对象指针，它不会增加它的引用计数。你可以通过 `weakref` 来创建弱引用。例如：
 
 ```py
-      >>> import weakref
+>>> import weakref
 >>> a = Node()
 >>> a_ref = weakref.ref(a)
 >>> a_ref
@@ -3291,7 +3291,7 @@ class Node:
 为了访问弱引用所引用的对象，你可以像函数一样去调用它即可。如果那个对象还存在就会返回它，否则就返回一个 None。由于原始对象的引用计数没有增加，那么就可以去删除它了。例如;
 
 ```py
-      >>> print(a_ref())
+>>> print(a_ref())
 <__main__.Node object at 0x1005c5410>
 >>> del a
 Data.__del__
@@ -3318,7 +3318,7 @@ Python 类对每个比较操作都需要实现一个特殊方法来支持。例�
 作为例子，我们构建一些房子，然后给它们增加一些房间，最后通过房子大小来比较它们：
 
 ```py
-      from functools import total_ordering
+from functools import total_ordering
 
 class Room:
     def __init__(self, name, length, width):
@@ -3357,7 +3357,7 @@ class House:
 这里我们只是给 House 类定义了两个方法：`__eq__()` 和 `__lt__()` ，它就能支持所有的比较操作：
 
 ```py
-      # Build a few houses, and add rooms to them
+# Build a few houses, and add rooms to them
 h1 = House('h1', 'Cape')
 h1.add_room(Room('Master Bedroom', 14, 21))
 h1.add_room(Room('Living Room', 18, 20))
@@ -3386,7 +3386,7 @@ print('Which is smallest?', min(houses)) # Prints 'h2: 846-square-foot Ranch'
 其实 `total_ordering` 装饰器也没那么神秘。它就是定义了一个从每个比较支持方法到所有需要定义的其他方法的一个映射而已。比如你定义了 `__le__()` 方法，那么它就被用来构建所有其他的需要定义的那些特殊方法。实际上就是在类里面像下面这样定义了一些特殊方法：
 
 ```py
-      class House:
+class House:
     def __eq__(self, other):
         pass
     def __lt__(self, other):
@@ -3412,7 +3412,7 @@ print('Which is smallest?', min(houses)) # Prints 'h2: 846-square-foot Ranch'
 这种通常是因为你希望相同参数创建的对象时单例的。在很多库中都有实际的例子，比如 `logging` 模块，使用相同的名称创建的 `logger` 实例永远只有一个。例如：
 
 ```py
-      >>> import logging
+>>> import logging
 >>> a = logging.getLogger('foo')
 >>> b = logging.getLogger('bar')
 >>> a is b
@@ -3427,7 +3427,7 @@ True
 为了达到这样的效果，你需要使用一个和类本身分开的工厂函数，例如：
 
 ```py
-      # The class in question
+# The class in question
 class Spam:
     def __init__(self, name):
         self.name = name
@@ -3448,7 +3448,7 @@ def get_spam(name):
 然后做一个测试，你会发现跟之前那个日志对象的创建行为是一致的：
 
 ```py
-      >>> a = get_spam('foo')
+>>> a = get_spam('foo')
 >>> b = get_spam('bar')
 >>> a is b
 False
@@ -3466,7 +3466,7 @@ True
 例如，你可能会考虑重新定义类的 `__new__()` 方法，就像下面这样：
 
 ```py
-      # Note: This code doesn't quite work
+# Note: This code doesn't quite work
 import weakref
 
 class Spam:
@@ -3487,7 +3487,7 @@ class Spam:
 初看起来好像可以达到预期效果，但是问题是 `__init__()` 每次都会被调用，不管这个实例是否被缓存了。例如：
 
 ```py
-      >>> s = Spam('Dave')
+>>> s = Spam('Dave')
 Initializing Spam
 >>> t = Spam('Dave')
 Initializing Spam
@@ -3502,7 +3502,7 @@ True
 上面我们使用到了弱引用计数，对于垃圾回收来讲是很有帮助的，关于这个我们在 8.23 小节已经讲过了。当我们保持实例缓存时，你可能只想在程序中使用到它们时才保存。一个 `WeakValueDictionary` 实例只会保存那些在其它地方还在被使用的实例。否则的话，只要实例不再被使用了，它就从字典中被移除了。观察下下面的测试结果：
 
 ```py
-      >>> a = get_spam('foo')
+>>> a = get_spam('foo')
 >>> b = get_spam('bar')
 >>> c = get_spam('foo')
 >>> list(_spam_cache)
@@ -3523,7 +3523,7 @@ True
 首先是这里使用到了一个全局变量，并且工厂函数跟类放在一块。我们可以通过将缓存代码放到一个单独的缓存管理器中：
 
 ```py
-      import weakref
+import weakref
 
 class CachedSpamManager:
     def __init__(self):
@@ -3555,7 +3555,7 @@ class Spam:
 还有一点就是，我们暴露了类的实例化给用户，用户很容易去直接实例化这个类，而不是使用工厂方法，如：
 
 ```py
-      >>> a = Spam('foo')
+>>> a = Spam('foo')
 >>> b = Spam('foo')
 >>> a is b
 False
@@ -3566,7 +3566,7 @@ False
 有几种方式可以防止用户这样做，第一个是将类的名字修改为以下划线(_)开头，提示用户别直接调用它。第二种就是让这个类的 `__init__()` 方法抛出一个异常，让它不能被初始化：
 
 ```py
-      class Spam:
+class Spam:
     def __init__(self, *args, **kwargs):
         raise RuntimeError("Can't instantiate directly")
 
@@ -3581,7 +3581,7 @@ False
 然后修改缓存管理器代码，使用 `Spam._new()` 来创建实例，而不是直接调用 `Spam()` 构造函数：
 
 ```py
-      # ------------------------最后的修正方案------------------------
+# ------------------------最后的修正方案------------------------
 class CachedSpamManager2:
     def __init__(self):
         self._cache = weakref.WeakValueDictionary()

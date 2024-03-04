@@ -22,7 +22,7 @@ $ ls | ./filein.py # Prints a directory listing to stdout.$ ./filein.py /etc/pas
 The fileinput.input() function creates and returns an instance of the FileInputclass. In addition to containing a few handy helper methods, the instance can also beused as a context manager. So, to put all of this together, if we wrote a script that expectedto be printing output from several files at once, we might have it include the filenameand line number in the output, like this:
 
 ```py
-      >>> import fileinput
+>>> import fileinput
 >>> with fileinput.input('/etc/passwd') as f:
 >>>     for line in f:
 ...         print(f.filename(), f.lineno(), line, end='')
@@ -171,7 +171,7 @@ You need to get the terminal size in order to properly format the output of your
 Use the os.get_terminal_size() function to do this:
 
 ```py
-      >>> import os
+>>> import os
 >>> sz = os.get_terminal_size()
 >>> sz
 os.terminal_size(columns=80, lines=24)
@@ -280,7 +280,7 @@ shutil.copytree(src, dst, ignore=shutil.ignore*patterns(‘*~','_.pyc'))
 Using shutil to copy files and directories is mostly straightforward. However, onecaution concerning file metadata is that functions such as copy2() only make a besteffort in preserving this data. Basic information, such as access times, creation times,and permissions, will always be preserved, but preservation of owners, ACLs, resourceforks, and other extended file metadata may or may not work depending on the un‐derlying operating system and the user’s own access permissions. You probably wouldn’twant to use a function like shutil.copytree() to perform system backups.When working with filenames, make sure you use the functions in os.path for thegreatest portability (especially if working with both Unix and Windows). For example:
 
 ```py
-      >>> filename = '/Users/guido/programs/spam.py'
+>>> filename = '/Users/guido/programs/spam.py'
 >>> import os.path
 >>> os.path.basename(filename)
 'spam.py'
@@ -312,7 +312,7 @@ You need to create or unpack archives in common formats (e.g., .tar, .tgz, or .z
 The shutil module has two functions—make_archive() and unpack_archive()—thatdo exactly what you want. For example:
 
 ```py
-      >>> import shutil
+>>> import shutil
 >>> shutil.unpack_archive('Python-3.3.0.tgz')
 
 >>> shutil.make_archive('py33','zip','Python-3.3.0')
@@ -324,7 +324,7 @@ The shutil module has two functions—make_archive() and unpack_archive()—that
 The second argument to make_archive() is the desired output format. To get a list ofsupported archive formats, use get_archive_formats(). For example:
 
 ```py
-      >>> shutil.get_archive_formats()
+>>> shutil.get_archive_formats()
 [('bztar', "bzip2'ed tar-file"), ('gztar', "gzip'ed tar-file"),
  ('tar', 'uncompressed tar file'), ('zip', 'ZIP file')]
 >>>
@@ -399,7 +399,7 @@ The configparser module can be used to read configuration files. For example, su
 Here is an example of how to read it and extract values:
 
 ```py
-      >>> from configparser import ConfigParser
+>>> from configparser import ConfigParser
 >>> cfg = ConfigParser()
 >>> cfg.read('config.ini')
 ['config.ini']
@@ -416,14 +416,14 @@ True>>> cfg.getint(‘server','port')8080>>> cfg.getint(‘server','nworkers')32
 # Brought to you by the Python Cookbook
 
 ```py
-      >>>
+>>>
 
 ```
 
 If desired, you can also modify the configuration and write it back to a file using thecfg.write() method. For example:
 
 ```py
-      >>> cfg.set('server','port','9000')
+>>> cfg.set('server','port','9000')
 >>> cfg.set('debug','log_errors','False')
 >>> import sys
 >>> cfg.write(sys.stdout)
@@ -448,7 +448,7 @@ prefix=/usr/localprefix: /usr/local
 The names used in a config file are also assumed to be case-insensitive. For example:
 
 ```py
-      >>> cfg.get('installation','PREFIX')
+>>> cfg.get('installation','PREFIX')
 '/usr/local'
 >>> cfg.get('installation','prefix')
 '/usr/local'
@@ -473,7 +473,7 @@ An easily overlooked feature of ConfigParser is that it can read multiple config
 This file can be merged with the previous configuration by reading it separately. Forexample:
 
 ```py
-      >>> # Previously read configuration
+>>> # Previously read configuration
 >>> cfg.get('installation', 'prefix')
 '/usr/local'
 
@@ -495,7 +495,7 @@ False
 Observe how the override of the prefix variable affects other related variables, such asthe setting of library. This works because variable interpolation is performed as lateas possible. You can see this by trying the following experiment:
 
 ```py
-      >>> cfg.get('installation','library')
+>>> cfg.get('installation','library')
 '/Users/beazley/test/lib'
 >>> cfg.set('installation','prefix','/tmp/dir')
 >>> cfg.get('installation','library')
@@ -596,7 +596,7 @@ import logginglog = logging.getLogger(**name**)log.addHandler(logging.NullHandle
 With this configuration, no logging will occur by default. For example:
 
 ```py
-      >>> import somelib
+>>> import somelib
 >>> somelib.func()
 >>>
 
@@ -605,7 +605,7 @@ With this configuration, no logging will occur by default. For example:
 However, if the logging system gets configured, log messages will start to appear. Forexample:
 
 ```py
-      >>> import logging
+>>> import logging
 >>> logging.basicConfig()
 >>> somelib.func()
 CRITICAL:somelib:A Critical Error!
@@ -620,7 +620,7 @@ Libraries present a special problem for logging, since information about the env
 The log.addHandler(logging.NullHandler()) operation attaches a null handler tothe just created logger object. A null handler ignores all logging messages by default.Thus, if the library is used and logging is never configured, no messages or warningswill appear.One subtle feature of this recipe is that the logging of individual libraries can be inde‐pendently configured, regardless of other logging settings. For example, consider thefollowing code:
 
 ```py
-      >>> import logging
+>>> import logging
 >>> logging.basicConfig(level=logging.ERROR)
 >>> import somelib
 >>> somelib.func()
@@ -727,7 +727,7 @@ You want to launch a browser from a script and have it point to some URL that yo
 The webbrowser module can be used to launch a browser in a platform-independentmanner. For example:
 
 ```py
-      >>> import webbrowser
+>>> import webbrowser
 >>> webbrowser.open('http://www.python.org')
 True
 >>>
@@ -737,7 +737,7 @@ True
 This opens the requested page using the default browser. If you want a bit more controlover how the page gets opened, you can use one of the following functions:
 
 ```py
-      >>> # Open the page in a new browser window
+>>> # Open the page in a new browser window
 >>> webbrowser.open_new('http://www.python.org')
 True
 >>>
@@ -752,7 +752,7 @@ True
 These will try to open the page in a new browser window or tab, if possible and supportedby the browser.If you want to open a page in a specific browser, you can use the webbrowser.get()function to specify a particular browser. For example:
 
 ```py
-      >>> c = webbrowser.get('firefox')
+>>> c = webbrowser.get('firefox')
 >>> c.open('http://www.python.org')
 True
 >>> c.open_new_tab('http://docs.python.org')

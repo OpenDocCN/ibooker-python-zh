@@ -13,7 +13,7 @@
 对于简单的事情来说，通常使用 `<span class="pre" style="box-sizing: border-box;">urllib.request</span>` 模块就够了。例如，发送一个简单的 HTTP GET 请求到远程的服务上，可以这样做：
 
 ```py
-      from urllib import request, parse
+from urllib import request, parse
 
 # Base URL being accessed
 url = 'http://httpbin.org/get'
@@ -36,7 +36,7 @@ resp = u.read()
 如果你需要使用 POST 方法在请求主体中发送查询参数，可以将参数编码后作为可选参数提供给`<span class="pre" style="box-sizing: border-box;">urlopen()</span>` 函数，就像这样：
 
 ```py
-      from urllib import request, parse
+from urllib import request, parse
 
 # Base URL being accessed
 url = 'http://httpbin.org/post'
@@ -59,7 +59,7 @@ resp = u.read()
 如果你需要在发出的请求中提供一些自定义的 HTTP 头，例如修改 `<span class="pre" style="box-sizing: border-box;">user-agent</span>` 字段,可以创建一个包含字段值的字典，并创建一个 Request 实例然后将其传给 `<span class="pre" style="box-sizing: border-box;">urlopen()</span>` ，如下：
 
 ```py
-      from urllib import request, parse
+from urllib import request, parse
 ...
 
 # Extra headers
@@ -79,7 +79,7 @@ resp = u.read()
 如果需要交互的服务比上面的例子都要复杂，也许应该去看看 requests 库（[`pypi.python.org/pypi/requests`](https://pypi.python.org/pypi/requests)）。例如，下面这个示例采用 requests 库重新实现了上面的操作：
 
 ```py
-      import requests
+import requests
 
 # Base URL being accessed
 url = 'http://httpbin.org/post'
@@ -108,7 +108,7 @@ text = resp.text
 下面这个示例利用 `<span class="pre" style="box-sizing: border-box;">requests</span>` 库发起一个 HEAD 请求，并从响应中提取出一些 HTTP 头数据的字段：
 
 ```py
-      import requests
+import requests
 
 resp = requests.head('http://www.python.org/index.html')
 
@@ -153,7 +153,7 @@ r = requests.post(url, files=files)
 例如，如果你决定坚持使用标准的程序库而不考虑像 `<span class="pre" style="box-sizing: border-box;">requests</span>` 这样的第三方库，那么也许就不得不使用底层的 `<span class="pre" style="box-sizing: border-box;">http.client</span>` 模块来实现自己的代码。比方说，下面的代码展示了如何执行一个 HEAD 请求：
 
 ```py
-      from http.client import HTTPConnection
+from http.client import HTTPConnection
 from urllib import parse
 
 c = HTTPConnection('www.python.org', 80)
@@ -169,7 +169,7 @@ for name, value in resp.getheaders():
 同样地，如果必须编写涉及代理、认证、cookies 以及其他一些细节方面的代码，那么使用 `<span class="pre" style="box-sizing: border-box;">urllib</span>` 就显得特别别扭和啰嗦。比方说，下面这个示例实现在 Python 包索引上的认证：
 
 ```py
-      import urllib.request
+import urllib.request
 
 auth = urllib.request.HTTPBasicAuthHandler()
 auth.add_password('pypi','http://pypi.python.org','username','password')
@@ -189,7 +189,7 @@ resp = u.read()
 在开发过程中测试 HTTP 客户端代码常常是很令人沮丧的，因为所有棘手的细节问题都需要考虑（例如 cookies、认证、HTTP 头、编码方式等）。要完成这些任务，考虑使用 httpbin 服务（[`httpbin.org`](http://httpbin.org)）。这个站点会接收发出的请求，然后以 JSON 的形式将相应信息回传回来。下面是一个交互式的例子：
 
 ```py
-      >>> import requests
+>>> import requests
 >>> r = requests.get('http://httpbin.org/get?name=Dave&n=37',
 ...     headers = { 'User-agent': 'goaway/1.0' })
 >>> resp = r.json
@@ -218,7 +218,7 @@ resp = u.read()
 创建一个 TCP 服务器的一个简单方法是使用 `<span class="pre" style="box-sizing: border-box;">socketserver</span>` 库。例如，下面是一个简单的应答服务器：
 
 ```py
-      from socketserver import BaseRequestHandler, TCPServer
+from socketserver import BaseRequestHandler, TCPServer
 
 class EchoHandler(BaseRequestHandler):
     def handle(self):
@@ -239,7 +239,7 @@ if __name__ == '__main__':
 在这段代码中，你定义了一个特殊的处理类，实现了一个 `<span class="pre" style="box-sizing: border-box;">handle()</span>` 方法，用来为客户端连接服务。`<span class="pre" style="box-sizing: border-box;">request</span>` 属性是客户端 socket，`<span class="pre" style="box-sizing: border-box;">client_address</span>` 有客户端地址。 为了测试这个服务器，运行它并打开另外一个 Python 进程连接这个服务器：
 
 ```py
-      >>> from socket import socket, AF_INET, SOCK_STREAM
+>>> from socket import socket, AF_INET, SOCK_STREAM
 >>> s = socket(AF_INET, SOCK_STREAM)
 >>> s.connect(('localhost', 20000))
 >>> s.send(b'Hello')
@@ -253,7 +253,7 @@ b'Hello'
 很多时候，可以很容易的定义一个不同的处理器。下面是一个使用 `<span class="pre" style="box-sizing: border-box;">StreamRequestHandler</span>` 基类将一个类文件接口放置在底层 socket 上的例子：
 
 ```py
-      from socketserver import StreamRequestHandler, TCPServer
+from socketserver import StreamRequestHandler, TCPServer
 
 class EchoHandler(StreamRequestHandler):
     def handle(self):
@@ -274,7 +274,7 @@ if __name__ == '__main__':
 `<span class="pre" style="box-sizing: border-box;">socketserver</span>` 可以让我们很容易的创建简单的 TCP 服务器。 但是，你需要注意的是，默认情况下这种服务器是单线程的，一次只能为一个客户端连接服务。 如果你想处理多个客户端，可以初始化一个`<span class="pre" style="box-sizing: border-box;">ForkingTCPServer</span>` 或者是 `<span class="pre" style="box-sizing: border-box;">ThreadingTCPServer</span>` 对象。例如：
 
 ```py
-      from socketserver import ThreadingTCPServer
+from socketserver import ThreadingTCPServer
 
 if __name__ == '__main__':
     serv = ThreadingTCPServer(('', 20000), EchoHandler)
@@ -287,7 +287,7 @@ if __name__ == '__main__':
 如果你担心这个问题，你可以创建一个预先分配大小的工作线程池或进程池。 你先创建一个普通的非线程服务器，然后在一个线程池中使用 `<span class="pre" style="box-sizing: border-box;">serve_forever()</span>` 方法来启动它们。
 
 ```py
-      if __name__ == '__main__':
+if __name__ == '__main__':
     from threading import Thread
     NWORKERS = 16
     serv = TCPServer(('', 20000), EchoHandler)
@@ -302,7 +302,7 @@ if __name__ == '__main__':
 一般来讲，一个 `<span class="pre" style="box-sizing: border-box;">TCPServer</span>` 在实例化的时候会绑定并激活相应的 `<span class="pre" style="box-sizing: border-box;">socket</span>` 。 不过，有时候你想通过设置某些选项去调整底下的 socket` ，可以设置参数 `bind_and_activate=False` 。如下：
 
 ```py
-      if __name__ == '__main__':
+if __name__ == '__main__':
     serv = TCPServer(('', 20000), EchoHandler, bind_and_activate=False)
     # Set up various socket options
     serv.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, True)
@@ -316,7 +316,7 @@ if __name__ == '__main__':
 上面的 `<span class="pre" style="box-sizing: border-box;">socket</span>` 选项是一个非常普遍的配置项，它允许服务器重新绑定一个之前使用过的端口号。 由于要被经常使用到，它被放置到类变量中，可以直接在 `<span class="pre" style="box-sizing: border-box;">TCPServer</span>` 上面设置。 在实例化服务器的时候去设置它的值，如下所示：
 
 ```py
-      if __name__ == '__main__':
+if __name__ == '__main__':
     TCPServer.allow_reuse_address = True
     serv = TCPServer(('', 20000), EchoHandler)
     serv.serve_forever()
@@ -326,7 +326,7 @@ if __name__ == '__main__':
 在上面示例中，我们演示了两种不同的处理器基类（ `<span class="pre" style="box-sizing: border-box;">BaseRequestHandler</span>` 和`<span class="pre" style="box-sizing: border-box;">StreamRequestHandler</span>` ）。 `<span class="pre" style="box-sizing: border-box;">StreamRequestHandler</span>` 更加灵活点，能通过设置其他的类变量来支持一些新的特性。比如：
 
 ```py
-      import socket
+import socket
 
 class EchoHandler(StreamRequestHandler):
     # Optional settings (defaults shown)
@@ -348,7 +348,7 @@ class EchoHandler(StreamRequestHandler):
 最后，还需要注意的是巨大部分 Python 的高层网络模块（比如 HTTP、XML-RPC 等）都是建立在`<span class="pre" style="box-sizing: border-box;">socketserver</span>` 功能之上。 也就是说，直接使用 `<span class="pre" style="box-sizing: border-box;">socket</span>` 库来实现服务器也并不是很难。 下面是一个使用 `<span class="pre" style="box-sizing: border-box;">socket</span>` 直接编程实现的一个服务器简单例子：
 
 ```py
-      from socket import socket, AF_INET, SOCK_STREAM
+from socket import socket, AF_INET, SOCK_STREAM
 
 def echo_handler(address, client_sock):
     print('Got connection from {}'.format(address))
@@ -383,7 +383,7 @@ if __name__ == '__main__':
 跟 TCP 一样，UDP 服务器也可以通过使用 `<span class="pre" style="box-sizing: border-box;">socketserver</span>` 库很容易的被创建。 例如，下面是一个简单的时间服务器：
 
 ```py
-      from socketserver import BaseRequestHandler, UDPServer
+from socketserver import BaseRequestHandler, UDPServer
 import time
 
 class TimeHandler(BaseRequestHandler):
@@ -405,7 +405,7 @@ if __name__ == '__main__':
 我们来测试下这个服务器，首先运行它，然后打开另外一个 Python 进程向服务器发送消息：
 
 ```py
-      >>> from socket import socket, AF_INET, SOCK_DGRAM
+>>> from socket import socket, AF_INET, SOCK_DGRAM
 >>> s = socket(AF_INET, SOCK_DGRAM)
 >>> s.sendto(b'', ('localhost', 20000))
 0
@@ -424,7 +424,7 @@ if __name__ == '__main__':
 `<span class="pre" style="box-sizing: border-box;">UDPServer</span>` 类是单线程的，也就是说一次只能为一个客户端连接服务。 实际使用中，这个无论是对于 UDP 还是 TCP 都不是什么大问题。 如果你想要并发操作，可以实例化一个 `<span class="pre" style="box-sizing: border-box;">ForkingUDPServer</span>` 或`<span class="pre" style="box-sizing: border-box;">ThreadingUDPServer</span>` 对象：
 
 ```py
-      from socketserver import ThreadingUDPServer
+from socketserver import ThreadingUDPServer
 
    if __name__ == '__main__':
     serv = ThreadingUDPServer(('',20000), TimeHandler)
@@ -435,7 +435,7 @@ if __name__ == '__main__':
 直接使用 `<span class="pre" style="box-sizing: border-box;">socket</span>` 来是想一个 UDP 服务器也不难，下面是一个例子：
 
 ```py
-      from socket import socket, AF_INET, SOCK_DGRAM
+from socket import socket, AF_INET, SOCK_DGRAM
 import time
 
 def time_server(address):
@@ -463,7 +463,7 @@ if __name__ == '__main__':
 可以使用 `<span class="pre" style="box-sizing: border-box;">ipaddress</span>` 模块很容易的实现这样的计算。例如：
 
 ```py
-      >>> import ipaddress
+>>> import ipaddress
 >>> net = ipaddress.ip_network('123.45.67.64/27')
 >>> net
 IPv4Network('123.45.67.64/27')
@@ -500,7 +500,7 @@ IPv6Network('12:3456:78:90ab:cd:ef01:23:30/125')
 `<span class="pre" style="box-sizing: border-box;">Network</span>` 也允许像数组一样的索引取值，例如：
 
 ```py
-      >>> net.num_addresses
+>>> net.num_addresses
 32
 >>> net[0]
 
@@ -518,7 +518,7 @@ IPv4Address('123.45.67.94')
 另外，你还可以执行网络成员检查之类的操作：
 
 ```py
-      >>> a = ipaddress.ip_address('123.45.67.69')
+>>> a = ipaddress.ip_address('123.45.67.69')
 >>> a in net
 True
 >>> b = ipaddress.ip_address('123.45.67.123')
@@ -531,7 +531,7 @@ False
 一个 IP 地址和网络地址能通过一个 IP 接口来指定，例如：
 
 ```py
-      >>> inet = ipaddress.ip_interface('123.45.67.73/27')
+>>> inet = ipaddress.ip_interface('123.45.67.73/27')
 >>> inet.network
 IPv4Network('123.45.67.64/27')
 >>> inet.ip
@@ -547,7 +547,7 @@ IPv4Address('123.45.67.73')
 要注意的是，`<span class="pre" style="box-sizing: border-box;">ipaddress</span>` 模块跟其他一些和网络相关的模块比如 `<span class="pre" style="box-sizing: border-box;">socket</span>` 库交集很少。 所以，你不能使用 `<span class="pre" style="box-sizing: border-box;">IPv4Address</span>` 的实例来代替一个地址字符串，你首先得显式的使用 `<span class="pre" style="box-sizing: border-box;">str()</span>` 转换它。例如：
 
 ```py
-      >>> a = ipaddress.ip_address('127.0.0.1')
+>>> a = ipaddress.ip_address('127.0.0.1')
 >>> from socket import socket, AF_INET, SOCK_STREAM
 >>> s = socket(AF_INET, SOCK_STREAM)
 >>> s.connect((a, 8080))
@@ -572,7 +572,7 @@ TypeError: Can't convert 'IPv4Address' object to str implicitly
 构建一个 REST 风格的接口最简单的方法是创建一个基于 WSGI 标准（PEP 3333）的很小的库，下面是一个例子：
 
 ```py
-      # resty.py
+# resty.py
 
 import cgi
 
@@ -602,7 +602,7 @@ class PathDispatcher:
 为了使用这个调度器，你只需要编写不同的处理器，就像下面这样：
 
 ```py
-      import time
+import time
 
 _hello_resp = '''\
 <html>
@@ -655,7 +655,7 @@ if __name__ == '__main__':
 要测试下这个服务器，你可以使用一个浏览器或 `<span class="pre" style="box-sizing: border-box;">urllib</span>` 和它交互。例如：
 
 ```py
-      >>> u = urlopen('http://localhost:8080/hello?name=Guido')
+>>> u = urlopen('http://localhost:8080/hello?name=Guido')
 >>> print(u.read().decode('utf-8'))
 <html>
   <head>
@@ -692,7 +692,7 @@ if __name__ == '__main__':
 在 WSGI 中，你可以像下面这样约定的方式以一个可调用对象形式来实现你的程序。
 
 ```py
-      import cgi
+import cgi
 
 def wsgi_app(environ, start_response):
     pass
@@ -702,7 +702,7 @@ def wsgi_app(environ, start_response):
 `<span class="pre" style="box-sizing: border-box;">environ</span>` 属性是一个字典，包含了从 web 服务器如 Apache[参考 Internet RFC 3875]提供的 CGI 接口中获取的值。 要将这些不同的值提取出来，你可以像这么这样写：
 
 ```py
-      def wsgi_app(environ, start_response):
+def wsgi_app(environ, start_response):
     method = environ['REQUEST_METHOD']
     path = environ['PATH_INFO']
     # Parse the query parameters
@@ -715,7 +715,7 @@ def wsgi_app(environ, start_response):
 `<span class="pre" style="box-sizing: border-box;">start_response</span>` 参数是一个为了初始化一个请求对象而必须被调用的函数。 第一个参数是返回的 HTTP 状态值，第二个参数是一个(名,值)元组列表，用来构建返回的 HTTP 头。例如：
 
 ```py
-      def wsgi_app(environ, start_response):
+def wsgi_app(environ, start_response):
     pass
     start_response('200 OK', [('Content-type', 'text/plain')])
 
@@ -724,7 +724,7 @@ def wsgi_app(environ, start_response):
 为了返回数据，一个 WSGI 程序必须返回一个字节字符串序列。可以像下面这样使用一个列表来完成：
 
 ```py
-      def wsgi_app(environ, start_response):
+def wsgi_app(environ, start_response):
     pass
     start_response('200 OK', [('Content-type', 'text/plain')])
     resp = []
@@ -737,7 +737,7 @@ def wsgi_app(environ, start_response):
 或者，你还可以使用 `<span class="pre" style="box-sizing: border-box;">yield</span>` ：
 
 ```py
-      def wsgi_app(environ, start_response):
+def wsgi_app(environ, start_response):
     pass
     start_response('200 OK', [('Content-type', 'text/plain')])
     yield b'Hello World\n'
@@ -750,7 +750,7 @@ def wsgi_app(environ, start_response):
 尽管 WSGI 程序通常被定义成一个函数，不过你也可以使用类实例来实现，只要它实现了合适的`<span class="pre" style="box-sizing: border-box;">__call__()</span>` 方法。例如：
 
 ```py
-      class WSGIApplication:
+class WSGIApplication:
     def __init__(self):
         ...
     def __call__(self, environ, start_response)
@@ -765,7 +765,7 @@ def wsgi_app(environ, start_response):
 最后，使用 WSGI 还有一个很重要的部分就是没有什么地方是针对特定 web 服务器的。 因为标准对于服务器和框架是中立的，你可以将你的程序放入任何类型服务器中。 我们使用下面的代码测试测试本节代码：
 
 ```py
-      if __name__ == '__main__':
+if __name__ == '__main__':
     from wsgiref.simple_server import make_server
 
     # Create the dispatcher and register functions
@@ -811,7 +811,7 @@ def get(self, name):return self._data[name]def set(self, name, value):self._data
 Here is how you would access the server remotely from a client:
 
 ```py
-      >>> from xmlrpc.client import ServerProxy
+>>> from xmlrpc.client import ServerProxy
 >>> s = ServerProxy('http://localhost:15000', allow_none=True)
 >>> s.set('foo', 'bar')
 >>> s.set('spam', [1, 2, 3])
@@ -841,7 +841,7 @@ serv = SimpleXMLRPCServer((‘', 15000))serv.register_function(add)serv.serve_fo
 Functions exposed via XML-RPC only work with certain kinds of data such as strings,numbers, lists, and dictionaries. For everything else, some study is required. For in‐stance, if you pass an instance through XML-RPC, only its instance dictionary ishandled:
 
 ```py
-      >>> class Point:
+>>> class Point:
 ...     def __init__(self, x, y):
 ...             self.x = x
 ...             self.y = y
@@ -857,7 +857,7 @@ Functions exposed via XML-RPC only work with certain kinds of data such as strin
 Similarly, handling of binary data is a bit different than you expect:
 
 ```py
-      >>> s.set('foo', b'Hello World')
+>>> s.set('foo', b'Hello World')
 >>> s.get('foo')
 <xmlrpc.client.Binary object at 0x10131d410>
 
@@ -895,7 +895,7 @@ echo_server((‘', 25000), authkey=b'peekaboo')
 Here is a simple example of a client connecting to the server and sending variousmessages:
 
 ```py
-      >>> from multiprocessing.connection import Client
+>>> from multiprocessing.connection import Client
 >>> c = Client(('localhost', 25000), authkey=b'peekaboo')
 >>> c.send('hello')
 >>> c.recv()
@@ -981,7 +981,7 @@ return do_rpc
 To use the proxy, you wrap it around a connection to the server. For example:
 
 ```py
-      >>> from multiprocessing.connection import Client
+>>> from multiprocessing.connection import Client
 >>> c = Client(('localhost', 17000), authkey=b'peekaboo')
 >>> proxy = RPCProxy(c)
 >>> proxy.add(2, 3)
@@ -1104,7 +1104,7 @@ echo_server((‘', 20000))
 Here’s an interactive session that shows how to connect to the server as a client. Theclient requires the server to present its certificate and verifies it:
 
 ```py
-      >>> from socket import socket, AF_INET, SOCK_STREAM
+>>> from socket import socket, AF_INET, SOCK_STREAM
 >>> import ssl
 >>> s = socket(AF_INET, SOCK_STREAM)
 >>> s_ssl = ssl.wrap_socket(s,
@@ -1165,7 +1165,7 @@ kvserv.serve_forever()
 To use this server, you can connect using the normal xmlrpc.client module. Just spec‐ify a https: in the URL. For example:
 
 ```py
-      >>> from xmlrpc.client import ServerProxy
+>>> from xmlrpc.client import ServerProxy
 >>> s = ServerProxy('https://localhost:15000', allow_none=True)
 >>> s.set('foo','bar')
 >>> s.set('spam', [1, 2, 3])
@@ -1422,7 +1422,7 @@ class UDPServer(EventHandler):def **init**(self, address):self.sock = socket.soc
 To test this code, you can try connecting to it from another Python interpreter:
 
 ```py
-      >>> from socket import *
+>>> from socket import *
 >>> s = socket(AF_INET, SOCK_DGRAM)
 >>> s.sendto(b'',('localhost',14000))
 0
@@ -1521,7 +1521,7 @@ view = memoryview(arr).cast(‘B')while len(view):
 To test the program, first create a server and client program connected over a socket.In the server:
 
 ```py
-      >>> from socket import *
+>>> from socket import *
 >>> s = socket(AF_INET, SOCK_STREAM)
 >>> s.bind(('', 25000))
 >>> s.listen(1)
@@ -1533,7 +1533,7 @@ To test the program, first create a server and client program connected over a s
 In the client (in a separate interpreter):
 
 ```py
-      >>> from socket import *
+>>> from socket import *
 >>> c = socket(AF_INET, SOCK_STREAM)
 >>> c.connect(('localhost', 25000))
 >>>

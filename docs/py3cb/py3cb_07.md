@@ -13,7 +13,7 @@
 使用带有 `rt` 模式的 `open()` 函数读取文本文件。如下所示：
 
 ```py
-      # Read the entire file as a single string
+# Read the entire file as a single string
 with open('somefile.txt', 'rt') as f:
     data = f.read()
 
@@ -28,7 +28,7 @@ with open('somefile.txt', 'rt') as f:
 类似的，为了写入一个文本文件，使用带有 `wt` 模式的 `open()` 函数，如果之前文件内容存在则清除并覆盖掉。如下所示：
 
 ```py
-      # Write chunks of text data
+# Write chunks of text data
 with open('somefile.txt', 'wt') as f:
     f.write(text1)
     f.write(text2)
@@ -47,7 +47,7 @@ with open('somefile.txt', 'wt') as f:
 文件的读写操作默认使用系统编码，可以通过调用 `sys.getdefaultencoding()` 来得到。在大多数机器上面都是 utf-8 编码。如果你已经知道你要读写的文本是其他编码方式，那么可以通过传递一个可选的 `encoding` 参数给 open()函数。如下所示：
 
 ```py
-      with open('somefile.txt', 'rt', encoding='latin-1') as f:
+with open('somefile.txt', 'rt', encoding='latin-1') as f:
     ...
 
 ```
@@ -59,7 +59,7 @@ Python 支持非常多的文本编码。几个常见的编码是 ascii, latin-1,
 读写文本文件一般来讲是比较简单的。但是也几点是需要注意的。首先，在例子程序中的 with 语句给被使用到的文件创建了一个上下文环境，但 with 控制块结束时，文件会自动关闭。你也可以不使用 with 语句，但是这时候你就必须记得手动关闭文件：
 
 ```py
-      f = open('somefile.txt', 'rt')
+f = open('somefile.txt', 'rt')
 data = f.read()
 f.close()
 
@@ -68,7 +68,7 @@ f.close()
 另外一个问题是关于换行符的识别问题，在 Unix 和 Windows 中是不一样的(分别是 n 和 rn)。默认情况下，Python 会以统一模式处理换行符。这种模式下，在读取文本的时候，Python 可以识别所有的普通换行符并将其转换为单个 `\n` 字符。类似的，在输出时会将换行符 `\n` 转换为系统默认的换行符。如果你不希望这种默认的处理方式，可以给 `open()` 函数传入参数 `newline=''` ，就像下面这样：
 
 ```py
-      # Read with disabled newline translation
+# Read with disabled newline translation
 with open('somefile.txt', 'rt', newline='') as f:
     ...
 
@@ -77,7 +77,7 @@ with open('somefile.txt', 'rt', newline='') as f:
 为了说明两者之间的差异，下面我在 Unix 机器上面读取一个 Windows 上面的文本文件，里面的内容是 `hello world!\r\n` ：
 
 ```py
-      >>> # Newline translation enabled (the default)
+>>> # Newline translation enabled (the default)
 >>> f = open('hello.txt', 'rt')
 >>> f.read()
 'hello world!\n'
@@ -93,7 +93,7 @@ with open('somefile.txt', 'rt', newline='') as f:
 最后一个问题就是文本文件中可能出现的编码错误。但你读取或者写入一个文本文件时，你可能会遇到一个编码或者解码错误。比如：
 
 ```py
-      >>> f = open('sample.txt', 'rt', encoding='ascii')
+>>> f = open('sample.txt', 'rt', encoding='ascii')
 >>> f.read()
 Traceback (most recent call last):
     File "<stdin>", line 1, in <module>
@@ -108,7 +108,7 @@ UnicodeDecodeError: 'ascii' codec can't decode byte 0xc3 in position
 如果出现这个错误，通常表示你读取文本时指定的编码不正确。你最好仔细阅读说明并确认你的文件编码是正确的(比如使用 UTF-8 而不是 Latin-1 编码或其他)。如果编码错误还是存在的话，你可以给 `open()` 函数传递一个可选的 `errors` 参数来处理这些错误。下面是一些处理常见错误的方法：
 
 ```py
-      >>> # Replace bad chars with Unicode U+fffd replacement char
+>>> # Replace bad chars with Unicode U+fffd replacement char
 >>> f = open('sample.txt', 'rt', encoding='ascii', errors='replace')
 >>> f.read()
 'Spicy Jalape?o!'
@@ -133,7 +133,7 @@ UnicodeDecodeError: 'ascii' codec can't decode byte 0xc3 in position
 在 `print()` 函数中指定 `file` 关键字参数，像下面这样：
 
 ```py
-      with open('somefile.txt', 'rt') as f:
+with open('somefile.txt', 'rt') as f:
     print('Hello World!', file=f)
 
 ```
@@ -153,7 +153,7 @@ UnicodeDecodeError: 'ascii' codec can't decode byte 0xc3 in position
 可以使用在 `print()` 函数中使用 `sep` 和 `end` 关键字参数，以你想要的方式输出。比如：
 
 ```py
-      >>> print('ACME', 50, 91.5)
+>>> print('ACME', 50, 91.5)
 ACME 50 91.5
 >>> print('ACME', 50, 91.5, sep=',')
 ACME,50,91.5
@@ -166,7 +166,7 @@ ACME,50,91.5!!
 使用 `end` 参数也可以在输出中禁止换行。比如：
 
 ```py
-      >>> for i in range(5):
+>>> for i in range(5):
 ...     print(i)
 ...
 0
@@ -186,7 +186,7 @@ ACME,50,91.5!!
 当你想使用非空格分隔符来输出数据的时候，给 `print()` 函数传递一个 `seq` 参数是最简单的方案。有时候你会看到一些程序员会使用 `str.join()` 来完成同样的事情。比如：
 
 ```py
-      >>> print(','.join('ACME','50','91.5'))
+>>> print(','.join('ACME','50','91.5'))
 ACME,50,91.5
 >>>
 
@@ -195,7 +195,7 @@ ACME,50,91.5
 `str.join()` 的问题在于它仅仅适用于字符串。这意味着你通常需要执行另外一些转换才能让它正常工作。比如：
 
 ```py
-      >>> row = ('ACME', 50, 91.5)
+>>> row = ('ACME', 50, 91.5)
 >>> print(','.join(row))
 Traceback (most recent call last):
     File "<stdin>", line 1, in <module>
@@ -209,7 +209,7 @@ ACME,50,91.5
 你当然可以不用那么麻烦，仅仅只需要像下面这样写：
 
 ```py
-      >>> print(*row, sep=',')
+>>> print(*row, sep=',')
 ACME,50,91.5
 >>>
 
@@ -226,7 +226,7 @@ ACME,50,91.5
 使用模式为 `rb` 或 `wb` 的 `open()` 函数来读取或写入二进制数据。比如：
 
 ```py
-      # Read the entire file as a single byte string
+# Read the entire file as a single byte string
 with open('somefile.bin', 'rb') as f:
     data = f.read()
 
@@ -243,7 +243,7 @@ with open('somefile.bin', 'wb') as f:
 在读取二进制数据的时候，字节字符串和文本字符串的语义差异可能会导致一个潜在的陷阱。特别需要注意的是，索引和迭代动作返回的是字节的值而不是字节字符串。比如：
 
 ```py
-      >>> # Text string
+>>> # Text string
 >>> t = 'Hello World'
 >>> t[0]
 'H'
@@ -276,7 +276,7 @@ o
 如果你想从二进制模式的文件中读取或写入文本数据，必须确保要进行解码和编码操作。比如：
 
 ```py
-      with open('somefile.bin', 'rb') as f:
+with open('somefile.bin', 'rb') as f:
     data = f.read(16)
     text = data.decode('utf-8')
 
@@ -289,7 +289,7 @@ with open('somefile.bin', 'wb') as f:
 二进制 I/O 还有一个鲜为人知的特性就是数组和 C 结构体类型能直接被写入，而不需要中间转换为自己对象。比如：
 
 ```py
-      import array
+import array
 nums = array.array('i', [1, 2, 3, 4])
 with open('data.bin','wb') as f:
     f.write(nums)
@@ -301,7 +301,7 @@ with open('data.bin','wb') as f:
 很多对象还允许通过使用文件对象的 `readinto()` 方法直接读取二进制数据到其底层的内存中去。比如：
 
 ```py
-      >>> import array
+>>> import array
 >>> a = array.array('i', [0, 0, 0, 0, 0, 0, 0, 0])
 >>> with open('data.bin', 'rb') as f:
 ...     f.readinto(a)
@@ -326,7 +326,7 @@ array('i', [1, 2, 3, 4, 0, 0, 0, 0])
 可以在 `open()` 函数中使用 x 模式来代替 w 模式的方法来解决这个问题。比如：
 
 ```py
-      >>> with open('somefile', 'wt') as f:
+>>> with open('somefile', 'wt') as f:
 ...     f.write('Hello\n')
 ...
 >>> with open('somefile', 'xt') as f:
@@ -343,7 +343,7 @@ FileExistsError: [Errno 17] File exists: 'somefile'
 讨论 这一小节演示了在写文件时通常会遇到的一个问题的完美解决方案(不小心覆盖一个已存在的文件)。 一个替代方案是先测试这个文件是否存在，像下面这样：
 
 ```py
-      >>> import os
+>>> import os
 >>> if not os.path.exists('somefile'):
 ...     with open('somefile', 'wt') as f:
 ...         f.write('Hello\n')
@@ -368,7 +368,7 @@ File already exists!
 使用 `io.StringIO()` 和 `io.BytesIO()` 类来创建类文件对象操作字符串数据。比如：
 
 ```py
-      >>> s = io.StringIO()
+>>> s = io.StringIO()
 >>> s.write('Hello World\n')
 12
 >>> print('This is a test', file=s)
@@ -391,7 +391,7 @@ File already exists!
 `io.StringIO` 只能用于文本。如果你要操作二进制数据，要使用 `io.BytesIO` 类来代替。比如：
 
 ```py
-      >>> s = io.BytesIO()
+>>> s = io.BytesIO()
 >>> s.write(b'binary data')
 >>> s.getvalue()
 b'binary data'
@@ -416,7 +416,7 @@ b'binary data'
 `gzip` 和 `bz2` 模块可以很容易的处理这些文件。两个模块都为 `open()` 函数提供了另外的实现来解决这个问题。比如，为了以文本形式读取压缩文件，可以这样做：
 
 ```py
-      # gzip compression
+# gzip compression
 import gzip
 with gzip.open('somefile.gz', 'rt') as f:
     text = f.read()
@@ -431,7 +431,7 @@ with bz2.open('somefile.bz2', 'rt') as f:
 类似的，为了写入压缩数据，可以这样做：
 
 ```py
-      # gzip compression
+# gzip compression
 import gzip
 with gzip.open('somefile.gz', 'wt') as f:
     f.write(text)
@@ -452,7 +452,7 @@ with bz2.open('somefile.bz2', 'wt') as f:
 当写入压缩数据时，可以使用 `compresslevel` 这个可选的关键字参数来指定一个压缩级别。比如：
 
 ```py
-      with gzip.open('somefile.gz', 'wt', compresslevel=5) as f:
+with gzip.open('somefile.gz', 'wt', compresslevel=5) as f:
     f.write(text)
 
 ```
@@ -462,7 +462,7 @@ with bz2.open('somefile.bz2', 'wt') as f:
 最后一点，`gzip.open()` 和 `bz2.open()` 还有一个很少被知道的特性，它们可以作用在一个已存在并以二进制模式打开的文件上。比如，下面代码是可行的：
 
 ```py
-      import gzip
+import gzip
 f = open('somefile.gz', 'rb')
 with gzip.open(f, 'rt') as g:
     text = g.read()
@@ -482,7 +482,7 @@ with gzip.open(f, 'rt') as g:
 通过下面这个小技巧使用 `iter` 和 `functools.partial()` 函数：
 
 ```py
-      from functools import partial
+from functools import partial
 
 RECORD_SIZE = 32
 
@@ -514,7 +514,7 @@ with open('somefile.data', 'rb') as f:
 为了读取数据到一个可变数组中，使用文件对象的 `readinto()` 方法。比如：
 
 ```py
-      import os.path
+import os.path
 
 def read_into_buffer(filename):
     buf = bytearray(os.path.getsize(filename))
@@ -527,7 +527,7 @@ def read_into_buffer(filename):
 下面是一个演示这个函数使用方法的例子：
 
 ```py
-      >>> # Write a sample file
+>>> # Write a sample file
 >>> with open('sample.bin', 'wb') as f:
 ...     f.write(b'Hello World')
 ...
@@ -550,7 +550,7 @@ bytearray(b'Hallo World')
 文件对象的 `readinto()` 方法能被用来为预先分配内存的数组填充数据，甚至包括由 array 模块或 numpy 库创建的数组。和普通 `read()` 方法不同的是，`readinto()` 填充已存在的缓冲区而不是为新对象重新分配内存再返回它们。因此，你可以使用它来避免大量的内存分配操作。比如，如果你读取一个由相同大小的记录组成的二进制文件时，你可以像下面这样写：
 
 ```py
-      record_size = 32 # Size of each record (adjust value)
+record_size = 32 # Size of each record (adjust value)
 
 buf = bytearray(record_size)
 with open('somefile', 'rb') as f:
@@ -566,7 +566,7 @@ with open('somefile', 'rb') as f:
 另外有一个有趣特性就是 `memoryview` ，它可以通过零复制的方式对已存在的缓冲区执行切片操作，甚至还能修改它的内容。比如：
 
 ```py
-      >>> buf
+>>> buf
 bytearray(b'Hello World')
 >>> m1 = memoryview(buf)
 >>> m2 = m1[-5:]
@@ -598,7 +598,7 @@ bytearray(b'Hello WORLD')
 使用 `mmap` 模块来内存映射文件。下面是一个工具函数，向你演示了如何打开一个文件并以一种便捷方式内存映射这个文件。
 
 ```py
-      import os
+import os
 import mmap
 
 def memory_map(filename, access=mmap.ACCESS_WRITE):
@@ -611,7 +611,7 @@ def memory_map(filename, access=mmap.ACCESS_WRITE):
 为了使用这个函数，你需要有一个已创建并且内容不为空的文件。下面是一个例子，教你怎样初始创建一个文件并将其内容扩充到指定大小：
 
 ```py
-      >>> size = 1000000
+>>> size = 1000000
 >>> with open('data', 'wb') as f:
 ...     f.seek(size-1)
 ...     f.write(b'\x00')
@@ -623,7 +623,7 @@ def memory_map(filename, access=mmap.ACCESS_WRITE):
 下面是一个利用 `memory_map()` 函数类内存映射文件内容的例子：
 
 ```py
-      >>> m = memory_map('data')
+>>> m = memory_map('data')
 >>> len(m)
 1000000
 >>> m[0:10]
@@ -646,7 +646,7 @@ b'Hello World'
 `mmap()` 返回的 `mmap` 对象同样也可以作为一个上下文管理器来使用，这时候底层的文件会被自动关闭。比如：
 
 ```py
-      >>> with memory_map('data') as m:
+>>> with memory_map('data') as m:
 ...     print(len(m))
 ...     print(m[0:10])
 ...
@@ -661,14 +661,14 @@ True
 默认情况下，`memeory_map()` 函数打开的文件同时支持读和写操作。任何的修改内容都会复制回原来的文件中。如果需要只读的访问模式，可以给参数 `access` 赋值为 `mmap.ACCESS_READ` 。比如：
 
 ```py
-      m = memory_map(filename, mmap.ACCESS_READ)
+m = memory_map(filename, mmap.ACCESS_READ)
 
 ```
 
 如果你想在本地修改数据，但是又不想将修改写回到原始文件中，可以使用 `mmap.ACCESS_COPY` ：
 
 ```py
-      m = memory_map(filename, mmap.ACCESS_COPY)
+m = memory_map(filename, mmap.ACCESS_COPY)
 
 ```
 
@@ -679,7 +679,7 @@ True
 一般来讲，`mmap()` 所暴露的内存看上去就是一个二进制数组对象。但是，你可以使用一个内存视图来解析其中的数据。比如：
 
 ```py
-      >>> m = memory_map('data')
+>>> m = memory_map('data')
 >>> # Memoryview of unsigned integers
 >>> v = memoryview(m).cast('I')
 >>> v[0] = 7
@@ -709,7 +709,7 @@ b'\x07\x00\x00\x00'
 使用 `os.path` 模块中的函数来操作路径名。下面是一个交互式例子来演示一些关键的特性：
 
 ```py
-      >>> import os
+>>> import os
 >>> path = '/Users/beazley/Data/data.csv'
 
 >>> # Get the last component of the path
@@ -753,7 +753,7 @@ b'\x07\x00\x00\x00'
 使用 `os.path` 模块来测试一个文件或目录是否存在。比如：
 
 ```py
-      >>> import os
+>>> import os
 >>> os.path.exists('/etc/passwd')
 True
 >>> os.path.exists('/tmp/spam')
@@ -765,7 +765,7 @@ False
 你还能进一步测试这个文件时什么类型的。在下面这些测试中，如果测试的文件不存在的时候，结果都会返回 False：
 
 ```py
-      >>> # Is a regular file
+>>> # Is a regular file
 >>> os.path.isfile('/etc/passwd')
 True
 
@@ -787,7 +787,7 @@ True
 如果你还想获取元数据(比如文件大小或者是修改日期)，也可以使用 `os.path` 模块来解决：
 
 ```py
-      >>> os.path.getsize('/etc/passwd')
+>>> os.path.getsize('/etc/passwd')
 3669
 >>> os.path.getmtime('/etc/passwd')
 1272478234.0
@@ -803,7 +803,7 @@ True
 使用 `os.path` 来进行文件测试是很简单的。在写这些脚本时，可能唯一需要注意的就是你需要考虑文件权限的问题，特别是在获取元数据时候。比如：
 
 ```py
-      >>> os.path.getsize('/Users/guido/Desktop/foo.txt')
+>>> os.path.getsize('/Users/guido/Desktop/foo.txt')
 Traceback (most recent call last):
     File "<stdin>", line 1, in <module>
     File "/usr/local/lib/python3.3/genericpath.py", line 49, in getsize
@@ -824,7 +824,7 @@ PermissionError: [Errno 13] Permission denied: '/Users/guido/Desktop/foo.txt'
 使用 `os.listdir()` 函数来获取某个目录中的文件列表：
 
 ```py
-      import os
+import os
 names = os.listdir('somedir')
 
 ```
@@ -832,7 +832,7 @@ names = os.listdir('somedir')
 结果会返回目录中所有文件列表，包括所有文件，子目录，符号链接等等。如果你需要通过某种方式过滤数据，可以考虑结合 `os.path` 库中的一些函数来使用列表推导。比如：
 
 ```py
-      import os.path
+import os.path
 
 # Get all regular files
 names = [name for name in os.listdir('somedir')
@@ -847,7 +847,7 @@ dirnames = [name for name in os.listdir('somedir')
 字符串的 `startswith()` 和 `endswith()` 方法对于过滤一个目录的内容也是很有用的。比如：
 
 ```py
-      pyfiles = [name for name in os.listdir('somedir')
+pyfiles = [name for name in os.listdir('somedir')
             if name.endswith('.py')]
 
 ```
@@ -855,7 +855,7 @@ dirnames = [name for name in os.listdir('somedir')
 对于文件名的匹配，你可能会考虑使用 `glob` 或 `fnmatch` 模块。比如：
 
 ```py
-      import glob
+import glob
 pyfiles = glob.glob('somedir/*.py')
 
 from fnmatch import fnmatch
@@ -869,7 +869,7 @@ pyfiles = [name for name in os.listdir('somedir')
 获取目录中的列表是很容易的，但是其返回结果只是目录中实体名列表而已。如果你还想获取其他的元信息，比如文件大小，修改时间等等，你或许还需要使用到 `os.path` 模块中的函数或着 `os.stat()` 函数来收集数据。比如：
 
 ```py
-      # Example of getting a directory listing
+# Example of getting a directory listing
 
 import os
 import os.path
@@ -903,7 +903,7 @@ for name, meta in file_metadata:
 默认情况下，所有的文件名都会根据 `sys.getfilesystemencoding()` 返回的文本编码来编码或解码。比如：
 
 ```py
-      >>> sys.getfilesystemencoding()
+>>> sys.getfilesystemencoding()
 'utf-8'
 >>>
 
@@ -912,7 +912,7 @@ for name, meta in file_metadata:
 如果因为某种原因你想忽略这种编码，可以使用一个原始字节字符串来指定一个文件名即可。比如：
 
 ```py
-      >>> # Wrte a file using a unicode filename
+>>> # Wrte a file using a unicode filename
 >>> with open('jalape\xf1o.txt', 'w') as f:
 ...     f.write('Spicy!')
 ...
@@ -956,7 +956,7 @@ Spicy!
 当打印未知的文件名时，使用下面的方法可以避免这样的错误：
 
 ```py
-      def bad_filename(filename):
+def bad_filename(filename):
     return repr(filename)[1:-1]
 
 try:
@@ -973,7 +973,7 @@ except UnicodeEncodeError:
 当执行类似 `os.listdir()` 这样的函数时，这些不合规范的文件名就会让 Python 陷入困境。一方面，它不能仅仅只是丢弃这些不合格的名字。而另一方面，它又不能将这些文件名转换为正确的文本字符串。Python 对这个问题的解决方案是从文件名中获取未解码的字节值比如 `\xhh`并将它映射成 Unicode 字符 `\udchh` 表示的所谓的”代理编码”。下面一个例子演示了当一个不合格目录列表中含有一个文件名为 bäd.txt(使用 Latin-1 而不是 UTF-8 编码)时的样子：
 
 ```py
-      >>> import os
+>>> import os
 >>> files = os.listdir('.')
 >>> files
 ['spam.py', 'b\udce4d.txt', 'foo.txt']
@@ -984,7 +984,7 @@ except UnicodeEncodeError:
 如果你有代码需要操作文件名或者将文件名传递给 `open()` 这样的函数，一切都能正常工作。只有当你想要输出文件名时才会碰到些麻烦(比如打印输出到屏幕或日志文件等)。特别的，当你想打印上面的文件名列表时，你的程序就会崩溃：
 
 ```py
-      >>> for name in files:
+>>> for name in files:
 ...     print(name)
 ...
 spam.py
@@ -999,7 +999,7 @@ position 1: surrogates not allowed
 程序崩溃的原因就是字符 `\udce4` 是一个非法的 Unicode 字符。它其实是一个被称为代理字符对的双字符组合的后半部分。由于缺少了前半部分，因此它是个非法的 Unicode。所以，唯一能成功输出的方法就是当遇到不合法文件名时采取相应的补救措施。比如可以将上述代码修改如下：
 
 ```py
-      >>> for name in files:
+>>> for name in files:
 ... try:
 ...     print(name)
 ... except UnicodeEncodeError:
@@ -1015,7 +1015,7 @@ foo.txt
 在 `bad_filename()` 函数中怎样处置取决于你自己。另外一个选择就是通过某种方式重新编码，示例如下：
 
 ```py
-      def bad_filename(filename):
+def bad_filename(filename):
     temp = filename.encode(sys.getfilesystemencoding(), errors='surrogateescape')
     return temp.decode('latin-1')
 
@@ -1033,7 +1033,7 @@ foo.txt
 使用这个版本产生的输出如下：
 
 ```py
-      >>> for name in files:
+>>> for name in files:
 ...     try:
 ...         print(name)
 ...     except UnicodeEncodeError:
@@ -1059,7 +1059,7 @@ foo.txt
 如果你想给一个以二进制模式打开的文件添加 Unicode 编码/解码方式，可以使用 `io.TextIOWrapper()` 对象包装它。比如：
 
 ```py
-      import urllib.request
+import urllib.request
 import io
 
 u = urllib.request.urlopen('http://www.python.org')
@@ -1071,7 +1071,7 @@ text = f.read()
 如果你想修改一个已经打开的文本模式的文件的编码方式，可以先使用 `detach()` 方法移除掉已存在的文本编码层，并使用新的编码方式代替。下面是一个在 `sys.stdout` 上修改编码方式的例子：
 
 ```py
-      >>> import sys
+>>> import sys
 >>> sys.stdout.encoding
 'UTF-8'
 >>> sys.stdout = io.TextIOWrapper(sys.stdout.detach(), encoding='latin-1')
@@ -1088,7 +1088,7 @@ text = f.read()
 I/O 系统由一系列的层次构建而成。你可以试着运行下面这个操作一个文本文件的例子来查看这种层次：
 
 ```py
-      >>> f = open('sample.txt','w')
+>>> f = open('sample.txt','w')
 >>> f
 <_io.TextIOWrapper name='sample.txt' mode='w' encoding='UTF-8'>
 >>> f.buffer
@@ -1104,7 +1104,7 @@ I/O 系统由一系列的层次构建而成。你可以试着运行下面这个�
 一般来讲，像上面例子这样通过访问属性值来直接操作不同的层是很不安全的。例如，如果你试着使用下面这样的技术改变编码看看会发生什么：
 
 ```py
-      >>> f
+>>> f
 <_io.TextIOWrapper name='sample.txt' mode='w' encoding='UTF-8'>
 >>> f = io.TextIOWrapper(f.buffer, encoding='latin-1')
 >>> f
@@ -1122,7 +1122,7 @@ ValueError: I/O operation on closed file.
 `detach()` 方法会断开文件的最顶层并返回第二层，之后最顶层就没什么用了。例如：
 
 ```py
-      >>> f = open('sample.txt', 'w')
+>>> f = open('sample.txt', 'w')
 >>> f
 <_io.TextIOWrapper name='sample.txt' mode='w' encoding='UTF-8'>
 >>> b = f.detach()
@@ -1139,7 +1139,7 @@ ValueError: underlying buffer has been detached
 一旦断开最顶层后，你就可以给返回结果添加一个新的最顶层。比如：
 
 ```py
-      >>> f = io.TextIOWrapper(b, encoding='latin-1')
+>>> f = io.TextIOWrapper(b, encoding='latin-1')
 >>> f
 <_io.TextIOWrapper name='sample.txt' encoding='latin-1'>
 >>>
@@ -1149,7 +1149,7 @@ ValueError: underlying buffer has been detached
 尽管已经向你演示了改变编码的方法，但是你还可以利用这种技术来改变文件行处理、错误机制以及文件处理的其他方面。例如：
 
 ```py
-      >>> sys.stdout = io.TextIOWrapper(sys.stdout.detach(), encoding='ascii',
+>>> sys.stdout = io.TextIOWrapper(sys.stdout.detach(), encoding='ascii',
 ...                             errors='xmlcharrefreplace')
 >>> print('Jalape\u00f1o')
 Jalape&#241;o
@@ -1170,7 +1170,7 @@ Jalape&#241;o
 将字节数据直接写入文件的缓冲区即可，例如：
 
 ```py
-      >>> import sys
+>>> import sys
 >>> sys.stdout.write(b'Hello\n')
 Traceback (most recent call last):
     File "<stdin>", line 1, in <module>
@@ -1201,7 +1201,7 @@ I/O 系统以层级结构的形式构建而成。文本文件是通过在一个�
 一个文件描述符和一个打开的普通文件是不一样的。文件描述符仅仅是一个由操作系统指定的整数，用来指代某个系统的 I/O 通道。如果你碰巧有这么一个文件描述符，你可以通过使用 `open()` 函数来将其包装为一个 Python 的文件对象。你仅仅只需要使用这个整数值的文件描述符作为第一个参数来代替文件名即可。例如：
 
 ```py
-      # Open a low-level file descriptor
+# Open a low-level file descriptor
 import os
 fd = os.open('somefile.txt', os.O_WRONLY | os.O_CREAT)
 
@@ -1215,7 +1215,7 @@ f.close()
 当高层的文件对象被关闭或者破坏的时候，底层的文件描述符也会被关闭。如果这个并不是你想要的结果，你可以给 `open()` 函数传递一个可选的 `colsefd=False` 。比如：
 
 ```py
-      # Create a file object, but don't close underlying fd when done
+# Create a file object, but don't close underlying fd when done
 f = open(fd, 'wt', closefd=False)
 ...
 
@@ -1226,7 +1226,7 @@ f = open(fd, 'wt', closefd=False)
 在 Unix 系统中，这种包装文件描述符的技术可以很方便的将一个类文件接口作用于一个以不同方式打开的 I/O 通道上，如管道、套接字等。举例来讲，下面是一个操作管道的例子：
 
 ```py
-      from socket import socket, AF_INET, SOCK_STREAM
+from socket import socket, AF_INET, SOCK_STREAM
 
 def echo_client(client_sock, addr):
     print('Got connection from', addr)
@@ -1260,7 +1260,7 @@ def echo_server(address):
 你也可以使用这种技术来构造一个别名，允许以不同于第一次打开文件的方式使用它。例如，下面演示如何创建一个文件对象，它允许你输出二进制数据到标准输出(通常以文本模式打开)：
 
 ```py
-      import sys
+import sys
 # Create a binary-mode file for stdout
 bstdout = open(sys.stdout.fileno(), 'wb', closefd=False)
 bstdout.write(b'Hello World\n')
@@ -1281,7 +1281,7 @@ bstdout.flush()
 `tempfile` 模块中有很多的函数可以完成这任务。为了创建一个匿名的临时文件，可以使用 `tempfile.TemporaryFile` ：
 
 ```py
-      from tempfile import TemporaryFile
+from tempfile import TemporaryFile
 
 with TemporaryFile('w+t') as f:
     # Read/write to the file
@@ -1299,7 +1299,7 @@ with TemporaryFile('w+t') as f:
 或者，如果你喜欢，你还可以像这样使用临时文件：
 
 ```py
-      f = TemporaryFile('w+t')
+f = TemporaryFile('w+t')
 # Use the temporary file
 ...
 f.close()
@@ -1310,7 +1310,7 @@ f.close()
 `TemporaryFile()` 的第一个参数是文件模式，通常来讲文本模式使用 `w+t` ，二进制模式使用 `w+b` 。这个模式同时支持读和写操作，在这里是很有用的，因为当你关闭文件去改变模式的时候，文件实际上已经不存在了。`TemporaryFile()` 另外还支持跟内置的 `open()` 函数一样的参数。比如：
 
 ```py
-      with TemporaryFile('w+t', encoding='utf-8', errors='ignore') as f:
+with TemporaryFile('w+t', encoding='utf-8', errors='ignore') as f:
     ...
 
 ```
@@ -1318,7 +1318,7 @@ f.close()
 在大多数 Unix 系统上，通过 `TemporaryFile()` 创建的文件都是匿名的，甚至连目录都没有。如果你想打破这个限制，可以使用 `NamedTemporaryFile()` 来代替。比如：
 
 ```py
-      from tempfile import NamedTemporaryFile
+from tempfile import NamedTemporaryFile
 
 with NamedTemporaryFile('w+t') as f:
     print('filename is:', f.name)
@@ -1331,7 +1331,7 @@ with NamedTemporaryFile('w+t') as f:
 这里，被打开文件的 `f.name` 属性包含了该临时文件的文件名。当你需要将文件名传递给其他代码来打开这个文件的时候，这个就很有用了。和 `TemporaryFile()` 一样，结果文件关闭时会被自动删除掉。如果你不想这么做，可以传递一个关键字参数 `delte=False` 即可。比如：
 
 ```py
-      with NamedTemporaryFile('w+t', delete=False) as f:
+with NamedTemporaryFile('w+t', delete=False) as f:
     print('filename is:', f.name)
     ...
 
@@ -1340,7 +1340,7 @@ with NamedTemporaryFile('w+t') as f:
 为了创建一个临时目录，可以使用 `tempfile.TemporaryDirectory()` 。比如：
 
 ```py
-      from tempfile import TemporaryDirectory
+from tempfile import TemporaryDirectory
 
 with TemporaryDirectory() as dirname:
     print('dirname is:', dirname)
@@ -1355,7 +1355,7 @@ with TemporaryDirectory() as dirname:
 `TemporaryFile()` 、`NamedTemporaryFile()` 和 `TemporaryDirectory()` 函数应该是处理临时文件目录的最简单的方式了，因为它们会自动处理所有的创建和清理步骤。在一个更低的级别，你可以使用 `mkstemp()` 和 `mkdtemp()` 来创建临时文件和目录。比如：
 
 ```py
-      >>> import tempfile
+>>> import tempfile
 >>> tempfile.mkstemp()
 (3, '/var/folders/7W/7WZl5sfZEF0pljrEB1UMWE+++TI/-Tmp-/tmp7fefhv')
 >>> tempfile.mkdtemp()
@@ -1369,7 +1369,7 @@ with TemporaryDirectory() as dirname:
 通常来讲，临时文件在系统默认的位置被创建，比如 `/var/tmp` 或类似的地方。为了获取真实的位置，可以使用 `tempfile.gettempdir()` 函数。比如：
 
 ```py
-      >>> tempfile.gettempdir()
+>>> tempfile.gettempdir()
 '/var/folders/7W/7WZl5sfZEF0pljrEB1UMWE+++TI/-Tmp-'
 >>>
 
@@ -1378,7 +1378,7 @@ with TemporaryDirectory() as dirname:
 所有和临时文件相关的函数都允许你通过使用关键字参数`prefix` 、`suffix` 和 `dir` 来自定义目录以及命名规则。比如：
 
 ```py
-      >>> f = NamedTemporaryFile(prefix='mytemp', suffix='.txt', dir='/tmp')
+>>> f = NamedTemporaryFile(prefix='mytemp', suffix='.txt', dir='/tmp')
 >>> f.name
 '/tmp/mytemp8ee899.txt'
 >>>
@@ -1398,7 +1398,7 @@ with TemporaryDirectory() as dirname:
 尽管你可以通过使用 Python 内置的 I/O 模块来完成这个任务，但对于串行通信最好的选择是使用[pySerial 包](http://pyserial.sourceforge.net/) [[`pyserial.sourceforge.net/`](http://pyserial.sourceforge.net/)] 。这个包的使用非常简单，先安装 pySerial，使用类似下面这样的代码就能很容易的打开一个串行端口：
 
 ```py
-      import serial
+import serial
 ser = serial.Serial('/dev/tty.usbmodem641', # Device name varies
                     baudrate=9600,
                     bytesize=8,
@@ -1410,7 +1410,7 @@ ser = serial.Serial('/dev/tty.usbmodem641', # Device name varies
 设备名对于不同的设备和操作系统是不一样的。比如，在 Windows 系统上，你可以使用 0, 1 等表示的一个设备来打开通信端口”COM0”和”COM1”。一旦端口打开，那就可以使用 `read()`，`readline()` 和 `write()` 函数读写数据了。例如：
 
 ```py
-      ser.write(b'G1 X50 Y50\r\n')
+ser.write(b'G1 X50 Y50\r\n')
 resp = ser.readline()
 
 ```
@@ -1434,7 +1434,7 @@ resp = ser.readline()
 对于序列化最普遍的做法就是使用 `pickle` 模块。为了将一个对象保存到一个文件中，可以这样做：
 
 ```py
-      import pickle
+import pickle
 
 data = ... # Some Python object
 f = open('somefile', 'wb')
@@ -1445,14 +1445,14 @@ pickle.dump(data, f)
 为了将一个对象转储为一个字符串，可以使用 `pickle.dumps()` ：
 
 ```py
-      s = pickle.dumps(data)
+s = pickle.dumps(data)
 
 ```
 
 为了从字节流中恢复一个对象，使用 `picle.load()` 或 `pickle.loads()` 函数。比如：
 
 ```py
-      # Restore from a file
+# Restore from a file
 f = open('somefile', 'rb')
 data = pickle.load(f)
 
@@ -1468,7 +1468,7 @@ data = pickle.loads(s)
 `pickle` 是一种 Python 特有的自描述的数据编码。通过自描述，被序列化后的数据包含每个对象开始和结束以及它的类型信息。因此，你无需担心对象记录的定义，它总是能工作。举个例子，如果要处理多个对象，你可以这样做：
 
 ```py
-      >>> import pickle
+>>> import pickle
 >>> f = open('somedata', 'wb')
 >>> pickle.dump([1, 2, 3, 4], f)
 >>> pickle.dump('hello', f)
@@ -1488,7 +1488,7 @@ data = pickle.loads(s)
 你还能序列化函数，类，还有接口，但是结果数据仅仅将它们的名称编码成对应的代码对象。例如：
 
 ```py
-      >>> import math
+>>> import math
 >>> import pickle.
 >>> pickle.dumps(math.cos)
 b'\x80\x03cmath\ncos\nq\x00.'
@@ -1501,7 +1501,7 @@ b'\x80\x03cmath\ncos\nq\x00.'
 注
 
 ```py
-      千万不要对不信任的数据使用 pickle.load()。
+千万不要对不信任的数据使用 pickle.load()。
 pickle 在加载时有一个副作用就是它会自动加载相应模块并构造实例对象。
 但是某个坏人如果知道 pickle 的工作原理，
 他就可以创建一个恶意的数据导致 Python 执行随意指定的系统命令。
@@ -1514,7 +1514,7 @@ import time
 import threading
 
 ```py
-      class Countdown:
+class Countdown:
     def __init__(self, n):
         self.n = n
         self.thr = threading.Thread(target=self.run)
@@ -1538,7 +1538,7 @@ import threading
 试着运行下面的序列化试验代码：
 
 ```py
-      >>> import countdown
+>>> import countdown
 >>> c = countdown.Countdown(30)
 >>> T-minus 30
 T-minus 29
@@ -1556,7 +1556,7 @@ T-minus 28
 然后退出 Python 解析器并重启后再试验下：
 
 ```py
-      >>> f = open('cstate.p', 'rb')
+>>> f = open('cstate.p', 'rb')
 >>> pickle.load(f)
 countdown.Countdown object at 0x10069e2d0>
 T-minus 19

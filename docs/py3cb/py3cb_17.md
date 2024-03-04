@@ -7,7 +7,7 @@ Although Python provides an extensive C programming API, there are actually many
 Here is the C code we will work with in most of the recipes:
 
 ```py
-      /* sample.c */_method
+/* sample.c */_method
 #include <math.h>
 
 /* Compute the greatest common divisor */
@@ -123,7 +123,7 @@ def avg(values):return _avg(values, len(values))
 If all goes well, you should be able to load the module and use the resulting C functions.For example:
 
 ```py
-      >>> import sample
+>>> import sample
 >>> sample.gcd(35,42)
 7
 >>> sample.in_mandel(0,0,500)
@@ -147,7 +147,7 @@ If all goes well, you should be able to load the module and use the resulting C 
 There are several aspects of this recipe that warrant some discussion. The first issueconcerns the overall packaging of C and Python code together. If you are using ctypesto access C code that you have compiled yourself, you will need to make sure that theshared library gets placed in a location where the sample.py module can find it. Onepossibility is to put the resulting .so file in the same directory as the supporting Pythoncode. This is what’s shown at the first part of this recipe—sample.py looks at the **file**variable to see where it has been installed, and then constructs a path that points to alibsample.so file in the same directory.If the C library is going to be installed elsewhere, then you’ll have to adjust the pathaccordingly. If the C library is installed as a standard library on your machine, you mightbe able to use the ctypes.util.find_library() function. For example:
 
 ```py
-      >>> from ctypes.util import find_library
+>>> from ctypes.util import find_library
 >>> find_library('m')
 '/usr/lib/libm.dylib'
 >>> find_library('pthread')
@@ -169,7 +169,7 @@ Once a library has been loaded, you need to write statements that extract specif
 In this code, the .argtypes attribute is a tuple containing the input arguments to afunction, and .restype is the return type. ctypes defines a variety of type objects (e.g.,c_double, c_int, c_short, c_float, etc.) that represent common C data types. Attach‐ing the type signatures is critical if you want to make Python pass the right kinds ofarguments and convert data correctly (if you don’t do this, not only will the code notwork, but you might cause the entire interpreter process to crash).A somewhat tricky part of using ctypes is that the original C code may use idioms thatdon’t map cleanly to Python. The divide() function is a good example because it returnsa value through one of its arguments. Although that’s a common C technique, it’s oftennot clear how it’s supposed to work in Python. For example, you can’t do anythingstraightforward like this:
 
 ```py
-      >>> divide = _mod.divide
+>>> divide = _mod.divide
 >>> divide.argtypes = (ctypes.c_int, ctypes.c_int, ctypes.POINTER(ctypes.c_int))
 >>> x = 0
 >>> divide(10, 3, x)
@@ -184,7 +184,7 @@ instance instead of int
 Even if this did work, it would violate Python’s immutability of integers and probablycause the entire interpreter to be sucked into a black hole. For arguments involvingpointers, you usually have to construct a compatible ctypes object and pass it in likethis:
 
 ```py
-      >>> x = ctypes.c_int()
+>>> x = ctypes.c_int()
 >>> divide(10, 3, x)
 3
 >>> x.value
@@ -201,7 +201,7 @@ def divide(x, y):rem = ctypes.c_int()quot = _divide(x,y,rem)return quot, rem.val
 The avg() function presents a new kind of challenge. The underlying C code expectsto receive a pointer and a length representing an array. However, from the Python side,we must consider the following questions: What is an array? Is it a list? A tuple? Anarray from the array module? A numpy array? Is it all of these? In practice, a Python“array” could take many different forms, and maybe you would like to support multiplepossibilities.The DoubleArrayType class shows how to handle this situation. In this class, a singlemethod from_param() is defined. The role of this method is to take a single parameterand narrow it down to a compatible ctypes object (a pointer to a ctypes.c_double, inthe example). Within from_param(), you are free to do anything that you wish. In thesolution, the typename of the parameter is extracted and used to dispatch to a morespecialized method. For example, if a list is passed, the typename is list and a methodfrom_list() is invoked.For lists and tuples, the from_list() method performs a conversion to a ctypes arrayobject. This looks a little weird, but here is an interactive example of converting a list toa ctypes array:
 
 ```py
-      >>> nums = [1, 2, 3]
+>>> nums = [1, 2, 3]
 >>> a = (ctypes.c_double * len(nums))(*nums)
 >>> a
 <__main__.c_double_Array_3 object at 0x10069cd40>
@@ -218,7 +218,7 @@ The avg() function presents a new kind of challenge. The underlying C code expec
 For array objects, the from_array() method extracts the underlying memory pointerand casts it to a ctypes pointer object. For example:
 
 ```py
-      >>> import array
+>>> import array
 >>> a = array.array('d',[1,2,3])
 >>> a
 array('d', [1.0, 2.0, 3.0])
@@ -234,7 +234,7 @@ array('d', [1.0, 2.0, 3.0])
 The from_ndarray() shows comparable conversion code for numpy arrays.By defining the DoubleArrayType class and using it in the type signature of avg(), asshown, the function can accept a variety of different array-like inputs:
 
 ```py
-      >>> import sample
+>>> import sample
 >>> sample.avg([1,2,3])
 2.0
 >>> sample.avg((1,2,3))
@@ -255,7 +255,7 @@ class Point(ctypes.Structure):*fields* = [(‘x', ctypes.c_double),(‘y', ctype
 Once defined, you can use the class in type signatures as well as in code that needs toinstantiate and work with the structures. For example:
 
 ```py
-      >>> p1 = sample.Point(1,2)
+>>> p1 = sample.Point(1,2)
 >>> p2 = sample.Point(4,5)
 >>> p1.x
 1.0
@@ -366,7 +366,7 @@ bash %
 As shown, this creates a shared library called sample.so. When compiled, you shouldbe able to start importing it as a module:
 
 ```py
-      >>> import sample
+>>> import sample
 >>> sample.gcd(35, 42)
 7
 >>> sample.in_mandel(0, 0, 500)
@@ -435,7 +435,7 @@ if (view.ndim != 1) {PyErr_SetString(PyExc_TypeError, “Expected a 1-dimensiona
 Here is an example that shows how this extension function works:
 
 ```py
-      >>> import array
+>>> import array
 >>> avg(array.array('d',[1,2,3]))
 2.0
 >>> import numpy
@@ -536,7 +536,7 @@ if (!PyArg_ParseTuple(args,”OO”,&py_p1, &py_p2)) {return NULL;
 Using these functions from Python looks like this:
 
 ```py
-      >>> import sample
+>>> import sample
 >>> p1 = sample.Point(2,3)
 >>> p2 = sample.Point(4,5)
 >>> p1
@@ -701,7 +701,7 @@ setup(name='ptexample',ext_modules=[Extension(‘ptexample',[‘ptexample.c'],in
 If it all works, you’ll find that your new extension function works perfectly with the CAPI functions defined in the other module:
 
 ```py
-      >>> import sample
+>>> import sample
 >>> p1 = sample.Point(2,3)
 >>> p1
 <capsule object "Point *" at 0x1004ea330>
@@ -812,7 +812,7 @@ Here is a slightly different example that shows an extension function that recei
 Using this extension function, you could test it as follows:
 
 ```py
-      >>> import sample
+>>> import sample
 >>> def add(x,y):
 ...     return x+y
 ...
@@ -1007,7 +1007,7 @@ bash %
 If all of this works, you’ll find that you can use the resulting C extension module in astraightforward way. For example:
 
 ```py
-      >>> import sample
+>>> import sample
 >>> sample.gcd(42,8)
 2
 >>> sample.divide(42,8)
@@ -1048,7 +1048,7 @@ extern double distance(Point *p1, Point *p2);
 It is important to stress that these declarations are telling Swig what you want to includein the Python module. It is quite common to edit the list of declarations or to makemodifications as appropriate. For example, if you didn’t want certain declarations to beincluded, you would remove them from the declaration list.The most complicated part of using Swig is the various customizations that it can applyto the C code. This is a huge topic that can’t be covered in great detail here, but a numberof such customizations are shown in this recipe.The first customization involving the %extend directive allows methods to be attachedto existing structure and class definitions. In the example, this is used to add a con‐structor method to the Point structure. This customization makes it possible to use thestructure like this:
 
 ```py
-      >>> p1 = sample.Point(2,3)
+>>> p1 = sample.Point(2,3)
 >>>
 
 ```
@@ -1056,7 +1056,7 @@ It is important to stress that these declarations are telling Swig what you want
 If omitted, then Point objects would have to be created in a much more clumsy mannerlike this:
 
 ```py
-      >>> # Usage if %extend Point is omitted
+>>> # Usage if %extend Point is omitted
 >>> p1 = sample.Point()
 >>> p1.x = 2.0
 >>> p1.y = 3
@@ -1066,7 +1066,7 @@ If omitted, then Point objects would have to be created in a much more clumsy ma
 The second customization involving the inclusion of the typemaps.i library and the%apply directive is instructing Swig that the argument signature int *remainder is tobe treated as an output value. This is actually a pattern matching rule. In all declarationsthat follow, any time int *remainder is encountered, it is handled as output. Thiscustomization is what makes the divide() function return two values:
 
 ```py
-      >>> sample.divide(42,8)
+>>> sample.divide(42,8)
 [5, 2]
 >>>
 
@@ -1150,7 +1150,7 @@ bash %
 If it works, you should have an extension module sample.so that can be used as shownin the following example:
 
 ```py
-      >>> import sample
+>>> import sample
 >>> sample.gcd(42,10)
 2
 >>> sample.in_mandel(1,1,400)
@@ -1185,7 +1185,7 @@ def gcd(unsigned int x, unsigned int y):return csample.gcd(x,y)
 For simple functions, you don’t have to do too much. Cython will generate wrapper codethat properly converts the arguments and return value. The C data types attached to thearguments are optional. However, if you include them, you get additional error checkingfor free. For example, if someone calls this function with negative values, an exceptionis generated:
 
 ```py
-      >>> sample.gcd(-10,2)
+>>> sample.gcd(-10,2)
 Traceback (most recent call last):
   File "<stdin>", line 1, in <module>
   File "sample.pyx", line 7, in sample.gcd (sample.c:1284)
@@ -1226,7 +1226,7 @@ def **dealloc**(self):free(self._c_point)property x:def **get**(self):return sel
 Here, the cdef class Point is declaring Point as an extension type. The class variablecdef csample.Point *_c_point is declaring an instance variable that holds a pointerto an underlying Point structure in C. The **cinit**() and **dealloc**() methodscreate and destroy the underlying C structure using malloc() and free() calls. Theproperty x and property y declarations give code that gets and sets the underlyingstructure attributes. The wrapper for distance() has also been suitably modified toaccept instances of the Point extension type as arguments, but pass the underlyingpointer to the C function.Making this change, you will find that the code for manipulating Point objects is morenatural:
 
 ```py
-      >>> import sample
+>>> import sample
 >>> p1 = sample.Point(2,3)
 >>> p2 = sample.Point(4,5)
 >>> p1
@@ -1280,7 +1280,7 @@ setup(name = ‘Sample app',cmdclass = {‘build_ext': build_ext},ext_modules = 
 You will find that the resulting function clips arrays, and that it works with many dif‐ferent kinds of array objects. For example:
 
 ```py
-      >>> # array module example
+>>> # array module example
 >>> import sample
 >>> import array
 >>> a = array.array('d',[1,-3,4,7,2,0])
@@ -1291,7 +1291,7 @@ You will find that the resulting function clips arrays, and that it works with m
 array(‘d', [1.0, -3.0, 4.0, 7.0, 2.0, 0.0])>>> sample.clip(a,1,4,a)>>> aarray(‘d', [1.0, 1.0, 4.0, 4.0, 2.0, 1.0])
 
 ```py
-      >>> # numpy example
+>>> # numpy example
 >>> import numpy
 >>> b = numpy.random.uniform(-10,10,size=1000000)
 >>> b
@@ -1315,7 +1315,7 @@ array([-5\.        ,  5\.        ,  0.69248932, ...,  0.69583148,
 You will also find that the resulting code is fast. The following session puts our imple‐mentation in a head-to-head battle with the clip() function already present in numpy:
 
 ```py
-      >>> timeit('numpy.clip(b,-5,5,c)','from __main__ import b,c,numpy',number=1000)
+>>> timeit('numpy.clip(b,-5,5,c)','from __main__ import b,c,numpy',number=1000)
 8.093049556000551
 >>> timeit('sample.clip(b,-5,5,c)','from __main__ import b,c,sample',
 ...         number=1000)
@@ -1374,7 +1374,7 @@ You have (somehow) obtained the memory address of a compiled function, but wantt
 The ctypes module can be used to create Python callables that wrap around arbitrarymemory addresses. The following example shows how to obtain the raw, low-level ad‐dress of a C function and how to turn it back into a callable object:
 
 ```py
-      >>> import ctypes
+>>> import ctypes
 >>> lib = ctypes.cdll.LoadLibrary(None)
 >>> # Get the address of sin() from the C math library
 >>> addr = ctypes.cast(lib.sin, ctypes.c_void_p).value
@@ -1401,7 +1401,7 @@ The ctypes module can be used to create Python callables that wrap around arbitr
 To make a callable, you must first create a CFUNCTYPE instance. The first argument toCFUNCTYPE() is the return type. Subsequent arguments are the types of the arguments.Once you have defined the function type, you wrap it around an integer memory addressto create a callable object. The resulting object is used like any normal function accessedthrough ctypes.This recipe might look rather cryptic and low level. However, it is becoming increasinglycommon for programs and libraries to utilize advanced code generation techniques likejust in-time compilation, as found in libraries such as LLVM.For example, here is a simple example that uses the llvmpy extension to make a smallassembly function, obtain a function pointer to it, and turn it into a Python callable:
 
 ```py
-      >>> from llvm.core import Module, Function, Type, Builder
+>>> from llvm.core import Module, Function, Type, Builder
 >>> mod = Module.new('example')
 >>> f = Function.new(mod,Type.function(Type.double(), \
                      [Type.double(), Type.double()], False), 'foo')
@@ -1466,7 +1466,7 @@ if (!PyArg_ParseTuple(args, “y”, &s)) {return NULL;
 The resulting function operates as follows. Carefully observe how bytes with embeddedNULL bytes and Unicode strings are rejected:
 
 ```py
-      >>> print_chars(b'Hello World')
+>>> print_chars(b'Hello World')
 48 65 6c 6c 6f 20 57 6f 72 6c 64
 >>> print_chars(b'Hello\x00World')
 Traceback (most recent call last):
@@ -1493,7 +1493,7 @@ if (!PyArg_ParseTuple(args, “s”, &s)) {return NULL;
 When used, this will automatically convert all strings to a NULL-terminated UTF-8encoding. For example:
 
 ```py
-      >>> print_chars('Hello World')
+>>> print_chars('Hello World')
 48 65 6c 6c 6f 20 57 6f 72 6c 64
 >>> print_chars('Spicy Jalape\u00f1o')  # Note: UTF-8 encoding
 53 70 69 63 79 20 4a 61 6c 61 70 65 c3 b1 6f
@@ -1540,7 +1540,7 @@ Both of the preceding conversions guarantee NULL-terminated data, but they do no
 If it all possible, you should try to avoid writing code that relies on NULL-terminatedstrings since Python has no such requirement. It is almost always better to handle stringsusing the combination of a pointer and a size if possible. Nevertheless, sometimes youhave to work with legacy C code that presents no other option.Although it is easy to use, there is a hidden memory overhead associated with using the“s” format code to PyArg_ParseTuple() that is easy to overlook. When you write codethat uses this conversion, a UTF-8 string is created and permanently attached to theoriginal string object. If the original string contains non-ASCII characters, this makesthe size of the string increase until it is garbage collected. For example:
 
 ```py
-      >>> import sys
+>>> import sys
 >>> s = 'Spicy Jalape\u00f1o'
 >>> sys.getsizeof(s)
 87
@@ -1565,7 +1565,7 @@ if (!PyArg_ParseTuple(args, “U”, &o)) {return NULL;
 With this modification, a UTF-8 encoded string is created if needed, but then discardedafter use. Here is the modified behavior:
 
 ```py
-      >>> import sys
+>>> import sys
 >>> s = 'Spicy Jalape\u00f1o'
 >>> sys.getsizeof(s)
 87
@@ -1580,7 +1580,7 @@ With this modification, a UTF-8 encoded string is created if needed, but then di
 If you are trying to pass NULL-terminated strings to functions wrapped via ctypes, beaware that ctypes only allows bytes to be passed and that it does not check for embeddedNULL bytes. For example:
 
 ```py
-      >>> import ctypes
+>>> import ctypes
 >>> lib = ctypes.cdll.LoadLibrary("./libsample.so")
 >>> print_chars = lib.print_chars
 >>> print_chars.argtypes = (ctypes.c_char_p,)
@@ -1599,7 +1599,7 @@ ctypes.ArgumentError: argument 1: <class 'TypeError'>: wrong type
 If you want to pass a string instead of bytes, you need to perform a manual UTF-8encoding first. For example:
 
 ```py
-      >>> print_chars('Hello World'.encode('utf-8'))
+>>> print_chars('Hello World'.encode('utf-8'))
 48 65 6c 6c 6f 20 57 6f 72 6c 64
 >>>
 
@@ -1657,7 +1657,7 @@ if (!PyArg_ParseTuple(args, “u#”, &s, &len)) {return NULL;
 Here is an interactive session that illustrates how these functions work:
 
 ```py
-      >>> s = 'Spicy Jalape\u00f1o'
+>>> s = 'Spicy Jalape\u00f1o'
 >>> print_chars(s)
 53 70 69 63 79 20 4a 61 6c 61 70 65 c3 b1 6f
 >>> print_wchars(s)
@@ -1686,7 +1686,7 @@ char *s;Py_ssize_t len;
 If you decide that you still want to pass strings, you need to know that Python 3 uses anadaptable string representation that is not entirely straightforward to map directly to Clibraries using the standard types char *or wchar_t* See PEP 393 for details. Thus,to present string data to C, some kind of conversion is almost always necessary. The s#and u# format codes to PyArg_ParseTuple() safely perform such conversions.One potential downside is that such conversions cause the size of the original stringobject to permanently increase. Whenever a conversion is made, a copy of the converteddata is kept and attached to the original string object so that it can be reused later. Youcan observe this effect:
 
 ```py
-      >>> import sys
+>>> import sys
 >>> s = 'Spicy Jalape\u00f1o'
 >>> sys.getsizeof(s)
 87
@@ -1849,7 +1849,7 @@ if ((bytes = PyUnicode_AsEncodedString(obj,”utf-8”,”surrogateescape”))> 
 If you try these functions from Python, here’s what happens:
 
 ```py
-      >>> s = retstr()
+>>> s = retstr()
 >>> s
 'Spicy Jalapeño\udcae'
 >>> print_chars(s)
@@ -1867,7 +1867,7 @@ This recipe addresses a subtle, but potentially annoying problem with string han
 Normally, Unicode errors are often handled by specifying some sort of error policy, suchas strict, ignore, replace, or something similar. However, a downside of these policiesis that they irreparably destroy the original string content. For example, if the malformeddata in the example was decoded using one of these polices, you would get results suchas this:
 
 ```py
-      >>> raw = b'Spicy Jalape\xc3\xb1o\xae'
+>>> raw = b'Spicy Jalape\xc3\xb1o\xae'
 >>> raw.decode('utf-8','ignore')
 'Spicy Jalapeño'
 >>> raw.decode('utf-8','replace')
@@ -1879,7 +1879,7 @@ Normally, Unicode errors are often handled by specifying some sort of error poli
 The surrogateescape error handling policies takes all nondecodable bytes and turnsthem into the low-half of a surrogate pair (udcXX where XX is the raw byte value). Forexample:
 
 ```py
-      >>> raw.decode('utf-8','surrogateescape')
+>>> raw.decode('utf-8','surrogateescape')
 'Spicy Jalapeño\udcae'
 >>>
 
@@ -1888,7 +1888,7 @@ The surrogateescape error handling policies takes all nondecodable bytes and tur
 Isolated low surrogate characters such as udcae never appear in valid Unicode. Thus,this string is technically an illegal representation. In fact, if you ever try to pass it tofunctions that perform output, you’ll get encoding errors:
 
 ```py
-      >>> s = raw.decode('utf-8', 'surrogateescape')
+>>> s = raw.decode('utf-8', 'surrogateescape')
 >>> print(s)
 Traceback (most recent call last):
   File "<stdin>", line 1, in <module>
@@ -1901,7 +1901,7 @@ in position 14: surrogates not allowed
 However, the main point of allowing the surrogate escapes is to allow malformed stringsto pass from C to Python and back into C without any data loss. When the string isencoded using surrogateescape again, the surrogate characters are turned back intotheir original bytes. For example:
 
 ```py
-      >>> s
+>>> s
 'Spicy Jalapeño\udcae'
 >>> s.encode('utf-8','surrogateescape')
 b'Spicy Jalape\xc3\xb1o\xae'
@@ -2041,7 +2041,7 @@ final:/ *Cleanup */Py_DECREF(read_meth);Py_DECREF(read_args);return result;
 To test the code, try making a file-like object such as a StringIO instance and pass it in:
 
 ```py
-      >>> import io
+>>> import io
 >>> f = io.StringIO('Hello\nWorld\n')
 >>> import sample
 >>> sample.consume_file(f)

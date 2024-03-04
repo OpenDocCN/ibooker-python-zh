@@ -13,7 +13,7 @@
 封装成包是很简单的。在文件系统上组织你的代码，并确保每个目录都定义了一个**init**.py 文件。 例如：
 
 ```py
-      graphics/
+graphics/
     __init__.py
     primitive/
         __init__.py
@@ -30,7 +30,7 @@
 一旦你做到了这一点，你应该能够执行各种 import 语句，如下：
 
 ```py
-      import graphics.primitive.line
+import graphics.primitive.line
 from graphics.primitive import line
 import graphics.formats.jpg as jpg
 
@@ -43,7 +43,7 @@ import graphics.formats.jpg as jpg
 绝大部分时候让**init**.py 空着就好。但是有些情况下可能包含代码。 举个例子，**init**.py 能够用来自动加载子模块:
 
 ```py
-      # graphics/formats/__init__.py
+# graphics/formats/__init__.py
 from . import jpg
 from . import png
 
@@ -68,7 +68,7 @@ from . import png
 举个例子:
 
 ```py
-      # somemodule.py
+# somemodule.py
 def spam():
     pass
 
@@ -98,7 +98,7 @@ __all__ = ['spam', 'grok']
 使用包的相对导入，使一个的模块导入同一个包的另一个模块 举个例子，假设在你的文件系统上有 mypackage 包，组织如下：
 
 ```py
-      mypackage/
+mypackage/
     __init__.py
     A/
         __init__.py
@@ -113,7 +113,7 @@ __all__ = ['spam', 'grok']
 如果模块 mypackage.A.spam 要导入同目录下的模块 grok，它应该包括的 import 语句如下：
 
 ```py
-      # mypackage/A/spam.py
+# mypackage/A/spam.py
 from . import grok
 
 ```
@@ -121,7 +121,7 @@ from . import grok
 如果模块 mypackage.A.spam 要导入不同目录下的模块 B.bar，它应该使用的 import 语句如下：
 
 ```py
-      # mypackage/A/spam.py
+# mypackage/A/spam.py
 from ..B import bar
 
 ```
@@ -133,7 +133,7 @@ from ..B import bar
 在包内，既可以使用相对路径也可以使用绝对路径来导入。 举个例子：
 
 ```py
-      # mypackage/A/spam.py
+# mypackage/A/spam.py
 from mypackage.A import grok # OK
 from . import grok # OK
 import grok # Error (not found)
@@ -145,7 +145,7 @@ import grok # Error (not found)
 import 语句的 `<span class="pre" style="box-sizing: border-box;">.</span>` 和 [``](http://python3-cookbook.readthedocs.org/zh_CN/latest/c10/p03_import_submodules_by_relative_names.html#id5)..``看起来很滑稽, 但它指定目录名.为当前目录，..B 为目录../B。这种语法只适用于 import。 举个例子：
 
 ```py
-      from . import grok # OK
+from . import grok # OK
 import .grok # ERROR
 
 ```
@@ -155,14 +155,14 @@ import .grok # ERROR
 最后，相对导入只适用于在合适的包中的模块。尤其是在顶层的脚本的简单模块中，它们将不起作用。如果包的部分被作为脚本直接执行，那它们将不起作用 例如：
 
 ```py
-      % python3 mypackage/A/spam.py # Relative imports fail
+% python3 mypackage/A/spam.py # Relative imports fail
 
 ```
 
 另一方面，如果你使用 Python 的-m 选项来执行先前的脚本，相对导入将会正确运行。 例如：
 
 ```py
-      % python3 -m mypackage.A.spam # Relative imports work
+% python3 -m mypackage.A.spam # Relative imports work
 
 ```
 
@@ -179,7 +179,7 @@ import .grok # ERROR
 程序模块可以通过变成包来分割成多个独立的文件。考虑下下面简单的模块：
 
 ```py
-      # mymodule.py
+# mymodule.py
 class A:
     def spam(self):
         print('A.spam')
@@ -193,7 +193,7 @@ class B(A):
 假设你想 mymodule.py 分为两个文件，每个定义的一个类。要做到这一点，首先用 mymodule 目录来替换文件 mymodule.py。 这这个目录下，创建以下文件：
 
 ```py
-      mymodule/
+mymodule/
     __init__.py
     a.py
     b.py
@@ -203,7 +203,7 @@ class B(A):
 在 a.py 文件中插入以下代码：
 
 ```py
-      # a.py
+# a.py
 class A:
     def spam(self):
         print('A.spam')
@@ -213,7 +213,7 @@ class A:
 在 b.py 文件中插入以下代码：
 
 ```py
-      # b.py
+# b.py
 from .a import A
 class B(A):
     def bar(self):
@@ -224,7 +224,7 @@ class B(A):
 最后，在 **init**.py 中，将 2 个文件粘合在一起：
 
 ```py
-      # __init__.py
+# __init__.py
 from .a import A
 from .b import B
 
@@ -233,7 +233,7 @@ from .b import B
 如果按照这些步骤，所产生的包 MyModule 将作为一个单一的逻辑模块：
 
 ```py
-      >>> import mymodule
+>>> import mymodule
 >>> a = mymodule.A()
 >>> a.spam()
 A.spam
@@ -249,7 +249,7 @@ B.bar
 在这个章节中的主要问题是一个设计问题，不管你是否希望用户使用很多小模块或只是一个模块。举个例子，在一个大型的代码库中，你可以将这一切都分割成独立的文件，让用户使用大量的 import 语句，就像这样：
 
 ```py
-      from mymodule.a import A
+from mymodule.a import A
 from mymodule.b import B
 ...
 
@@ -258,7 +258,7 @@ from mymodule.b import B
 这样能工作，但这让用户承受更多的负担，用户要知道不同的部分位于何处。通常情况下，将这些统一起来，使用一条 import 将更加容易，就像这样：
 
 ```py
-      from mymodule import A, B
+from mymodule import A, B
 
 ```
 
@@ -271,7 +271,7 @@ from mymodule.b import B
 作为这一章节的延伸，将介绍延迟导入。如图所示，**init**.py 文件一次导入所有必需的组件的。但是对于一个很大的模块，可能你只想组件在需要时被加载。 要做到这一点，**init**.py 有细微的变化：
 
 ```py
-      # __init__.py
+# __init__.py
 def A():
     from .a import A
     return A()
@@ -285,7 +285,7 @@ def B():
 在这个版本中，类 A 和类 B 被替换为在第一次访问时加载所需的类的函数。对于用户，这看起来不会有太大的不同。 例如：
 
 ```py
-      >>> import mymodule
+>>> import mymodule
 >>> a = mymodule.A()
 >>> a.spam()
 A.spam
@@ -296,7 +296,7 @@ A.spam
 延迟加载的主要缺点是继承和类型检查可能会中断。你可能会稍微改变你的代码，例如:
 
 ```py
-      if isinstance(x, mymodule.A): # Error
+if isinstance(x, mymodule.A): # Error
 ...
 
 if isinstance(x, mymodule.a.A): # Ok
@@ -319,7 +319,7 @@ if isinstance(x, mymodule.a.A): # Ok
 在统一不同的目录里统一相同的命名空间，但是要删去用来将组件联合起来的**init**.py 文件。假设你有 Python 代码的两个不同的目录如下：
 
 ```py
-      foo-package/
+foo-package/
     spam/
         blah.py
 
@@ -334,7 +334,7 @@ bar-package/
 让我们看看，如果将 foo-package 和 bar-package 都加到 python 模块路径并尝试导入会发生什么
 
 ```py
-      >>> import sys
+>>> import sys
 >>> sys.path.extend(['foo-package', 'bar-package'])
 >>> import spam.blah
 >>> import spam.grok
@@ -351,7 +351,7 @@ bar-package/
 包命名空间的关键是确保顶级目录中没有**init**.py 文件来作为共同的命名空间。缺失**init**.py 文件使得在导入包的时候会发生有趣的事情：这并没有产生错误，解释器创建了一个由所有包含匹配包名的目录组成的列表。特殊的包命名空间模块被创建，只读的目录列表副本被存储在其**path**变量中。 举个例子：
 
 ```py
-      >>> import spam
+>>> import spam
 >>> spam.__path__
 _NamespacePath(['foo-package/spam', 'bar-package/spam'])
 >>>
@@ -363,7 +363,7 @@ _NamespacePath(['foo-package/spam', 'bar-package/spam'])
 包命名空间的一个重要特点是任何人都可以用自己的代码来扩展命名空间。举个例子，假设你自己的代码目录像这样：
 
 ```py
-      my-package/
+my-package/
     spam/
         custom.py
 
@@ -372,7 +372,7 @@ _NamespacePath(['foo-package/spam', 'bar-package/spam'])
 如果你将你的代码目录和其他包一起添加到 sys.path，这将无缝地合并到别的 spam 包目录中：
 
 ```py
-      >>> import spam.custom
+>>> import spam.custom
 >>> import spam.grok
 >>> import spam.blah
 >>>
@@ -382,7 +382,7 @@ _NamespacePath(['foo-package/spam', 'bar-package/spam'])
 一个包是否被作为一个包命名空间的主要方法是检查其**file**属性。如果没有，那包是个命名空间。这也可以由其字符表现形式中的“namespace”这个词体现出来。
 
 ```py
-      >>> spam.__file__
+>>> spam.__file__
 Traceback (most recent call last):
     File "<stdin>", line 1, in <module>
 AttributeError: 'module' object has no attribute '__file__'
@@ -405,7 +405,7 @@ AttributeError: 'module' object has no attribute '__file__'
 使用 imp.reload()来重新加载先前加载的模块。举个例子：
 
 ```py
-      >>> import spam
+>>> import spam
 >>> import imp
 >>> imp.reload(spam)
 <module 'spam' from './spam.py'>
@@ -422,7 +422,7 @@ reload()擦除了模块底层字典的内容，并通过重新执行模块的源
 尽管如此，reload()没有更新像”from module import name”这样使用 import 语句导入的定义。举个例子：
 
 ```py
-      # spam.py
+# spam.py
 def bar():
     print('bar')
 
@@ -434,7 +434,7 @@ def grok():
 现在启动交互式会话：
 
 ```py
-      >>> import spam
+>>> import spam
 >>> from spam import grok
 >>> spam.bar()
 bar
@@ -447,7 +447,7 @@ grok
 不退出 Python 修改 spam.py 的源码，将 grok()函数改成这样：
 
 ```py
-      def grok():
+def grok():
     print('New grok')
 
 ```
@@ -455,7 +455,7 @@ grok
 现在回到交互式会话，重新加载模块，尝试下这个实验：
 
 ```py
-      >>> import imp
+>>> import imp
 >>> imp.reload(spam)
 <module 'spam' from './spam.py'>
 >>> spam.bar()
@@ -483,7 +483,7 @@ New grok
 如果你的应用程序已经有多个文件，你可以把你的应用程序放进它自己的目录并添加一个**main**.py 文件。 举个例子，你可以像这样创建目录：
 
 ```py
-      myapplication/
+myapplication/
     spam.py
     bar.py
     grok.py
@@ -494,7 +494,7 @@ New grok
 如果**main**.py 存在，你可以简单地在顶级目录运行 Python 解释器：
 
 ```py
-      bash % python3 myapplication
+bash % python3 myapplication
 
 ```
 
@@ -503,7 +503,7 @@ New grok
 如果你将你的代码打包成 zip 文件，这种技术同样也适用，举个例子：
 
 ```py
-      bash % ls
+bash % ls
 spam.py bar.py grok.py __main__.py
 bash % zip -r myapp.zip *.py
 bash % python3 myapp.zip
@@ -518,7 +518,7 @@ bash % python3 myapp.zip
 由于目录和 zip 文件与正常文件有一点不同，你可能还需要增加一个 shell 脚本，使执行更加容易。例如，如果代码文件名为 myapp.zip，你可以创建这样一个顶级脚本：
 
 ```py
-      #!/usr/bin/env python3 /usr/local/bin/myapp.zip
+#!/usr/bin/env python3 /usr/local/bin/myapp.zip
 
 ```
 
@@ -533,7 +533,7 @@ bash % python3 myapp.zip
 假设你的包中的文件组织成如下：
 
 ```py
-      mypackage/
+mypackage/
     __init__.py
     somedata.dat
     spam.py
@@ -543,7 +543,7 @@ bash % python3 myapp.zip
 现在假设 spam.py 文件需要读取 somedata.dat 文件中的内容。你可以用以下代码来完成：
 
 ```py
-      # spam.py
+# spam.py
 import pkgutil
 data = pkgutil.get_data(__package__, 'somedata.dat')
 
@@ -574,7 +574,7 @@ get_data()的第一个参数是包含包名的字符串。你可以直接使用�
 有两种常用的方式将新目录添加到 sys.path。第一种，你可以使用 PYTHONPATH 环境变量来添加。例如：
 
 ```py
-      bash % env PYTHONPATH=/some/dir:/other/dir python3
+bash % env PYTHONPATH=/some/dir:/other/dir python3
 Python 3.3.0 (default, Oct 4 2012, 10:17:33)
 [GCC 4.2.1 (Apple Inc. build 5666) (dot 3)] on darwin
 Type "help", "copyright", "credits" or "license" for more information.
@@ -590,7 +590,7 @@ Type "help", "copyright", "credits" or "license" for more information.
 第二种方法是创建一个.pth 文件，将目录列举出来，像这样：
 
 ```py
-      # myapplication.pth
+# myapplication.pth
 /some/dir
 /other/dir
 
@@ -603,7 +603,7 @@ Type "help", "copyright", "credits" or "license" for more information.
 比起费力地找文件，你可能会倾向于写一个代码手动调节 sys.path 的值。例如:
 
 ```py
-      import sys
+import sys
 sys.path.insert(0, '/some/dir')
 sys.path.insert(0, '/other/dir')
 
@@ -612,7 +612,7 @@ sys.path.insert(0, '/other/dir')
 虽然这能“工作”，它是在实践中极为脆弱，应尽量避免使用。这种方法的问题是，它将目录名硬编码到了你的源。如果你的代码被移到一个新的位置，这会导致维护问题。更好的做法是在不修改源代码的情况下，将 path 配置到其他地方。如果您使用模块级的变量来精心构造一个适当的绝对路径，有时你可以解决硬编码目录的问题，比如**file**。举个例子：
 
 ```py
-      import sys
+import sys
 from os.path import abspath, join, dirname
 sys.path.insert(0, abspath(dirname('__file__'), 'src'))
 
@@ -633,7 +633,7 @@ site-packages 目录是第三方包和模块安装的目录。如果你手动安
 使用 importlib.import_module()函数来手动导入名字为字符串给出的一个模块或者包的一部分。举个例子：
 
 ```py
-      >>> import importlib
+>>> import importlib
 >>> math = importlib.import_module('math')
 >>> math.sin(2)
 0.9092974268256817
@@ -648,7 +648,7 @@ import_module 只是简单地执行和 import 相同的步骤，但是返回生�
 如果你正在使用的包，import_module()也可用于相对导入。但是，你需要给它一个额外的参数。例如：
 
 ```py
-      import importlib
+import importlib
 # Same as 'from . import b'
 b = importlib.import_module('.b', __package__)
 
@@ -675,7 +675,7 @@ First, a serious disclaimer about security. The idea discussed in this recipe wo
 At the core of this recipe is a desire to extend the functionality of the import statement. There are several approaches for doing this, but for the purposes of illustration, start by making the following directory of Python code:
 
 ```py
-      testcode/
+testcode/
     spam.py
     fib.py
     grok/
@@ -687,7 +687,7 @@ At the core of this recipe is a desire to extend the functionality of the import
 The content of these files doesn’t matter, but put a few simple statements and functions in each file so you can test them and see output when they’re imported. For example:
 
 ```py
-      # spam.py
+# spam.py
 print("I'm spam")
 
 def hello(name):
@@ -713,7 +713,7 @@ print("I'm grok.blah")
 The goal here is to allow remote access to these files as modules. Perhaps the easiest way to do this is to publish them on a web server. Simply go to the testcode directory and run Python like this:
 
 ```py
-      bash % cd testcode
+bash % cd testcode
 bash % python3 -m http.server 15000
 Serving HTTP on 0.0.0.0 port 15000 ...
 
@@ -722,7 +722,7 @@ Serving HTTP on 0.0.0.0 port 15000 ...
 Leave that server running and start up a separate Python interpreter. Make sure you can access the remote files using urllib. For example:
 
 ```py
-      >>> from urllib.request import urlopen
+>>> from urllib.request import urlopen
 >>> u = urlopen('http://localhost:15000/fib.py')
 >>> data = u.read().decode('utf-8')
 >>> print(data)
@@ -743,7 +743,7 @@ Loading source code from this server is going to form the basis for the remainde
 The first approach to loading a remote module is to create an explicit loading function for doing it. For example:
 
 ```py
-      import imp
+import imp
 import urllib.request
 import sys
 
@@ -762,7 +762,7 @@ def load_module(url):
 This function merely downloads the source code, compiles it into a code object using compile(), and executes it in the dictionary of a newly created module object. Here’s how you would use the function:
 
 ```py
-      >>> fib = load_module('http://localhost:15000/fib.py')
+>>> fib = load_module('http://localhost:15000/fib.py')
 I'm fib
 >>> fib.fib(10)
 89
@@ -783,7 +783,7 @@ As you can see, it “works” for simple modules. However, it’s not plugged i
 A much slicker approach is to create a custom importer. The first way to do this is to create what’s known as a meta path importer. Here is an example:
 
 ```py
-      # urlimport.py
+# urlimport.py
 import sys
 import importlib.abc
 import imp
@@ -945,7 +945,7 @@ def remove_meta(address):
 Here is an interactive session showing how to use the preceding code:
 
 ```py
-      >>> # importing currently fails
+>>> # importing currently fails
 >>> import fib
 Traceback (most recent call last):
 File "<stdin>", line 1, in <module>
@@ -973,7 +973,7 @@ As for the general implementation approach, the UrlMetaFinder class wraps around
 The second approach to customizing import is to write a hook that plugs directly into the sys.path variable, recognizing certain directory naming patterns. Add the following class and support functions to urlimport.py:
 
 ```py
-      # urlimport.py
+# urlimport.py
 # ... include previous code above ...
 # Path finder class for a URL
 class UrlPathFinder(importlib.abc.PathEntryFinder):
@@ -1047,7 +1047,7 @@ def remove_path_hook():
 To use this path-based finder, you simply add URLs to sys.path. For example:
 
 ```py
-      >>> # Initial import fails
+>>> # Initial import fails
 >>> import fib
 Traceback (most recent call last):
     File "<stdin>", line 1, in <module>
@@ -1082,7 +1082,7 @@ The key to this last example is the handle_url() function, which is added to the
 It should be noted that the remotely imported modules work exactly like any other module. For instance:
 
 ```py
-      >>> fib
+>>> fib
 <urlmodule 'fib' from 'http://localhost:15000/fib.py'>
 >>> fib.__name__
 'fib'
@@ -1109,7 +1109,7 @@ Before discussing this recipe in further detail, it should be emphasized that Py
 First, if you want to create a new module object, you use the imp.new_module() function. For example:
 
 ```py
-      >>> import imp
+>>> import imp
 >>> m = imp.new_module('spam')
 >>> m
 <module 'spam'>
@@ -1124,7 +1124,7 @@ Module objects usually have a few expected attributes, including **file** (the n
 Second, modules are cached by the interpreter. The module cache can be found in the dictionary sys.modules. Because of this caching, it’s common to combine caching and module creation together into a single step. For example:
 
 ```py
-      >>> import sys
+>>> import sys
 >>> import imp
 >>> m = sys.modules.setdefault('spam', imp.new_module('spam'))
 >>> m
@@ -1136,7 +1136,7 @@ Second, modules are cached by the interpreter. The module cache can be found in 
 The main reason for doing this is that if a module with the given name already exists, you’ll get the already created module instead. For example:
 
 ```py
-      >>> import math
+>>> import math
 >>> m = sys.modules.setdefault('math', imp.new_module('math'))
 >>> m
 <module 'math' from '/usr/local/lib/python3.3/lib-dynload/math.so'>
@@ -1153,7 +1153,7 @@ Since creating modules is easy, it is straightforward to write simple functions,
 Extending the import statement is straightforward, but involves a number of moving parts. At the highest level, import operations are processed by a list of “meta-path” finders that you can find in the list sys.meta_path. If you output its value, you’ll see the following:
 
 ```py
-      >>> from pprint import pprint
+>>> from pprint import pprint
 >>> pprint(sys.meta_path)
 [<class '_frozen_importlib.BuiltinImporter'>,
 <class '_frozen_importlib.FrozenImporter'>,
@@ -1165,7 +1165,7 @@ Extending the import statement is straightforward, but involves a number of movi
 When executing a statement such as import fib, the interpreter walks through the finder objects on sys.meta_path and invokes their find_module() method in order to locate an appropriate module loader. It helps to see this by experimentation, so define the following class and try the following:
 
 ```py
-      >>> class Finder:
+>>> class Finder:
 ...     def find_module(self, fullname, path):
 ...         print('Looking for', fullname, path)
 ...         return None
@@ -1190,7 +1190,7 @@ Looking for token None
 Notice how the find_module() method is being triggered on every import. The role of the path argument in this method is to handle packages. When packages are imported, it is a list of the directories that are found in the package’s **path** attribute. These are the paths that need to be checked to find package subcomponents. For example, notice the path setting for xml.etree and xml.etree.ElementTree:
 
 ```py
-      >>> import xml.etree.ElementTree
+>>> import xml.etree.ElementTree
 Looking for xml None
 Looking for xml.etree ['/usr/local/lib/python3.3/xml']
 Looking for xml.etree.ElementTree ['/usr/local/lib/python3.3/xml/etree']
@@ -1209,7 +1209,7 @@ Looking for ElementC14N None
 The placement of the finder on sys.meta_path is critical. Remove it from the front of the list to the end of the list and try more imports:
 
 ```py
-      >>> del sys.meta_path[0]
+>>> del sys.meta_path[0]
 >>> sys.meta_path.append(Finder())
 >>> import urllib.request
 >>> import datetime
@@ -1219,7 +1219,7 @@ The placement of the finder on sys.meta_path is critical. Remove it from the fro
 Now you don’t see any output because the imports are being handled by other entries in sys.meta_path. In this case, you would only see it trigger when nonexistent modules are imported:
 
 ```py
-      >>> import fib
+>>> import fib
 Looking for fib None
 Traceback (most recent call last):
     File "<stdin>", line 1, in <module>
@@ -1238,7 +1238,7 @@ The fact that you can install a finder to catch unknown modules is the key to th
 Additional handling of packages is found in the UrlPackageLoader class. This class, rather than importing the package name, tries to load the underlying **init**.py file. It also sets the module **path** attribute. This last part is critical, as the value set will be passed to subsequent find_module() calls when loading package submodules. The path-based import hook is an extension of these ideas, but based on a somewhat different mechanism. As you know, sys.path is a list of directories where Python looks for modules. For example:
 
 ```py
-      >>> from pprint import pprint
+>>> from pprint import pprint
 >>> import sys
 >>> pprint(sys.path)
 ['',
@@ -1254,7 +1254,7 @@ Additional handling of packages is found in the UrlPackageLoader class. This cla
 Each entry in sys.path is additionally attached to a finder object. You can view these finders by looking at sys.path_importer_cache:
 
 ```py
-      >>> pprint(sys.path_importer_cache)
+>>> pprint(sys.path_importer_cache)
 {'.': FileFinder('.'),
 '/usr/local/lib/python3.3': FileFinder('/usr/local/lib/python3.3'),
 '/usr/local/lib/python3.3/': FileFinder('/usr/local/lib/python3.3/'),
@@ -1273,7 +1273,7 @@ sys.path_importer_cache tends to be much larger than sys.path because it records
 To execute import fib, the directories on sys.path are checked in order. For each directory, the name fib is presented to the associated finder found in sys.path_im porter_cache. This is also something that you can investigate by making your own finder and putting an entry in the cache. Try this experiment:
 
 ```py
-      >>> class Finder:
+>>> class Finder:
 ... def find_loader(self, name):
 ...     print('Looking for', name)
 ...     return (None, [])
@@ -1299,7 +1299,7 @@ Here, you’ve installed a new cache entry for the name debug and installed the 
 The population of sys.path_importer_cache is controlled by a list of functions stored in sys.path_hooks. Try this experiment, which clears the cache and adds a new path checking function to sys.path_hooks:
 
 ```py
-      >>> sys.path_importer_cache.clear()
+>>> sys.path_importer_cache.clear()
 >>> def check_path(path):
 ...     print('Checking', path)
 ...     raise ImportError()
@@ -1327,7 +1327,7 @@ As you can see, the check_path() function is being invoked for every entry on sy
 Using this knowledge of how sys.path is processed, you can install a custom path checking function that looks for filename patterns, such as URLs. For instance:
 
 ```py
-      >>> def check_url(path):
+>>> def check_url(path):
 ...     if path.startswith('http://'):
 ...         return Finder()
 ...     else:
@@ -1359,7 +1359,7 @@ The find_loader() must additionally account for the possibility of a namespace p
 There is a recursive element to package handling that is not immediately obvious in the solution, but also at work. All packages contain an internal path setting, which can be found in **path** attribute. For example:
 
 ```py
-      >>> import xml.etree.ElementTree
+>>> import xml.etree.ElementTree
 >>> xml.__path__
 ['/usr/local/lib/python3.3/xml']
 >>> xml.etree.__path__
@@ -1373,7 +1373,7 @@ As mentioned, the setting of **path** is controlled by the return value of the f
 One remaining tricky part of the implementation concerns the behavior of the han dle_url() function and its interaction with the _get_links() function used internally. If your implementation of a finder involves the use of other modules (e.g., urllib.re quest), there is a possibility that those modules will attempt to make further imports in the middle of the finder’s operation. This can actually cause handle_url() and other parts of the finder to get executed in a kind of recursive loop. To account for this possibility, the implementation maintains a cache of created finders (one per URL). This avoids the problem of creating duplicate finders. In addition, the following fragment of code ensures that the finder doesn’t respond to any import requests while it’s in the processs of getting the initial set of links:
 
 ```py
-      # Check link cache
+# Check link cache
 if self._links is None:
     self._links = [] # See discussion
     self._links = _get_links(self._baseurl)
@@ -1389,7 +1389,7 @@ In comparing the two approaches (modifying sys.meta_path or using a path hook), 
 Assuming that your head hasn’t completely exploded at this point, a key to understanding and experimenting with this recipe may be the added logging calls. You can enable logging and try experiments such as this:
 
 ```py
-      >>> import logging
+>>> import logging
 >>> logging.basicConfig(level=logging.DEBUG)
 >>> import urlimport
 >>> urlimport.install_path_hook()
@@ -1429,7 +1429,7 @@ The essential problem here is that you would like to carry out actions in respon
 This problem can be solved using the same import hook machinery discussed inRecipe 10.11\. Here is a possible solution:
 
 ```py
-      # postimport.py
+# postimport.py
 import importlib
 import sys
 from collections import defaultdict
@@ -1474,7 +1474,7 @@ sys.meta_path.insert(0, PostImportFinder())
 To use this code, you use the when_imported() decorator. For example:
 
 ```py
-      >>> from postimport import when_imported
+>>> from postimport import when_imported
 >>> @when_imported('threading')
 ... def warn_threads(mod):
 ...     print('Threads? Are you crazy?')
@@ -1489,7 +1489,7 @@ Threads? Are you crazy?
 As a more practical example, maybe you want to apply decorators to existing definitions,such as shown here:
 
 ```py
-      from functools import wraps
+from functools import wraps
 from postimport import when_imported
 
 def logged(func):
@@ -1536,14 +1536,14 @@ You want to install a third-party package, but you don’t have permission to in
 Python has a per-user installation directory that’s typically located in a directory suchas ~/.local/lib/python3.3/site-packages. To force packages to install in this directory, givethe –user option to the installation command. For example:
 
 ```py
-      python3 setup.py install --user
+python3 setup.py install --user
 
 ```
 
 or
 
 ```py
-      pip install --user packagename
+pip install --user packagename
 
 ```
 
@@ -1568,7 +1568,7 @@ You want to create a new Python environment in which you can install modules and
 You can make a new “virtual” environment using the pyvenv command. This commandis installed in the same directory as the Python interpreter or possibly in the Scriptsdirectory on Windows. Here is an example:
 
 ```py
-      bash % pyvenv Spam
+bash % pyvenv Spam
 bash %
 
 ```
@@ -1576,7 +1576,7 @@ bash %
 The name supplied to pyvenv is the name of a directory that will be created. Uponcreation, the Spam directory will look something like this:
 
 ```py
-      bash % cd Spam
+bash % cd Spam
 bash % ls
 bin include lib pyvenv.cfg
 bash %
@@ -1586,7 +1586,7 @@ bash %
 In the bin directory, you’ll find a Python interpreter that you can use. For example:
 
 ```py
-      bash % Spam/bin/python3
+bash % Spam/bin/python3
 Python 3.3.0 (default, Oct 6 2012, 15:45:22)
 [GCC 4.2.1 (Apple Inc. build 5666) (dot 3)] on darwin
 Type "help", "copyright", "credits" or "license" for more information.
@@ -1616,7 +1616,7 @@ Although a virtual environment might look like a copy of the Python installation
 By default, virtual environments are completely clean and contain no third-party addons.If you would like to include already installed packages as part of a virtual environment,create the environment using the –system-site-packages option. For example:
 
 ```py
-      bash % pyvenv --system-site-packages Spam
+bash % pyvenv --system-site-packages Spam
 bash %
 
 ```
@@ -1634,7 +1634,7 @@ You’ve written a useful library, and you want to be able to give it away to ot
 If you’re going to start giving code away, the first thing to do is to give it a unique nameand clean up its directory structure. For example, a typical library package might looksomething like this:
 
 ```py
-      projectname/
+projectname/
     README.txt
     Doc/
         documentation.txt
@@ -1655,7 +1655,7 @@ If you’re going to start giving code away, the first thing to do is to give it
 To make the package something that you can distribute, first write a setup.py file thatlooks like this:
 
 ```py
-      # setup.py
+# setup.py
 from distutils.core import setup
 
 setup(name='projectname',
@@ -1671,7 +1671,7 @@ setup(name='projectname',
 Next, make a file MANIFEST.in that lists various nonsource files that you want to includein your package:
 
 ```py
-      # MANIFEST.in
+# MANIFEST.in
 include *.txt
 recursive-include examples *
 recursive-include Doc *
@@ -1681,7 +1681,7 @@ recursive-include Doc *
 Make sure the setup.py and MANIFEST.in files appear in the top-level directory of yourpackage. Once you have done this, you should be able to make a source distribution bytyping a command such as this:
 
 ```py
-      % bash python3 setup.py sdist
+% bash python3 setup.py sdist
 
 ```
 
