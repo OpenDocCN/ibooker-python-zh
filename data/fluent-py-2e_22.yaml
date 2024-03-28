@@ -1,0 +1,2840 @@
+- en: Chapter 18\. with, match, and else Blocks
+  id: totrans-0
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 第18章。with、match 和 else 块
+- en: Context managers may end up being almost as important as the subroutine itself.
+    We’ve only scratched the surface with them. […] Basic has a `with` statement,
+    there are `with` statements in lots of languages. But they don’t do the same thing,
+    they all do something very shallow, they save you from repeated dotted [attribute]
+    lookups, they don’t do setup and tear down. Just because it’s the same name don’t
+    think it’s the same thing. The `with` statement is a very big deal.^([1](ch18.html#idm46582397868400))
+  id: totrans-1
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+  zh: 上下文管理器可能几乎与子例程本身一样重要。我们只是初步了解了它们。[…] Basic 有一个 `with` 语句，在许多语言中都有 `with` 语句。但它们的功能不同，它们都只是做一些非常浅显的事情，它们可以避免重复的点式[属性]查找，但它们不进行设置和拆卸。仅仅因为它们有相同的名称，不要认为它们是相同的东西。`with`
+    语句是一件大事。
+- en: ''
+  id: totrans-2
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: Raymond Hettinger, eloquent Python evangelist
+  id: totrans-3
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+  zh: Raymond Hettinger，Python 雄辩的传道者
+- en: 'This chapter is about control flow features that are not so common in other
+    languages, and for this reason tend to be overlooked or underused in Python. They
+    are:'
+  id: totrans-4
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 本章讨论的是在其他语言中不太常见的控制流特性，因此往往在 Python 中被忽视或未充分利用。它们包括：
+- en: The `with` statement and context manager protocol
+  id: totrans-5
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '`with` 语句和上下文管理器协议'
+- en: Pattern matching with `match/case`
+  id: totrans-6
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 使用 `match/case` 进行模式匹配
+- en: The `else` clause in `for`, `while`, and `try` statements
+  id: totrans-7
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '`for`、`while` 和 `try` 语句中的 `else` 子句'
+- en: The `with` statement sets up a temporary context and reliably tears it down,
+    under the control of a context manager object. This prevents errors and reduces
+    boilerplate code, making APIs at the same time safer and easier to use. Python
+    programmers are finding lots of uses for `with` blocks beyond automatic file closing.
+  id: totrans-8
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`with` 语句建立了一个临时上下文，并可靠地在上下文管理器对象的控制下将其拆除。这可以防止错误并减少样板代码，同时使 API 更安全、更易于使用。Python
+    程序员发现 `with` 块除了自动关闭文件外还有许多其他用途。'
+- en: We’ve seen pattern matching in previous chapters, but here we’ll see how the
+    grammar of a language can be expressed as sequence patterns. That observation
+    explains why `match/case` is an effective tool to create language processors that
+    are easy to understand and extend. We’ll study a complete interpreter for a small
+    but functional subset of the Scheme language. The same ideas could be applied
+    to develop a template language or a DSL (Domain-Specific Language) to encode business
+    rules in a larger system.
+  id: totrans-9
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们在之前的章节中已经看到了模式匹配，但在这里我们将看到语言的语法如何可以表示为序列模式。这一观察解释了为什么 `match/case` 是创建易于理解和扩展的语言处理器的有效工具。我们将研究
+    Scheme 语言的一个小但功能齐全的子集的完整解释器。相同的思想可以应用于开发模板语言或在更大系统中编码业务规则的 DSL（领域特定语言）。
+- en: The `else` clause is not a big deal, but it does help convey intention when
+    properly used together with `for`, `while`, and `try`.
+  id: totrans-10
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`else` 子句并不是一件大事，但在与 `for`、`while` 和 `try` 一起正确使用时有助于传达意图。'
+- en: What’s New in This Chapter
+  id: totrans-11
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 本章新内容
+- en: '[“Pattern Matching in lis.py: A Case Study”](#pattern_matching_case_study_sec)
+    is a new section.'
+  id: totrans-12
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[“lis.py 中的模式匹配：案例研究”](#pattern_matching_case_study_sec) 是一个新的部分。'
+- en: I updated [“The contextlib Utilities”](#context_utilities_sec) to cover a few
+    features of the `contextlib` module added since Python 3.6, and the new parenthesized
+    context managers syntax introduced in Python 3.10.
+  id: totrans-13
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我更新了[“contextlib 实用工具”](#context_utilities_sec)，涵盖了自 Python 3.6 以来添加到 `contextlib`
+    模块的一些功能，以及 Python 3.10 中引入的新的带括号的上下文管理器语法。
+- en: Let’s start with the powerful `with` statement.
+  id: totrans-14
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 让我们从强大的 `with` 语句开始。
+- en: Context Managers and with Blocks
+  id: totrans-15
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 上下文管理器和 with 块
+- en: Context manager objects exist to control a `with` statement, just like iterators
+    exist to control a `for` statement.
+  id: totrans-16
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 上下文管理器对象存在以控制 `with` 语句，就像迭代器存在以控制 `for` 语句一样。
+- en: The `with` statement was designed to simplify some common uses of `try/finally`,
+    which guarantees that some operation is performed after a block of code, even
+    if the block is terminated by `return`, an exception, or a `sys.exit()` call.
+    The code in the `finally` clause usually releases a critical resource or restores
+    some previous state that was temporarily changed.
+  id: totrans-17
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`with` 语句旨在简化一些常见的 `try/finally` 用法，它保证在代码块结束后执行某些操作，即使代码块由 `return`、异常或 `sys.exit()`
+    调用终止。`finally` 子句中的代码通常释放关键资源或恢复一些临时更改的先前状态。'
+- en: 'The Python community is finding new, creative uses for context managers. Some
+    examples from the standard library are:'
+  id: totrans-18
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Python 社区正在为上下文管理器找到新的创造性用途。标准库中的一些示例包括：
+- en: Managing transactions in the `sqlite3` module—see [“Using the connection as
+    a context manager”](https://fpy.li/18-2).
+  id: totrans-19
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 在 `sqlite3` 模块中管理事务—参见[“将连接用作上下文管理器”](https://fpy.li/18-2)。
+- en: Safely handling locks, conditions, and semaphores—as described in the [`threading`
+    module documentation](https://fpy.li/18-3).
+  id: totrans-20
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 安全处理锁、条件和信号量，如[`threading` 模块文档](https://fpy.li/18-3)中所述。
+- en: Setting up custom environments for arithmetic operations with `Decimal` objects—see
+    the [`decimal.localcontext` documentation](https://fpy.li/18-4).
+  id: totrans-21
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 为 `Decimal` 对象设置自定义环境进行算术运算—参见[`decimal.localcontext` 文档](https://fpy.li/18-4)。
+- en: Patching objects for testing—see the [`unittest.mock.patch` function](https://fpy.li/18-5).
+  id: totrans-22
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 为测试修补对象—参见[`unittest.mock.patch` 函数](https://fpy.li/18-5)。
+- en: The context manager interface consists of the `__enter__` and `__exit__` methods.
+    At the top of the `with`, Python calls the `__enter__` method of the context manager
+    object. When the `with` block completes or terminates for any reason, Python calls
+    `__exit__` on the context manager object.
+  id: totrans-23
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 上下文管理器接口由 `__enter__` 和 `__exit__` 方法组成。在 `with` 的顶部，Python 调用上下文管理器对象的 `__enter__`
+    方法。当 `with` 块完成或由于任何原因终止时，Python 调用上下文管理器对象的 `__exit__` 方法。
+- en: The most common example is making sure a file object is closed. [Example 18-1](#with_file_demo)
+    is a detailed demonstration of using `with` to close a file.
+  id: totrans-24
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 最常见的例子是确保文件对象��关闭。[示例 18-1](#with_file_demo) 是使用 `with` 关闭文件的详细演示。
+- en: Example 18-1\. Demonstration of a file object as a context manager
+  id: totrans-25
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 18-1。文件对象作为上下文管理器的演示
+- en: '[PRE0]'
+  id: totrans-26
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE0]'
+- en: '[![1](assets/1.png)](#co_with__match__and_else_blocks_CO1-1)'
+  id: totrans-27
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_with__match__and_else_blocks_CO1-1)'
+- en: '`fp` is bound to the opened text file because the file’s `__enter__` method
+    returns `self`.'
+  id: totrans-28
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`fp`绑定到打开的文本文件，因为文件的`__enter__`方法返回`self`。'
+- en: '[![2](assets/2.png)](#co_with__match__and_else_blocks_CO1-2)'
+  id: totrans-29
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_with__match__and_else_blocks_CO1-2)'
+- en: Read `60` Unicode characters from `fp`.
+  id: totrans-30
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 从`fp`中读取`60`个Unicode字符。
+- en: '[![3](assets/3.png)](#co_with__match__and_else_blocks_CO1-3)'
+  id: totrans-31
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_with__match__and_else_blocks_CO1-3)'
+- en: The `fp` variable is still available—`with` blocks don’t define a new scope,
+    as functions do.
+  id: totrans-32
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`fp`变量仍然可用——`with`块不像函数那样定义新的作用域。'
+- en: '[![4](assets/4.png)](#co_with__match__and_else_blocks_CO1-4)'
+  id: totrans-33
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_with__match__and_else_blocks_CO1-4)'
+- en: We can read the attributes of the `fp` object.
+  id: totrans-34
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们可以读取`fp`对象的属性。
+- en: '[![5](assets/5.png)](#co_with__match__and_else_blocks_CO1-5)'
+  id: totrans-35
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_with__match__and_else_blocks_CO1-5)'
+- en: But we can’t read more text from `fp` because at the end of the `with` block,
+    the `TextIOWrapper.__exit__` method was called, and it closed the file.
+  id: totrans-36
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 但是我们无法从`fp`中读取更多文本，因为在`with`块结束时，调用了`TextIOWrapper.__exit__`方法，它关闭了文件。
+- en: 'The first callout in [Example 18-1](#with_file_demo) makes a subtle but crucial
+    point: the context manager object is the result of evaluating the expression after
+    `with`, but the value bound to the target variable (in the `as` clause) is the
+    result returned by the `__enter__` method of the context manager object.'
+  id: totrans-37
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 18-1](#with_file_demo) 中的第一个标注点提出了一个微妙但至关重要的观点：上下文管理器对象是在评估`with`后的表达式的结果，但绑定到目标变量（在`as`子句中）的值是上下文管理器对象的`__enter__`方法返回的结果。'
+- en: It just happens that the `open()` function returns an instance of `TextIOWrapper`,
+    and its `__enter__` method returns `self`. But in a different class, the `__enter__`
+    method may also return some other object instead of the context manager instance.
+  id: totrans-38
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 恰好`open()`函数返回`TextIOWrapper`的一个实例，其`__enter__`方法返回`self`。但在不同的类中，`__enter__`方法也可能返回其他对象，而不是上下文管理器实例。
+- en: When control flow exits the `with` block in any way, the `__exit__` method is
+    invoked on the context manager object, not on whatever was returned by `__enter__`.
+  id: totrans-39
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 无论以何种方式退出`with`块的控制流，`__exit__`方法都会在上下文管理器对象上调用，而不是在`__enter__`返回的任何对象上调用。
+- en: The `as` clause of the `with` statement is optional. In the case of `open`,
+    we always need it to get a reference to the file, so that we can call methods
+    on it. But some context managers return `None` because they have no useful object
+    to give back to the user.
+  id: totrans-40
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`with`语句的`as`子句是可选的。在`open`的情况下，我们总是需要它来获得文件的引用，以便我们可以在其上调用方法。但是一些上下文管理器返回`None`，因为它们没有有用的对象可以返回给用户。'
+- en: '[Example 18-2](#looking_glass_demo_1) shows the operation of a perfectly frivolous
+    context manager designed to highlight the distinction between the context manager
+    and the object returned by its `__enter__` method.'
+  id: totrans-41
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 18-2](#looking_glass_demo_1) 展示了一个完全轻松的上下文管理器的操作，旨在突出上下文管理器和其`__enter__`方法返回的对象之间的区别。'
+- en: Example 18-2\. Test-driving the `LookingGlass` context manager class
+  id: totrans-42
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 18-2\. 测试`LookingGlass`上下文管理器类
+- en: '[PRE1]'
+  id: totrans-43
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE1]'
+- en: '[![1](assets/1.png)](#co_with__match__and_else_blocks_CO2-1)'
+  id: totrans-44
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_with__match__and_else_blocks_CO2-1)'
+- en: The context manager is an instance of `LookingGlass`; Python calls `__enter__`
+    on the context manager and the result is bound to `what`.
+  id: totrans-45
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 上下文管理器是`LookingGlass`的一个实例；Python在上下文管理器上调用`__enter__`，结果绑定到`what`。
+- en: '[![2](assets/2.png)](#co_with__match__and_else_blocks_CO2-2)'
+  id: totrans-46
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_with__match__and_else_blocks_CO2-2)'
+- en: Print a `str`, then the value of the target variable `what`. The output of each
+    `print` will come out reversed.
+  id: totrans-47
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 打印一个`str`，然后打印目标变量`what`的值。每个`print`的输出都会被反转。
+- en: '[![3](assets/3.png)](#co_with__match__and_else_blocks_CO2-3)'
+  id: totrans-48
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_with__match__and_else_blocks_CO2-3)'
+- en: Now the `with` block is over. We can see that the value returned by `__enter__`,
+    held in `what`, is the string `'JABBERWOCKY'`.
+  id: totrans-49
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在`with`块已经结束。我们可以看到`__enter__`返回的值，保存在`what`中，是字符串`'JABBERWOCKY'`。
+- en: '[![4](assets/4.png)](#co_with__match__and_else_blocks_CO2-4)'
+  id: totrans-50
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_with__match__and_else_blocks_CO2-4)'
+- en: Program output is no longer reversed.
+  id: totrans-51
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 程序输出不再被反转。
+- en: '[Example 18-3](#looking_glass_ex) shows the implementation of `LookingGlass`.'
+  id: totrans-52
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 18-3](#looking_glass_ex) 展示了`LookingGlass`的实现。'
+- en: 'Example 18-3\. mirror.py: code for the `LookingGlass` context manager class'
+  id: totrans-53
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 18-3\. mirror.py：`LookingGlass`上下文管理器类的代码
+- en: '[PRE2]'
+  id: totrans-54
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE2]'
+- en: '[![1](assets/1.png)](#co_with__match__and_else_blocks_CO3-1)'
+  id: totrans-55
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_with__match__and_else_blocks_CO3-1)'
+- en: Python invokes `__enter__` with no arguments besides `self`.
+  id: totrans-56
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Python会以除`self`之外没有其他参数调用`__enter__`。
+- en: '[![2](assets/2.png)](#co_with__match__and_else_blocks_CO3-2)'
+  id: totrans-57
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_with__match__and_else_blocks_CO3-2)'
+- en: Hold the original `sys.stdout.write` method, so we can restore it later.
+  id: totrans-58
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 保留原始的`sys.stdout.write`方法，以便稍后恢复。
+- en: '[![3](assets/3.png)](#co_with__match__and_else_blocks_CO3-3)'
+  id: totrans-59
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_with__match__and_else_blocks_CO3-3)'
+- en: Monkey-patch `sys.stdout.write`, replacing it with our own method.
+  id: totrans-60
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 用我们自己的方法替换`sys.stdout.write`，进行Monkey-patch。
+- en: '[![4](assets/4.png)](#co_with__match__and_else_blocks_CO3-4)'
+  id: totrans-61
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_with__match__and_else_blocks_CO3-4)'
+- en: Return the `'JABBERWOCKY'` string just so we have something to put in the target
+    variable `what`.
+  id: totrans-62
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 返回`'JABBERWOCKY'`字符串，这样我们就有了一些东西可以放在目标变量`what`中。
+- en: '[![5](assets/5.png)](#co_with__match__and_else_blocks_CO3-5)'
+  id: totrans-63
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_with__match__and_else_blocks_CO3-5)'
+- en: Our replacement to `sys.stdout.write` reverses the `text` argument and calls
+    the original implementation.
+  id: totrans-64
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们替换了`sys.stdout.write`，将`text`参数反转并调用原始实现。
+- en: '[![6](assets/6.png)](#co_with__match__and_else_blocks_CO3-6)'
+  id: totrans-65
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![6](assets/6.png)](#co_with__match__and_else_blocks_CO3-6)'
+- en: Python calls `__exit__` with `None, None, None` if all went well; if an exception
+    is raised, the three arguments get the exception data, as described after this
+    example.
+  id: totrans-66
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果一切顺利，Python会用`None, None, None`调用`__exit__`；如果引发异常，则三个参数将获得异常数据，如本示例后所述。
+- en: '[![7](assets/7.png)](#co_with__match__and_else_blocks_CO3-7)'
+  id: totrans-67
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![7](assets/7.png)](#co_with__match__and_else_blocks_CO3-7)'
+- en: Restore the original method to `sys.stdout.write`.
+  id: totrans-68
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 恢复原始方法`sys.stdout.write`。
+- en: '[![8](assets/8.png)](#co_with__match__and_else_blocks_CO3-8)'
+  id: totrans-69
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![8](assets/8.png)](#co_with__match__and_else_blocks_CO3-8)'
+- en: If the exception is not `None` and its type is `ZeroDivisionError`, print a
+    message…
+  id: totrans-70
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果异常不是`None`且其类型是`ZeroDivisionError`，则打印一条消息…
+- en: '[![9](assets/9.png)](#co_with__match__and_else_blocks_CO3-9)'
+  id: totrans-71
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![9](assets/9.png)](#co_with__match__and_else_blocks_CO3-9)'
+- en: …and return `True` to tell the interpreter that the exception was handled.
+  id: totrans-72
+  prefs: []
+  type: TYPE_NORMAL
+  zh: …并返回`True`以告诉解释器异常已被处理。
+- en: '[![10](assets/10.png)](#co_with__match__and_else_blocks_CO3-10)'
+  id: totrans-73
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![10](assets/10.png)](#co_with__match__and_else_blocks_CO3-10)'
+- en: If `__exit__` returns `None` or any *falsy* value, any exception raised in the
+    `with` block will be propagated.
+  id: totrans-74
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果`__exit__`返回`None`或任何*假值*，则`with`块中引发的任何异常都将传播。
+- en: Tip
+  id: totrans-75
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 提示
+- en: 'When real applications take over standard output, they often want to replace
+    `sys.stdout` with another file-like object for a while, then switch back to the
+    original. The [`contextlib.redirect_stdout`](https://fpy.li/18-6) context manager
+    does exactly that: just pass it the file-like object that will stand in for `sys.stdout`.'
+  id: totrans-76
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当真实应用接管标准输出时，它们通常希望将`sys.stdout`替换为另一个类似文件的对象一段时间，然后再切换回原始状态。[`contextlib.redirect_stdout`](https://fpy.li/18-6)上下文管理器正是这样做的：只需将它传递给将替代`sys.stdout`的文件类对象。
+- en: 'The interpreter calls the `__enter__` method with no arguments—beyond the implicit
+    `self`. The three arguments passed to `__exit__` are:'
+  id: totrans-77
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 解释器使用无参数—除了隐式的`self`—调用`__enter__`方法。传递给`__exit__`的三个参数是：
+- en: '`exc_type`'
+  id: totrans-78
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`exc_type`'
+- en: The exception class (e.g., `ZeroDivisionError`).
+  id: totrans-79
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 异常类（例如`ZeroDivisionError`）。
+- en: '`exc_value`'
+  id: totrans-80
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`exc_value`'
+- en: The exception instance. Sometimes, parameters passed to the exception constructor—such
+    as the error message—can be found in `exc_value.args`.
+  id: totrans-81
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 异常实例。有时，传递给异常构造函数的参数—如错误消息—可以在`exc_value.args`中找到。
+- en: '`traceback`'
+  id: totrans-82
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`traceback`'
+- en: A `traceback` object.^([2](ch18.html#idm46582397322384))
+  id: totrans-83
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 一个`traceback`对象。^([2](ch18.html#idm46582397322384))
+- en: For a detailed look at how a context manager works, see [Example 18-4](#looking_glass_demo_2),
+    where `LookingGlass` is used outside of a `with` block, so we can manually call
+    its `__enter__` and `__exit__` methods.
+  id: totrans-84
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 要详细了解上下文管理器的工作原理，请参见[示例18-4](#looking_glass_demo_2)，其中`LookingGlass`在`with`块之外使用，因此我们可以手动调用其`__enter__`和`__exit__`方法。
+- en: Example 18-4\. Exercising `LookingGlass` without a `with` block
+  id: totrans-85
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 18-4\. 在没有`with`块的情况下使用`LookingGlass`
+- en: '[PRE3]'
+  id: totrans-86
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE3]'
+- en: '[![1](assets/1.png)](#co_with__match__and_else_blocks_CO4-1)'
+  id: totrans-87
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_with__match__and_else_blocks_CO4-1)'
+- en: Instantiate and inspect the `manager` instance.
+  id: totrans-88
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 实例化并检查`manager`实例。
+- en: '[![2](assets/2.png)](#co_with__match__and_else_blocks_CO4-2)'
+  id: totrans-89
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_with__match__and_else_blocks_CO4-2)'
+- en: Call the manager’s `__enter__` method and store result in `monster`.
+  id: totrans-90
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 调用管理器的`__enter__`方法并将结果存储在`monster`中。
+- en: '[![3](assets/3.png)](#co_with__match__and_else_blocks_CO4-3)'
+  id: totrans-91
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_with__match__and_else_blocks_CO4-3)'
+- en: '`monster` is the string `''JABBERWOCKY''`. The `True` identifier appears reversed
+    because all output via `stdout` goes through the `write` method we patched in
+    `__enter__`.'
+  id: totrans-92
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`monster`是字符串`''JABBERWOCKY''`。`True`标识符出现颠倒，因为所有通过`stdout`输出的内容都经过我们在`__enter__`中打补丁的`write`方法。'
+- en: '[![4](assets/4.png)](#co_with__match__and_else_blocks_CO4-4)'
+  id: totrans-93
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_with__match__and_else_blocks_CO4-4)'
+- en: Call `manager.__exit__` to restore the previous `stdout.write`.
+  id: totrans-94
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 调用`manager.__exit__`以恢复先前的`stdout.write`。
+- en: Parenthesized Context Managers in Python 3.10
+  id: totrans-95
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: Python 3.10中的括号上下文管理器
+- en: 'Python 3.10 adopted [a new, more powerful parser](https://fpy.li/pep617), allowing
+    new syntax beyond what was possible with the older [LL(1) parser](https://fpy.li/18-8).
+    One syntax enhancement was to allow parenthesized context managers, like this:'
+  id: totrans-96
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Python 3.10采用了[一个新的、更强大的解析器](https://fpy.li/pep617)，允许新的语法超出旧的[LL(1)解析器](https://fpy.li/18-8)所��实现的范围。一个语法增强是允许括号上下文管理器，就像这样：
+- en: '[PRE4]'
+  id: totrans-97
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE4]'
+- en: Prior to 3.10, we’d have to write that as nested `with` blocks.
+  id: totrans-98
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在3.10之前，我们必须编写嵌套的`with`块。
+- en: The standard library includes the `contextlib` package with handy functions,
+    classes, and decorators for building, combining, and using context managers.
+  id: totrans-99
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 标准库包括`contextlib`包，其中包含用于构建、组合和使用上下文管理器的方便函数、类和装饰器。
+- en: The contextlib Utilities
+  id: totrans-100
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: '`contextlib`实用程序'
+- en: Before rolling your own context manager classes, take a look at [`contextlib`—“Utilities
+    for `with`-statement contexts”](https://fpy.li/18-9) in the Python documentation.
+    Maybe what you are about to build already exists, or there is a class or some
+    callable that will make your job easier.
+  id: totrans-101
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在自己编写上下文管理器类之前，请查看Python文档中的[`contextlib`—“用于`with`语句上下文的实用程序”](https://fpy.li/18-9)。也许您即将构建的内容已经存在，或者有一个类或一些可调用对象可以让您的工作更轻松。
+- en: Besides the `redirect_stdout` context manager mentioned right after [Example 18-3](#looking_glass_ex),
+    `redirect_stderr` was added in Python 3.5—it does the same as the former, but
+    for output directed to `stderr`.
+  id: totrans-102
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 除了在[示例18-3](#looking_glass_ex)之后提到的`redirect_stdout`上下文管理器之外，Python 3.5中还添加了`redirect_stderr`—它的功能与前者相同，但用于指向`stderr`的输出。
+- en: 'The `contextlib` package also includes:'
+  id: totrans-103
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`contextlib`包还包括：'
+- en: '`closing`'
+  id: totrans-104
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`closing`'
+- en: A function to build context managers out of objects that provide a `close()`
+    method but don’t implement the `__enter__/__exit__` interface.
+  id: totrans-105
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 一个函数，用于从提供`close()`方法但不实现`__enter__/__exit__`接口的对象构建上下文管理器。
+- en: '`suppress`'
+  id: totrans-106
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`suppress`'
+- en: A context manager to temporarily ignore exceptions given as arguments.
+  id: totrans-107
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 一个上下文管理器，用于临时忽略作为参数给出的异常。
+- en: '`nullcontext`'
+  id: totrans-108
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`nullcontext`'
+- en: A context manager that does nothing, to simplify conditional logic around objects
+    that may not implement a suitable context manager. It serves as a stand-in when
+    conditional code before the `with` block may or may not provide a context manager
+    for the `with` statement—added in Python 3.7.
+  id: totrans-109
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 一个什么都不做的上下文管理器，用于简化围绕可能不实现合适上下文管理器的对象的条件逻辑。当`with`块之前的条件代码可能或可能不为`with`语句提供上下文管理器时，它充当替代品—Python
+    3.7中添加。
+- en: 'The `contextlib` module provides classes and a decorator that are more widely
+    applicable than the decorators just mentioned:'
+  id: totrans-110
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`contextlib`模块提供的类和装饰器比刚才提到的装饰器更广泛适用：'
+- en: '`@contextmanager`'
+  id: totrans-111
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`@contextmanager`'
+- en: A decorator that lets you build a context manager from a simple generator function,
+    instead of creating a class and implementing the interface. See [“Using @contextmanager”](#using_cm_decorator_sec).
+  id: totrans-112
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 一个装饰器，让您可以从简单的生成器函数构建上下文管理器，而不是创建一个类并实现接口。参见[“使用@contextmanager”](#using_cm_decorator_sec)。
+- en: '`AbstractContextManager`'
+  id: totrans-113
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`AbstractContextManager`'
+- en: An ABC that formalizes the context manager interface, and makes it a bit easier
+    to create context manager classes by subclassing—added in Python 3.6.
+  id: totrans-114
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 一个正式化上下文管理器接口的ABC，并通过子类化使得创建上下文管理器类变得更容易——在Python 3.6中添加。
+- en: '`ContextDecorator`'
+  id: totrans-115
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`ContextDecorator`'
+- en: A base class for defining class-based context managers that can also be used
+    as function decorators, running the entire function within a managed context.
+  id: totrans-116
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 用于定义基于类的上下文管理器的基类，也可以用作函数修饰符，将整个函数在受控上下文中运行。
+- en: '`ExitStack`'
+  id: totrans-117
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`ExitStack`'
+- en: A context manager that lets you enter a variable number of context managers.
+    When the `with` block ends, `ExitStack` calls the stacked context managers’ `__exit__`
+    methods in LIFO order (last entered, first exited). Use this class when you don’t
+    know beforehand how many context managers you need to enter in your `with` block;
+    for example, when opening all files from an arbitrary list of files at the same
+    time.
+  id: totrans-118
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 一个允许您进入可变数量上下文管理器的上下文管理器。当`with`块结束时，`ExitStack`以LIFO顺序（最后进入，最先退出）调用堆叠的上下文管理器的`__exit__`方法。当您不知道在`with`块中需要进入多少上下文管理器时，请使用此类；例如，当同时打开来自任意文件列表的所有文件时。
+- en: With Python 3.7, `contextlib` added `AbstractAsyncContextManager`, `@asynccontextmanager`,
+    and `AsyncExitStack`. They are similar to the equivalent utilities without the
+    `async` part of the name, but designed for use with the new `async with` statement,
+    covered in [Chapter 21](ch21.html#async_ch).
+  id: totrans-119
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在Python 3.7中，`contextlib`添加了`AbstractAsyncContextManager`，`@asynccontextmanager`和`AsyncExitStack`。它们类似于名称中不带`async`部分的等效实用程序，但设计用于与新的`async
+    with`语句一起使用，该语句在[第21章](ch21.html#async_ch)中介绍。
+- en: The most widely used of these utilities is the `@contextmanager` decorator,
+    so it deserves more attention. That decorator is also interesting because it shows
+    a use for the `yield` statement unrelated to iteration.
+  id: totrans-120
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这些实用程序中最常用的是`@contextmanager`修饰符，因此它值得更多关注。该修饰符也很有趣，因为它展示了与迭代无关的`yield`语句的用法。
+- en: Using @contextmanager
+  id: totrans-121
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 使用`@contextmanager`
+- en: 'The `@contextmanager` decorator is an elegant and practical tool that brings
+    together three distinctive Python features: a function decorator, a generator,
+    and the `with` statement.'
+  id: totrans-122
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`@contextmanager`修饰符是一个优雅且实用的工具，它将三个独特的Python特性结合在一起：函数修饰符、生成器和`with`语句。'
+- en: 'Using `@contextmanager` reduces the boilerplate of creating a context manager:
+    instead of writing a whole class with `__enter__/__exit__` methods, you just implement
+    a generator with a single `yield` that should produce whatever you want the `__enter__`
+    method to return.'
+  id: totrans-123
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 使用`@contextmanager`减少了创建上下文管理器的样板代码：不需要编写一个具有`__enter__/__exit__`方法的整个类，只需实现一个生成器，其中包含一个应该生成`__enter__`方法返回的内容。
+- en: 'In a generator decorated with `@contextmanager`, `yield` splits the body of
+    the function in two parts: everything before the `yield` will be executed at the
+    beginning of the `with` block when the interpreter calls `__enter__`; the code
+    after `yield` will run when `__exit__` is called at the end of the block.'
+  id: totrans-124
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在使用`@contextmanager`修饰的生成器中，`yield`将函数体分为两部分：`yield`之前的所有内容将在解释器调用`__enter__`时在`with`块的开头执行；`yield`之后的代码将在块结束时调用`__exit__`时运行。
+- en: '[Example 18-5](#looking_glass_gen_ex) replaces the `LookingGlass` class from
+    [Example 18-3](#looking_glass_ex) with a generator function.'
+  id: totrans-125
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例18-5](#looking_glass_gen_ex)用生成器函数替换了[示例18-3](#looking_glass_ex)中的`LookingGlass`类。'
+- en: 'Example 18-5\. mirror_gen.py: a context manager implemented with a generator'
+  id: totrans-126
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例18-5\. mirror_gen.py：使用生成器实现的上下文管理器
+- en: '[PRE5]'
+  id: totrans-127
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE5]'
+- en: '[![1](assets/1.png)](#co_with__match__and_else_blocks_CO5-1)'
+  id: totrans-128
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_with__match__and_else_blocks_CO5-1)'
+- en: Apply the `contextmanager` decorator.
+  id: totrans-129
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 应用`contextmanager`修饰符。
+- en: '[![2](assets/2.png)](#co_with__match__and_else_blocks_CO5-2)'
+  id: totrans-130
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_with__match__and_else_blocks_CO5-2)'
+- en: Preserve the original `sys.stdout.write` method.
+  id: totrans-131
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 保留原始的`sys.stdout.write`方法。
+- en: '[![3](assets/3.png)](#co_with__match__and_else_blocks_CO5-3)'
+  id: totrans-132
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_with__match__and_else_blocks_CO5-3)'
+- en: '`reverse_write` can call `original_write` later because it is available in
+    its closure.'
+  id: totrans-133
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`reverse_write`稍后可以调用`original_write`，因为它在其闭包中可用。'
+- en: '[![4](assets/4.png)](#co_with__match__and_else_blocks_CO5-4)'
+  id: totrans-134
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_with__match__and_else_blocks_CO5-4)'
+- en: Replace `sys.stdout.write` with `reverse_write`.
+  id: totrans-135
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 将`sys.stdout.write`替换为`reverse_write`。
+- en: '[![5](assets/5.png)](#co_with__match__and_else_blocks_CO5-5)'
+  id: totrans-136
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_with__match__and_else_blocks_CO5-5)'
+- en: Yield the value that will be bound to the target variable in the `as` clause
+    of the `with` statement. The generator pauses at this point while the body of
+    the `with` executes.
+  id: totrans-137
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 产生将绑定到`with`语句中`as`子句的目标变量的值。生成器在此处暂停，而`with`的主体执行。
+- en: '[![6](assets/6.png)](#co_with__match__and_else_blocks_CO5-6)'
+  id: totrans-138
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![6](assets/6.png)](#co_with__match__and_else_blocks_CO5-6)'
+- en: When control exits the `with` block, execution continues after the `yield`;
+    here the original `sys.stdout.write` is restored.
+  id: totrans-139
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当控制退出`with`块时，执行继续在`yield`之后；这里恢复原始的`sys.stdout.write`。
+- en: '[Example 18-6](#looking_glass_gen_demo) shows the `looking_glass` function
+    in operation.'
+  id: totrans-140
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例18-6](#looking_glass_gen_demo)展示了`looking_glass`函数的运行。'
+- en: Example 18-6\. Test-driving the `looking_glass` context manager function
+  id: totrans-141
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例18-6\. 测试`looking_glass`上下文管理器函数
+- en: '[PRE6]'
+  id: totrans-142
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE6]'
+- en: '[![1](assets/1.png)](#co_with__match__and_else_blocks_CO6-1)'
+  id: totrans-143
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_with__match__and_else_blocks_CO6-1)'
+- en: 'The only difference from [Example 18-2](#looking_glass_demo_1) is the name
+    of the context manager: `looking_glass` instead of `LookingGlass`.'
+  id: totrans-144
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 与[示例18-2](#looking_glass_demo_1)唯一的区别是上下文管理器的名称：`looking_glass`而不是`LookingGlass`。
+- en: The `contextlib.contextmanager` decorator wraps the function in a class that
+    implements the `__enter__` and `__exit__` methods.^([3](ch18.html#idm46582396834368))
+  id: totrans-145
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`contextlib.contextmanager`修饰符将函数包装在一个实现`__enter__`和`__exit__`方法的类中。^([3](ch18.html#idm46582396834368))'
+- en: 'The `__enter__` method of that class:'
+  id: totrans-146
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 该类的`__enter__`方法：
+- en: Calls the generator function to get a generator object—let’s call it `gen`.
+  id: totrans-147
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 调用生成器函数以获取生成器对象——我们将其称为`gen`。
+- en: Calls `next(gen)` to drive it to the `yield` keyword.
+  id: totrans-148
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 调用`next(gen)`来驱动它到`yield`关键字。
+- en: Returns the value yielded by `next(gen)`, to allow the user to bind it to a
+    variable in the `with/as` form.
+  id: totrans-149
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 返回由`next(gen)`产生的值，以允许用户将其绑定到`with/as`形式中的变量。
+- en: 'When the `with` block terminates, the `__exit__` method:'
+  id: totrans-150
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当`with`块终止时，`__exit__`方法：
+- en: Checks whether an exception was passed as `exc_type`; if so, `gen.throw(exception)`
+    is invoked, causing the exception to be raised in the `yield` line inside the
+    generator function body.
+  id: totrans-151
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 检查是否将异常作为`exc_type`传递；如果是，则调用`gen.throw(exception)`，导致异常在生成器函数体内的`yield`行中被引发。
+- en: Otherwise, `next(gen)` is called, resuming the execution of the generator function
+    body after the `yield`.
+  id: totrans-152
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 否则，调用`next(gen)`，恢复`yield`后生成器函数体的执行。
+- en: '[Example 18-5](#looking_glass_gen_ex) has a flaw: if an exception is raised
+    in the body of the `with` block, the Python interpreter will catch it and raise
+    it again in the `yield` expression inside `looking_glass`. But there is no error
+    handling there, so the `looking_glass` generator will terminate without ever restoring
+    the original `sys.stdout.write` method, leaving the system in an invalid state.'
+  id: totrans-153
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例18-5](#looking_glass_gen_ex)存在一个缺陷：如果在`with`块的主体中引发异常，Python解释器将捕获它并在`looking_glass`内的`yield`表达式中再次引发它。但那里没有错误处理，因此`looking_glass`生成器将在不恢复原始`sys.stdout.write`方法的情况下终止，使系统处于无效状态。'
+- en: '[Example 18-7](#looking_glass_gen_exc_ex) adds special handling of the `ZeroDivisionError`
+    exception, making it functionally equivalent to the class-based [Example 18-3](#looking_glass_ex).'
+  id: totrans-154
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例18-7](#looking_glass_gen_exc_ex)添加了对`ZeroDivisionError`异常的特殊处理，使其在功能上等同于基于类的[示例18-3](#looking_glass_ex)。'
+- en: 'Example 18-7\. mirror_gen_exc.py: generator-based context manager implementing
+    exception handling—same external behavior as [Example 18-3](#looking_glass_ex)'
+  id: totrans-155
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例18-7\. mirror_gen_exc.py：基于生成器的上下文管理器实现异常处理，与[示例18-3](#looking_glass_ex)具有相同的外部行为
+- en: '[PRE7]'
+  id: totrans-156
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE7]'
+- en: '[![1](assets/1.png)](#co_with__match__and_else_blocks_CO7-1)'
+  id: totrans-157
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_with__match__and_else_blocks_CO7-1)'
+- en: Create a variable for a possible error message; this is the first change in
+    relation to [Example 18-5](#looking_glass_gen_ex).
+  id: totrans-158
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为可能的错误消息创建一个变量；这是与[示例18-5](#looking_glass_gen_ex)相关的第一个更改。
+- en: '[![2](assets/2.png)](#co_with__match__and_else_blocks_CO7-2)'
+  id: totrans-159
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_with__match__and_else_blocks_CO7-2)'
+- en: Handle `ZeroDivisionError` by setting an error message.
+  id: totrans-160
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 处理`ZeroDivisionError`，设置一个错误消息。
+- en: '[![3](assets/3.png)](#co_with__match__and_else_blocks_CO7-3)'
+  id: totrans-161
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_with__match__and_else_blocks_CO7-3)'
+- en: Undo monkey-patching of `sys.stdout.write`.
+  id: totrans-162
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 撤消对`sys.stdout.write`的猴子补丁。
+- en: '[![4](assets/4.png)](#co_with__match__and_else_blocks_CO7-4)'
+  id: totrans-163
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_with__match__and_else_blocks_CO7-4)'
+- en: Display error message, if it was set.
+  id: totrans-164
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果已设置错误消息，则显示错误消息。
+- en: 'Recall that the `__exit__` method tells the interpreter that it has handled
+    the exception by returning a truthy value; in that case, the interpreter suppresses
+    the exception. On the other hand, if `__exit__` does not explicitly return a value,
+    the interpreter gets the usual `None`, and propagates the exception. With `@contextmanager`,
+    the default behavior is inverted: the `__exit__` method provided by the decorator
+    assumes any exception sent into the generator is handled and should be suppressed.'
+  id: totrans-165
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 回想一下，`__exit__`方法告诉解释器已通过返回一个真值处理了异常；在这种情况下，解释器会抑制异常。另一方面，如果`__exit__`没有显式返回一个值，解释器会得到通常的`None`，并传播异常。使用`@contextmanager`，默认行为被反转：装饰器提供的`__exit__`方法假定任何发送到生成器中的异常都已处理并应该被抑制。
+- en: Tip
+  id: totrans-166
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 提示
+- en: Having a `try/finally` (or a `with` block) around the `yield` is an unavoidable
+    price of using `@contextmanager`, because you never know what the users of your
+    context manager are going to do inside the `with` block.^([4](ch18.html#idm46582396616496))
+  id: totrans-167
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在`yield`周围有一个`try/finally`（或`with`块）是使用`@contextmanager`的不可避免的代价，因为你永远不知道你的上下文管理器的用户会在`with`块内做什么。^([4](ch18.html#idm46582396616496))
+- en: A little-known feature of `@contextmanager` is that the generators decorated
+    with it can also be used as decorators themselves.^([5](ch18.html#idm46582396615104))
+    That happens because `@contextmanager` is implemented with the `contextlib.ContextDecorator`
+    class.
+  id: totrans-168
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`@contextmanager`的一个鲜为人知的特性是，用它装饰的生成器也可以作为装饰器使用。^([5](ch18.html#idm46582396615104))
+    这是因为`@contextmanager`是使用`contextlib.ContextDecorator`类实现的。'
+- en: '[Example 18-8](#looking_glass_gen_deco_demo) shows the `looking_glass` context
+    manager from [Example 18-5](#looking_glass_gen_ex) used as decorator.'
+  id: totrans-169
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例18-8](#looking_glass_gen_deco_demo)展示了从[示例18-5](#looking_glass_gen_ex)中使用的`looking_glass`上下文管理器作为装饰器。'
+- en: Example 18-8\. The `looking_glass` context manager also works as a decorator
+  id: totrans-170
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例18-8\. `looking_glass`上下文管理器也可以作为装饰器使用
+- en: '[PRE8]'
+  id: totrans-171
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE8]'
+- en: '[![1](assets/1.png)](#co_with__match__and_else_blocks_CO8-1)'
+  id: totrans-172
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_with__match__and_else_blocks_CO8-1)'
+- en: '`looking_glass` does its job before and after the body of `verse` runs.'
+  id: totrans-173
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`looking_glass`在`verse`主体运行之前和之后执行其工作。'
+- en: '[![2](assets/2.png)](#co_with__match__and_else_blocks_CO8-2)'
+  id: totrans-174
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_with__match__and_else_blocks_CO8-2)'
+- en: This confirms that the original `sys.write` was restored.
+  id: totrans-175
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这证实了原始的`sys.write`已经恢复。
+- en: Contrast [Example 18-8](#looking_glass_gen_deco_demo) with [Example 18-6](#looking_glass_gen_demo),
+    where `looking_glass` is used as a context manager.
+  id: totrans-176
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 将[示例18-8](#looking_glass_gen_deco_demo)与[示例18-6](#looking_glass_gen_demo)进行对比，在其中`looking_glass`被用作上下文管理器。
+- en: An interesting real-life example of `@contextmanager` outside of the standard
+    library is Martijn Pieters’ [in-place file rewriting using a context manager](https://fpy.li/18-11).
+    [Example 18-9](#inplace_ex) shows how it’s used.
+  id: totrans-177
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`@contextmanager`在标准库之外的一个有趣的现实生活示例是Martijn Pieters的[使用上下文管理器进行原地文件重写](https://fpy.li/18-11)。[示例18-9](#inplace_ex)展示了它的使用方式。'
+- en: Example 18-9\. A context manager for rewriting files in place
+  id: totrans-178
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例18-9\. 用于原地重写文件的上下文管理器
+- en: '[PRE9]'
+  id: totrans-179
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE9]'
+- en: The `inplace` function is a context manager that gives you two handles—`infh`
+    and `outfh` in the example—to the same file, allowing your code to read and write
+    to it at the same time. It’s easier to use than the standard library’s [`fileinput.input`
+    function](https://fpy.li/18-12) (which also provides a context manager, by the
+    way).
+  id: totrans-180
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`inplace`函数是一个上下文管理器，为您提供两个句柄—在示例中为`infh`和`outfh`—指向同一个文件，允许您的代码同时读取和写入。它比标准库的[`fileinput.input`函数](https://fpy.li/18-12)更容易使用（顺便说一句，它也提供了一个上下文管理器）。'
+- en: 'If you want to study Martijn’s `inplace` source code (listed in [the post](https://fpy.li/18-11)),
+    find the `yield` keyword: everything before it deals with setting up the context,
+    which entails creating a backup file, then opening and yielding references to
+    the readable and writable file handles that will be returned by the `__enter__`
+    call. The `__exit__` processing after the `yield` closes the file handles and
+    restores the file from the backup if something went wrong.'
+  id: totrans-181
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果您想研究Martijn的`inplace`源代码（列在[帖子中](https://fpy.li/18-11)），请查找`yield`关键字：在它之前的所有内容都涉及设置上下文，这包括创建备份文件，然后打开并生成可读和可写文件句柄的引用，这些引用将由`__enter__`调用返回。`yield`后的`__exit__`处理关闭文件句柄，并在出现问题时从备份中恢复文件。
+- en: This concludes our overview of the `with` statement and context managers. Let’s
+    turn to `match/case` in the context of a complete example.
+  id: totrans-182
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这结束了我们对`with`语句和上下文管理器的概述。让我们转向完整示例中的`match/case`。
+- en: 'Pattern Matching in lis.py: A Case Study'
+  id: totrans-183
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: lis.py中的模式匹配：一个案例研究
+- en: In [“Pattern Matching Sequences in an Interpreter”](ch02.html#pattern_matching_seq_interp_sec)
+    we saw examples of sequence patterns extracted from the `evaluate` function of
+    Peter Norvig’s *lis.py* interpreter, ported to Python 3.10. In this section I
+    want to give a broader overview of how *lis.py* works, and also explore all the
+    `case` clauses of `evaluate`, explaining not only the patterns but also what the
+    interpreter does in each `case`.
+  id: totrans-184
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在[“解释器中的模式匹配序列”](ch02.html#pattern_matching_seq_interp_sec)中，我们看到了从Peter Norvig的*lis.py*解释器的`evaluate`函数中提取的序列模式的示例，该解释器已移植到Python
+    3.10。在本节中，我想更广泛地介绍*lis.py*的工作原理，并探讨`evaluate`的所有`case`子句，不仅解释模式，还解释解释器在每个`case`中的操作。
+- en: 'Besides showing more pattern matching, I wrote this section for three reasons:'
+  id: totrans-185
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 除了展示更多的模式匹配，我写这一部分有三个原因：
+- en: Norvig’s *lis.py* is a beautiful example of idiomatic Python code.
+  id: totrans-186
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: Norvig的*lis.py*是惯用Python代码的一个很好的例子。
+- en: The simplicity of Scheme is a master class of language design.
+  id: totrans-187
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: Scheme的简单性是语言设计的典范。
+- en: Learning how an interpreter works gave me a deeper understanding of Python and
+    programming languages in general—interpreted or compiled.
+  id: totrans-188
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 了解解释器如何工作让我更深入地理解了Python和一般编程语言——无论是解释型还是编译型。
+- en: Before looking at the Python code, let’s get a little taste of Scheme so you
+    can make sense of this case study—in case you haven’t seen Scheme or Lisp before.
+  id: totrans-189
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在查看Python代码之前，让我们稍微了解一下Scheme，这样您就可以理解这个案例研究——如果您以前没有见过Scheme或Lisp的话。
+- en: Scheme Syntax
+  id: totrans-190
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: Scheme语法
+- en: In Scheme there is no distinction between expressions and statements, like we
+    have in Python. Also, there are no infix operators. All expressions use prefix
+    notation like `(+ x 13)` instead of `x + 13`. The same prefix notation is used
+    for function calls—e.g., `(gcd x 13)`—and special forms—e.g., `(define x 13)`,
+    which we’d write as the assignment statement `x = 13` in Python. The notation
+    used by Scheme and most Lisp dialects is known as *S-expression*.^([6](ch18.html#idm46582396385792))
+  id: totrans-191
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在Scheme中，表达式和语句之间没有区别，就像我们在Python中所看到的那样。此外，没有中缀运算符。所有表达式都使用前缀表示法，如`(+ x 13)`而不是`x
+    + 13`。相同的前缀表示法用于函数调用—例如，`(gcd x 13)`—和特殊形式—例如，`(define x 13)`，我们在Python中会写成赋值语句`x
+    = 13`。Scheme和大多数Lisp方言使用的表示法称为*S表达式*。^([6](ch18.html#idm46582396385792))
+- en: '[Example 18-10](#ex_gcd_scheme) shows a simple example in Scheme.'
+  id: totrans-192
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 18-10](#ex_gcd_scheme)展示了Scheme中的一个简单示例。'
+- en: Example 18-10\. Greatest common divisor in Scheme
+  id: totrans-193
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 18-10\. Scheme中的最大公约数
+- en: '[PRE10]'
+  id: totrans-194
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE10]'
+- en: '[Example 18-10](#ex_gcd_scheme) shows three Scheme expressions: two function
+    definitions—`mod` and `gcd`—and a call to `display`, which will output 9, the
+    result of `(gcd 18 45)`. [Example 18-11](#ex_gcd_python) is the same code in Python
+    (shorter than an English explanation of the recursive [*Euclidean algorithm*](https://fpy.li/18-14)).'
+  id: totrans-195
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 18-10](#ex_gcd_scheme)展示了三个Scheme表达式：两个函数定义—`mod`和`gcd`—以及一个调用`display`，它将输出9，即`(gcd
+    18 45)`的结果。[示例 18-11](#ex_gcd_python)是相同的Python代码（比递归[*欧几里德算法*](https://fpy.li/18-14)的英文解释更短）。'
+- en: Example 18-11\. Same as [Example 18-10](#ex_gcd_scheme), written in Python
+  id: totrans-196
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 18-11\. 与[示例 18-10](#ex_gcd_scheme)相同，用Python编写
+- en: '[PRE11]'
+  id: totrans-197
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE11]'
+- en: In idiomatic Python, I’d use the `%` operator instead of reinventing `mod`,
+    and it would be more efficient to use a `while` loop instead of recursion. But
+    I wanted to show two function definitions, and make the examples as similar as
+    possible, to help you read the Scheme code.
+  id: totrans-198
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在惯用Python中，我会使用`%`运算符而不是重新发明`mod`，并且使用`while`循环而不是递归会更有效率。但我想展示两个函数定义，并尽可能使示例相似，以帮助您阅读Scheme代码。
+- en: Scheme has no iterative control flow commands like `while` or `for`. Iteration
+    is done with recursion. Note how there are no assignments in the Scheme and Python
+    examples. Extensive use of recursion and minimal use of assignment are hallmarks
+    of programming in a functional style.^([7](ch18.html#idm46582396220528))
+  id: totrans-199
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Scheme没有像Python中那样的迭代控制流命令，如`while`或`for`。迭代是通过递归完成的。请注意，在Scheme和Python示例中没有赋值。广泛使用递归和最小使用赋值是函数式编程的标志。^([7](ch18.html#idm46582396220528))
+- en: Now let’s review the code of the Python 3.10 version of *lis.py*. The complete
+    source code with tests is in the [*18-with-match/lispy/py3.10/*](https://fpy.li/18-15)
+    directory of the GitHub repository [*fluentpython/example-code-2e*](https://fpy.li/code).
+  id: totrans-200
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在让我们回顾一下Python 3.10版本的*lis.py*代码。完整的源代码和测试位于GitHub存储库[*fluentpython/example-code-2e*](https://fpy.li/code)的[*18-with-match/lispy/py3.10/*目录中。
+- en: Imports and Types
+  id: totrans-201
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 导入和类型
+- en: '[Example 18-12](#lis_top_ex) shows the first lines of *lis.py*. The use of
+    `TypeAlias` and the `|` type union operator require Python 3.10.'
+  id: totrans-202
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 18-12](#lis_top_ex)显示了*lis.py*的前几行。`TypeAlias`和`|`类型联合运算符的使用需要Python 3.10。'
+- en: 'Example 18-12\. lis.py: top of the file'
+  id: totrans-203
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 18-12\. lis.py：文件顶部
+- en: '[PRE12]'
+  id: totrans-204
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE12]'
+- en: 'The types defined are:'
+  id: totrans-205
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 定义的类型有：
+- en: '`Symbol`'
+  id: totrans-206
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`Symbol`'
+- en: Just an alias for `str`. In *lis.py*, `Symbol` is used for identifiers; there
+    is no string data type with operations such as slicing, splitting, etc.^([8](ch18.html#idm46582396087856))
+  id: totrans-207
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`str`的别名。在*lis.py*中，`Symbol`用于标识符；没有带有切片、分割等操作的字符串数据类型。^([8](ch18.html#idm46582396087856))'
+- en: '`Atom`'
+  id: totrans-208
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`Atom`'
+- en: A simple syntactic element, such as a number or a `Symbol`—as opposed to a composite
+    structure made of distinct parts, like a list.
+  id: totrans-209
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 一个简单的句法元素，如数字或 `Symbol`—与由不同部分组成的复合结构相对，如列表。
+- en: '`Expression`'
+  id: totrans-210
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`表达式`'
+- en: The building blocks of Scheme programs are expressions made of atoms and lists,
+    possibly nested.
+  id: totrans-211
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Scheme 程序的构建块是由原子和列表组成的表达式，可能是嵌套的。
+- en: The Parser
+  id: totrans-212
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 解析器
+- en: Norvig’s parser is 36 lines of code showcasing the power of Python applied to
+    handling the simple recursive syntax of S-expression—without string data, comments,
+    macros, and other features of standard Scheme that make parsing more complicated
+    ([Example 18-13](#lis_parser_ex)).
+  id: totrans-213
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Norvig 的解析器是 36 行代码，展示了 Python 的强大之处，应用于处理 S-表达式的简单递归语法，没有字符串数据、注释、宏和标准 Scheme
+    的其他特性，这些特性使解析变得更加复杂（[示例 18-13](#lis_parser_ex)）。
+- en: 'Example 18-13\. lis.py: the main parsing functions'
+  id: totrans-214
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 18-13\. lis.py：主要解析函数
+- en: '[PRE13]'
+  id: totrans-215
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE13]'
+- en: 'The main function of that group is `parse`, which takes an S-expression as
+    a `str` and returns an `Expression` object, as defined in [Example 18-12](#lis_top_ex):
+    an `Atom` or a `list` that may contain more atoms and nested lists.'
+  id: totrans-216
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 该组的主要函数是 `parse`，它接受一个 S-表达式作为 `str` 并返回一个 `Expression` 对象，如 [示例 18-12](#lis_top_ex)
+    中定义的：一个 `Atom` 或一个可能包含更多原子和嵌套列表的 `list`。
+- en: 'Norvig uses a smart trick in `tokenize`: he adds spaces before and after each
+    parenthesis in the input and then splits it, resulting in a list of syntactic
+    tokens with `''(''` and `'')''` as separate tokens. This shortcut works because
+    there is no string type in the little Scheme of *lis.py*, so every `''(''` or
+    `'')''` is an expression delimiter. The recursive parsing code is in `read_from_tokens`,
+    a 14-line function that you can read in the [*fluentpython/example-code-2e*](https://fpy.li/18-17)
+    repository. I will skip it because I want to focus on the other parts of the interpreter.'
+  id: totrans-217
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Norvig 在 `tokenize` 中使用了一个聪明的技巧：他在输入的每个括号前后添加空格，然后拆分它，结果是一个包含 `'('` 和 `')'`
+    作为单独标记的句法标记列表。这个快捷方式有效，因为在 *lis.py* 的小 Scheme 中没有字符串类型，所以每个 `'('` 或 `')'` 都是表达式分隔符。递归解析代码在
+    `read_from_tokens` 中，这是一个 14 行的函数，你可以在 [*fluentpython/example-code-2e*](https://fpy.li/18-17)
+    仓库中阅读。我会跳过它，因为我想专注于解释器的其他部分。
+- en: 'Here are some doctests extracted from [*lispy/py3.10/examples_test.py*](https://fpy.li/18-18):'
+  id: totrans-218
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这里是从 [*lispy/py3.10/examples_test.py*](https://fpy.li/18-18) 中提取的一些 doctest：
+- en: '[PRE14]'
+  id: totrans-219
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE14]'
+- en: 'The parsing rules for this subset of Scheme are simple:'
+  id: totrans-220
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这个 Scheme 子集的解析规则很简单：
+- en: A token that looks like a number is parsed as a `float` or `int`.
+  id: totrans-221
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 看起来像数字的标记被解析为 `float` 或 `int`。
+- en: Anything else that is not `'('` or `')'` is parsed as a `Symbol`—a `str` to
+    be used as an identifier. This includes source text like `+`, `set!`, and `make-counter`
+    that are valid identifiers in Scheme but not in Python.
+  id: totrans-222
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 其他任何不是 `'('` 或 `')'` 的内容都被解析为 `Symbol`—一个可用作标识符的 `str`。这包括 Scheme 中有效但不在 Python
+    中的标识符的源文本，如 `+`、`set!` 和 `make-counter`。
+- en: Expressions inside `'('` and `')'` are recursively parsed as lists containing
+    atoms or as nested lists that may contain atoms and more nested lists.
+  id: totrans-223
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: '`''(''` 和 `'')''` 内的表达式被递归解析为包含原子的列表或可能包含原子和更多嵌套列表的嵌套列表。'
+- en: 'Using the terminology of the Python interpreter, the output of `parse` is an
+    AST (Abstract Syntax Tree): a convenient representation of the Scheme program
+    as nested lists forming a tree-like structure, where the outermost list is the
+    trunk, inner lists are the branches, and atoms are the leaves ([Figure 18-1](#ast_fig)).'
+  id: totrans-224
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 使用 Python 解释器的术语，`parse` 的输出是一个 AST（抽象语法树）：一个方便的表示 Scheme 程序的嵌套列表形成树状结构，其中最外层列表是主干，内部列表是分支，原子是叶子（[图
+    18-1](#ast_fig)）。
+- en: '![Scheme code, a tree diagram, and Python objects](assets/flpy_1801.png)'
+  id: totrans-225
+  prefs: []
+  type: TYPE_IMG
+  zh: '![Scheme 代码、树状图和 Python 对象](assets/flpy_1801.png)'
+- en: Figure 18-1\. A Scheme `lambda` expression represented as source code (concrete
+    syntax), as a tree, and as a sequence of Python objects (abstract syntax).
+  id: totrans-226
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 图 18-1\. 一个 Scheme `lambda` 表达式，表示为源代码（具体语法）、作为树和作为 Python 对象序列（抽象语法）。
+- en: The Environment
+  id: totrans-227
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 环境
+- en: 'The `Environment` class extends `collections.ChainMap`, adding a `change` method
+    to update a value inside one of the chained dicts, which `ChainMap` instances
+    hold in a list of mappings: the `self.maps` attribute. The `change` method is
+    needed to support the Scheme `(set! …)` form, described later; see [Example 18-14](#environment_class_ex).'
+  id: totrans-228
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`Environment` 类扩展了 `collections.ChainMap`，添加了一个 `change` 方法来更新链式字典中的值，`ChainMap`
+    实例将这些值保存在映射列表中：`self.maps` 属性。`change` 方法用于支持后面描述的 Scheme `(set! …)` 形式；参见 [示例
+    18-14](#environment_class_ex)。'
+- en: 'Example 18-14\. *lis.py*: the `Environment` class'
+  id: totrans-229
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 18-14\. *lis.py*：`Environment` 类
+- en: '[PRE15]'
+  id: totrans-230
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE15]'
+- en: Note that the `change` method only updates existing keys.^([9](ch18.html#idm46582395831120))
+    Trying to change a key that is not found raises `KeyError`.
+  id: totrans-231
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意，`change` 方法只更新现有键。^([9](ch18.html#idm46582395831120)) 尝试更改未找到的键会引发 `KeyError`。
+- en: 'This doctest shows how `Environment` works:'
+  id: totrans-232
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这个 doctest 展示了 `Environment` 的工作原理：
+- en: '[PRE16]'
+  id: totrans-233
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE16]'
+- en: '[![1](assets/1.png)](#co_with__match__and_else_blocks_CO9-1)'
+  id: totrans-234
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_with__match__and_else_blocks_CO9-1)'
+- en: 'When reading values, `Environment` works as `ChainMap`: keys are searched in
+    the nested mappings from left to right. That’s why the value of `a` in the `outer_env`
+    is shadowed by the value in `inner_env`.'
+  id: totrans-235
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在读取值时，`Environment` 的工作方式类似于 `ChainMap`：键从左到右在嵌套映射中搜索。这就是为什么 `outer_env` 中 `a`
+    的值被 `inner_env` 中的值遮蔽。
+- en: '[![2](assets/2.png)](#co_with__match__and_else_blocks_CO9-2)'
+  id: totrans-236
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_with__match__and_else_blocks_CO9-2)'
+- en: Assigning with `[]` overwrites or inserts new items, but always in the first
+    mapping, `inner_env` in this example.
+  id: totrans-237
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 使用 `[]` 赋值会覆盖或插入新项，但始终在第一个映射 `inner_env` 中进行，本例中。
+- en: '[![3](assets/3.png)](#co_with__match__and_else_blocks_CO9-3)'
+  id: totrans-238
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_with__match__and_else_blocks_CO9-3)'
+- en: '`env.change(''b'', 333)` seeks the `''b''` key and assigns a new value to it
+    in-place, in the `outer_env`.'
+  id: totrans-239
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`env.change(''b'', 333)` 寻找 `''b''` 键并在 `outer_env` 中就地分配一个新值。'
+- en: Next is the `standard_env()` function, which builds and returns an `Environment`
+    loaded with predefined functions, similar to Python’s `__builtins__` module that
+    is always available ([Example 18-15](#lis_std_env_ex)).
+  id: totrans-240
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 接下来是 `standard_env()` 函数，它构建并返回一个加载了预定义函数的 `Environment`，类似于 Python 的 `__builtins__`
+    模块，始终可用（[示例 18-15](#lis_std_env_ex)）。
+- en: 'Example 18-15\. lis.py: `standard_env()` builds and returns the global environment'
+  id: totrans-241
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 18-15\. lis.py：`standard_env()`构建并返回全局环境
+- en: '[PRE17]'
+  id: totrans-242
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE17]'
+- en: 'To summarize, the `env` mapping is loaded with:'
+  id: totrans-243
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 总结一下，`env`映射加载了：
+- en: All functions from Python’s `math` module
+  id: totrans-244
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: Python的`math`模块中的所有函数
+- en: Selected operators from Python’s `op` module
+  id: totrans-245
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 从Python的`op`模块中选择的运算符
+- en: Simple but powerful functions built with Python’s `lambda`
+  id: totrans-246
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 使用Python的`lambda`构建的简单但强大的函数
+- en: Python built-ins renamed, like `callable` as `procedure?`, or directly mapped,
+    like `round`
+  id: totrans-247
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: Python 内置函数重命名，比如`callable`改为`procedure?`，或者直接映射，比如`round`
+- en: The REPL
+  id: totrans-248
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: REPL
+- en: Norvig’s REPL (read-eval-print-loop) is easy to understand but not user-friendly
+    (see [Example 18-16](#ex_lispy_repl)). If no command-line arguments are given
+    to *lis.py*, the `repl()` function is invoked by `main()`—defined at the end of
+    the module. At the `lis.py>` prompt, we must enter correct and complete expressions;
+    if we forget to close one parenthesis, *lis.py* crashes.^([10](ch18.html#idm46582395540048))
+  id: totrans-249
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Norvig的REPL（读取-求值-打印-循环）易于理解但不用户友好（参见[Example 18-16](#ex_lispy_repl)）。如果没有向*lis.py*提供命令行参数，则`main()`会调用`repl()`函数—在模块末尾定义。在`lis.py>`提示符下，我们必须输入正确和完整的表达式；如果忘记关闭一个括号，*lis.py*会崩溃。^([10](ch18.html#idm46582395540048))
+- en: Example 18-16\. The REPL functions
+  id: totrans-250
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 18-16\. REPL函数
+- en: '[PRE18]'
+  id: totrans-251
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE18]'
+- en: 'Here is a quick explanation about these two functions:'
+  id: totrans-252
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这里是关于这两个函数的简要解释：
+- en: '`repl(prompt: str = ''lis.py> '') -> NoReturn`'
+  id: totrans-253
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`repl(prompt: str = ''lis.py> '') -> NoReturn`'
+- en: Calls `standard_env()` to provide built-in functions for the global environment,
+    then enters an infinite loop, reading and parsing each input line, evaluating
+    it in the global environment, and displaying the result—unless it’s `None`. The
+    `global_env` may be modified by `evaluate`. For example, when a user defines a
+    new global variable or named function, it is stored in the first mapping of the
+    environment—the empty `dict` in the `Environment` constructor call in the first
+    line of `repl`.
+  id: totrans-254
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 调用`standard_env()`为全局环境提供内置函数，然后进入一个无限循环，读取和解析每个输入行，在全局环境中评估它，并显示结果—除非它是`None`。`global_env`可能会被`evaluate`修改。例如，当用户定义新的全局变量或命名函数时，它会存储在环境的第一个映射中—在`repl`的第一行中的`Environment`构造函数调用中的空`dict`中。
+- en: '`lispstr(exp: object) -> str`'
+  id: totrans-255
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`lispstr(exp: object) -> str`'
+- en: 'The inverse function of `parse`: given a Python object representing an expression,
+    `parse` returns the Scheme source code for it. For example, given `[''+'', 2,
+    3]`, the result is `''(+ 2 3)''`.'
+  id: totrans-256
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`parse`的反函数：给定表示表达式的Python对象，`parse`返回其Scheme源代码。例如，给定`[''+'', 2, 3]`，结果是`''(+
+    2 3)''`。'
+- en: The Evaluator
+  id: totrans-257
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 评估器
+- en: Now we can appreciate the beauty of Norvig’s expression evaluator—made a little
+    prettier with `match/case`. The `evaluate` function in [Example 18-17](#ex_evaluate_match)
+    takes an `Expression` built by `parse` and an `Environment`.
+  id: totrans-258
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在我们可以欣赏Norvig的表达式求值器的美丽之处—通过`match/case`稍微美化了一下。[Example 18-17](#ex_evaluate_match)中的`evaluate`函数接受由`parse`构建的`Expression`和一个`Environment`。
+- en: The body of `evaluate` is a single `match` statement with an expression `exp`
+    as the subject. The `case` patterns express the syntax and semantics of Scheme
+    with amazing clarity.
+  id: totrans-259
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`evaluate`的主体是一个带有表达式`exp`的单个`match`语句。`case`模式以惊人的清晰度表达了Scheme的语法和语义。'
+- en: Example 18-17\. `evaluate` takes an expression and computes its value
+  id: totrans-260
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 18-17\. `evaluate`接受一个表达式并计算其值
+- en: '[PRE19]'
+  id: totrans-261
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE19]'
+- en: Let’s study each `case` clause and what it does. In some cases I added comments
+    showing an S-expression that would match the pattern when parsed into a Python
+    list. Doctests extracted from [*examples_test.py*](https://fpy.li/18-21) demonstrate
+    each `case`.
+  id: totrans-262
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 让我们研究每个`case`子句及其作用。在某些情况下，我添加了注释，显示出一个S表达式，当解析为Python列表时会匹配该模式。从[*examples_test.py*](https://fpy.li/18-21)提取的Doctests展示了每个`case`。
+- en: Evaluating numbers
+  id: totrans-263
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 评估数字
+- en: '[PRE20]'
+  id: totrans-264
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE20]'
+- en: 'Subject:'
+  id: totrans-265
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 主题：
+- en: Instance of `int` or `float`.
+  id: totrans-266
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`int`或`float`的实例。'
+- en: 'Action:'
+  id: totrans-267
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 操作：
+- en: Return value as is.
+  id: totrans-268
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 原样返回值。
+- en: 'Example:'
+  id: totrans-269
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 示例：
+- en: '[PRE21]'
+  id: totrans-270
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE21]'
+- en: Evaluating symbols
+  id: totrans-271
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 评估符号
+- en: '[PRE22]'
+  id: totrans-272
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE22]'
+- en: 'Subject:'
+  id: totrans-273
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 主题：
+- en: Instance of `Symbol`, i.e., a `str` used as an identifier.
+  id: totrans-274
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`Symbol`的实例，即作为标识符使用的`str`。'
+- en: 'Action:'
+  id: totrans-275
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 操作：
+- en: Look up `var` in `env` and return its value.
+  id: totrans-276
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在`env`中查找`var`并返回其值。
+- en: 'Examples:'
+  id: totrans-277
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 示例：
+- en: '[PRE23]'
+  id: totrans-278
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE23]'
+- en: (quote …)
+  id: totrans-279
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: (quote …)
+- en: The `quote` special form treats atoms and lists as data instead of expressions
+    to be evaluated.
+  id: totrans-280
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`quote`特殊形式将原子和列表视为数据而不是要评估的表达式。'
+- en: '[PRE24]'
+  id: totrans-281
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE24]'
+- en: 'Subject:'
+  id: totrans-282
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 主题：
+- en: List starting with the symbol `'quote'`, followed by one expression `x`.
+  id: totrans-283
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 以符号`'quote'`开头的列表，后跟一个表达式`x`。
+- en: 'Action:'
+  id: totrans-284
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 操作：
+- en: Return `x` without evaluating it.
+  id: totrans-285
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 返回`x`而不对其进行评估。
+- en: 'Examples:'
+  id: totrans-286
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 示例：
+- en: '[PRE25]'
+  id: totrans-287
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE25]'
+- en: 'Without `quote`, each expression in the test would raise an error:'
+  id: totrans-288
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 没有`quote`，测试中的每个表达式都会引发错误：
+- en: '`no-such-name` would be looked up in the environment, raising `KeyError`'
+  id: totrans-289
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 在环境中查找`no-such-name`，引发`KeyError`
+- en: '`(99 bottles of beer)` cannot be evaluated because the number 99 is not a `Symbol`
+    naming a special form, operator, or function'
+  id: totrans-290
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '`(99 bottles of beer)`无法评估，因为数字99不是命名特殊形式、运算符或函数的`Symbol`'
+- en: '`(/ 10 0)` would raise `ZeroDivisionError`'
+  id: totrans-291
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '`(/ 10 0)`会引发`ZeroDivisionError`'
+- en: (if …)
+  id: totrans-292
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: (if …)
+- en: '[PRE26]'
+  id: totrans-293
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE26]'
+- en: 'Subject:'
+  id: totrans-294
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 主题：
+- en: 'List starting with `''if''` followed by three expressions: `test`, `consequence`,
+    and `alternative`.'
+  id: totrans-295
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 以`'if'`开头的列表，后跟三个表达式：`test`、`consequence`和`alternative`。
+- en: 'Action:'
+  id: totrans-296
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 操作：
+- en: 'Evaluate `test`:'
+  id: totrans-297
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 评估`test`：
+- en: If true, evaluate `consequence` and return its value.
+  id: totrans-298
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 如果为真，则评估`consequence`并返回其值。
+- en: Otherwise, evaluate `alternative` and return its value.
+  id: totrans-299
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 否则，评估`alternative`并返回其值。
+- en: 'Examples:'
+  id: totrans-300
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 示例：
+- en: '[PRE27]'
+  id: totrans-301
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE27]'
+- en: The `consequence` and `alternative` branches must be single expressions. If
+    more than one expression is needed in a branch, you can combine them with `(begin
+    exp1 exp2…)`, provided as a function in *lis.py*—see [Example 18-15](#lis_std_env_ex).
+  id: totrans-302
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`consequence`和`alternative`分支必须是单个表达式。如果分支中需要多个表达式，可以使用`(begin exp1 exp2…)`将它们组合起来，作为*lis.py*中的一个函数提供—参见[Example 18-15](#lis_std_env_ex)。'
+- en: (lambda …)
+  id: totrans-303
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: (lambda …)
+- en: 'Scheme’s `lambda` form defines anonymous functions. It doesn’t suffer from
+    the limitations of Python’s `lambda`: any function that can be written in Scheme
+    can be written using the `(lambda …)` syntax.'
+  id: totrans-304
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Scheme的`lambda`形式定义了匿名函数。它不受Python的`lambda`的限制：任何可以用Scheme编写的函数都可以使用`(lambda
+    ...)`语法编写。
+- en: '[PRE28]'
+  id: totrans-305
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE28]'
+- en: 'Subject:'
+  id: totrans-306
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 主题：
+- en: 'List starting with `''lambda''`, followed by:'
+  id: totrans-307
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 以`'lambda'`开头的列表，后跟：
+- en: List of zero or more parameter names.
+  id: totrans-308
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 零个或多个参数名的列表。
+- en: One or more expressions collected in `body` (the guard ensures that `body` is
+    not empty).
+  id: totrans-309
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 一个或多个收集在`body`中的表达式（保证`body`不为空）。
+- en: 'Action:'
+  id: totrans-310
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 操作：
+- en: Create and return a new `Procedure` instance with the parameter names, the list
+    of expressions as the body, and the current environment.
+  id: totrans-311
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 创建并返回一个新的`Procedure`实例，其中包含参数名称、作为主体的表达式列表和当前环境。
+- en: 'Example:'
+  id: totrans-312
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 例子：
+- en: '[PRE29]'
+  id: totrans-313
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE29]'
+- en: 'The `Procedure` class implements the concept of a closure: a callable object
+    holding parameter names, a function body, and a reference to the environment in
+    which the function is defined. We’ll study the code for `Procedure` in a moment.'
+  id: totrans-314
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`Procedure`类实现了闭包的概念：一个可调用对象，包含参数名称、函数体和函数定义所在环境的引用。我们将很快研究`Procedure`的代码。'
+- en: (define …)
+  id: totrans-315
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: '`(define …)`'
+- en: 'The `define` keyword is used in two different syntactic forms. The simplest
+    is:'
+  id: totrans-316
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`define`关键字以两种不同的语法形式使用。最简单的是：'
+- en: '[PRE30]'
+  id: totrans-317
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE30]'
+- en: 'Subject:'
+  id: totrans-318
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 主题：
+- en: List starting with `'define'`, followed by a `Symbol` and an expression.
+  id: totrans-319
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 以`'define'`开头的列表，后跟一个`Symbol`和一个表达式。
+- en: 'Action:'
+  id: totrans-320
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 操作：
+- en: Evaluate the expression and put its value into `env`, using `name` as key.
+  id: totrans-321
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 评估表达式并将其值放入`env`中，使用`name`作为键。
+- en: 'Example:'
+  id: totrans-322
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 例子：
+- en: '[PRE31]'
+  id: totrans-323
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE31]'
+- en: The doctest for this `case` creates a `global_env` so that we can verify that
+    `evaluate` puts `answer` into that `Environment`.
+  id: totrans-324
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 此`case`的doctest创建一个`global_env`，以便我们可以验证`evaluate`将`answer`放入该`Environment`中。
+- en: We can use that simple `define` form to create variables or to bind names to
+    anonymous functions, using `(lambda …)` as the `value_exp`.
+  id: totrans-325
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们可以使用简单的`define`形式来创建变量或将名称绑定到匿名函数，使用`(lambda …)`作为`value_exp`。
+- en: 'Standard Scheme provides a shortcut for defining named functions. That’s the
+    second `define` form:'
+  id: totrans-326
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 标准Scheme提供了一种快捷方式来定义命名函数。这是第二种`define`形式：
+- en: '[PRE32]'
+  id: totrans-327
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE32]'
+- en: 'Subject:'
+  id: totrans-328
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 主题：
+- en: 'List starting with `''define''`, followed by:'
+  id: totrans-329
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 以`'define'`开头的列表，后跟：
+- en: A list starting with a `Symbol(name)`, followed by zero or more items collected
+    into a list named `parms`.
+  id: totrans-330
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 以`Symbol(name)`开头的列表，后跟零个或多个收集到名为`parms`的列表中的项目。
+- en: One or more expressions collected in `body` (the guard ensures that `body` is
+    not empty).
+  id: totrans-331
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 一个或多个收集在`body`中的表达式（保证`body`不为空）。
+- en: 'Action:'
+  id: totrans-332
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 操作：
+- en: Create a new `Procedure` instance with the parameter names, the list of expressions
+    as the body, and the current environment.
+  id: totrans-333
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 创建一个新的`Procedure`实例，其中包含参数名称、作为主体的表达式列表和当前环境。
+- en: Put the `Procedure` into `env`, using `name` as key.
+  id: totrans-334
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 将`Procedure`放入`env`中，使用`name`作为键。
+- en: The doctest in [Example 18-18](#test_case_defun) defines a function named `%`
+    that computes a percentage and adds it to the `global_env`.
+  id: totrans-335
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[Example 18-18](#test_case_defun)中的doctest定义了一个名为`%`的计算百分比的函数，并将其添加到`global_env`中。'
+- en: Example 18-18\. Defining a function named `%` that computes a percentage
+  id: totrans-336
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 例18-18\. 定义一个名为`%`的计算百分比的函数
+- en: '[PRE33]'
+  id: totrans-337
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE33]'
+- en: After calling `evaluate`, we check that `%` is bound to a `Procedure` that takes
+    two numeric arguments and returns a percentage.
+  id: totrans-338
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 调用`evaluate`后，我们检查`%`是否绑定到一个接受两个数值参数并返回百分比的`Procedure`。
+- en: The pattern for the second `define` `case` does not enforce that the items in
+    `parms` are all `Symbol` instances. I’d have to check that before building the
+    `Procedure`, but I didn’t—to keep the code as easy to follow as Norvig’s.
+  id: totrans-339
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 第二个`define` `case`的模式不强制要求`parms`中的项目都是`Symbol`实例。我必须在构建`Procedure`之前检查这一点，但我没有这样做——为了使代码像Norvig的那样易于理解。
+- en: (set! …)
+  id: totrans-340
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: (set! …)
+- en: The `set!` form changes the value of a previously defined variable.^([11](ch18.html#idm46582394172800))
+  id: totrans-341
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`set!`形式更改先前定义的变量的值。^([11](ch18.html#idm46582394172800))'
+- en: '[PRE34]'
+  id: totrans-342
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE34]'
+- en: 'Subject:'
+  id: totrans-343
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 主题：
+- en: List starting with `'set!'`, followed by a `Symbol` and an expression.
+  id: totrans-344
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 以`'set!'`开头的列表，后跟一个`Symbol`和一个表达式。
+- en: 'Action:'
+  id: totrans-345
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 操作：
+- en: Update the value of `name` in `env` with the result of evaluating the expression.
+  id: totrans-346
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 使用评估表达式的结果更新`env`中的`name`的值。
+- en: The `Environment.change` method traverses the chained environments from local
+    to global, and updates the first occurrence of `name` with the new value. If we
+    were not implementing the `'set!'` keyword, we could use Python’s `ChainMap` as
+    the `Environment` type everywhere in this interpreter.
+  id: totrans-347
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`Environment.change`方法从本地到全局遍历链接的环境，并用新值更新第一次出现的`name`。如果我们不实现`''set!''`关键字，我们可以在解释器中的任何地方都使用Python的`ChainMap`作为`Environment`类型。'
+- en: Now we get to a function call.
+  id: totrans-348
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在我们来到一个函数调用。
+- en: Function call
+  id: totrans-349
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 函数调用
+- en: '[PRE35]'
+  id: totrans-350
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE35]'
+- en: 'Subject:'
+  id: totrans-351
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 主题：
+- en: List with one or more items.
+  id: totrans-352
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 一个或多个项目的列表。
+- en: The guard ensures that `func_exp` is not one of `['quote', 'if', 'define', 'lambda',
+    'set!']`—listed right before `evaluate` in [Example 18-17](#ex_evaluate_match).
+  id: totrans-353
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 保护确保`func_exp`不是`['quote', 'if', 'define', 'lambda', 'set!']`中的一个——在[Example 18-17](#ex_evaluate_match)中的`evaluate`之前列出。
+- en: The pattern matches any list with one or more expressions, binding the first
+    expression to `func_exp` and the rest to `args` as a list, which may be empty.
+  id: totrans-354
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 模式匹配任何具有一个或多个表达式的列表，将第一个表达式绑定到`func_exp`，其余的绑定到`args`作为列表，可能为空。
+- en: 'Action:'
+  id: totrans-355
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 操作：
+- en: Evaluate `func_exp` to obtain a function `proc`.
+  id: totrans-356
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 评估`func_exp`以获得函数`proc`。
+- en: Evaluate each item in `args` to build a list of argument values.
+  id: totrans-357
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 评估`args`中的每个项目以构建参数值列表。
+- en: Call `proc` with the values as separate arguments, returning the result.
+  id: totrans-358
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 用值作为单独参数调用`proc`，返回结果。
+- en: 'Example:'
+  id: totrans-359
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 例子：
+- en: '[PRE36]'
+  id: totrans-360
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE36]'
+- en: 'This doctest continues from [Example 18-18](#test_case_defun): it assumes `global_env`
+    has a function named `%`. The arguments given to `%` are arithmetic expressions,
+    to emphasize that the arguments are evaluated before the function is called.'
+  id: totrans-361
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 此doctest继续自[Example 18-18](#test_case_defun)：假设`global_env`有一个名为`%`的函数。给定给`%`的参数是算术表达式，以强调在调用函数之前对参数进行评估。
+- en: The guard in this `case` is needed because `[func_exp, *args]` matches any sequence
+    subject with one or more items. However, if `func_exp` is a keyword, and the subject
+    did not match any previous case, then it is really a syntax error.
+  id: totrans-362
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 此`case`中的保护是必需的，因为`[func_exp, *args]`匹配任何具有一个或多个项目的主题序列。但是，如果`func_exp`是一个关键字，并且主题没有匹配任何先前的情况，那么这实际上是一个语法错误。
+- en: Catch syntax errors
+  id: totrans-363
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 捕获语法错误
+- en: 'If the subject `exp` does not match any of the previous cases, the catch-all
+    `case` raises a `SyntaxError`:'
+  id: totrans-364
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果主题`exp`不匹配任何先前的情况，通用`case`会引发`SyntaxError`：
+- en: '[PRE37]'
+  id: totrans-365
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE37]'
+- en: 'Here is an example of a malformed `(lambda …)` reported as a `SyntaxError`:'
+  id: totrans-366
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这是一个作为`SyntaxError`报告的格式不正确的`(lambda …)`的示例：
+- en: '[PRE38]'
+  id: totrans-367
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE38]'
+- en: If the `case` for function call did not have that guard rejecting keywords,
+    the `(lambda is not like this)` expression would be handled as a function call,
+    which would raise `KeyError` because `'lambda'` is not part of the environment—just
+    like `lambda` is not a Python built-in function.
+  id: totrans-368
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果函数调用的 `case` 没有拒绝关键字的保护，`(lambda is not like this)` 表达式将被处理为函数调用，这将引发 `KeyError`，因为
+    `'lambda'` 不是环境的一部分——就像 `lambda` 不是 Python 内置函数一样。
+- en: 'Procedure: A Class Implementing a Closure'
+  id: totrans-369
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 'Procedure: 实现闭包的类'
+- en: 'The `Procedure` class could very well be named `Closure`, because that’s what
+    it represents: a function definition together with an environment. The function
+    definition includes the name of the parameters and the expressions that make up
+    the body of the function. The environment is used when the function is called
+    to provide the values of the *free variables*: variables that appear in the body
+    of the function but are not parameters, local variables, or global variables.
+    We saw the concepts of *closure* and *free variable* in [“Closures”](ch09.html#closures_sec).'
+  id: totrans-370
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`Procedure` 类实际上可以被命名为 `Closure`，因为它代表的就是一个函数定义和一个环境。函数定义包括参数的名称和构成函数主体的表达式。当函数被调用时，环境用于提供*自由变量*的值：出现在函数主体中但不是参数、局部变量或全局变量的变量。我们在[“闭包”](ch09.html#closures_sec)中看到了*闭包*和*自由变量*的概念。'
+- en: 'We learned how to use closures in Python, but now we can dive deeper and see
+    how a closure is implemented in *lis.py*:'
+  id: totrans-371
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们学会了如何在 Python 中使用闭包，但现在我们可以更深入地了解闭包是如何在 *lis.py* 中实现的：
+- en: '[PRE39]'
+  id: totrans-372
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE39]'
+- en: '[![1](assets/1.png)](#co_with__match__and_else_blocks_CO11-1)'
+  id: totrans-373
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_with__match__and_else_blocks_CO11-1)'
+- en: Called when a function is defined by the `lambda` or `define` forms.
+  id: totrans-374
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当函数由 `lambda` 或 `define` 形式定义时调用。
+- en: '[![2](assets/2.png)](#co_with__match__and_else_blocks_CO11-2)'
+  id: totrans-375
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_with__match__and_else_blocks_CO11-2)'
+- en: Save the parameter names, body expressions, and environment for later use.
+  id: totrans-376
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 保存参数名称、主体表达式和环境以备后用。
+- en: '[![3](assets/3.png)](#co_with__match__and_else_blocks_CO11-3)'
+  id: totrans-377
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_with__match__and_else_blocks_CO11-3)'
+- en: Called by `proc(*values)` in the last line of the `case [func_exp, *args]` clause.
+  id: totrans-378
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在 `case [func_exp, *args]` 子句的最后一行由 `proc(*values)` 调用。
+- en: '[![4](assets/4.png)](#co_with__match__and_else_blocks_CO11-4)'
+  id: totrans-379
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_with__match__and_else_blocks_CO11-4)'
+- en: Build `local_env` mapping `self.parms` as local variable names, and the given
+    `args` as values.
+  id: totrans-380
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 构建 `local_env`，将 `self.parms` 映射为局部变量名称，将给定的 `args` 映射为值。
+- en: '[![5](assets/5.png)](#co_with__match__and_else_blocks_CO11-5)'
+  id: totrans-381
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_with__match__and_else_blocks_CO11-5)'
+- en: Build a new combined `env`, putting `local_env` first, and then `self.env`—the
+    environment that was saved when the function was defined.
+  id: totrans-382
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 构建一个新的合并 `env`，将 `local_env` 放在首位，然后是 `self.env`—即在��数定义时保存的环境。
+- en: '[![6](assets/6.png)](#co_with__match__and_else_blocks_CO11-6)'
+  id: totrans-383
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![6](assets/6.png)](#co_with__match__and_else_blocks_CO11-6)'
+- en: Iterate over each expression in `self.body`, evaluating it in the combined `env`.
+  id: totrans-384
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 迭代 `self.body` 中的每个表达式，在合并的 `env` 中对其进行评估。
+- en: '[![7](assets/7.png)](#co_with__match__and_else_blocks_CO11-7)'
+  id: totrans-385
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![7](assets/7.png)](#co_with__match__and_else_blocks_CO11-7)'
+- en: Return the result of the last expression evaluated.
+  id: totrans-386
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 返回最后一个表达式评估的结果。
+- en: 'There are a couple of simple functions after `evaluate` in [*lis.py*](https://fpy.li/18-24):
+    `run` reads a complete Scheme program and executes it, and `main` calls `run`
+    or `repl`, depending on the command line—similar to what Python does. I will not
+    describe those functions because there’s nothing new in them. My goals were to
+    share with you the beauty of Norvig’s little interpreter, to give more insight
+    into how closures work, and to show how `match/case` is a great addition to Python.'
+  id: totrans-387
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在[*lis.py*](https://fpy.li/18-24)中的 `evaluate` 后有几个简单的函数：`run` 读取一个完整的 Scheme
+    程序并执行它，`main` 调用 `run` 或 `repl`，取决于命令行——类似于 Python 的做法。我不会描述这些函数，因为它们没有什么新内容。我的目标是与你分享
+    Norvig 的小解释器的美丽之处，更深入地了解闭包的工作原理，并展示 `match/case` 如何成为 Python 的一个很好的补充。
+- en: To wrap up this extended section on pattern matching, let’s formalize the concept
+    of an OR-pattern.
+  id: totrans-388
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 结束这一关于模式匹配的扩展部分，让我们正式定义一下*OR-pattern*的概念。
+- en: Using OR-patterns
+  id: totrans-389
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 使用 OR-patterns
+- en: 'A series of patterns separated by `|` is an [*OR-pattern*](https://fpy.li/18-25):
+    it succeeds if any of the subpatterns succeed. The pattern in [“Evaluating numbers”](#eval_atom_sec)
+    is an OR-pattern:'
+  id: totrans-390
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 一系列由 `|` 分隔的模式是一个[*OR-pattern*](https://fpy.li/18-25)：如果任何子模式成功，则它成功。[“评估数字”](#eval_atom_sec)中的模式就是一个
+    OR-pattern：
+- en: '[PRE40]'
+  id: totrans-391
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE40]'
+- en: All subpatterns in an OR-pattern must use the same variables. This restriction
+    is necessary to ensure that the variables are available to the guard expression
+    and the `case` body, regardless of the subpattern that matched.
+  id: totrans-392
+  prefs: []
+  type: TYPE_NORMAL
+  zh: OR-pattern 中的所有子模式必须使用相同的变量。这种限制是必要的，以确保变量在匹配的子模式中都是可用的，无论匹配的是哪个子模式。
+- en: Warning
+  id: totrans-393
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 警告
+- en: In the context of a `case` clause, the `|` operator has a special meaning. It
+    does not trigger the `__or__` special method, which handles expressions like `a
+    | b` in other contexts, where it is overloaded to perform operations such as set
+    union or integer bitwise-or, depending on the operands.
+  id: totrans-394
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在 `case` 子句的上下文中，`|` 运算符有特殊的含义。它不会触发 `__or__` 特殊方法，该方法处理其他上下文中的表达式，如 `a | b`，在这些上下文中，它被重载以执行诸如集合并集或整数按位或等操作，具体取决于操作数。
+- en: 'An OR-pattern is not restricted to appear at the top level of a pattern. You
+    can also use `|` in subpatterns. For example, if we wanted *lis.py* to accept
+    the Greek letter λ (lambda)^([12](ch18.html#idm46582393491248)) as well as the
+    `lambda` keyword, we can rewrite the pattern like this:'
+  id: totrans-395
+  prefs: []
+  type: TYPE_NORMAL
+  zh: OR-pattern 不限于出现在模式的顶层。你也可以在子模式中使用 `|`。例如，如果我们希望 *lis.py* 接受希腊字母 λ (lambda)^([12](ch18.html#idm46582393491248))
+    以及 `lambda` 关键字，我们可以像这样重写模式：
+- en: '[PRE41]'
+  id: totrans-396
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE41]'
+- en: 'Now we can move to the third and last subject of this chapter: the unusual
+    places where an `else` clause may appear in Python.'
+  id: totrans-397
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在我们可以转向本章的第三个也是最后一个主题：Python 中出现 `else` 子句的不寻常位置。
+- en: 'Do This, Then That: else Blocks Beyond if'
+  id: totrans-398
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 这样做，然后那样：else 块超出 if
+- en: 'This is no secret, but it is an underappreciated language feature: the `else`
+    clause can be used not only in `if` statements but also in `for`, `while`, and
+    `try` statements.'
+  id: totrans-399
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这并不是什么秘密，但是这是一个被低估的语言特性：`else`子句不仅可以用在`if`语句中，还可以用在`for`、`while`和`try`语句中。
+- en: The semantics of `for/else`, `while/else`, and `try/else` are closely related,
+    but very different from `if/else`. Initially, the word `else` actually hindered
+    my understanding of these features, but eventually I got used to it.
+  id: totrans-400
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`for/else`、`while/else`和`try/else`的语义密切相关，但与`if/else`非常不同。最初，`else`这个词实际上阻碍了我对这些特性的理解，但最终我习惯了它。'
+- en: 'Here are the rules:'
+  id: totrans-401
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这里是规则：
+- en: '`for`'
+  id: totrans-402
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`for`'
+- en: The `else` block will run only if and when the `for` loop runs to completion
+    (i.e., not if the `for` is aborted with a `break`).
+  id: totrans-403
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当`for`循环完成时，`else`块将运行一次（即，如果`for`被`break`中止，则不会运行）。
+- en: '`while`'
+  id: totrans-404
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`while`'
+- en: The `else` block will run only if and when the `while` loop exits because the
+    condition became *falsy* (i.e., not if the `while` is aborted with a `break`).
+  id: totrans-405
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当`while`循环退出时，`else`块只会运行一次，因为条件变为*假*（即，如果`while`被`break`中止，则不会运行）。
+- en: '`try`'
+  id: totrans-406
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`try`'
+- en: 'The `else` block will run only if no exception is raised in the `try` block.
+    The [official docs](https://fpy.li/18-27) also state: “Exceptions in the `else`
+    clause are not handled by the preceding `except` clauses.”'
+  id: totrans-407
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当`try`块中没有引发异常时，`else`块将运行。[官方文档](https://fpy.li/18-27)还指出：“`else`子句中的异常不会被前面的`except`子句处理。”
+- en: In all cases, the `else` clause is also skipped if an exception or a `return`,
+    `break`, or `continue` statement causes control to jump out of the main block
+    of the compound statement.
+  id: totrans-408
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在所有情况下，如果异常或`return`、`break`或`continue`语句导致控制跳出复合语句的主块，则`else`子句也会被跳过。
+- en: Note
+  id: totrans-409
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 注意
+- en: 'I think `else` is a very poor choice for the keyword in all cases except `if`.
+    It implies an excluding alternative, like, “Run this loop, otherwise do that,”
+    but the semantics for `else` in loops is the opposite: “Run this loop, then do
+    that.” This suggests `then` as a better keyword—which would also make sense in
+    the `try` context: “Try this, then do that.” However, adding a new keyword is
+    a breaking change to the language—not an easy decision to make.'
+  id: totrans-410
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我认为`else`在除了`if`之外的所有情况下都是一个非常糟糕的关键字选择。它暗示了一个排除性的替代方案，比如，“运行这个循环，否则做那个”��但是在循环中`else`的语义是相反的：“运行这个循环，然后做那个”。这表明`then`是一个更好的关键字选择——这在`try`的上下文中也是有意义的：“尝试这个，然后做那个”。然而，添加一个新关键字会对语言造成破坏性的改变——这不是一个容易做出的决定。
+- en: Using `else` with these statements often makes the code easier to read and saves
+    the trouble of setting up control flags or coding extra `if` statements.
+  id: totrans-411
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在这些语句中使用`else`通常会使代码更易读，避免设置控制标志或编写额外的`if`语句。
+- en: 'The use of `else` in loops generally follows the pattern of this snippet:'
+  id: totrans-412
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在循环中使用`else`通常遵循以下代码段的模式：
+- en: '[PRE42]'
+  id: totrans-413
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE42]'
+- en: In the case of `try/except` blocks, `else` may seem redundant at first. After
+    all, the `after_call()` in the following snippet will run only if the `dangerous_call()`
+    does not raise an exception, correct?
+  id: totrans-414
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在`try/except`块的情况下，`else`起初可能看起来是多余的。毕竟，在以下代码段中，只有当`dangerous_call()`不引发异常时，`after_call()`才会运行，对吗？
+- en: '[PRE43]'
+  id: totrans-415
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE43]'
+- en: 'However, doing so puts the `after_call()` inside the `try` block for no good
+    reason. For clarity and correctness, the body of a `try` block should only have
+    the statements that may generate the expected exceptions. This is better:'
+  id: totrans-416
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 然而，这样做将`after_call()`放在`try`块内没有任何好处。为了清晰和正确，`try`块的主体应该只包含可能引发预期异常的语句。这样更好：
+- en: '[PRE44]'
+  id: totrans-417
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE44]'
+- en: Now it’s clear that the `try` block is guarding against possible errors in `dangerous_call()`
+    and not in `after_call()`. It’s also explicit that `after_call()` will only execute
+    if no exceptions are raised in the `try` block.
+  id: totrans-418
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在清楚了`try`块是在保护`dangerous_call()`可能出现的错误，而不是在`after_call()`中。明确的是，只有在`try`块中没有引发异常时，`after_call()`才会执行。
+- en: 'In Python, `try/except` is commonly used for control flow, and not just for
+    error handling. There’s even an acronym/slogan for that documented in the [official
+    Python glossary](https://fpy.li/18-28):'
+  id: totrans-419
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在Python中，`try/except`通常用于控制流，而不仅仅用于错误处理。甚至在[官方Python术语表](https://fpy.li/18-28)中都有一个缩略语/口号来记录这一点：
+- en: EAFP
+  id: totrans-420
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+  zh: EAFP
+- en: ''
+  id: totrans-421
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: Easier to ask for forgiveness than permission. This common Python coding style
+    assumes the existence of valid keys or attributes and catches exceptions if the
+    assumption proves false. This clean and fast style is characterized by the presence
+    of many try and except statements. The technique contrasts with the *LBYL* style
+    common to many other languages such as C.
+  id: totrans-422
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+  zh: 宽恕比许可更容易。这种常见的Python编码风格假设存在有效的键或属性，并在假设被证明为假时捕获异常。这种干净且快速的风格的特点是存在许多try和except语句。这种技术与许多其他语言（如C）常见的*LBYL*风格形成对比。
+- en: 'The glossary then defines LBYL:'
+  id: totrans-423
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 然后，术语表定义了LBYL：
+- en: LBYL
+  id: totrans-424
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+  zh: LBYL
+- en: ''
+  id: totrans-425
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: 'Look before you leap. This coding style explicitly tests for pre-conditions
+    before making calls or lookups. This style contrasts with the *EAFP* approach
+    and is characterized by the presence of many if statements. In a multi-threaded
+    environment, the LBYL approach can risk introducing a race condition between “the
+    looking” and “the leaping.” For example, the code, if key in mapping: return mapping[key]
+    can fail if another thread removes key from mapping after the test, but before
+    the lookup. This issue can be solved with locks or by using the EAFP approach.'
+  id: totrans-426
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+  zh: '三思而后行。这种编码风格在进行调用或查找之前明确测试前提条件。这种风格与*EAFP*方法形成对比，其特点是存在许多if语句。在多线程环境中，LBYL方法可能会在“观察”和“跳转”之间引入竞争条件。例如，如果代码`if
+    key in mapping: return mapping[key]`在测试后，但查找前，另一个线程从映射中删除了键，那么就会失败。这个问题可以通过使用锁或使用EAFP方法来解决。'
+- en: Given the EAFP style, it makes even more sense to know and use `else` blocks
+    well in `try/except` statements.
+  id: totrans-427
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 鉴于EAFP风格，了解并善于使用`try/except`语句中的`else`块更有意义。
+- en: Note
+  id: totrans-428
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 注意
+- en: When the `match` statement was discussed, some people (including me) thought
+    it should also have an `else` clause. In the end it was decided that it wasn’t
+    needed because `case _:` does the same job.^([13](ch18.html#idm46582393271584))
+  id: totrans-429
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当讨论`match`语句时，一些人（包括我在内）认为它也应该有一个`else`子句。最终决定不需要，因为`case _:`可以完成相同的工作。^([13](ch18.html#idm46582393271584))
+- en: Now let’s summarize the chapter.
+  id: totrans-430
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在让我们总结本章。
+- en: Chapter Summary
+  id: totrans-431
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 章节总结
+- en: 'This chapter started with context managers and the meaning of the `with` statement,
+    quickly moving beyond its common use to automatically close opened files. We implemented
+    a custom context manager: the `LookingGlass` class with the `__enter__/__exit__`
+    methods, and saw how to handle exceptions in the `__exit__` method. A key point
+    that Raymond Hettinger made in his PyCon US 2013 keynote is that `with` is not
+    just for resource management; it’s a tool for factoring out common setup and teardown
+    code, or any pair of operations that need to be done before and after another
+    procedure.^([14](ch18.html#idm46582393262112))'
+  id: totrans-432
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 本章从上下文管理器和`with`语句的含义开始，迅速超越了其常见用法，自动关闭已打开的文件。我们实现了一个自定义上下文管理器：`LookingGlass`类，具有`__enter__/__exit__`方法，并看到如何在`__exit__`方法中处理异常。雷蒙德·赫廷格在他2013年PyCon美国大会的主题演讲中强调了一个关键点，即`with`不仅用于资源管理；它是一个用于分解常见设置和拆卸代码，或者需要在另一个过程之前和之后执行的任何一对操作的工具。^([14](ch18.html#idm46582393262112))
+- en: We reviewed functions in the `contextlib` standard library module. One of them,
+    the `@contextmanager` decorator, makes it possible to implement a context manager
+    using a simple generator with one `yield`—a leaner solution than coding a class
+    with at least two methods. We reimplemented the `LookingGlass` as a `looking_glass`
+    generator function, and discussed how to do exception handling when using `@contextmanager`.
+  id: totrans-433
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们回顾了`contextlib`标准库模块中的函数。其中之一，`@contextmanager`装饰器，使得可以使用一个`yield`的简单生成器实现上下文管理器—这比编写至少两个方法的类更为简洁。我们将`LookingGlass`重新实现为`looking_glass`生成器函数，并讨论了在使用`@contextmanager`时如何处理异常。
+- en: 'Then we studied Peter Norvig’s elegant *lis.py*, a Scheme interpreter written
+    in idiomatic Python, refactored to use `match/case` in `evaluate`—the function
+    at the core of any interpreter. Understanding how `evaluate` works required reviewing
+    a little bit of Scheme, a parser for S-expressions, a simple REPL, and the construction
+    of nested scopes through an `Environment` subclass of `collection.ChainMap`. In
+    the end, *lis.py* became a vehicle to explore much more than pattern matching.
+    It shows how the different parts of an interpreter work together, illuminating
+    core features of Python itself: why reserved keywords are necessary, how scoping
+    rules work, and how closures are built and used.'
+  id: totrans-434
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 然后我们研究了彼得·诺维格优雅的*lis.py*，这是一个用惯用Python编写的Scheme解释器，重构为在`evaluate`中使用`match/case`—这是任何解释器核心功能的函数。理解`evaluate`如何工作需要回顾一点Scheme，一个S表达式的解析器，一个简单的REPL，以及通过`collection.ChainMap`的`Environment`子类构建嵌套作用域。最终，*lis.py*成为一个探索远不止模式匹配的工具。它展示了解释器的不同部分如何协同工作，阐明了Python本身的核心特性：为什么保留关键字是必要的，作用域规则如何工作，以及闭包是如何构建和使用的。
+- en: Further Reading
+  id: totrans-435
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 进一步阅读
+- en: '[Chapter 8, “Compound Statements,”](https://fpy.li/18-27) in *The Python Language
+    Reference* says pretty much everything there is to say about `else` clauses in
+    `if`, `for`, `while`, and `try` statements. Regarding Pythonic usage of `try/except`,
+    with or without `else`, Raymond Hettinger has a brilliant answer to the question
+    [“Is it a good practice to use try-except-else in Python?”](https://fpy.li/18-31)
+    in StackOverflow. [*Python in a Nutshell*](https://fpy.li/pynut3), 3rd ed., by
+    Martelli et al., has a chapter about exceptions with an excellent discussion of
+    the EAFP style, crediting computing pioneer Grace Hopper for coining the phrase,
+    “It’s easier to ask forgiveness than permission.”'
+  id: totrans-436
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在*Python语言参考*的[第8章，“复合语句”](https://fpy.li/18-27)中，几乎涵盖了关于`if`、`for`、`while`和`try`语句中`else`子句的所有内容。关于Pythonic使用`try/except`，无论是否有`else`，雷蒙德·赫廷格在StackOverflow上对问题[“在Python中使用try-except-else是一个好习惯吗？”](https://fpy.li/18-31)有一个精彩的回答。*Python速查手册*，第3版，由马特利等人编写，有一章关于异常，对EAFP风格进行了出色的讨论，归功于计算先驱格雷斯·霍珀创造了“宽恕比许可更容易”的短语。
+- en: '*The* *Python Standard Library*, Chapter 4, “Built-in Types,” has a section
+    devoted to [“Context Manager Types”](https://fpy.li/18-32). The `__enter__/__exit__`
+    special methods are also documented in *The Python Language Reference* in [“With
+    Statement Context Managers”](https://fpy.li/18-33). Context managers were introduced
+    in [PEP 343—The “with” Statement](https://fpy.li/pep343).'
+  id: totrans-437
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*Python标准库*，第4章，“内置类型”，有一个专门介绍[“上下文管理器类型”](https://fpy.li/18-32)的部分。`__enter__/__exit__`特殊方法也在*Python语言参考*中的[“With语句上下文管理器”](https://fpy.li/18-33)中有文档。上下文管理器是在[PEP
+    343—“with”语句](https://fpy.li/pep343)中引入的。'
+- en: Raymond Hettinger highlighted the `with` statement as a “winning language feature”
+    in his [PyCon US 2013 keynote](https://fpy.li/18-29). He also showed some interesting
+    applications of context managers in his talk, [“Transforming Code into Beautiful,
+    Idiomatic Python”](https://fpy.li/18-35), at the same conference.
+  id: totrans-438
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 雷蒙德·赫廷格在他的[PyCon US 2013主题演讲](https://fpy.li/18-29)中将`with`语句视为“胜利的语言特性”。他还在同一会议上的演讲中展示了一些有趣的上下文管理器应用，标题为[“将代码转变为优美、惯用的Python”](https://fpy.li/18-35)。
+- en: Jeff Preshing’s blog post [“The Python *with* Statement by Example”](https://fpy.li/18-36)
+    is interesting for the examples using context managers with the `pycairo` graphics
+    library.
+  id: totrans-439
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 杰夫·普雷辛的博客文章[“Python *with*语句示例”](https://fpy.li/18-36)对使用`pycairo`图形库的上下文管理器示例很有趣。
+- en: 'The `contextlib.ExitStack` class is based on an original idea by Nikolaus Rath,
+    who wrote a short post explaining why its useful: [“On the Beauty of Python’s
+    ExitStack”](https://fpy.li/18-37). In that text, Rath submits that `ExitStack`
+    is similar but more flexible than the `defer` statement in Go—which I think is
+    one of the best ideas in that language.'
+  id: totrans-440
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`contextlib.ExitStack`类基于尼古劳斯·拉特的原始想法，他写了一篇简短的文章解释为什么它很有用：[“关于Python的ExitStack之美”](https://fpy.li/18-37)。在那篇文章中，拉特认为`ExitStack`类似于但比Go语言中的`defer`语句更灵活—我认为这是那种语言中最好的想法之一。'
+- en: 'Beazley and Jones devised context managers for very different purposes in their
+    *[Python Cookbook,](https://fpy.li/pycook3)* 3rd ed. “Recipe 8.3\. Making Objects
+    Support the Context-Management Protocol” implements a `LazyConnection` class whose
+    instances are context managers that open and close network connections automatically
+    in `with` blocks. “Recipe 9.22\. Defining Context Managers the Easy Way” introduces
+    a context manager for timing code, and another for making transactional changes
+    to a `list` object: within the `with` block, a working copy of the `list` instance
+    is made, and all changes are applied to that working copy. Only when the `with`
+    block completes without an exception, the working copy replaces the original list.
+    Simple and ingenious.'
+  id: totrans-441
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Beazley和Jones在他们的*[Python Cookbook](https://fpy.li/pycook3)*第3版中为非常不同的目的设计了上下文管理器。“Recipe
+    8.3\. 使对象支持上下文管理协议”实现了一个`LazyConnection`类，其实例是上下文管理器，在`with`块中自动打开和关闭网络连接。“Recipe
+    9.22\. 简单定义上下文管理器”介绍了一个用于计时代码的上下文管理器，以及另一个用于对`list`对象进行事务性更改的上下文管理器：在`with`块内，会创建`list`实例的工作副本，并将所有更改应用于该工作副本。只有当`with`块在没有异常的情况下完成时，工作副本才会替换原始列表。简单而巧妙。
+- en: Peter Norvig describes his small Scheme interpreters in the posts [“(How to
+    Write a (Lisp) Interpreter (in Python))”](https://fpy.li/18-38) and [“(An ((Even
+    Better) Lisp) Interpreter (in Python))”](https://fpy.li/18-39). The code for *lis.py*
+    and *lispy.py* is the [*norvig/pytudes*](https://fpy.li/18-40) repository. My
+    repository [*fluentpython/lispy*](https://fpy.li/18-41) includes the *mylis* forks
+    of *lis.py*, updated to Python 3.10, with a nicer REPL, command-line integration,
+    examples, more tests, and references for learning more about Scheme. The best
+    Scheme dialect and environment to learn and experiment is [Racket](https://fpy.li/18-42).
+  id: totrans-442
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Peter Norvig在文章中描述了他的小型Scheme解释器，分别是[“（如何编写（Lisp）解释器（用Python））”](https://fpy.li/18-38)和[“（一个（更好的）Lisp解释器（用Python））”](https://fpy.li/18-39)。*lis.py*和*lispy.py*的代码在[*norvig/pytudes*](https://fpy.li/18-40)存储库中。我的存储库[*fluentpython/lispy*](https://fpy.li/18-41)包括了*lis.py*的*mylis*分支，更新到Python
+    3.10，具有更好的REPL、命令行集成、示例、更多测试和学习Scheme的参考资料。学习和实验的最佳Scheme方言和环境是[Racket](https://fpy.li/18-42)。
+- en: '^([1](ch18.html#idm46582397868400-marker)) PyCon US 2013 keynote: [“What Makes
+    Python Awesome”](https://fpy.li/18-1); the part about `with` starts at 23:00 and
+    ends at 26:15.'
+  id: totrans-443
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([1](ch18.html#idm46582397868400-marker)) PyCon US 2013主题演讲：[“Python的卓越之处”](https://fpy.li/18-1)；关于`with`的部分从23:00开始，到26:15结束。
+- en: ^([2](ch18.html#idm46582397322384-marker)) The three arguments received by `self`
+    are exactly what you get if you call [`sys.exc_info()`](https://fpy.li/18-7) in
+    the `finally` block of a `try/finally` statement. This makes sense, considering
+    that the `with` statement is meant to replace most uses of `try/finally`, and
+    calling `sys.exc_info()` was often necessary to determine what clean-up action
+    would be required.
+  id: totrans-444
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([2](ch18.html#idm46582397322384-marker)) `self`接收的三个参数正是在`try/finally`语句的`finally`块中调用[`sys.exc_info()`](https://fpy.li/18-7)时得到的内容。这是有道理的，考虑到`with`语句旨在取代大多数`try/finally`的用法，而调用`sys.exc_info()`通常是必要的，以确定需要什么清理操作。
+- en: ^([3](ch18.html#idm46582396834368-marker)) The actual class is named `_GeneratorContextManager`.
+    If you want to see exactly how it works, read its [source code](https://fpy.li/18-10)
+    in *Lib/contextlib.py* in Python 3.10.
+  id: totrans-445
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([3](ch18.html#idm46582396834368-marker)) 实际的类名是`_GeneratorContextManager`。如果你想确切地了解���是如何工作的，请阅读Python
+    3.10中*Lib/contextlib.py*中的[源代码](https://fpy.li/18-10)。
+- en: ^([4](ch18.html#idm46582396616496-marker)) This tip is quoted literally from
+    a comment by Leonardo Rochael, one of the tech reviewers for this book. Nicely
+    said, Leo!
+  id: totrans-446
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([4](ch18.html#idm46582396616496-marker)) 这个提示是从本书的技术审阅员之一Leonardo Rochael的评论中直接引用的。说得好，Leo！
+- en: ^([5](ch18.html#idm46582396615104-marker)) At least I and the other technical
+    reviewers didn’t know it until Caleb Hattingh told us. Thanks, Caleb!
+  id: totrans-447
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([5](ch18.html#idm46582396615104-marker)) 至少我和其他技术审阅员在Caleb Hattingh告诉我们之前并不知道这一点。谢谢，Caleb！
+- en: ^([6](ch18.html#idm46582396385792-marker)) People complain about too many parentheses
+    in Lisp, but thoughtful indentation and a good editor mostly take care of that
+    issue. The main readability problem is using the same `(f …)` notation for function
+    calls and special forms like `(define …)`, `(if …)`, and `(quote …)` that don’t
+    behave at all like function calls.
+  id: totrans-448
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([6](ch18.html#idm46582396385792-marker)) 人们抱怨Lisp中有太多括号，但仔细的缩进和一个好的编辑器大多可以解决这个问题。主要的可读性问题是使用相同的`(f
+    …)`符号来表示函数调用和像`(define …)`、`(if …)`和`(quote …)`这样根本不像函数调用的特殊形式。
+- en: ^([7](ch18.html#idm46582396220528-marker)) To make iteration through recursion
+    practical and efficient, Scheme and other functional languages implement *proper
+    tail calls*. For more about this, see [“Soapbox”](#soapbox_with_match).
+  id: totrans-449
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([7](ch18.html#idm46582396220528-marker)) 为了使递归迭代实用和高效，Scheme和其他函数式语言实现了*proper
+    tail calls*。关于这一点的更多信息，请参见[“Soapbox”](#soapbox_with_match)。
+- en: ^([8](ch18.html#idm46582396087856-marker)) But Norvig’s second interpreter,
+    [*lispy.py*](https://fpy.li/18-16), supports strings as a data type, as well as
+    advanced features like syntactic macros, continuations, and proper tail calls.
+    However, *lispy.py* is almost three times longer than *lis.py*—and much harder
+    to understand.
+  id: totrans-450
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([8](ch18.html#idm46582396087856-marker)) 但Norvig的第二个解释器，[*lispy.py*](https://fpy.li/18-16)，支持字符串作为数据类型，以及高级功能，如语法宏、延续和正确的尾调用。然而，*lispy.py*几乎比*lis.py*长三倍，而且更难理解。
+- en: '^([9](ch18.html#idm46582395831120-marker)) The `# type: ignore[index]` comment
+    is there because of *typeshed* issue [#6042](https://fpy.li/18-19), which is unresolved
+    as I review this chapter. `ChainMap` is annotated as `MutableMapping`, but the
+    type hint in the `maps` attribute says it’s a list of `Mapping`, indirectly making
+    the whole `ChainMap` immutable as far as Mypy is concerned.'
+  id: totrans-451
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '^([9](ch18.html#idm46582395831120-marker)) `# type: ignore[index]`注释是因为*typeshed*问题[#6042](https://fpy.li/18-19)，在我审阅本章时尚未解决。`ChainMap`被注释为`MutableMapping`，但`maps`属性的类型提示表示它是`Mapping`列表，间接地使整个`ChainMap`在Mypy看来是不可变的。'
+- en: ^([10](ch18.html#idm46582395540048-marker)) As I studied Norvig’s *lis.py* and
+    *lispy.py*, I started a fork named [*mylis*](https://fpy.li/18-20) that adds some
+    features, including a REPL that accepts partial S-expressions and prompts for
+    the continuation, similar to how Python’s REPL knows we are not finished and presents
+    the secondary prompt (`...`) until we enter a complete expression or statement
+    that can be evaluated. *mylis* also handles a few errors gracefully, but it’s
+    still easy to crash. It’s not nearly as robust as Python’s REPL.
+  id: totrans-452
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([10](ch18.html#idm46582395540048-marker)) 当我研究 Norvig 的 *lis.py* 和 *lispy.py*
+    时，我开始了一个名为 [*mylis*](https://fpy.li/18-20) 的分支，添加了一些功能，包括一个 REPL，可以接受部分 S-表达式，并提示继续，类似于
+    Python 的 REPL 知道我们还没有完成并呈现次要提示符（`...`），直到我们输入一个可以评估的完整表达式或语句。*mylis* 也可以优雅地处理一些错误，但仍然很容易崩溃。它远没有
+    Python 的 REPL 那么健壮。
+- en: ^([11](ch18.html#idm46582394172800-marker)) Assignment is one of the first features
+    taught in many programming tutorials, but `set!` only appears on page 220 of the
+    best known Scheme book, [*Structure and Interpretation of Computer Programs*,
+    2nd ed.,](https://fpy.li/18-22) by Abelson et al. (MIT Press), a.k.a. SICP or
+    the “Wizard Book.” Coding in a functional style can take us very far without the
+    state changes that are typical of imperative and object-oriented programming.
+  id: totrans-453
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([11](ch18.html#idm46582394172800-marker)) 赋值是许多编程教程中教授的第一个特性之一，但 `set!` 只出现在最知名的
+    Scheme 书籍[*计算机程序的构造与解释*，第 2 版，](https://fpy.li/18-22) 由 Abelson 等人（麻省理工学院出版社）编写，也称为
+    SICP 或“巫师书”。以函数式风格编码可以让我们在没有典型的命令式和面向对象编程中的状态更改的情况下走得更远。
+- en: '^([12](ch18.html#idm46582393491248-marker)) The official Unicode name for λ
+    (U+03BB) is GREEK SMALL LETTER LAMDA. This is not a typo: the character is named
+    “lamda” without the “b” in the Unicode database. According to the English Wikipedia
+    article [“Lambda”](https://fpy.li/18-26), the Unicode Consortium adopted that
+    spelling because of “preferences expressed by the Greek National Body.”'
+  id: totrans-454
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([12](ch18.html#idm46582393491248-marker)) λ（U+03BB）的官方 Unicode 名称是 GREEK SMALL
+    LETTER LAMDA。这不是拼写错误：Unicode 数据库中该字符的名称是“lamda”，没有“b”。根据英文维基百科文章[“Lambda”](https://fpy.li/18-26)，Unicode
+    联盟采用了这种拼写，是因为“希腊国家机构表达的偏好”。
+- en: '^([13](ch18.html#idm46582393271584-marker)) Watching the discussion in the
+    python-dev mailing list I thought one reason why `else` was rejected was the lack
+    of consensus on how to indent it within `match`: should `else` be indented at
+    the same level as `match`, or at the same level as `case`?'
+  id: totrans-455
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([13](ch18.html#idm46582393271584-marker)) 在 python-dev 邮件列表中观察讨论时，我认为 `else`
+    被拒绝的一个原因是在 `match` 中如何缩进它缺乏共识：`else` 应该与 `match` 缩进在同一级别，还是与 `case` 缩进在同一级别？
+- en: ^([14](ch18.html#idm46582393262112-marker)) See [slide 21 in “Python is Awesome”](https://fpy.li/18-29).
+  id: totrans-456
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([14](ch18.html#idm46582393262112-marker)) 请参见[“Python is Awesome”中的第 21 页幻灯片](https://fpy.li/18-29)。

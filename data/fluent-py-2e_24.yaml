@@ -1,0 +1,2508 @@
+- en: Chapter 20\. Concurrent Executors
+  id: totrans-0
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 第20章 并发执行器
+- en: The people bashing threads are typically system programmers which have in mind
+    use cases that the typical application programmer will never encounter in her
+    life. [...] In 99% of the use cases an application programmer is likely to run
+    into, the simple pattern of spawning a bunch of independent threads and collecting
+    the results in a queue is everything one needs to know.
+  id: totrans-1
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+  zh: 抨击线程的人通常是系统程序员，他们心中有着典型应用程序员终其一生都不会遇到的用例。[...] 在99%的用例中，应用程序员可能会遇到的情况是，生成一堆独立线程并将结果收集到队列中的简单模式就是他们需要了解的一切。
+- en: ''
+  id: totrans-2
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: Michele Simionato, Python deep thinker^([1](ch20.html#idm46582389734384))
+  id: totrans-3
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+  zh: 米歇尔·西莫纳托，Python深思者^([1](ch20.html#idm46582389734384))
+- en: This chapter focuses on the `concurrent.futures.Executor` classes that encapsulate
+    the pattern of “spawning a bunch of independent threads and collecting the results
+    in a queue,” described by Michele Simionato. The concurrent executors make this
+    pattern almost trivial to use, not only with threads but also with processes—useful
+    for compute-intensive tasks.
+  id: totrans-4
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 本章重点介绍了封装“生成一堆独立线程并将结果收集到队列中”模式的`concurrent.futures.Executor`类，这是米歇尔·西莫纳托描述的。并发执行器使得这种模式几乎可以轻松使用，不仅适用于线程，还适用于进程——对于计算密集型任务非常有用。
+- en: Here I also introduce the concept of *futures*—objects representing the asynchronous
+    execution of an operation, similar to JavaScript promises. This primitive idea
+    is the foundation not only of `concurrent.futures` but also of the `asyncio` package,
+    the subject of [Chapter 21](ch21.html#async_ch).
+  id: totrans-5
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在这里，我还介绍了*futures*的概念——代表操作异步执行的对象，类似于JavaScript的promises。这个基本概念不仅是`concurrent.futures`的基础，也是`asyncio`包的基础，是[第21章](ch21.html#async_ch)的主题。
+- en: What’s New in This Chapter
+  id: totrans-6
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 本章亮点
+- en: I renamed the chapter from “Concurrency with Futures” to “Concurrent Executors”
+    because the executors are the most important high-level feature covered here.
+    Futures are low-level objects, focused on in [“Where Are the Futures?”](#where_futures_sec),
+    but mostly invisible in the rest of the chapter.
+  id: totrans-7
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我将本章从“使用Futures进行并发”改名为“并发执行器”，因为执行器是这里涵盖的最重要的高级特性。Futures是低级对象，在[“Futures在哪里？”](#where_futures_sec)中重点介绍，但在本章的其他部分基本上是不可见的。
+- en: All the HTTP client examples now use the new [*HTTPX*](https://fpy.li/httpx)
+    library, which provides synchronous and asynchronous APIs.
+  id: totrans-8
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 所有HTTP客户端示例现在都使用新的[*HTTPX*](https://fpy.li/httpx)库，提供同步和异步API。
+- en: The setup for the experiments in [“Downloads with Progress Display and Error
+    Handling”](#flags2_sec) is now simpler, thanks to the multithreaded server added
+    to the [`http.server`](https://fpy.li/20-2) package in Python 3.7. Previously,
+    the standard library only had the single-threaded `BaseHttpServer`, which was
+    no good for experimenting with concurrent clients, so I had to resort to external
+    tools in the first edition of this book.
+  id: totrans-9
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在[“带有进度显示和错误处理的下载”](#flags2_sec)实验的设置现在更简单了，这要归功于Python 3.7中添加到[`http.server`](https://fpy.li/20-2)包中的多线程服务器。以前，标准库只有单线程的`BaseHttpServer`，不适合用于并发客户端的实验，因此我不得不在本书第一版中使用外部工具。
+- en: '[“Launching Processes with concurrent.futures”](#launching_processes_sec) now
+    demonstrates how an executor simplifies the code we saw in [“Code for the Multicore
+    Prime Checker”](ch19.html#code_for_multicore_prime_sec).'
+  id: totrans-10
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[“使用concurrent.futures启动进程”](#launching_processes_sec)现在演示了执行器如何简化我们在[“多核素数检查器的代码”](ch19.html#code_for_multicore_prime_sec)中看到的代码。'
+- en: Finally, I moved most of the theory to the new [Chapter 19, “Concurrency Models
+    in Python”](ch19.html#concurrency_models_ch).
+  id: totrans-11
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 最后，我将大部分理论内容移至新的[第19章，“Python中的并发模型”](ch19.html#concurrency_models_ch)。
+- en: Concurrent Web Downloads
+  id: totrans-12
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 并发网络下载
+- en: 'Concurrency is essential for efficient network I/O: instead of idly waiting
+    for remote machines, the application should do something else until a response
+    comes back.^([2](ch20.html#idm46582389710272))'
+  id: totrans-13
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 并发对于高效的网络I/O至关重要：应用程序不应该闲置等待远程机器，而应该在收到响应之前做其他事情。^([2](ch20.html#idm46582389710272))
+- en: 'To demonstrate with code, I wrote three simple programs to download images
+    of 20 country flags from the web. The first one, *flags.py*, runs sequentially:
+    it only requests the next image when the previous one is downloaded and saved
+    locally. The other two scripts make concurrent downloads: they request several
+    images practically at the same time, and save them as they arrive. The *flags_threadpool.py*
+    script uses the `concurrent.futures` package, while *flags_asyncio.py* uses `asyncio`.'
+  id: totrans-14
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了用代码演示，我编写了三个简单的程序来从网络上下载20个国家的国旗图片。第一个*flags.py*按顺序运行：只有在上一个图片下载并保存在本地后才请求下一个图片。另外两个脚本进行并发下载：它们几乎同时请求多个图片，并在图片到达时保存。*flags_threadpool.py*脚本使用`concurrent.futures`包，而*flags_asyncio.py*使用`asyncio`。
+- en: '[Example 20-1](#ex_flags_sample_runs) shows the result of running the three
+    scripts, three times each. I also posted a [73s video on YouTube](https://fpy.li/20-3)
+    so you can watch them running while a macOS Finder window displays the flags as
+    they are saved. The scripts are downloading images from *fluentpython.com*, which
+    is behind a CDN, so you may see slower results in the first runs. The results
+    in [Example 20-1](#ex_flags_sample_runs) were obtained after several runs, so
+    the CDN cache was warm.'
+  id: totrans-15
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例20-1](#ex_flags_sample_runs)展示了运行三个脚本三次的结果。我还在YouTube上发布了一个[73秒的视频](https://fpy.li/20-3)，这样你就可以看到它们运行时macOS
+    Finder窗口显示保存的标志。这些脚本正在从*fluentpython.com*下载图片，该网站位于CDN后面，因此在第一次运行时可能会看到较慢的结果。[示例20-1](#ex_flags_sample_runs)中的结果是在多次运行后获得的，因此CDN缓存已经热了。'
+- en: Example 20-1\. Three typical runs of the scripts flags.py, flags_threadpool.py,
+    and flags_asyncio.py
+  id: totrans-16
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例20-1 三个脚本flags.py、flags_threadpool.py和flags_asyncio.py的典型运行结果
+- en: '[PRE0]'
+  id: totrans-17
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE0]'
+- en: '[![1](assets/1.png)](#co_concurrent_executors_CO1-1)'
+  id: totrans-18
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_concurrent_executors_CO1-1)'
+- en: The output for each run starts with the country codes of the flags as they are
+    downloaded, and ends with a message stating the elapsed time.
+  id: totrans-19
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 每次运行的输出以下载的国旗国家代码开头，并以显示经过的时间的消息结束。
+- en: '[![2](assets/2.png)](#co_concurrent_executors_CO1-2)'
+  id: totrans-20
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_concurrent_executors_CO1-2)'
+- en: It took *flags.py* an average 7.18s to download 20 images.
+  id: totrans-21
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*flags.py*下载20张图像平均用时7.18秒。'
+- en: '[![3](assets/3.png)](#co_concurrent_executors_CO1-3)'
+  id: totrans-22
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_concurrent_executors_CO1-3)'
+- en: The average for *flags_threadpool.py* was 1.40s.
+  id: totrans-23
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*flags_threadpool.py*的平均时间为1.40秒。'
+- en: '[![4](assets/4.png)](#co_concurrent_executors_CO1-4)'
+  id: totrans-24
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_concurrent_executors_CO1-4)'
+- en: For *flags_asyncio.py*, 1.35s was the average time.
+  id: totrans-25
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 对于*flags_asyncio.py*，平均时间为1.35秒。
+- en: '[![5](assets/5.png)](#co_concurrent_executors_CO1-5)'
+  id: totrans-26
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_concurrent_executors_CO1-5)'
+- en: 'Note the order of the country codes: the downloads happened in a different
+    order every time with the concurrent scripts.'
+  id: totrans-27
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意国家代码的顺序：使用并发脚本下载时，每次下载的顺序都不同。
+- en: The difference in performance between the concurrent scripts is not significant,
+    but they are both more than five times faster than the sequential script—and this
+    is just for the small task of downloading 20 files of a few kilobytes each. If
+    you scale the task to hundreds of downloads, the concurrent scripts can outpace
+    the sequential code by a factor or 20 or more.
+  id: totrans-28
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 并发脚本之间的性能差异不大，但它们都比顺序脚本快五倍以上——这仅针对下载几千字节的20个文件的小任务。如果将任务扩展到数百个下载，那么并发脚本可以比顺序代码快20倍或更多。
+- en: Warning
+  id: totrans-29
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 警告
+- en: While testing concurrent HTTP clients against public web servers, you may inadvertently
+    launch a denial-of-service (DoS) attack, or be suspected of doing so. In the case
+    of [Example 20-1](#ex_flags_sample_runs), it’s OK to do it because those scripts
+    are hardcoded to make only 20 requests. We’ll use Python’s `http.server` package
+    to run tests later in this chapter.
+  id: totrans-30
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在针对公共网络服务器测试并发HTTP客户端时，您可能会无意中发动拒绝服务（DoS）攻击，或被怀疑这样做。在[示例 20-1](#ex_flags_sample_runs)的情况下，这样做是可以的，因为这些脚本是硬编码为仅发出20个请求。我们将在本章后面使用Python的`http.server`包来运行测试。
+- en: 'Now let’s study the implementations of two of the scripts tested in [Example 20-1](#ex_flags_sample_runs):
+    *flags.py* and *flags_threadpool.py*. I will leave the third script, *flags_asyncio.py*,
+    for [Chapter 21](ch21.html#async_ch), but I wanted to demonstrate all three together
+    to make two points:'
+  id: totrans-31
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在让我们研究[示例 20-1](#ex_flags_sample_runs)中测试的两个脚本的实现：*flags.py*和*flags_threadpool.py*。第三个脚本*flags_asyncio.py*将在[第21章](ch21.html#async_ch)中介绍，但我想一起展示这三个脚本以阐明两点：
+- en: Regardless of the concurrency constructs you use—threads or coroutines—you’ll
+    see vastly improved throughput over sequential code in network I/O operations,
+    if you code it properly.
+  id: totrans-32
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 无论您使用哪种并发构造——线程还是协程——如果正确编码，您将看到网络I/O操作的吞吐量大大提高。
+- en: For HTTP clients that can control how many requests they make, there is no significant
+    difference in performance between threads and coroutines.^([3](ch20.html#idm46582389637136))
+  id: totrans-33
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 对于可以控制发出多少请求的HTTP客户端，线程和协程之间的性能差异不大。^([3](ch20.html#idm46582389637136))
+- en: On to the code.
+  id: totrans-34
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 进入代码部分。
+- en: A Sequential Download Script
+  id: totrans-35
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 一个顺序下载脚本
+- en: '[Example 20-2](#flags_module_ex) contains the implementation of *flags.py*,
+    the first script we ran in [Example 20-1](#ex_flags_sample_runs). It’s not very
+    interesting, but we’ll reuse most of its code and settings to implement the concurrent
+    scripts, so it deserves some attention.'
+  id: totrans-36
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 20-2](#flags_module_ex)包含*flags.py*的实现，这是我们在[示例 20-1](#ex_flags_sample_runs)中运行的第一个脚本。它并不是很有趣，但我们将重用大部分代码和设置来实现并发脚本，因此它值得一提。'
+- en: Note
+  id: totrans-37
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 注意
+- en: For clarity, there is no error handling in [Example 20-2](#flags_module_ex).
+    We will deal with exceptions later, but here I want to focus on the basic structure
+    of the code, to make it easier to contrast this script with the concurrent ones.
+  id: totrans-38
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了清晰起见，在[示例 20-2](#flags_module_ex)中没有错误处理。我们稍后会处理异常，但这里我想专注于代码的基本结构，以便更容易将此脚本与并发脚本进行对比。
+- en: 'Example 20-2\. flags.py: sequential download script; some functions will be
+    reused by the other scripts'
+  id: totrans-39
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例20-2\. flags.py：顺序下载脚本；一些函数将被其他脚本重用
+- en: '[PRE1]'
+  id: totrans-40
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE1]'
+- en: '[![1](assets/1.png)](#co_concurrent_executors_CO2-1)'
+  id: totrans-41
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_concurrent_executors_CO2-1)'
+- en: Import the `httpx` library. It’s not part of the standard library, so by convention
+    the import goes after the standard library modules and a blank line.
+  id: totrans-42
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 导入`httpx`库。它不是标准库的一部分，因此按照惯例，导入应放在标准库模块之后并空一行。
+- en: '[![2](assets/2.png)](#co_concurrent_executors_CO2-2)'
+  id: totrans-43
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_concurrent_executors_CO2-2)'
+- en: List of the ISO 3166 country codes for the 20 most populous countries in order
+    of decreasing population.
+  id: totrans-44
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ISO 3166国家代码列表，按人口递减顺序列出前20个人口最多的国家。
+- en: '[![3](assets/3.png)](#co_concurrent_executors_CO2-3)'
+  id: totrans-45
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_concurrent_executors_CO2-3)'
+- en: The directory with the flag images.^([4](ch20.html#idm46582389287152))
+  id: totrans-46
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 存放国旗图像的目录。^([4](ch20.html#idm46582389287152))
+- en: '[![4](assets/4.png)](#co_concurrent_executors_CO2-4)'
+  id: totrans-47
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_concurrent_executors_CO2-4)'
+- en: Local directory where the images are saved.
+  id: totrans-48
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图像保存的本地目录。
+- en: '[![5](assets/5.png)](#co_concurrent_executors_CO2-5)'
+  id: totrans-49
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_concurrent_executors_CO2-5)'
+- en: Save the `img` bytes to `filename` in the `DEST_DIR`.
+  id: totrans-50
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 将`img`字节保存到`DEST_DIR`中的`filename`。
+- en: '[![6](assets/6.png)](#co_concurrent_executors_CO2-6)'
+  id: totrans-51
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![6](assets/6.png)](#co_concurrent_executors_CO2-6)'
+- en: Given a country code, build the URL and download the image, returning the binary
+    contents of the response.
+  id: totrans-52
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 给定一个国家代码，构建URL并下载图像，返回响应的二进制内容。
+- en: '[![7](assets/7.png)](#co_concurrent_executors_CO2-7)'
+  id: totrans-53
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![7](assets/7.png)](#co_concurrent_executors_CO2-7)'
+- en: It’s good practice to add a sensible timeout to network operations, to avoid
+    blocking for several minutes for no good reason.
+  id: totrans-54
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为网络操作添加合理的超时是个好习惯，以避免无故阻塞几分钟。
+- en: '[![8](assets/8.png)](#co_concurrent_executors_CO2-8)'
+  id: totrans-55
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![8](assets/8.png)](#co_concurrent_executors_CO2-8)'
+- en: By default, *HTTPX* does not follow redirects.^([5](ch20.html#idm46582389300624))
+  id: totrans-56
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 默认情况下，*HTTPX*不会遵循重定向。^([5](ch20.html#idm46582389300624))
+- en: '[![9](assets/9.png)](#co_concurrent_executors_CO2-9)'
+  id: totrans-57
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![9](assets/9.png)](#co_concurrent_executors_CO2-9)'
+- en: There’s no error handling in this script, but this method raises an exception
+    if the HTTP status is not in the 2XX range—highly recommended to avoid silent
+    failures.
+  id: totrans-58
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这个脚本中没有错误处理，但是如果HTTP状态不在2XX范围内，此方法会引发异常——强烈建议避免静默失败。
+- en: '[![10](assets/10.png)](#co_concurrent_executors_CO2-10)'
+  id: totrans-59
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![10](assets/10.png)](#co_concurrent_executors_CO2-10)'
+- en: '`download_many` is the key function to compare with the concurrent implementations.'
+  id: totrans-60
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`download_many`是用于比较并发实现的关键函数。'
+- en: '[![11](assets/11.png)](#co_concurrent_executors_CO2-11)'
+  id: totrans-61
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![11](assets/11.png)](#co_concurrent_executors_CO2-11)'
+- en: Loop over the list of country codes in alphabetical order, to make it easy to
+    see that the ordering is preserved in the output; return the number of country
+    codes downloaded.
+  id: totrans-62
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 按字母顺序循环遍历国家代码列表，以便轻松查看输出中保留了顺序；返回下载的国家代码数量。
+- en: '[![12](assets/12.png)](#co_concurrent_executors_CO2-12)'
+  id: totrans-63
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![12](assets/12.png)](#co_concurrent_executors_CO2-12)'
+- en: Display one country code at a time in the same line so we can see progress as
+    each download happens. The `end=' '` argument replaces the usual line break at
+    the end of each line printed with a space character, so all country codes are
+    displayed progressively in the same line. The `flush=True` argument is needed
+    because, by default, Python output is line buffered, meaning that Python only
+    displays printed characters after a line break.
+  id: totrans-64
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 逐个显示一个国家代码，以便我们可以看到每次下载发生时的进度。`end=' '`参数用空格字符替换了通常在每行末尾打印的换行符，因此所有国家代码都逐步显���在同一行中。需要`flush=True`参数，因为默认情况下，Python输出是行缓冲的，这意味着Python仅在换行后显示打印的字符。
+- en: '[![13](assets/13.png)](#co_concurrent_executors_CO2-13)'
+  id: totrans-65
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![13](assets/13.png)](#co_concurrent_executors_CO2-13)'
+- en: '`main` must be called with the function that will make the downloads; that
+    way, we can use `main` as a library function with other implementations of `download_many`
+    in the `threadpool` and `ascyncio` examples.'
+  id: totrans-66
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 必须使用将进行下载的函数调用`main`；这样，我们可以在`threadpool`和`ascyncio`示例中的其他`download_many`实现中将`main`用作库函数。
+- en: '[![14](assets/14.png)](#co_concurrent_executors_CO2-14)'
+  id: totrans-67
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![14](assets/14.png)](#co_concurrent_executors_CO2-14)'
+- en: Create `DEST_DIR` if needed; don’t raise an error if the directory exists.
+  id: totrans-68
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果需要，创建`DEST_DIR`；如果目录已存在，则不会引发错误。
+- en: '[![15](assets/15.png)](#co_concurrent_executors_CO2-15)'
+  id: totrans-69
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![15](assets/15.png)](#co_concurrent_executors_CO2-15)'
+- en: Record and report the elapsed time after running the `downloader` function.
+  id: totrans-70
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 运行`downloader`函数后记录并报告经过的时间。
+- en: '[![16](assets/16.png)](#co_concurrent_executors_CO2-16)'
+  id: totrans-71
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![16](assets/16.png)](#co_concurrent_executors_CO2-16)'
+- en: Call `main` with the `download_many` function.
+  id: totrans-72
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 使用`download_many`函数调用`main`。
+- en: Tip
+  id: totrans-73
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 提示
+- en: The [*HTTPX*](https://fpy.li/httpx) library is inspired by the Pythonic [*requests*](https://fpy.li/20-5)
+    package, but is built on a more modern foundation. Crucially, *HTTPX* provides
+    synchronous and asynchronous APIs, so we can use it in all HTTP client examples
+    in this chapter and the next. Python’s standard library provides the `urllib.request`
+    module, but its API is synchronous only, and is not user friendly.
+  id: totrans-74
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[*HTTPX*](https://fpy.li/httpx)库受到Pythonic [*requests*](https://fpy.li/20-5)包的启发，但建立在更现代的基础上。关键是，*HTTPX*提供同步和异步API，因此我们可以在本章和下一章的所有HTTP客户端示例中使用它。Python的标准库提供了`urllib.request`模块，但其API仅支持同步，并且不够用户友好。'
+- en: There’s really nothing new to *flags.py*. It serves as a baseline for comparing
+    the other scripts, and I used it as a library to avoid redundant code when implementing
+    them. Now let’s see a reimplementation using `concurrent.futures`.
+  id: totrans-75
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*flags.py* 实际上没有什么新内容。它作为比较其他脚本的基准，并且我在实现它们时将其用作库，以避免冗余代码。现在让我们看看使用`concurrent.futures`重新实现的情况。'
+- en: Downloading with concurrent.futures
+  id: totrans-76
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 使用concurrent.futures进行下载
+- en: The main features of the `concurrent.futures` package are the `ThreadPoolExecutor`
+    and `ProcessPoolExecutor` classes, which implement an API to submit callables
+    for execution in different threads or processes, respectively. The classes transparently
+    manage a pool of worker threads or processes, and queues to distribute jobs and
+    collect results. But the interface is very high-level, and we don’t need to know
+    about any of those details for a simple use case like our flag downloads.
+  id: totrans-77
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`concurrent.futures`包的主要特点是`ThreadPoolExecutor`和`ProcessPoolExecutor`类，它们实现了一个API，用于在不同线程或进程中提交可调用对象进行执行。这些类透明地管理一组工作线程或进程以及队列来分发作业和收集结果。但接口非常高级，对于像我们的标志下载这样的简单用例，我们不需要了解任何这些细节。'
+- en: '[Example 20-3](#flags_threadpool_ex) shows the easiest way to implement the
+    downloads concurrently, using the `ThreadPoolExecutor.map` method.'
+  id: totrans-78
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 20-3](#flags_threadpool_ex)展示了实现并发下载的最简单方法，使用`ThreadPoolExecutor.map`方法。'
+- en: 'Example 20-3\. flags_threadpool.py: threaded download script using `futures.ThreadPoolExecutor`'
+  id: totrans-79
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 20-3\. flags_threadpool.py：使用`futures.ThreadPoolExecutor`的线程下载脚本
+- en: '[PRE2]'
+  id: totrans-80
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE2]'
+- en: '[![1](assets/1.png)](#co_concurrent_executors_CO3-1)'
+  id: totrans-81
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_concurrent_executors_CO3-1)'
+- en: Reuse some functions from the `flags` module ([Example 20-2](#flags_module_ex)).
+  id: totrans-82
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 从`flags`模块中重用一些函数（[示例 20-2](#flags_module_ex))。
+- en: '[![2](assets/2.png)](#co_concurrent_executors_CO3-2)'
+  id: totrans-83
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_concurrent_executors_CO3-2)'
+- en: Function to download a single image; this is what each worker will execute.
+  id: totrans-84
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 用于下载单个图像的函数；这是每个工作线程将执行的内容。
+- en: '[![3](assets/3.png)](#co_concurrent_executors_CO3-3)'
+  id: totrans-85
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_concurrent_executors_CO3-3)'
+- en: Instantiate the `ThreadPoolExecutor` as a context manager; the `executor​.__exit__`
+    method will call `executor.shutdown(wait=True)`, which will block until all threads
+    are done.
+  id: totrans-86
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 将`ThreadPoolExecutor`实例化为上下文管理器；`executor​.__exit__`方法将调用`executor.shutdown(wait=True)`，这将阻塞直到所有线程完成。
+- en: '[![4](assets/4.png)](#co_concurrent_executors_CO3-4)'
+  id: totrans-87
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_concurrent_executors_CO3-4)'
+- en: The `map` method is similar to the `map` built-in, except that the `download_one`
+    function will be called concurrently from multiple threads; it returns a generator
+    that you can iterate to retrieve the value returned by each function call—in this
+    case, each call to `download_one` will return a country code.
+  id: totrans-88
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`map`方法类似于内置的`map`，不同之处在于`download_one`函数将并发地从多个线程调用；它返回一个生成器，您可以迭代以检索每个函数调用返回的值—在本例中，每次调用`download_one`都将返回一个国家代码。'
+- en: '[![5](assets/5.png)](#co_concurrent_executors_CO3-5)'
+  id: totrans-89
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_concurrent_executors_CO3-5)'
+- en: Return the number of results obtained. If any of the threaded calls raises an
+    exception, that exception is raised here when the implicit `next()` call inside
+    the `list` constructor tries to retrieve the corresponding return value from the
+    iterator returned by `executor.map`.
+  id: totrans-90
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 返回获得的结果数量。如果任何线程调用引发异常，当 `list` 构造函数内部的隐式 `next()` 调用尝试从 `executor.map` 返回的迭代器中检索相应的返回值时，异常会在此处引发。
+- en: '[![6](assets/6.png)](#co_concurrent_executors_CO3-6)'
+  id: totrans-91
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![6](assets/6.png)](#co_concurrent_executors_CO3-6)'
+- en: Call the `main` function from the `flags` module, passing the concurrent version
+    of `download_many`.
+  id: totrans-92
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 从 `flags` 模块调用 `main` 函数，传递并发版本的 `download_many`。
+- en: 'Note that the `download_one` function from [Example 20-3](#flags_threadpool_ex)
+    is essentially the body of the `for` loop in the `download_many` function from
+    [Example 20-2](#flags_module_ex). This is a common refactoring when writing concurrent
+    code: turning the body of a sequential `for` loop into a function to be called
+    concurrently.'
+  id: totrans-93
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 请注意，来自 [示例 20-3](#flags_threadpool_ex) 的 `download_one` 函数本质上是来自 [示例 20-2](#flags_module_ex)
+    中的 `download_many` 函数中 `for` 循环的主体。这是在编写并发代码时常见的重构：将顺序 `for` 循环的主体转换为一个要并发调用的函数。
+- en: Tip
+  id: totrans-94
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 提示
+- en: '[Example 20-3](#flags_threadpool_ex) is very short because I was able to reuse
+    most functions from the sequential *flags.py* script. One of the best features
+    of `concurrent.futures` is to make it simple to add concurrent execution on top
+    of legacy sequential code.'
+  id: totrans-95
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 20-3](#flags_threadpool_ex) 非常简短，因为我能够重用顺序执行的 *flags.py* 脚本中的大部分函数。`concurrent.futures`
+    最好的特性之一是使得在传统的顺序代码之上添加并发执行变得简单。'
+- en: 'The `ThreadPoolExecutor` constructor takes several arguments not shown, but
+    the first and most important one is `max_workers`, setting the maximum number
+    of worker threads to be executed. When `max_workers` is `None` (the default),
+    `ThreadPool​Executor` decides its value using the following expression—since Python
+    3.8:'
+  id: totrans-96
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`ThreadPoolExecutor` 构造函数接受几个未显示的参数，但第一个且最重要的是 `max_workers`，设置要执行的工作线程的最大数量。当
+    `max_workers` 为 `None`（默认值）时，`ThreadPoolExecutor` 使用以下表达式决定其值—自 Python 3.8 起：'
+- en: '[PRE3]'
+  id: totrans-97
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE3]'
+- en: 'The rationale is explained in the [`ThreadPoolExecutor` documentation](https://fpy.li/20-6):'
+  id: totrans-98
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这个理念在 [`ThreadPoolExecutor` 文档](https://fpy.li/20-6) 中有解释：
+- en: This default value preserves at least 5 workers for I/O bound tasks. It utilizes
+    at most 32 CPU cores for CPU bound tasks which release the GIL. And it avoids
+    using very large resources implicitly on many-core machines.
+  id: totrans-99
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+  zh: 这个默认值至少保留了 5 个工作线程用于 I/O 绑定任务。对于释放 GIL 的 CPU 绑定任务，它最多利用 32 个 CPU 核心。它避免在多核机器上隐式使用非常大的资源。
+- en: ''
+  id: totrans-100
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: '`ThreadPoolExecutor` now reuses idle worker threads before starting `max_workers`
+    worker threads too.'
+  id: totrans-101
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+  zh: '`ThreadPoolExecutor` 现在在启动 `max_workers` 工作线程之前重用空闲的工作线程。'
+- en: 'To conclude: the computed default for `max_workers` is sensible, and `ThreadPoolExecutor`
+    avoids starting new workers unnecessarily. Understanding the logic behind `max_workers`
+    may help you decide when and how to set it yourself.'
+  id: totrans-102
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 总之：`max_workers` 的默认计算是合理的，`ThreadPoolExecutor` 避免不必要地启动新的工作线程。理解 `max_workers`
+    背后的逻辑可能会帮助您决定何时以及如何自行设置它。
+- en: The library is called *concurrency.futures*, yet there are no futures to be
+    seen in [Example 20-3](#flags_threadpool_ex), so you may be wondering where they
+    are. The next section explains.
+  id: totrans-103
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这个库被称为 *concurrency.futures*，但在 [示例 20-3](#flags_threadpool_ex) 中看不到 futures，所以你可能会想知道它们在哪里。接下来的部分会解释。
+- en: Where Are the Futures?
+  id: totrans-104
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 未来在哪里？
+- en: Futures are core components of `concurrent.futures` and of `asyncio`, but as
+    users of these libraries we sometimes don’t see them. [Example 20-3](#flags_threadpool_ex)
+    depends on futures behind the scenes, but the code I wrote does not touch them
+    directly. This section is an overview of futures, with an example that shows them
+    in action.
+  id: totrans-105
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Futures 是 `concurrent.futures` 和 `asyncio` 的核心组件，但作为这些库的用户，我们有时看不到它们。[示例 20-3](#flags_threadpool_ex)
+    在幕后依赖于 futures，但我编写的代码并没有直接涉及它们。本节是 futures 的概述，其中包含一个展示它们运作的示例。
+- en: 'Since Python 3.4, there are two classes named `Future` in the standard library:
+    `concurrent.futures.Future` and `asyncio.Future`. They serve the same purpose:
+    an instance of either `Future` class represents a deferred computation that may
+    or may not have completed. This is somewhat similar to the `Deferred` class in
+    Twisted, the `Future` class in Tornado, and `Promise` in modern JavaScript.'
+  id: totrans-106
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 自 Python 3.4 起，标准库中有两个名为 `Future` 的类：`concurrent.futures.Future` 和 `asyncio.Future`。它们的作用相同：`Future`
+    类的实例代表一个延迟计算，可能已经完成，也可能尚未完成。这在某种程度上类似于 Twisted 中的 `Deferred` 类、Tornado 中的 `Future`
+    类以及现代 JavaScript 中的 `Promise`。
+- en: Futures encapsulate pending operations so that we can put them in queues, check
+    whether they are done, and retrieve results (or exceptions) when they become available.
+  id: totrans-107
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Futures 封装了待处理的操作，以便我们可以将它们放入队列，检查它们是否完成，并在结果（或异常）可用时检索结果。
+- en: 'An important thing to know about futures is that you and I should not create
+    them: they are meant to be instantiated exclusively by the concurrency framework,
+    be it `concurrent.futures` or `asyncio`. Here is why: a `Future` represents something
+    that will eventually run, therefore it must be scheduled to run, and that’s the
+    job of the framework. In particular, `concurrent.futures.Future` instances are
+    created only as the result of submitting a callable for execution with a `concurrent.futures.Executor`
+    subclass. For example, the `Executor.submit()` method takes a callable, schedules
+    it to run, and returns a `Future`.'
+  id: totrans-108
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 关于 futures 的一个重要事项是，你和我不应该创建它们：它们应该由并发框架专门实例化，无论是 `concurrent.futures` 还是 `asyncio`。原因在于：`Future`
+    代表着最终会运行的东西，因此必须安排其运行，这是框架的工作。特别是，`concurrent.futures.Future` 实例仅在使用 `concurrent.futures.Executor`
+    子类提交可调用对象以执行时才会创建。例如，`Executor.submit()` 方法接受一个可调用对象，安排其运行，并返回一个 `Future`。
+- en: 'Application code is not supposed to change the state of a future: the concurrency
+    framework changes the state of a future when the computation it represents is
+    done, and we can’t control when that happens.'
+  id: totrans-109
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 应用代码不应该改变 future 的状态：当它所代表的计算完成时，并发框架会改变 future 的状态，我们无法控制何时发生这种情况。
+- en: 'Both types of `Future` have a `.done()` method that is nonblocking and returns
+    a Boolean that tells you whether the callable wrapped by that future has executed
+    or not. However, instead of repeatedly asking whether a future is done, client
+    code usually asks to be notified. That’s why both `Future` classes have an `.add_done_callback()`
+    method: you give it a callable, and the callable will be invoked with the future
+    as the single argument when the future is done. Be aware that the callback callable
+    will run in the same worker thread or process that ran the function wrapped in
+    the future.'
+  id: totrans-110
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 两种类型的`Future`都有一个非阻塞的`.done()`方法，返回一个布尔值，告诉你被该`future`包装的可调用是否已执行。然而，客户端代码通常不会反复询问`future`是否完成，而是要求通知。这就是为什么两种`Future`类都有一个`.add_done_callback()`方法：你给它一个可调用对象，当`future`完成时，该可调用对象将以`future`作为唯一参数被调用。请注意，回调可调用对象将在运行包装在`future`中的函数的工作线程或进程中运行。
+- en: 'There is also a `.result()` method, which works the same in both classes when
+    the future is done: it returns the result of the callable, or re-raises whatever
+    exception might have been thrown when the callable was executed. However, when
+    the future is not done, the behavior of the `result` method is very different
+    between the two flavors of `Future`. In a `concurrency.futures.Future` instance,
+    invoking `f.result()` will block the caller’s thread until the result is ready.
+    An optional `timeout` argument can be passed, and if the future is not done in
+    the specified time, the `result` method raises `TimeoutError`. The `asyncio.Future.result`
+    method does not support timeout, and `await` is the preferred way to get the result
+    of futures in `asyncio`—but `await` doesn’t work with `concurrency.futures.Future`
+    instances.'
+  id: totrans-111
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 还有一个`.result()`方法，在`future`完成时两种类中的工作方式相同：它返回可调用对象的结果，或者在执行可调用对象时抛出的任何异常。然而，当`future`未完成时，`result`方法在两种`Future`的行为上有很大不同。在`concurrency.futures.Future`实例中，调用`f.result()`将阻塞调用者的线程，直到结果准备就绪。可以传递一个可选的`timeout`参数，如果在指定时间内`future`未完成，`result`方法将引发`TimeoutError`。`asyncio.Future.result`方法不支持超时，`await`是在`asyncio`中获取`future`结果的首选方式，但`await`不能与`concurrency.futures.Future`实例一起使用。
+- en: 'Several functions in both libraries return futures; others use them in their
+    implementation in a way that is transparent to the user. An example of the latter
+    is the `Executor.map` we saw in [Example 20-3](#flags_threadpool_ex): it returns
+    an iterator in which `__next__` calls the `result` method of each future, so we
+    get the results of the futures, and not the futures themselves.'
+  id: totrans-112
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 两个库中的几个函数返回`future`；其他函数在其实现中使用`future`的方式对用户来说是透明的。后者的一个例子是我们在[示例 20-3](#flags_threadpool_ex)中看到的`Executor.map`：它返回一个迭代器，其中`__next__`调用每个`future`的`result`方法，因此我们得到`future`的结果，而不是`future`本身。
+- en: To get a practical look at futures, we can rewrite [Example 20-3](#flags_threadpool_ex)
+    to use the [`concurrent.futures.as_completed`](https://fpy.li/20-7) function,
+    which takes an iterable of futures and returns an iterator that yields futures
+    as they are done.
+  id: totrans-113
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了实际查看`future`，我们可以重写[示例 20-3](#flags_threadpool_ex)以使用[`concurrent.futures.as_completed`](https://fpy.li/20-7)函数，该函数接受一个`future`的可迭代对象，并返回一个迭代器，按照完成的顺序产生`future`。
+- en: 'Using `futures.as_completed` requires changes to the `download_many` function
+    only. The higher-level `executor.map` call is replaced by two `for` loops: one
+    to create and schedule the futures, the other to retrieve their results. While
+    we are at it, we’ll add a few `print` calls to display each future before and
+    after it’s done. [Example 20-4](#flags_threadpool_futures_ex) shows the code for
+    a new `download_many` function. The code for `download_many` grew from 5 to 17
+    lines, but now we get to inspect the mysterious futures. The remaining functions
+    are the same as in [Example 20-3](#flags_threadpool_ex).'
+  id: totrans-114
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 使用`futures.as_completed`仅需要更改`download_many`函数。高级`executor.map`调用被两个`for`循环替换：一个用于创建和调度`future`，另一个用于检索它们的结果。在此过程中，我们将添加一些`print`调用来显示每个`future`在完成前后的状态。[示例 20-4](#flags_threadpool_futures_ex)展示了新`download_many`函数的代码。`download_many`函数的代码从5行增长到17行，但现在我们可以检查神秘的`future`。其余函数与[示例 20-3](#flags_threadpool_ex)中的相同。
+- en: 'Example 20-4\. flags_threadpool_futures.py: replacing `executor.map` with `executor.submit`
+    and `futures.as_completed` in the `download_many` function'
+  id: totrans-115
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: '示例 20-4\. flags_threadpool_futures.py: 在`download_many`函数中用`executor.submit`和`futures.as_completed`替换`executor.map`。'
+- en: '[PRE4]'
+  id: totrans-116
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE4]'
+- en: '[![1](assets/1.png)](#co_concurrent_executors_CO4-1)'
+  id: totrans-117
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_concurrent_executors_CO4-1)'
+- en: For this demonstration, use only the top five most populous countries.
+  id: totrans-118
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了演示，只使用人口最多的前五个国家。
+- en: '[![2](assets/2.png)](#co_concurrent_executors_CO4-2)'
+  id: totrans-119
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_concurrent_executors_CO4-2)'
+- en: Set `max_workers` to `3` so we can see pending futures in the output.
+  id: totrans-120
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 将`max_workers`设置为`3`，这样我们可以在输出中看到待处理的`future`。
+- en: '[![3](assets/3.png)](#co_concurrent_executors_CO4-3)'
+  id: totrans-121
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_concurrent_executors_CO4-3)'
+- en: Iterate over country codes alphabetically, to make it clear that results will
+    arrive out of order.
+  id: totrans-122
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 按字母顺序遍历国家代码，以明确结果将无序到达。
+- en: '[![4](assets/4.png)](#co_concurrent_executors_CO4-4)'
+  id: totrans-123
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_concurrent_executors_CO4-4)'
+- en: '`executor.submit` schedules the callable to be executed, and returns a `future`
+    representing this pending operation.'
+  id: totrans-124
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`executor.submit`调度可调用对象的执行，并返回代表此挂起操作的`future`。'
+- en: '[![5](assets/5.png)](#co_concurrent_executors_CO4-5)'
+  id: totrans-125
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_concurrent_executors_CO4-5)'
+- en: Store each `future` so we can later retrieve them with `as_completed`.
+  id: totrans-126
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 存储每个`future`，以便稍后使用`as_completed`检索它们。
+- en: '[![6](assets/6.png)](#co_concurrent_executors_CO4-6)'
+  id: totrans-127
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![6](assets/6.png)](#co_concurrent_executors_CO4-6)'
+- en: Display a message with the country code and the respective `future`.
+  id: totrans-128
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 显示带有国家代码和相应`future`的消息。
+- en: '[![7](assets/7.png)](#co_concurrent_executors_CO4-7)'
+  id: totrans-129
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![7](assets/7.png)](#co_concurrent_executors_CO4-7)'
+- en: '`as_completed` yields futures as they are completed.'
+  id: totrans-130
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`as_completed`在`future`完成时产生`future`。'
+- en: '[![8](assets/8.png)](#co_concurrent_executors_CO4-8)'
+  id: totrans-131
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![8](assets/8.png)](#co_concurrent_executors_CO4-8)'
+- en: Get the result of this `future`.
+  id: totrans-132
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 获取这个`future`的结果。
+- en: '[![9](assets/9.png)](#co_concurrent_executors_CO4-9)'
+  id: totrans-133
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![9](assets/9.png)](#co_concurrent_executors_CO4-9)'
+- en: Display the `future` and its result.
+  id: totrans-134
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 显示`future`及其结果。
+- en: Note that the `future.result()` call will never block in this example because
+    the `future` is coming out of `as_completed`. [Example 20-5](#flags_threadpool_futures_run)
+    shows the output of one run of [Example 20-4](#flags_threadpool_futures_ex).
+  id: totrans-135
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意，在这个例子中，`future.result()` 调用永远不会阻塞，因为 `future` 是从 `as_completed` 中出来的。[示例
+    20-5](#flags_threadpool_futures_run) 展示了[示例 20-4](#flags_threadpool_futures_ex)的一次运行的输出。
+- en: Example 20-5\. Output of flags_threadpool_futures.py
+  id: totrans-136
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 20-5\. flags_threadpool_futures.py 的输出
+- en: '[PRE5]'
+  id: totrans-137
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE5]'
+- en: '[![1](assets/1.png)](#co_concurrent_executors_CO5-1)'
+  id: totrans-138
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_concurrent_executors_CO5-1)'
+- en: 'The futures are scheduled in alphabetical order; the `repr()` of a future shows
+    its state: the first three are `running`, because there are three worker threads.'
+  id: totrans-139
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 未来按字母顺序安排；未来的 `repr()` 显示其状态：前三个是 `running`，因为有三个工作线程。
+- en: '[![2](assets/2.png)](#co_concurrent_executors_CO5-2)'
+  id: totrans-140
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_concurrent_executors_CO5-2)'
+- en: The last two futures are `pending`, waiting for worker threads.
+  id: totrans-141
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 最后两个未来是 `pending`，等待工作线程。
+- en: '[![3](assets/3.png)](#co_concurrent_executors_CO5-3)'
+  id: totrans-142
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_concurrent_executors_CO5-3)'
+- en: The first `CN` here is the output of `download_one` in a worker thread; the
+    rest of the line is the output of `download_many`.
+  id: totrans-143
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这里的第一个 `CN` 是在工作线程中的 `download_one` 的输出；其余行是 `download_many` 的输出。
+- en: '[![4](assets/4.png)](#co_concurrent_executors_CO5-4)'
+  id: totrans-144
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_concurrent_executors_CO5-4)'
+- en: Here, two threads output codes before `download_many` in the main thread can
+    display the result of the first thread.
+  id: totrans-145
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在主线程的 `download_many` 显示结果之前，两个线程在输出代码。
+- en: Tip
+  id: totrans-146
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 提示
+- en: I recommend experimenting with *flags_threadpool_futures.py*. If you run it
+    several times, you’ll see the order of the results varying. Increasing `max_workers`
+    to `5` will increase the variation in the order of the results. Decreasing it
+    to `1` will make this script run sequentially, and the order of the results will
+    always be the order of the `submit` calls.
+  id: totrans-147
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我建议尝试 *flags_threadpool_futures.py*。如果你多次运行它，你会看到结果的顺序变化。将 `max_workers` 增加到
+    `5` 将增加结果顺序的变化。将其减少到 `1` 将使此脚本按顺序运行，结果的顺序将始终是 `submit` 调用的顺序。
+- en: 'We saw two variants of the download script using `concurrent.futures`: one
+    in [Example 20-3](#flags_threadpool_ex) with `ThreadPoolExecutor.map` and one
+    in [Example 20-4](#flags_threadpool_futures_ex) with `futures.as_completed`. If
+    you are curious about the code for *flags_asyncio.py*, you may peek at [Example 21-3](ch21.html#flags_asyncio_ex)
+    in [Chapter 21](ch21.html#async_ch), where it is explained.'
+  id: totrans-148
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们看到了两个使用 `concurrent.futures` 的下载脚本变体：一个在[示例 20-3](#flags_threadpool_ex)中使用
+    `ThreadPoolExecutor.map`，另一个在[示例 20-4](#flags_threadpool_futures_ex)中使用 `futures.as_completed`。如果你对
+    *flags_asyncio.py* 的代码感兴趣，可以查看[第 21 章](ch21.html#async_ch)中的[示例 21-3](ch21.html#flags_asyncio_ex)进行了解。
+- en: Now let’s take a brief look at a simple way to work around the GIL for CPU-bound
+    jobs using `concurrent.futures`.
+  id: totrans-149
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在让我们简要看一下使用 `concurrent.futures` 绕过 GIL 处理 CPU 密集型任务的简单方法。
+- en: Launching Processes with concurrent.futures
+  id: totrans-150
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 使用 `concurrent.futures` 启动进程
+- en: The [`concurrent.futures` documentation page](https://fpy.li/20-8) is subtitled
+    “Launching parallel tasks.” The package enables parallel computation on multicore
+    machines because it supports distributing work among multiple Python processes
+    using the `ProcessPool​Executor` class.
+  id: totrans-151
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[`concurrent.futures` 文档页面](https://fpy.li/20-8) 的副标题是“启动并行任务”。该软件包支持在多核计算机上进行并行计算，因为它支持使用
+    `ProcessPool​Executor` 类在多个 Python 进程之间分发工作。'
+- en: Both `ProcessPoolExecutor` and `ThreadPoolExecutor` implement the [`Executor`](https://fpy.li/20-9)
+    interface, so it’s easy to switch from a thread-based to a process-based solution
+    using `concurrent.futures`.
+  id: totrans-152
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`ProcessPoolExecutor` 和 `ThreadPoolExecutor` 都实现了[`Executor`](https://fpy.li/20-9)
+    接口，因此使用 `concurrent.futures` 从基于线程的解决方案切换到基于进程的解决方案很容易。'
+- en: 'There is no advantage in using a `ProcessPoolExecutor` for the flags download
+    example or any I/O-bound job. It’s easy to verify this; just change these lines
+    in [Example 20-3](#flags_threadpool_ex):'
+  id: totrans-153
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 对于下载标志示例或任何 I/O 密集型任务，使用 `ProcessPoolExecutor` 没有优势。很容易验证这一点；只需更改[示例 20-3](#flags_threadpool_ex)中的这些行：
+- en: '[PRE6]'
+  id: totrans-154
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE6]'
+- en: 'To this:'
+  id: totrans-155
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 到这里：
+- en: '[PRE7]'
+  id: totrans-156
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE7]'
+- en: The constructor for `ProcessPoolExecutor` also has a `max_workers` parameter,
+    which defaults to `None`. In that case, the executor limits the number of workers
+    to the number returned by `os.cpu_count()`.
+  id: totrans-157
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`ProcessPoolExecutor` 的构造函数也有一个 `max_workers` 参数，默认为 `None`。在这种情况下，执行器将工作进程的数量限制为
+    `os.cpu_count()` 返回的数量。'
+- en: Processes use more memory and take longer to start than threads, so the real
+    value of `ProcessPoolExecutor` is in CPU-intensive jobs. Let’s go back to the
+    primality test example of [“A Homegrown Process Pool”](ch19.html#naive_multiprocessing_sec),
+    rewriting it with `concurrent.futures`.
+  id: totrans-158
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 进程使用更多内存，启动时间比线程长，所以 `ProcessPoolExecutor` 的真正价值在于 CPU 密集型任务。让我们回到[“自制进程池”](ch19.html#naive_multiprocessing_sec)中的素数检查示例，使用
+    `concurrent.futures` 重新编写它。
+- en: Multicore Prime Checker Redux
+  id: totrans-159
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 多核素数检查器 Redux
+- en: In [“Code for the Multicore Prime Checker”](ch19.html#code_for_multicore_prime_sec)
+    we studied *procs.py*, a script that checked the primality of some large numbers
+    using `multiprocessing`. In [Example 20-6](#proc_pool_py) we solve the same problem
+    in the *proc_pool.py* program using a `ProcessPool​Executor`. From the first import
+    to the `main()` call at the end, *procs.py* has 43 nonblank lines of code, and
+    *proc_pool.py* has 31—28% shorter.
+  id: totrans-160
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在[“多核素数检查器的代码”](ch19.html#code_for_multicore_prime_sec)中，我们研究了 *procs.py*，一个使用
+    `multiprocessing` 检查一些大数的素数性质的脚本。在[示例 20-6](#proc_pool_py)中，我们使用 `ProcessPoolExecutor`
+    在 *proc_pool.py* 程序中解决了相同的问题。从第一个导入到最后的 `main()` 调用，*procs.py* 有 43 行非空代码，而 *proc_pool.py*
+    只有 31 行，比原来的短了 28%。
+- en: 'Example 20-6\. proc_pool.py: *procs.py* rewritten with `ProcessPoolExecutor`'
+  id: totrans-161
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: '示例 20-6\. proc_pool.py: *procs.py* 使用 `ProcessPoolExecutor` 重写'
+- en: '[PRE8]'
+  id: totrans-162
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE8]'
+- en: '[![1](assets/1.png)](#co_concurrent_executors_CO6-1)'
+  id: totrans-163
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_concurrent_executors_CO6-1)'
+- en: No need to import `multiprocessing`, `SimpleQueue` etc.; `concurrent.futures`
+    hides all that.
+  id: totrans-164
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 不需要导入 `multiprocessing`、`SimpleQueue` 等；`concurrent.futures` 隐藏了所有这些。
+- en: '[![2](assets/2.png)](#co_concurrent_executors_CO6-2)'
+  id: totrans-165
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_concurrent_executors_CO6-2)'
+- en: The `PrimeResult` tuple and the `check` function are the same as we saw in *procs.py*,
+    but we don’t need the queues and the `worker` function anymore.
+  id: totrans-166
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`PrimeResult`元组和`check`函数与*procs.py*中看到的相同，但我们不再需要队列和`worker`函数。'
+- en: '[![3](assets/3.png)](#co_concurrent_executors_CO6-3)'
+  id: totrans-167
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_concurrent_executors_CO6-3)'
+- en: Instead of deciding ourselves how many workers to use if no command-line argument
+    was given, we set `workers` to `None` and let the `ProcessPoolExecutor` decide.
+  id: totrans-168
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果没有给出命令行参数，我们不再决定使用多少工作进程，而是将`workers`设置为`None`，让`ProcessPoolExecutor`自行决定。
+- en: '[![4](assets/4.png)](#co_concurrent_executors_CO6-4)'
+  id: totrans-169
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_concurrent_executors_CO6-4)'
+- en: Here I build the `ProcessPoolExecutor` before the `with` block in ➐ so that
+    I can display the actual number of workers in the next line.
+  id: totrans-170
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在➐中我在`with`块之前构建了`ProcessPoolExecutor`，这样我就可以在下一行显示实际的工作进程数。
+- en: '[![5](assets/5.png)](#co_concurrent_executors_CO6-5)'
+  id: totrans-171
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_concurrent_executors_CO6-5)'
+- en: '`_max_workers` is an undocumented instance attribute of a `ProcessPoolExecutor`.
+    I decided to use it to show the number of workers when the `workers` variable
+    is `None`. *Mypy* correctly complains when I access it, so I put the `type: ignore`
+    comment to silence it.'
+  id: totrans-172
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`_max_workers`是`ProcessPoolExecutor`的一个未记录的实例属性。我决定使用它来显示`workers`变量为`None`时的工作进程数。*Mypy*在我访问它时正确地抱怨，所以我放了`type:
+    ignore`注释来消除警告。'
+- en: '[![6](assets/6.png)](#co_concurrent_executors_CO6-6)'
+  id: totrans-173
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![6](assets/6.png)](#co_concurrent_executors_CO6-6)'
+- en: Sort the numbers to be checked in descending order. This will expose a difference
+    in the behavior of *proc_pool.py* when compared with *procs.py*. See the explanation
+    after this example.
+  id: totrans-174
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 将要检查的数字按降序排序。这将揭示*proc_pool.py*与*procs.py*在行为上的差异。请参见本示例后的解释。
+- en: '[![7](assets/7.png)](#co_concurrent_executors_CO6-7)'
+  id: totrans-175
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![7](assets/7.png)](#co_concurrent_executors_CO6-7)'
+- en: Use the `executor` as a context manager.
+  id: totrans-176
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 使用`executor`作为上下文管理器。
+- en: '[![8](assets/8.png)](#co_concurrent_executors_CO6-8)'
+  id: totrans-177
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![8](assets/8.png)](#co_concurrent_executors_CO6-8)'
+- en: The `executor.map` call returns the `PrimeResult` instances returned by `check`
+    in the same order as the `numbers` arguments.
+  id: totrans-178
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`executor.map`调用返回由`check`返回的`PrimeResult`实例，顺序与`numbers`参数相同。'
+- en: If you run [Example 20-6](#proc_pool_py), you’ll see the results appearing in
+    strict descending order, as shown in [Example 20-7](#proc_pool_py_output). In
+    contrast, the ordering of the output of *procs.py* (shown in [“Process-Based Solution”](ch19.html#proc_based_solution))
+    is heavily influenced by the difficulty in checking whether each number is a prime.
+    For example, *procs.py* shows the result for 7777777777777777 near the top, because
+    it has a low divisor, 7, so `is_prime` quickly determines it’s not a prime.
+  id: totrans-179
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果你运行[示例20-6](#proc_pool_py)，你会看到结果严格按降���出现，就像[示例20-7](#proc_pool_py_output)中所示。相比之下，*procs.py*的输出顺序（在[“基于进程的解决方案”](ch19.html#proc_based_solution)中显示）受到检查每个数字是否为质数的难度的影响。例如，*procs.py*在顶部显示了7777777777777777的结果，因为它有一个较低的除数7，所以`is_prime`很快确定它不是质数。
+- en: In contrast, 7777777536340681 is 88191709², so `is_prime` will take much longer
+    to determine that it’s a composite number, and even longer to find out that 7777777777777753
+    is prime—therefore both of these numbers appear near the end of the output of
+    *procs.py*.
+  id: totrans-180
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 相比之下，7777777536340681是88191709²，因此`is_prime`将花费更长的时间来确定它是一个合数，甚至更长的时间来找出7777777777777753是质数—因此这两个数字都出现在*procs.py*输出的末尾。
+- en: Running *proc_pool.py*, you’ll observe not only the descending order of the
+    results, but also that the program will appear to be stuck after showing the result
+    for 9999999999999999.
+  id: totrans-181
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 运行*proc_pool.py*，你会观察到结果严格按降序排列，但在显示9999999999999999的结果后，程序似乎会卡住。
+- en: Example 20-7\. Output of proc_pool.py
+  id: totrans-182
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 20-7\. proc_pool.py的输出
+- en: '[PRE9]'
+  id: totrans-183
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE9]'
+- en: '[![1](assets/1.png)](#co_concurrent_executors_CO7-1)'
+  id: totrans-184
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_concurrent_executors_CO7-1)'
+- en: This line appears very quickly.
+  id: totrans-185
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这行出现得非常快。
+- en: '[![2](assets/2.png)](#co_concurrent_executors_CO7-2)'
+  id: totrans-186
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_concurrent_executors_CO7-2)'
+- en: This line takes more than 9.5s to show up.
+  id: totrans-187
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这行需要超过9.5秒才能显示出来。
+- en: '[![3](assets/3.png)](#co_concurrent_executors_CO7-3)'
+  id: totrans-188
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_concurrent_executors_CO7-3)'
+- en: All the remaining lines appear almost immediately.
+  id: totrans-189
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 所有剩下的行几乎立即出现。
+- en: 'Here is why *proc_pool.py* behaves in that way:'
+  id: totrans-190
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这就是*proc_pool.py*表现出这种方式的原因：
+- en: As mentioned before, `executor.map(check, numbers)` returns the result in the
+    same order as the `numbers` are given.
+  id: totrans-191
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 如前所述，`executor.map(check, numbers)`返回的结果与给定的`numbers`顺序相同。
+- en: By default, *proc_pool.py* uses as many workers as there are CPUs—it’s what
+    `ProcessPoolExecutor` does when `max_workers` is `None`. That’s 12 processes in
+    this laptop.
+  id: totrans-192
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 默认情况下，*proc_pool.py*使用与CPU数量相同的工作进程数——当`max_workers`为`None`时，这就是`ProcessPoolExecutor`的做法。在这台笔记本电脑上是12个进程。
+- en: Because we are submitting `numbers` in descending order, the first is 9999999999999999;
+    with 9 as a divisor, it returns quickly.
+  id: totrans-193
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 因为我们按降序提交`numbers`，第一个是9999999999999999；以9为除数，它会迅速返回。
+- en: The second number is 9999999999999917, the largest prime in the sample. This
+    will take longer than all the others to check.
+  id: totrans-194
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 第二个数字是9999999999999917，样本中最大的质数。这将比所有其他数字检查花费更长的时间。
+- en: Meanwhile, the remaining 11 processes will be checking other numbers, which
+    are either primes or composites with large factors, or composites with very small
+    factors.
+  id: totrans-195
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 与此同时，其余的11个进程将检查其他数字，这些数字要么是质数，要么是具有大因子的合数，要么是具有非常小因子的合数。
+- en: When the worker in charge of 9999999999999917 finally determines that’s a prime,
+    all the other processes have completed their last jobs, so the results appear
+    immediately after.
+  id: totrans-196
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 当负责9999999999999917的工作进程最终确定那是一个质数时，所有其他进程已经完成了最后的工作，因此结果会立即显示出来。
+- en: Note
+  id: totrans-197
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 注意
+- en: Although the progress of *proc_pool.py* is not as visible as that of *procs.py*,
+    the overall execution time is practically the same as depicted in [Figure 19-2](ch19.html#procs_x_time_fig),
+    for the same number of workers and CPU cores.
+  id: totrans-198
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 尽管*proc_pool.py*的进度不像*procs.py*那样明显，但对于相同数量的工作进程和CPU核心，总体执行时间几乎与[图19-2](ch19.html#procs_x_time_fig)中描述的相同。
+- en: Understanding how concurrent programs behave is not straightforward, so here’s
+    is a second experiment that may help you visualize the operation of `Executor.map`.
+  id: totrans-199
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 理解并发程序的行为并不直接，因此这里有第二个实验，可以帮助你可视化`Executor.map`的操作。
+- en: Experimenting with Executor.map
+  id: totrans-200
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 试验`Executor.map`
+- en: Let’s investigate `Executor.map`, now using a `ThreadPoolExecutor` with three
+    workers running five callables that output timestamped messages. The code is in
+    [Example 20-8](#demo_executor_map_ex), the output in [Example 20-9](#demo_executor_map_run).
+  id: totrans-201
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 让我们来研究`Executor.map`，现在使用一个具有三个工作线程的`ThreadPoolExecutor`运行五个可调用函数，输出带时间戳的消息。代码在[示例 20-8](#demo_executor_map_ex)中，输出在[示例 20-9](#demo_executor_map_run)中。
+- en: 'Example 20-8\. demo_executor_map.py: Simple demonstration of the map method
+    of `ThreadPoolExecutor`'
+  id: totrans-202
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例20-8。demo_executor_map.py：`ThreadPoolExecutor`的`map`方法的简单演示。
+- en: '[PRE10]'
+  id: totrans-203
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE10]'
+- en: '[![1](assets/1.png)](#co_concurrent_executors_CO8-1)'
+  id: totrans-204
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_concurrent_executors_CO8-1)'
+- en: This function simply prints whatever arguments it gets, preceded by a timestamp
+    in the format `[HH:MM:SS]`.
+  id: totrans-205
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这个函数简单地打印出它收到的任何参数，前面加上格式为`[HH:MM:SS]`的时间戳。
+- en: '[![2](assets/2.png)](#co_concurrent_executors_CO8-2)'
+  id: totrans-206
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_concurrent_executors_CO8-2)'
+- en: '`loiter` does nothing except display a message when it starts, sleep for `n`
+    seconds, then display a message when it ends; tabs are used to indent the messages
+    according to the value of `n`.'
+  id: totrans-207
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`loiter`除了在开始时显示消息、休眠`n`秒，然后在结束时显示消息外什么也不做；制表符用于根据`n`的值缩进消息。'
+- en: '[![3](assets/3.png)](#co_concurrent_executors_CO8-3)'
+  id: totrans-208
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_concurrent_executors_CO8-3)'
+- en: '`loiter` returns `n * 10` so we can see how to collect results.'
+  id: totrans-209
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`loiter`返回`n * 10`，因此我们可以看到如何收集结果。'
+- en: '[![4](assets/4.png)](#co_concurrent_executors_CO8-4)'
+  id: totrans-210
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_concurrent_executors_CO8-4)'
+- en: Create a `ThreadPoolExecutor` with three threads.
+  id: totrans-211
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 创建一个具有三个线程的`ThreadPoolExecutor`。
+- en: '[![5](assets/5.png)](#co_concurrent_executors_CO8-5)'
+  id: totrans-212
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_concurrent_executors_CO8-5)'
+- en: 'Submit five tasks to the `executor`. Since there are only three threads, only
+    three of those tasks will start immediately: the calls `loiter(0)`, `loiter(1)`,
+    and `loiter(2)`; this is a nonblocking call.'
+  id: totrans-213
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 向`executor`提交五个任务。由于只有三个线程，因此只有其中三个任务会立即启动：调用`loiter(0)`、`loiter(1)`和`loiter(2)`；这是一个非阻塞调用。
+- en: '[![6](assets/6.png)](#co_concurrent_executors_CO8-6)'
+  id: totrans-214
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![6](assets/6.png)](#co_concurrent_executors_CO8-6)'
+- en: 'Immediately display the `results` of invoking `executor.map`: it’s a generator,
+    as the output in [Example 20-9](#demo_executor_map_run) shows.'
+  id: totrans-215
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 立即显示调用`executor.map`的`results`：它是一个生成器，正如[示例 20-9](#demo_executor_map_run)中的输出所示。
+- en: '[![7](assets/7.png)](#co_concurrent_executors_CO8-7)'
+  id: totrans-216
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![7](assets/7.png)](#co_concurrent_executors_CO8-7)'
+- en: The `enumerate` call in the `for` loop will implicitly invoke `next(results)`,
+    which in turn will invoke `_f.result()` on the (internal) `_f` future representing
+    the first call, `loiter(0)`. The `result` method will block until the future is
+    done, therefore each iteration in this loop will have to wait for the next result
+    to be ready.
+  id: totrans-217
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`for`循环中的`enumerate`调用将隐式调用`next(results)`，这将进而在（内部的）代表第一个调用`loiter(0)`的`_f`
+    future上调用`_f.result()`。`result`方法将阻塞直到future完成，因此此循环中的每次迭代都必须等待下一个结果准备就绪。'
+- en: I encourage you to run [Example 20-8](#demo_executor_map_ex) and see the display
+    being updated incrementally. While you’re at it, play with the `max_workers` argument
+    for the `ThreadPool​Executor` and with the `range` function that produces the
+    arguments for the `executor.map` call—or replace it with lists of handpicked values
+    to create different delays.
+  id: totrans-218
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 鼓励你运行[示例 20-8](#demo_executor_map_ex)，看到显示逐步更新。在此过程中，尝试调整`ThreadPoolExecutor`的`max_workers`参数以及产生`executor.map`调用参数的`range`函数，或者用手动选择的值列表替换它以创建不同的延迟。
+- en: '[Example 20-9](#demo_executor_map_run) shows a sample run of [Example 20-8](#demo_executor_map_ex).'
+  id: totrans-219
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 20-9](#demo_executor_map_run)展示了[示例 20-8](#demo_executor_map_ex)的一个运行示例。'
+- en: Example 20-9\. Sample run of demo_executor_map.py from [Example 20-8](#demo_executor_map_ex)
+  id: totrans-220
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例20-9。来自[示例 20-8](#demo_executor_map_ex)的demo_executor_map.py的示例运行。
+- en: '[PRE11]'
+  id: totrans-221
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE11]'
+- en: '[![1](assets/1.png)](#co_concurrent_executors_CO9-1)'
+  id: totrans-222
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_concurrent_executors_CO9-1)'
+- en: This run started at 15:56:50.
+  id: totrans-223
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 此运行开始于15:56:50。
+- en: '[![2](assets/2.png)](#co_concurrent_executors_CO9-2)'
+  id: totrans-224
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_concurrent_executors_CO9-2)'
+- en: The first thread executes `loiter(0)`, so it will sleep for 0s and return even
+    before the second thread has a chance to start, but YMMV.^([6](ch20.html#idm46582387668096))
+  id: totrans-225
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 第一个线程执行`loiter(0)`，因此它将休眠0秒并在第二个线程有机会启动之前返回，但结果可能有所不同。^([6](ch20.html#idm46582387668096))
+- en: '[![3](assets/3.png)](#co_concurrent_executors_CO9-3)'
+  id: totrans-226
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_concurrent_executors_CO9-3)'
+- en: '`loiter(1)` and `loiter(2)` start immediately (because the thread pool has
+    three workers, it can run three functions concurrently).'
+  id: totrans-227
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`loiter(1)`和`loiter(2)`立即启动（因为线程池有三个工作线程，可以同时运行三个函数）。'
+- en: '[![4](assets/4.png)](#co_concurrent_executors_CO9-4)'
+  id: totrans-228
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_concurrent_executors_CO9-4)'
+- en: This shows that the `results` returned by `executor.map` is a generator; nothing
+    so far would block, regardless of the number of tasks and the `max_workers` setting.
+  id: totrans-229
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这表明`executor.map`返回的`results`是一个生成器；到目前为止，无论任务数量和`max_workers`设置如何，都不会阻塞。
+- en: '[![5](assets/5.png)](#co_concurrent_executors_CO9-5)'
+  id: totrans-230
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_concurrent_executors_CO9-5)'
+- en: Because `loiter(0)` is done, the first worker is now available to start the
+    fourth thread for `loiter(3)`.
+  id: totrans-231
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 因为`loiter(0)`已经完成，第一个工作线程现在可以开始第四个线程执行`loiter(3)`。
+- en: '[![6](assets/6.png)](#co_concurrent_executors_CO9-6)'
+  id: totrans-232
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![6](assets/6.png)](#co_concurrent_executors_CO9-6)'
+- en: 'This is where execution may block, depending on the parameters given to the
+    `loiter` calls: the `__next__` method of the `results` generator must wait until
+    the first future is complete. In this case, it won’t block because the call to
+    `loiter(0)` finished before this loop started. Note that everything up to this
+    point happened within the same second: 15:56:50.'
+  id: totrans-233
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这是执行可能会阻塞的地方，取决于给`loiter`调用的参数：`results`生成器的`__next__`方法必须等待第一个future完成。在这种情况下，它不会阻塞，因为对`loiter(0)`的调用��此循环开始之前已经完成。请注意，到目前为止，所有操作都发生在同一秒内：15:56:50。
+- en: '[![7](assets/7.png)](#co_concurrent_executors_CO9-7)'
+  id: totrans-234
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![7](assets/7.png)](#co_concurrent_executors_CO9-7)'
+- en: '`loiter(1)` is done one second later, at 15:56:51\. The thread is freed to
+    start `loiter(4)`.'
+  id: totrans-235
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 一秒钟后，`loiter(1)`完成，在15:56:51。线程被释放以启动`loiter(4)`。
+- en: '[![8](assets/8.png)](#co_concurrent_executors_CO9-8)'
+  id: totrans-236
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![8](assets/8.png)](#co_concurrent_executors_CO9-8)'
+- en: 'The result of `loiter(1)` is shown: `10`. Now the `for` loop will block waiting
+    for the result of `loiter(2)`.'
+  id: totrans-237
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`loiter(1)`的结果显示为：`10`。现在`for`循环将阻塞等待`loiter(2)`的结果。'
+- en: '[![9](assets/9.png)](#co_concurrent_executors_CO9-9)'
+  id: totrans-238
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![9](assets/9.png)](#co_concurrent_executors_CO9-9)'
+- en: 'The pattern repeats: `loiter(2)` is done, its result is shown; same with `loiter(3)`.'
+  id: totrans-239
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 模式重复：`loiter(2)`完成，显示其结果；`loiter(3)`也是如此。
+- en: '[![10](assets/10.png)](#co_concurrent_executors_CO9-10)'
+  id: totrans-240
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![10](assets/10.png)](#co_concurrent_executors_CO9-10)'
+- en: There is a 2s delay until `loiter(4)` is done, because it started at 15:56:51
+    and did nothing for 4s.
+  id: totrans-241
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 直到`loiter(4)`完成前有2秒的延迟，因为它在15:56:51开始，并且4秒内什么也没做。
+- en: The `Executor.map` function is easy to use, but often it’s preferable to get
+    the results as they are ready, regardless of the order they were submitted. To
+    do that, we need a combination of the `Executor.submit` method and the `futures.as_completed`
+    function, as we saw in [Example 20-4](#flags_threadpool_futures_ex). We’ll come
+    back to this technique in [“Using futures.as_completed”](#using_futures_as_completed_sec).
+  id: totrans-242
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`Executor.map`函数易于使用，但通常最好在准备就绪时获取结果，而不考虑提交的顺序。为此，我们需要`Executor.submit`方法和`futures.as_completed`函数的组合，正如我们在[Example
+    20-4](#flags_threadpool_futures_ex)中看到的那样。我们将在[“使用futures.as_completed”](#using_futures_as_completed_sec)中回到这种技术。'
+- en: Tip
+  id: totrans-243
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 提示
+- en: The combination of `executor.submit` and `futures.as_completed` is more flexible
+    than `executor.map` because you can `submit` different callables and arguments,
+    while `executor.map` is designed to run the same callable on the different arguments.
+    In addition, the set of futures you pass to `futures.as_completed` may come from
+    more than one executor—perhaps some were created by a `ThreadPoolExecutor` instance,
+    while others are from a `ProcessPoolExecutor`.
+  id: totrans-244
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`executor.submit`和`futures.as_completed`的组合比`executor.map`更灵活，因为您可以`submit`不同的可调用函数和参数，而`executor.map`设计为在不同的参数上运行相同的可调用函数。此外，您传递给`futures.as_completed`的future集合可能来自多个执行器——也许一些是由`ThreadPoolExecutor`实例创建的，而其他一些来自`ProcessPoolExecutor`。'
+- en: In the next section, we will resume the flag download examples with new requirements
+    that will force us to iterate over the results of `futures.as_completed` instead
+    of using `executor.map`.
+  id: totrans-245
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在下一节中，我们将使用新要求恢复标志下载示例，这将迫使我们迭代`futures.as_completed`的结果，而不是使用`executor.map`。
+- en: Downloads with Progress Display and Error Handling
+  id: totrans-246
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 带有进度显示和错误处理的下载
+- en: 'As mentioned, the scripts in [“Concurrent Web Downloads”](#ex_web_downloads_sec)
+    have no error handling to make them easier to read and to contrast the structure
+    of the three approaches: sequential, threaded, and asynchronous.'
+  id: totrans-247
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如前所述，[“并发Web下载”](#ex_web_downloads_sec)中的脚本没有错误处理，以使其更易于阅读，并对比三种方法的结构：顺序，线程和异步。
+- en: 'In order to test the handling of a variety of error conditions, I created the
+    `flags2` examples:'
+  id: totrans-248
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了测试处理各种错误条件，我创建了`flags2`示例：
+- en: flags2_common.py
+  id: totrans-249
+  prefs: []
+  type: TYPE_NORMAL
+  zh: flags2_common.py
+- en: 'This module contains common functions and settings used by all `flags2` examples,
+    including a `main` function, which takes care of command-line parsing, timing,
+    and reporting results. That is really support code, not directly relevant to the
+    subject of this chapter, so I will not list the source code here, but you can
+    read it in the [*fluentpython/example-code-2e*](https://fpy.li/code) repository:
+    [*20-executors/getflags/flags2_common.py*](https://fpy.li/20-10).'
+  id: totrans-250
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 该模块包含所有`flags2`示例中使用的常见函数和设置，包括一个`main`函数，负责命令行解析，计时和报告结果。这实际上是支持代码，与本章主题无直接关系，因此我不会在这里列出源代码，但您可以在[*fluentpython/example-code-2e*](https://fpy.li/code)存储库中阅读：[*20-executors/getflags/flags2_common.py*](https://fpy.li/20-10)。
+- en: flags2_sequential.py
+  id: totrans-251
+  prefs: []
+  type: TYPE_NORMAL
+  zh: flags2_sequential.py
+- en: A sequential HTTP client with proper error handling and progress bar display.
+    Its `download_one` function is also used by `flags2_threadpool.py`.
+  id: totrans-252
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 具有适当错误处理和进度条显示的顺序HTTP客户端。其`download_one`函数也被`flags2_threadpool.py`使用。
+- en: flags2_threadpool.py
+  id: totrans-253
+  prefs: []
+  type: TYPE_NORMAL
+  zh: flags2_threadpool.py
+- en: Concurrent HTTP client based on `futures.ThreadPoolExecutor` to demonstrate
+    error handling and integration of the progress bar.
+  id: totrans-254
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 基于`futures.ThreadPoolExecutor`的并发HTTP客户端，用于演示错误处理和进度条的集成。
+- en: flags2_asyncio.py
+  id: totrans-255
+  prefs: []
+  type: TYPE_NORMAL
+  zh: flags2_asyncio.py
+- en: Same functionality as the previous example, but implemented with `asyncio` and
+    `httpx`. This will be covered in [“Enhancing the asyncio Downloader”](ch21.html#flags2_asyncio_sec),
+    in [Chapter 21](ch21.html#async_ch).
+  id: totrans-256
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 与上一个示例具有相同功能，但使用`asyncio`和`httpx`实现。这将在[“增强asyncio下载器”](ch21.html#flags2_asyncio_sec)中介绍，在[第21章](ch21.html#async_ch)中。
+- en: Be Careful when Testing Concurrent Clients
+  id: totrans-257
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 在测试并发客户端时要小心
+- en: When testing concurrent HTTP clients on public web servers, you may generate
+    many requests per second, and that’s how denial-of-service (DoS) attacks are made.
+    Carefully throttle your clients when hitting public servers. For testing, set
+    up a local HTTP server. See [“Setting Up Test Servers”](#setting_up_servers_box)
+    for instructions.
+  id: totrans-258
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在公共Web服务器上测试并发HTTP客户端时，您可能每秒生成许多请求，这就是拒绝服务（DoS）攻击的方式。在命中公��服务器时，请谨慎限制您的客户端。对于测试，请设置本地HTTP服务器。有关说明，请参阅[“设置测试服务器”](#setting_up_servers_box)。
+- en: 'The most visible feature of the `flags2` examples is that they have an animated,
+    text-mode progress bar implemented with the [*tqdm* package](https://fpy.li/20-11).
+    I posted a [108s video on YouTube](https://fpy.li/20-12) to show the progress
+    bar and contrast the speed of the three `flags2` scripts. In the video, I start
+    with the sequential download, but I interrupt it after 32s because it was going
+    to take more than 5 minutes to hit on 676 URLs and get 194 flags. I then run the
+    threaded and `asyncio` scripts three times each, and every time they complete
+    the job in 6s or less (i.e., more than 60 times faster). [Figure 20-1](#flags2_progress_fig)
+    shows two screenshots: during and after running *flags2_threadpool.py*.'
+  id: totrans-259
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`flags2`示例最显著的特点是它们具有一个使用[*tqdm*包](https://fpy.li/20-11)实现的动画文本模式进度条。我在YouTube上发布了一个[108秒的视频](https://fpy.li/20-12)来展示进度条，并对比三个`flags2`脚本的速度。在视频中，我从顺序下载开始，但在32秒后中断了，因为要花费超过5分钟才能访问676个URL并获取194个标志。然后我分别运行了线程和`asyncio`脚本三次，每次都在6秒内完成任务（即，速度超过60倍）。[图20-1](#flags2_progress_fig)显示了两个屏幕截图：运行*flags2_threadpool.py*时和脚本��成后。'
+- en: '![flags2_threadpool.py running with progress bar](assets/flpy_2001.png)'
+  id: totrans-260
+  prefs: []
+  type: TYPE_IMG
+  zh: '![flags2_threadpool.py运行时的进度条](assets/flpy_2001.png)'
+- en: 'Figure 20-1\. Top-left: flags2_threadpool.py running with live progress bar
+    generated by tqdm; bottom-right: same terminal window after the script is finished.'
+  id: totrans-261
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 图20-1。左上角：flags2_threadpool.py运行时由tqdm生成的实时进度条；右下角：脚本完成后相同的终端窗口。
+- en: 'The simplest *tqdm* example appears in an animated *.gif* in the project’s
+    [*README.md*](https://fpy.li/20-13). If you type the following code in the Python
+    console after installing the *tqdm* package, you’ll see an animated progress bar
+    where the comment is:'
+  id: totrans-262
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 最简单的*tqdm*示例出现在项目的[*README.md*](https://fpy.li/20-13)中的动画*.gif*中。如果在安装了*tqdm*包后在Python控制台中输入以下代码，您将看到一个动画进度条，其中的注释是：
+- en: '[PRE12]'
+  id: totrans-263
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE12]'
+- en: 'Besides the neat effect, the `tqdm` function is also interesting conceptually:
+    it consumes any iterable and produces an iterator which, while it’s consumed,
+    displays the progress bar and estimates the remaining time to complete all iterations.
+    To compute that estimate, `tqdm` needs to get an iterable that has a `len`, or
+    additionally receive the `total=` argument with the expected number of items.
+    Integrating `tqdm` with our `flags2` examples provides an opportunity to look
+    deeper into how the concurrent scripts actually work, by forcing us to use the
+    [`futures.as_completed`](https://fpy.li/20-7) and the [`asyncio.as_completed`](https://fpy.li/20-15)
+    functions so that `tqdm` can display progress as each future is completed.'
+  id: totrans-264
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 除了整洁的效果外，`tqdm`函数在概念上也很有趣：它消耗任何可迭代对象，并生成一个迭代器，当它被消耗时，显示进度条并估计完成所有迭代所需的剩余时间。为了计算这个估计值，`tqdm`需要获得一个具有`len`的可迭代对象，或者另外接收期望的项目数量作为`total=`参数。将`tqdm`与我们的`flags2`示例集成提供了一个机会，深入了解并发脚本的实际工作原理，强制我们使用[`futures.as_completed`](https://fpy.li/20-7)和[`asyncio.as_completed`](https://fpy.li/20-15)函数，以便`tqdm`可以在每个未来完成时显示进度。
+- en: The other feature of the `flags2` example is a command-line interface. All three
+    scripts accept the same options, and you can see them by running any of the scripts
+    with the `-h` option. [Example 20-10](#flags2_help_demo) shows the help text.
+  id: totrans-265
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`flags2`示例的另一个特点是命令行界面。所有三个脚本都接受相同的选项，您可以通过在任何脚本中使用`-h`选项来查看它们。[示例20-10](#flags2_help_demo)显示了帮助文本。'
+- en: Example 20-10\. Help screen for the scripts in the flags2 series
+  id: totrans-266
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例20-10。flags2系列脚本的帮助界面
+- en: '[PRE13]'
+  id: totrans-267
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE13]'
+- en: 'All arguments are optional. But the `-s/--server` is essential for testing:
+    it lets you choose which HTTP server and port will be used in the test. Pass one
+    of these case-insensitive labels to determine where the script will look for the
+    flags:'
+  id: totrans-268
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 所有参数都是可选的。但`-s/--server`对于测试是必不可少的：它让您选择在测试中使用哪个HTTP服务器和端口。传递这些不区分大小写的标签之一，以确定脚本将在哪里查找标志：
+- en: '`LOCAL`'
+  id: totrans-269
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`本地`'
+- en: Use `http://localhost:8000/flags`; this is the default. You should configure
+    a local HTTP server to answer at port 8000\. See the following note for instructions.
+  id: totrans-270
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 使用`http://localhost:8000/flags`；这是默认设置。您应该配置一个本地HTTP服务器以在端口8000回答。查看以下说明。
+- en: '`REMOTE`'
+  id: totrans-271
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`远程`'
+- en: Use `http://fluentpython.com/data/flags`; that is a public website owned by
+    me, hosted on a shared server. Please do not pound it with too many concurrent
+    requests. The *fluentpython.com* domain is handled by the [Cloudflare](https://fpy.li/20-16)
+    CDN (Content Delivery Network) so you may notice that the first downloads are
+    slower, but they get faster when the CDN cache warms up.
+  id: totrans-272
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 使用`http://fluentpython.com/data/flags`；这是我拥有的一个公共网站，托管在共享服务器上。请不要对其进行过多的并发请求。*fluentpython.com*域名由[Cloudflare](https://fpy.li/20-16)
+    CDN（内容交付网络）处理，因此您可能会注意到初始下载速度较慢，但当CDN缓存热身时速度会加快。
+- en: '`DELAY`'
+  id: totrans-273
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`延迟`'
+- en: Use `http://localhost:8001/flags`; a server delaying HTTP responses should be
+    listening to port 8001\. I wrote *slow_server.py* to make it easier to experiment.
+    You’ll find it in the *20-futures/getflags/* directory of the [*Fluent Python*
+    code repository](https://fpy.li/code). See the following note for instructions.
+  id: totrans-274
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 使用`http://localhost:8001/flags`；一个延迟HTTP响应的服务器应该监听端口8001。我编写了*slow_server.py*来使实验更加容易。您可以在[*Fluent
+    Python*代码库](https://fpy.li/code)的*20-futures/getflags/*目录中找到它。查看以下说明。
+- en: '`ERROR`'
+  id: totrans-275
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`错误`'
+- en: Use `http://localhost:8002/flags`; a server returning some HTTP errors should
+    be listening on port 8002\. Instructions are next.
+  id: totrans-276
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 使用`http://localhost:8002/flags`；一个返回一些HTTP错误的服务器应该监听端口8002。接下来是说明。
+- en: Setting Up Test Servers
+  id: totrans-277
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 设置测试服务器
+- en: 'If you don’t have a local HTTP server for testing, I wrote setup instructions
+    using only Python ≥ 3.9 (no external libraries) in [*20-executors/getflags/README.adoc*](https://fpy.li/20-17)
+    in the [*fluentpython/example-code-2e*](https://fpy.li/code) repository. In short,
+    *README.adoc* describes how to use:'
+  id: totrans-278
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果您没有用于测试的本地HTTP服务器，我在[*fluentpython/example-code-2e*](https://fpy.li/code)代码库的[*20-executors/getflags/README.adoc*](https://fpy.li/20-17)中使用仅Python
+    ≥ 3.9（无外部库）编写了设置说明。简而言之，*README.adoc*描述了如何使用：
+- en: '`python3 -m http.server`'
+  id: totrans-279
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`python3 -m http.server`'
+- en: The `LOCAL` server on port 8000
+  id: totrans-280
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`本地`服务器端口8000'
+- en: '`python3 slow_server.py`'
+  id: totrans-281
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`python3 slow_server.py`'
+- en: The `DELAY` server on port 8001, which adds a random delay of .5s to 5s before
+    each response
+  id: totrans-282
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在端口8001上的`DELAY`服务器，在每个响应之前增加随机延迟0.5秒至5秒
+- en: '`python3 slow_server.py 8002 --error-rate .25`'
+  id: totrans-283
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`python3 slow_server.py 8002 --error-rate .25`'
+- en: The `ERROR` server on port 8002, which in addition to the random delay, has
+    a 25% chance of returning a [“418 I’m a teapot”](https://fpy.li/20-18) error response
+  id: totrans-284
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在端口8002上的`ERROR`服务器，除了随机延迟外，还有25%的几率返回[“418我是一个茶壶”](https://fpy.li/20-18)错误响应
+- en: By default, each *flags2*.py* script will fetch the flags of the 20 most populous
+    countries from the `LOCAL` server (`http://localhost:8000/flags`) using a default
+    number of concurrent connections, which varies from script to script. [Example 20-11](#flags2_sequential_run)
+    shows a sample run of the *flags2_sequential.py* script using all defaults. To
+    run it, you need a local server, as explained in [“Be Careful when Testing Concurrent
+    Clients”](#careful_testing_clients).
+  id: totrans-285
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 默认情况下，每个*flags2*.py*脚本将使用默认的并发连接数从`LOCAL`服务器（`http://localhost:8000/flags`）获取人口最多的20个国家的标志，这在脚本之间有所不同。[示例 20-11](#flags2_sequential_run)展示了使用所有默认值运行*flags2_sequential.py*脚本的示例。要运行它，您需要一个本地服务器，如[“测试并发客户端时要小心”](#careful_testing_clients)中所解释的那样。
+- en: 'Example 20-11\. Running flags2_sequential.py with all defaults: `LOCAL site`,
+    top 20 flags, 1 concurrent connection'
+  id: totrans-286
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 20-11\. 使用所有默认值运行flags2_sequential.py：`LOCAL站点`，前20个标志，1个并发连接
+- en: '[PRE14]'
+  id: totrans-287
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE14]'
+- en: You can select which flags will be downloaded in several ways. [Example 20-12](#flags2_threadpool_run)
+    shows how to download all flags with country codes starting with the letters A,
+    B, or C.
+  id: totrans-288
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 您可以通过多种方式选择要下载的标志。[示例 20-12](#flags2_threadpool_run)展示了如何下载所有以字母A、B或C开头的国家代码的标志。
+- en: Example 20-12\. Run flags2_threadpool.py to fetch all flags with country codes
+    prefixes A, B, or C from the `DELAY` server
+  id: totrans-289
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 20-12\. 运行flags2_threadpool.py从`DELAY`服务器获取所有以A、B或C开头的国家代码前缀的标志
+- en: '[PRE15]'
+  id: totrans-290
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE15]'
+- en: Regardless of how the country codes are selected, the number of flags to fetch
+    can be limited with the `-l/--limit` option. [Example 20-13](#flags2_asyncio_run)
+    demonstrates how to run exactly 100 requests, combining the `-a` option to get
+    all flags with `-l 100`.
+  id: totrans-291
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 无论如何选择国家代码，要获取的标志数量都可以通过`-l/--limit`选项限制。[示例 20-13](#flags2_asyncio_run)演示了如何运行确切的100个请求，结合`-a`选项获取所有标志和`-l
+    100`。
+- en: Example 20-13\. Run flags2_asyncio.py to get 100 flags (`-al 100`) from the
+    `ERROR` server, using 100 concurrent requests (`-m 100`)
+  id: totrans-292
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 20-13\. 运行flags2_asyncio.py从`ERROR`服务器获取100个标志（`-al 100`），使用100个并发请求（`-m
+    100`）
+- en: '[PRE16]'
+  id: totrans-293
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE16]'
+- en: That’s the user interface of the `flags2` examples. Let’s see how they are implemented.
+  id: totrans-294
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这是`flags2`示例的用户界面。让我们看看它们是如何实现的。
+- en: Error Handling in the flags2 Examples
+  id: totrans-295
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: flags2示例中的错误处理
+- en: The common strategy in all three examples to deal with HTTP errors is that 404
+    errors (not found) are handled by the function in charge of downloading a single
+    file (`download_one`). Any other exception propagates to be handled by the `download_many`
+    function or the `supervisor` coroutine—in the `asyncio` example.
+  id: totrans-296
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 处理flags2示例中所有三个示例中HTTP错误的常见策略是，404错误（未找到）由负责下载单个文件的函数（`download_one`）处理。任何其他异常���会传播以由`download_many`函数或`supervisor`协程处理—在`asyncio`示例中。
+- en: Once more, we’ll start by studying the sequential code, which is easier to follow—and
+    mostly reused by the thread pool script. [Example 20-14](#flags2_basic_http_ex)
+    shows the functions that perform the actual downloads in the *flags2_sequential.py*
+    and *flags2_threadpool.py* scripts.
+  id: totrans-297
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 再次，我们将从研究顺序代码开始，这样更容易跟踪—并且大部分被线程池脚本重用。[示例 20-14](#flags2_basic_http_ex)展示了在*flags2_sequential.py*和*flags2_threadpool.py*脚本中执行实际下载的函数。
+- en: 'Example 20-14\. flags2_sequential.py: basic functions in charge of downloading;
+    both are reused in flags2_threadpool.py'
+  id: totrans-298
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 20-14\. flags2_sequential.py：负责下载的基本函数；两者在flags2_threadpool.py中都被重用
+- en: '[PRE17]'
+  id: totrans-299
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE17]'
+- en: '[![1](assets/1.png)](#co_concurrent_executors_CO10-1)'
+  id: totrans-300
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_concurrent_executors_CO10-1)'
+- en: Import the `tqdm` progress-bar display library, and tell Mypy to skip checking
+    it.^([7](ch20.html#idm46582387126720))
+  id: totrans-301
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 导入`tqdm`进度条显示库，并告诉Mypy跳过检查它。^([7](ch20.html#idm46582387126720))
+- en: '[![2](assets/2.png)](#co_concurrent_executors_CO10-2)'
+  id: totrans-302
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_concurrent_executors_CO10-2)'
+- en: Import a couple of functions and an `Enum` from the `flags2_common` module.
+  id: totrans-303
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 从`flags2_common`模块导入一对函数和一个`Enum`。
+- en: '[![3](assets/3.png)](#co_concurrent_executors_CO10-3)'
+  id: totrans-304
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_concurrent_executors_CO10-3)'
+- en: Raises `HTTPStetusError` if the HTTP status code is not in `range(200, 300)`.
+  id: totrans-305
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果HTTP状态码不在`range(200, 300)`中，则引发`HTTPStetusError`。
+- en: '[![4](assets/4.png)](#co_concurrent_executors_CO10-4)'
+  id: totrans-306
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_concurrent_executors_CO10-4)'
+- en: '`download_one` catches `HTTPStatusError` to handle HTTP code 404 specifically…'
+  id: totrans-307
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`download_one`捕获`HTTPStatusError`以处理特定的HTTP代码404…'
+- en: '[![5](assets/5.png)](#co_concurrent_executors_CO10-5)'
+  id: totrans-308
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_concurrent_executors_CO10-5)'
+- en: …by setting its local `status` to `DownloadStatus.NOT_FOUND`; `DownloadStatus`
+    is an `Enum` imported from *flags2_common.py*.
+  id: totrans-309
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 通过将其本地`status`设置为`DownloadStatus.NOT_FOUND`来处理; `DownloadStatus`是从*flags2_common.py*导入的`Enum`。
+- en: '[![6](assets/6.png)](#co_concurrent_executors_CO10-6)'
+  id: totrans-310
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![6](assets/6.png)](#co_concurrent_executors_CO10-6)'
+- en: Any other `HTTPStatusError` exception is re-raised to propagate to the caller.
+  id: totrans-311
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 其他任何`HTTPStatusError`异常都会重新引发以传播给调用者。
+- en: '[![7](assets/7.png)](#co_concurrent_executors_CO10-7)'
+  id: totrans-312
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![7](assets/7.png)](#co_concurrent_executors_CO10-7)'
+- en: If the `-v/--verbose` command-line option is set, the country code and status
+    message are displayed; this is how you’ll see progress in verbose mode.
+  id: totrans-313
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果设置了`-v/--verbose`命令行选项，则显示国家代码和状态消息；这是您在详细模式下看到进度的方式。
+- en: '[Example 20-15](#flags2_dowload_many_seq) lists the sequential version of the
+    `download_many` function. This code is straightforward, but it’s worth studying
+    to contrast with the concurrent versions coming up. Focus on how it reports progress,
+    handles errors, and tallies downloads.'
+  id: totrans-314
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 20-15](#flags2_dowload_many_seq)列出了`download_many`函数的顺序版本。这段代码很简单，但值得研究，以与即将出现的并发版本进行对比。关注它如何报告进度，处理错误和统计下载量。'
+- en: 'Example 20-15\. flags2_sequential.py: the sequential implementation of `download_many`'
+  id: totrans-315
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 20-15\. flags2_sequential.py：`download_many`的顺序实现
+- en: '[PRE18]'
+  id: totrans-316
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE18]'
+- en: '[![1](assets/1.png)](#co_concurrent_executors_CO11-1)'
+  id: totrans-317
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_concurrent_executors_CO11-1)'
+- en: 'This `Counter` will tally the different download outcomes: `DownloadStatus.OK`,
+    `DownloadStatus.NOT_FOUND`, or `DownloadStatus.ERROR`.'
+  id: totrans-318
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这个`Counter`将统计不同的下载结果：`DownloadStatus.OK`、`DownloadStatus.NOT_FOUND`或`DownloadStatus.ERROR`。
+- en: '[![2](assets/2.png)](#co_concurrent_executors_CO11-2)'
+  id: totrans-319
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_concurrent_executors_CO11-2)'
+- en: '`cc_iter` holds the list of the country codes received as arguments, ordered
+    alphabetically.'
+  id: totrans-320
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`cc_iter`保存按字母顺序排列的国家代码列表。'
+- en: '[![3](assets/3.png)](#co_concurrent_executors_CO11-3)'
+  id: totrans-321
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_concurrent_executors_CO11-3)'
+- en: If not running in verbose mode, `cc_iter` is passed to `tqdm`, which returns
+    an iterator yielding the items in `cc_iter` while also animating the progress
+    bar.
+  id: totrans-322
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果不在详细模式下运行，将`cc_iter`传递给`tqdm`，它会返回一个迭代器，该迭代器会产生`cc_iter`中的项目，并同时显示进度条。
+- en: '[![4](assets/4.png)](#co_concurrent_executors_CO11-4)'
+  id: totrans-323
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_concurrent_executors_CO11-4)'
+- en: Make successive calls to `download_one`.
+  id: totrans-324
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 连续调用`download_one`。
+- en: '[![5](assets/5.png)](#co_concurrent_executors_CO11-5)'
+  id: totrans-325
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_concurrent_executors_CO11-5)'
+- en: HTTP status code exceptions raised by `get_flag` and not handled by `download_one`
+    are handled here.
+  id: totrans-326
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 由`get_flag`引发的HTTP状态码异常，且未被`download_one`处理的异常在此处理。
+- en: '[![6](assets/6.png)](#co_concurrent_executors_CO11-6)'
+  id: totrans-327
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![6](assets/6.png)](#co_concurrent_executors_CO11-6)'
+- en: Other network-related exceptions are handled here. Any other exception will
+    abort the script, because the `flags2_common.main` function that calls `download_many`
+    has no `try/except`.
+  id: totrans-328
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 其他与网络相关的异常在此处理。任何其他异常都会中止脚本，因为调用`download_many`的`flags2_common.main`函数没有`try/except`。
+- en: '[![7](assets/7.png)](#co_concurrent_executors_CO11-7)'
+  id: totrans-329
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![7](assets/7.png)](#co_concurrent_executors_CO11-7)'
+- en: Exit the loop if the user hits Ctrl-C.
+  id: totrans-330
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果用户按下Ctrl-C，则退出循环。
+- en: '[![8](assets/8.png)](#co_concurrent_executors_CO11-8)'
+  id: totrans-331
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![8](assets/8.png)](#co_concurrent_executors_CO11-8)'
+- en: If no exception escaped `download_one`, clear the error message.
+  id: totrans-332
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果`download_one`没有发生异常，清除错误消息。
+- en: '[![9](assets/9.png)](#co_concurrent_executors_CO11-9)'
+  id: totrans-333
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![9](assets/9.png)](#co_concurrent_executors_CO11-9)'
+- en: If there was an error, set the local `status` accordingly.
+  id: totrans-334
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果发生错误，相应地设置本地`status`。
+- en: '[![10](assets/10.png)](#co_concurrent_executors_CO11-10)'
+  id: totrans-335
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![10](assets/10.png)](#co_concurrent_executors_CO11-10)'
+- en: Increment the counter for that `status`.
+  id: totrans-336
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为该`status`增加计数。
+- en: '[![11](assets/11.png)](#co_concurrent_executors_CO11-11)'
+  id: totrans-337
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![11](assets/11.png)](#co_concurrent_executors_CO11-11)'
+- en: In verbose mode, display the error message for the current country code, if
+    any.
+  id: totrans-338
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在详细模式下，显示当前国家代码的错误消息（如果有）。
+- en: '[![12](assets/12.png)](#co_concurrent_executors_CO11-12)'
+  id: totrans-339
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![12](assets/12.png)](#co_concurrent_executors_CO11-12)'
+- en: Return `counter` so that `main` can display the numbers in the final report.
+  id: totrans-340
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 返回`counter`，以便`main`函数可以在最终报告中显示数字。
+- en: We’ll now study the refactored thread pool example, *flags2_threadpool.py*.
+  id: totrans-341
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们现在将学习重构后的线程池示例，*flags2_threadpool.py*。
+- en: Using futures.as_completed
+  id: totrans-342
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 使用`futures.as_completed`
+- en: In order to integrate the *tqdm* progress bar and handle errors on each request,
+    the *flags2_threadpool.py* script uses `futures.ThreadPoolExecutor` with the `futures.as_completed`
+    function we’ve already seen. [Example 20-16](#flags2_threadpool_full) is the full
+    listing of *flags2_threadpool.py*. Only the `download_many` function is implemented;
+    the other functions are reused from *flags2_common.py* and *flags2_sequential.py*.
+  id: totrans-343
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了集成*tqdm*进度条并处理每个请求的错误，*flags2_threadpool.py*脚本使用了`futures.ThreadPoolExecutor`和我们已经见过的`futures.as_completed`函数。[示例 20-16](#flags2_threadpool_full)是*flags2_threadpool.py*的完整代码清单。只实现了`download_many`函数；其他函数是从*flags2_common.py*和*flags2_sequential.py*中重用的。
+- en: 'Example 20-16\. flags2_threadpool.py: full listing'
+  id: totrans-344
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 20-16\. flags2_threadpool.py：完整代码清单
+- en: '[PRE19]'
+  id: totrans-345
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE19]'
+- en: '[![1](assets/1.png)](#co_concurrent_executors_CO12-1)'
+  id: totrans-346
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_concurrent_executors_CO12-1)'
+- en: Reuse `download_one` from `flags2_sequential` ([Example 20-14](#flags2_basic_http_ex)).
+  id: totrans-347
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 从`flags2_sequential`中重用`download_one`（[示例 20-14](#flags2_basic_http_ex)）。
+- en: '[![2](assets/2.png)](#co_concurrent_executors_CO12-2)'
+  id: totrans-348
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_concurrent_executors_CO12-2)'
+- en: If the `-m/--max_req` command-line option is not given, this will be the maximum
+    number of concurrent requests, implemented as the size of the thread pool; the
+    actual number may be smaller if the number of flags to download is smaller.
+  id: totrans-349
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果没有给出`-m/--max_req`命令行选项，这将是最大并发请求的数量，实现为线程池的大小；如果要下载的标志数量较少，实际数量可能会更小。
+- en: '[![3](assets/3.png)](#co_concurrent_executors_CO12-3)'
+  id: totrans-350
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_concurrent_executors_CO12-3)'
+- en: '`MAX_CONCUR_REQ` caps the maximum number of concurrent requests regardless
+    of the number of flags to download or the `-m/--max_req` command-line option.
+    It’s a safety precaution to avoid launching too many threads with their significant
+    memory overhead.'
+  id: totrans-351
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`MAX_CONCUR_REQ`限制了最大并发请求的数量，不管要下载的标志数量或`-m/--max_req`命令行选项的值如何。这是为了避免启动过多线程带来的显著内存开销的安全预防措施。'
+- en: '[![4](assets/4.png)](#co_concurrent_executors_CO12-4)'
+  id: totrans-352
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_concurrent_executors_CO12-4)'
+- en: 'Create the `executor` with `max_workers` set to `concur_req`, computed by the
+    `main` function as the smaller of: `MAX_CONCUR_REQ`, the length of `cc_list`,
+    or the value of the `-m/--max_req` command-line option. This avoids creating more
+    threads than necessary.'
+  id: totrans-353
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 使用`max_workers`设置为由`main`函数计算的`concur_req`创建`executor`，`concur_req`是以下两者中较小的一个：`MAX_CONCUR_REQ`、`cc_list`的长度，或者`-m/--max_req`命令行选项的值。这样可以避免创建过多的线程。
+- en: '[![5](assets/5.png)](#co_concurrent_executors_CO12-5)'
+  id: totrans-354
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_concurrent_executors_CO12-5)'
+- en: This `dict` will map each `Future` instance—representing one download—with the
+    respective country code for error reporting.
+  id: totrans-355
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这个`dict`将把每个代表一个下载的`Future`实例与相应的国家代码进行映射，以便进行错误报告。
+- en: '[![6](assets/6.png)](#co_concurrent_executors_CO12-6)'
+  id: totrans-356
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![6](assets/6.png)](#co_concurrent_executors_CO12-6)'
+- en: Iterate over the list of country codes in alphabetical order. The order of the
+    results will depend on the timing of the HTTP responses more than anything, but
+    if the size of the thread pool (given by `concur_req`) is much smaller than `len(cc_list)`,
+    you may notice the downloads batched alphabetically.
+  id: totrans-357
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 按字母顺序遍历国家代码列表。结果的顺序将取决于HTTP响应的时间，但如果线程池的大小（由`concur_req`给出）远小于`len(cc_list)`，您可能会注意到按字母顺序批量下载。
+- en: '[![7](assets/7.png)](#co_concurrent_executors_CO12-7)'
+  id: totrans-358
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![7](assets/7.png)](#co_concurrent_executors_CO12-7)'
+- en: Each call to `executor.submit` schedules the execution of one callable and returns
+    a `Future` instance. The first argument is the callable, the rest are the arguments
+    it will receive.
+  id: totrans-359
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 每次调用 `executor.submit` 都会安排一个可调用函数的执行，并返回一个 `Future` 实例。第一个参数是可调用函数，其余参数是它将接收的参数。
+- en: '[![8](assets/8.png)](#co_concurrent_executors_CO12-8)'
+  id: totrans-360
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![8](assets/8.png)](#co_concurrent_executors_CO12-8)'
+- en: Store the `future` and the country code in the `dict`.
+  id: totrans-361
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 将 `future` 和国家代码存储在 `dict` 中。
+- en: '[![9](assets/9.png)](#co_concurrent_executors_CO12-9)'
+  id: totrans-362
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![9](assets/9.png)](#co_concurrent_executors_CO12-9)'
+- en: '`futures.as_completed` returns an iterator that yields futures as each task
+    is done.'
+  id: totrans-363
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`futures.as_completed` 返回一个迭代器，每当任务完成时就会产生一个 future。'
+- en: '[![10](assets/10.png)](#co_concurrent_executors_CO12-10)'
+  id: totrans-364
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![10](assets/10.png)](#co_concurrent_executors_CO12-10)'
+- en: If not in verbose mode, wrap the result of `as_completed` with the `tqdm` function
+    to display the progress bar; because `done_iter` has no `len`, we must tell `tqdm`
+    what is the expected number of items as the `total=` argument, so `tqdm` can estimate
+    the work remaining.
+  id: totrans-365
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果不处于详细模式，将 `as_completed` 的结果用 `tqdm` 函数包装起来以显示进度条；因为 `done_iter` 没有 `len`，我们必须告诉
+    `tqdm` 预期的项目数量是多少，作为 `total=` 参数，这样 `tqdm` 就可以估计剩余的工作量。
+- en: '[![11](assets/11.png)](#co_concurrent_executors_CO12-11)'
+  id: totrans-366
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![11](assets/11.png)](#co_concurrent_executors_CO12-11)'
+- en: Iterate over the futures as they are completed.
+  id: totrans-367
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 遍历已完成的 futures。
+- en: '[![12](assets/12.png)](#co_concurrent_executors_CO12-12)'
+  id: totrans-368
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![12](assets/12.png)](#co_concurrent_executors_CO12-12)'
+- en: Calling the `result` method on a future either returns the value returned by
+    the callable, or raises whatever exception was caught when the callable was executed.
+    This method may block waiting for a resolution, but not in this example because
+    `as_completed` only returns futures that are done.
+  id: totrans-369
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在 future 上调用 `result` 方法会返回可调用函数的返回值，或者在执行可调用函数时捕获的任何异常。这个方法可能会阻塞等待解决，但在这个例子中不会，因为
+    `as_completed` 只返回已完成的 future。
+- en: '[![13](assets/13.png)](#co_concurrent_executors_CO12-13)'
+  id: totrans-370
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![13](assets/13.png)](#co_concurrent_executors_CO12-13)'
+- en: Handle the potential exceptions; the rest of this function is identical to the
+    sequential `download_many` in [Example 20-15](#flags2_dowload_many_seq)), except
+    for the next callout.
+  id: totrans-371
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 处理潜在的异常；这个函数的其余部分与[示例20-15](#flags2_dowload_many_seq))中的顺序 `download_many` 相同，除了下一个
+    callout。
+- en: '[![14](assets/14.png)](#co_concurrent_executors_CO12-14)'
+  id: totrans-372
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![14](assets/14.png)](#co_concurrent_executors_CO12-14)'
+- en: To provide context for the error message, retrieve the country code from the
+    `to_do_map` using the current `future` as key. This was not necessary in the sequential
+    version because we were iterating over the list of country codes, so we knew the
+    current `cc`; here we are iterating over the futures.
+  id: totrans-373
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了提供错误消息的上下文，使用当前的 `future` 作为键从 `to_do_map` 中检索国家代码。这在顺序版本中是不必要的，因为我们是在国家代码列表上进行迭代，所以我们知道当前的
+    `cc`；而在这里我们是在 futures 上进行迭代。
+- en: Tip
+  id: totrans-374
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 提示
+- en: '[Example 20-16](#flags2_threadpool_full) uses an idiom that is very useful
+    with `futures.as_completed`: building a `dict` to map each future to other data
+    that may be useful when the future is completed. Here the `to_do_map` maps each
+    future to the country code assigned to it. This makes it easy to do follow-up
+    processing with the result of the futures, despite the fact that they are produced
+    out of order.'
+  id: totrans-375
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例20-16](#flags2_threadpool_full) 使用了一个在 `futures.as_completed` 中非常有用的习语：构建一个
+    `dict` 来将每个 future 映射到在 future 完成时可能有用的其他数据。这里的 `to_do_map` 将每个 future 映射到分配给它的国家代码。这使得很容易对
+    futures 的结果进行后续处理，尽管它们是无序生成的。'
+- en: Python threads are well suited for I/O-intensive applications, and the `concurrent.futures`
+    package makes it relatively simple to use for certain use cases. With `ProcessPoolExecutor`,
+    you can also solve CPU-intensive problems on multiple cores—if the computations
+    are [“embarrassingly parallel”](https://fpy.li/20-19). This concludes our basic
+    introduction to `concurrent.futures`.
+  id: totrans-376
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Python 线程非常适合 I/O 密集型应用程序，而 `concurrent.futures` 包使得在某些用例中相对简单地使用它变得可能。通过 `ProcessPoolExecutor`，您还可以在多个核心上解决
+    CPU 密集型问题——如果计算是[“尴尬地并行”](https://fpy.li/20-19)的话。这结束了我们对 `concurrent.futures`
+    的基本介绍。
+- en: Chapter Summary
+  id: totrans-377
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 章节总结
+- en: We started the chapter by comparing two concurrent HTTP clients with a sequential
+    one, demonstrating that the concurrent solutions show significant performance
+    gains over the sequential script.
+  id: totrans-378
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们通过比较两个并发的 HTTP 客户端和一个顺序的客户端来开始本章，演示了并发解决方案相对于顺序脚本显示出的显著性能提升。
+- en: After studying the first example based on `concurrent.futures`, we took a closer
+    look at future objects, either instances of `concurrent.futures.Future` or `asyncio​.Future`,
+    emphasizing what these classes have in common (their differences will be emphasized
+    in [Chapter 21](ch21.html#async_ch)). We saw how to create futures by calling
+    `Executor.submit`, and iterate over completed futures with `concurrent.futures.as_completed`.
+  id: totrans-379
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在学习基于 `concurrent.futures` 的第一个例子之后，我们更仔细地研究了 future 对象，无论是 `concurrent.futures.Future`
+    的实例还是 `asyncio.Future`，强调了这些类有什么共同之处（它们的差异将在[第21章](ch21.html#async_ch)中强调）。我们看到如何通过调用
+    `Executor.submit` 创建 futures，并使用 `concurrent.futures.as_completed` 迭代已完成的 futures。
+- en: We then discussed the use of multiple processes with the `concurrent.futures.ProcessPoolExecutor`
+    class, to go around the GIL and use multiple CPU cores to simplify the multicore
+    prime checker we first saw in [Chapter 19](ch19.html#concurrency_models_ch).
+  id: totrans-380
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 然后，我们讨论了如何使用 `concurrent.futures.ProcessPoolExecutor` 类与多个进程一起工作，绕过 GIL 并使用多个
+    CPU 核心来简化我们在[第19章](ch19.html#concurrency_models_ch)中首次看到的多核素数检查器。
+- en: In the following section, we saw how the `concurrent.futures.ThreadPoolExecutor`
+    works with a didactic example, launching tasks that did nothing for a few seconds,
+    except for displaying their status with a timestamp.
+  id: totrans-381
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在接下来的部分中，我们看到了 `concurrent.futures.ThreadPoolExecutor` 如何通过一个示教性的例子工作，启动了几个任务，这些任务只是等待几秒钟，除了显示它们的状态和时间戳。
+- en: 'Next we went back to the flag downloading examples. Enhancing them with a progress
+    bar and proper error handling prompted further exploration of the `future.as_completed`
+    generator function, showing a common pattern: storing futures in a `dict` to link
+    further information to them when submitting, so that we can use that information
+    when the future comes out of the `as_completed` iterator.'
+  id: totrans-382
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 接下来我们回到了下载标志的示例。通过增加进度条和适当的错误处理来增强它们，促使进一步探索`future.as_completed`生成器函数，展示了一个常见模式：在提交时将futures存储在`dict`中以将进一步信息链接到它们，这样我们可以在future从`as_completed`迭代器中出来时使用该信息。
+- en: Further Reading
+  id: totrans-383
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 进一步阅读
+- en: The `concurrent.futures` package was contributed by Brian Quinlan, who presented
+    it in a great talk titled [“The Future Is Soon!”](https://fpy.li/20-20) at PyCon
+    Australia 2010\. Quinlan’s talk has no slides; he shows what the library does
+    by typing code directly in the Python console. As a motivating example, the presentation
+    features a short video with XKCD cartoonist/programmer Randall Munroe making an
+    unintended DoS attack on Google Maps to build a colored map of driving times around
+    his city. The formal introduction to the library is [PEP 3148 - `futures` - execute
+    computations asynchronously](https://fpy.li/pep3148). In the PEP, Quinlan wrote
+    that the `concurrent.futures` library was “heavily influenced by the Java `java.util.concurrent`
+    package.”
+  id: totrans-384
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`concurrent.futures`包是由Brian Quinlan贡献的，他在PyCon Australia 2010年的一次名为[“未来即将到来！”](https://fpy.li/20-20)的精彩演讲中介绍了它。Quinlan的演讲没有幻灯片；他通过在Python控制台中直接输入代码来展示库的功能。作为一个激励性的例子，演示中展示了一个短视频，其中XKCD漫画家/程序员Randall
+    Munroe无意中对Google地图发起了DoS攻击，以构建他所在城市周围的驾驶时间彩色地图。该库的正式介绍是[PEP 3148 - `futures` -
+    异步执行计算](https://fpy.li/pep3148)。在PEP中，Quinlan写道，`concurrent.futures`库“受到了Java`java.util.concurrent`包的重大影响。”'
+- en: For additional resources covering `concurrent.futures`, please see [Chapter 19](ch19.html#concurrency_models_ch).
+    All the references that cover Python’s `threading` and `multiprocessing` in [“Concurrency
+    with Threads and Processes”](ch19.html#concurrency_further_threads_procs_sec)
+    also cover `concurrent.futures`.
+  id: totrans-385
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 有关`concurrent.futures`的其他资源，请参阅[第19章](ch19.html#concurrency_models_ch)。所有涵盖Python的`threading`和`multiprocessing`的参考资料也包括[“使用线程和进程进行并发处理”](ch19.html#concurrency_further_threads_procs_sec)。
+- en: '^([1](ch20.html#idm46582389734384-marker)) From Michele Simionato’s post, [“Threads,
+    processes and concurrency in Python: some thoughts”](https://fpy.li/20-1), summarized
+    as “Removing the hype around the multicore (non) revolution and some (hopefully)
+    sensible comment about threads and other forms of concurrency.”'
+  id: totrans-386
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([1](ch20.html#idm46582389734384-marker)) 来自Michele Simionato的帖子[“Python中的线程、进程和并发性：一些思考”](https://fpy.li/20-1)，总结为“消除多核（非）革命周围的炒作以及关于线程和其他形式并发性的一些（希望是）明智的评论。”
+- en: ^([2](ch20.html#idm46582389710272-marker)) Particularly if your cloud provider
+    rents machines by the second, regardless of how busy the CPUs are.
+  id: totrans-387
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([2](ch20.html#idm46582389710272-marker)) 特别是如果您的云服务提供商按秒租用机器，而不管CPU有多忙。
+- en: '^([3](ch20.html#idm46582389637136-marker)) For servers that may be hit by many
+    clients, there is a difference: coroutines scale better because they use much
+    less memory than threads, and also reduce the cost of context switching, which
+    I mentioned in [“Thread-Based Nonsolution”](ch19.html#thread_non_solution_sec).'
+  id: totrans-388
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([3](ch20.html#idm46582389637136-marker)) 对于可能受到许多客户端攻击的服务器，有一个区别：协程比线程更具扩展性，因为它们使用的内存比线程少得多，并且还减少了上下文切换的成本，我在[“基于线程的非解决方案”](ch19.html#thread_non_solution_sec)中提到过。
+- en: ^([4](ch20.html#idm46582389287152-marker)) The images are originally from the
+    [CIA World Factbook](https://fpy.li/20-4), a public-domain, US government publication.
+    I copied them to my site to avoid the risk of launching a DOS attack on *cia.gov*.
+  id: totrans-389
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([4](ch20.html#idm46582389287152-marker)) 这些图片最初来自[CIA世界概况](https://fpy.li/20-4)，这是一份公共领域的美国政府出版物。我将它们复制到我的网站上，以避免对*cia.gov*发起DOS攻击的风险。
+- en: ^([5](ch20.html#idm46582389300624-marker)) Setting `follow_redirects=True` is
+    not needed for this example, but I wanted to highlight this important difference
+    between *HTTPX* and *requests*. Also, setting `follow_redirects=True` in this
+    example gives me flexibility to host the image files elsewhere in the future.
+    I think the *HTTPX* default setting of `follow_redirects​=False` is sensible because
+    unexpected redirects can mask needless requests and complicate error diagnostics.
+  id: totrans-390
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([5](ch20.html#idm46582389300624-marker)) 设置`follow_redirects=True`对于这个示例并不需要，但我想强调*HTTPX*和*requests*之间的这个重要区别。此外，在这个示例中设置`follow_redirects=True`给了我将来在其他地方托管图像文件的灵活性。我认为*HTTPX*默认设置为`follow_redirects=False`是明智的，因为意外的重定向可能掩盖不必要的请求并复杂化错误诊断。
+- en: '^([6](ch20.html#idm46582387668096-marker)) Your mileage may vary: with threads,
+    you never know the exact sequencing of events that should happen nearly at the
+    same time; it’s possible that, in another machine, you see `loiter(1)` starting
+    before `loiter(0)` finishes, particularly because `sleep` always releases the
+    GIL, so Python may switch to another thread even if you sleep for 0s.'
+  id: totrans-391
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([6](ch20.html#idm46582387668096-marker)) 你的体验可能有所不同：使用线程，你永远不知道几乎同时发生的事件的确切顺序；在另一台机器上，可能会看到`loiter(1)`在`loiter(0)`完成之前开始，特别是因为`sleep`总是释放GIL，所以即使你睡眠0秒，Python也可能切换到另一个线程。
+- en: ^([7](ch20.html#idm46582387126720-marker)) As of September 2021, there are no
+    type hints in the current release of `tdqm`. That’s OK. The world will not end
+    because of that. Thank Guido for optional typing!
+  id: totrans-392
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([7](ch20.html#idm46582387126720-marker)) 截至2021年9月，当前版本的`tdqm`中没有类型提示。没关系。世界不会因此而终结。感谢Guido提供可选类型提示！
+- en: '^([8](ch20.html#idm46582386226944-marker)) Slide #9 from [“A Curious Course
+    on Coroutines and Concurrency”](https://fpy.li/20-21) tutorial presented at PyCon
+    2009.'
+  id: totrans-393
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([8](ch20.html#idm46582386226944-marker)) 来自PyCon 2009年演示的[“关于协程和并发性的一门好奇课程”](https://fpy.li/20-21)教程的幻灯片＃9。

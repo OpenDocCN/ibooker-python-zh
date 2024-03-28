@@ -1,0 +1,3979 @@
+- en: Chapter 24\. Class Metaprogramming
+  id: totrans-0
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 第 24 章 类元编程
+- en: Everyone knows that debugging is twice as hard as writing a program in the first
+    place. So if you’re as clever as you can be when you write it, how will you ever
+    debug it?
+  id: totrans-1
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+  zh: 每个人都知道调试比一开始编写程序要困难两倍。所以如果你在编写时尽可能聪明，那么你将如何调试呢？
+- en: ''
+  id: totrans-2
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: Brian W. Kernighan and P. J. Plauger, *The Elements of Programming Style*^([1](ch24.html#idm46582370208288))
+  id: totrans-3
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+  zh: Brian W. Kernighan 和 P. J. Plauger，《编程风格的要素》^([1](ch24.html#idm46582370208288))
+- en: 'Class metaprogramming is the art of creating or customizing classes at runtime.
+    Classes are first-class objects in Python, so a function can be used to create
+    a new class at any time, without using the `class` keyword. Class decorators are
+    also functions, but designed to inspect, change, and even replace the decorated
+    class with another class. Finally, metaclasses are the most advanced tool for
+    class metaprogramming: they let you create whole new categories of classes with
+    special traits, such as the abstract base classes we’ve already seen.'
+  id: totrans-4
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 类元编程是在运行时创建或自定义类的艺术。在 Python 中，类是一等对象，因此可以使用函数在任何时候创建一个新类，而无需使用 `class` 关键字。类装饰器也是函数，但设计用于检查、更改甚至替换装饰的类为另一个类。最后，元类是类元编程的最高级工具：它们让你创建具有特殊特性的全新类别的类，例如我们已经看到的抽象基类。
+- en: Metaclasses are powerful, but hard to justify and even harder to get right.
+    Class decorators solve many of the same problems and are easier to understand.
+    Furthermore, Python 3.6 implemented [PEP 487—Simpler customization of class creation](https://fpy.li/pep487),
+    providing special methods supporting tasks that previously required metaclasses
+    or class decorators.^([2](ch24.html#idm46582370203888))
+  id: totrans-5
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 元类很强大，但很难证明其合理性，甚至更难正确使用。类装饰器解决了许多相同的问题，并且更容易理解。此外，Python 3.6 实现了 [PEP 487—更简单的类创建自定义](https://fpy.li/pep487)，提供了支持以前需要元类或类装饰器完成的任务的特殊方法。^([2](ch24.html#idm46582370203888))
+- en: This chapter presents the class metaprogramming techniques in ascending order
+    of complexity.
+  id: totrans-6
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 本章按复杂性递增的顺序介绍了类元编程技术。
+- en: Warning
+  id: totrans-7
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 警告
+- en: This is an exciting topic, and it’s easy to get carried away. So I must offer
+    this advice.
+  id: totrans-8
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这是一个令人兴奋的话题，很容易让人着迷。因此，我必须提供这些建议。
+- en: For the sake of readability and maintainability, you should probably avoid the
+    techniques described in this chapter in application code.
+  id: totrans-9
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了可读性和可维护性，你可能应该避免在应用代码中使用本章描述的技术。
+- en: On the other hand, these are the tools of the trade if you want to write the
+    next great Python framework.
+  id: totrans-10
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 另一方面，如果你想编写下一个伟大的 Python 框架，这些就是你的工具。
+- en: What’s New in This Chapter
+  id: totrans-11
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 本章新内容
+- en: All the code in the “Class Metaprogramming” chapter of the first edition of
+    *Fluent Python* still runs correctly. However, some of the previous examples no
+    longer represent the simplest solutions in light of new features added since Python
+    3.6.
+  id: totrans-12
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 第一版《流畅的 Python》“类元编程”章节中的所有代码仍然可以正确运行。然而，由于自 Python 3.6 以来添加了新功能，一些先前的示例不再代表最简单的解决方案。
+- en: I replaced those examples with different ones, highlighting Python’s new metaprogramming
+    features or adding further requirements to justify the use of the more advanced
+    techniques. Some of the new examples leverage type hints to provide class builders
+    similar to the `@dataclass` decorator and `typing.NamedTuple`.
+  id: totrans-13
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我用不同的示例替换了那些示例，突出了 Python 的新元编程特性或添加了进一步的要求，以证明使用更高级技术的合理性。一些新示例利用类型提示提供了类构建器，类似于
+    `@dataclass` 装饰器和 `typing.NamedTuple`。
+- en: '[“Metaclasses in the Real World”](#metaclases_real_world_sec) is a new section
+    with some high-level considerations about the applicability of metaclasses.'
+  id: totrans-14
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[“现实世界中的元类”](#metaclases_real_world_sec) 是一个关于元类适用性的高层考虑的新部分。'
+- en: Tip
+  id: totrans-15
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 提示
+- en: Some of the best refactorings are removing code made redundant by newer and
+    simpler ways of solving the same problems. This applies to production code as
+    well as books.
+  id: totrans-16
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 一些最好的重构是通过删除由更新和更简单的解决相同问题的方法所导致的冗余代码来实现的。这适用于生产代码以及书籍。
+- en: We’ll get started by reviewing attributes and methods defined in the Python
+    Data Model for all classes.
+  id: totrans-17
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们将从审查 Python 数据模型中为所有类定义的属性和方法开始。
+- en: Classes as Objects
+  id: totrans-18
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 类作为对象
+- en: 'Like most program entities in Python, classes are also objects. Every class
+    has a number of attributes defined in the Python Data Model, documented in [“4.13\.
+    Special Attributes”](https://fpy.li/24-1) of the “Built-in Types” chapter in *The
+    Python Standard Library*. Three of those attributes appeared several times in
+    this book already: `__class__`, `__name__`, and `__mro__`. Other class standard
+    attributes are:'
+  id: totrans-19
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 像 Python 中的大多数程序实体一样，类也是对象。每个类在 Python 数据模型中都有一些属性，这些属性在《Python 标准库》的“内置类型”章节中的
+    [“4.13\. 特殊属性”](https://fpy.li/24-1) 中有文档记录。这本书中已经多次出现了其中的三个属性：`__class__`、`__name__`
+    和 `__mro__`。其他类的标准属性包括：
+- en: '`cls.__bases__`'
+  id: totrans-20
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`cls.__bases__`'
+- en: The tuple of base classes of the class.
+  id: totrans-21
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 类的基类元组。
+- en: '`cls.__qualname__`'
+  id: totrans-22
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`cls.__qualname__`'
+- en: The qualified name of a class or function, which is a dotted path from the global
+    scope of the module to the class definition. This is relevant when the class is
+    defined inside another class. For example, in a Django model class such as [`Ox`](https://fpy.li/24-2),
+    there is an inner class called `Meta`. The `__qualname__` of `Meta` is `Ox.Meta`,
+    but its `__name__` is just `Meta`. The specification for this attribute is [PEP
+    3155—Qualified name for classes and functions](https://fpy.li/24-3).
+  id: totrans-23
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 类或函数的限定名称，这是从模块的全局范围到类定义的点路径。当类在另一个类内部定义时，这是相关的。例如，在 Django 模型类中，比如 [`Ox`](https://fpy.li/24-2)，有一个名为
+    `Meta` 的内部类。`Meta` 的 `__qualname__` 是 `Ox.Meta`，但它的 `__name__` 只是 `Meta`。此属性的规范是
+    [PEP 3155—类和函数的限定名称](https://fpy.li/24-3)。
+- en: '`cls.__subclasses__()`'
+  id: totrans-24
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`cls.__subclasses__()`'
+- en: This method returns a list of the immediate subclasses of the class. The implementation
+    uses weak references to avoid circular references between the superclass and its
+    subclasses—which hold a strong reference to the superclasses in their `__bases__`
+    attribute. The method lists subclasses currently in memory. Subclasses in modules
+    not yet imported will not appear in the result.
+  id: totrans-25
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 此方法返回类的直接子类列表。该实现使用弱引用以避免超类和其子类之间的循环引用——后者在其`__bases__`属性中保留对超类的强引用。该方法列出当前内存中的子类。尚未导入的模块中的子类不会出现在结果中。
+- en: '`cls.mro()`'
+  id: totrans-26
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`cls.mro()`'
+- en: The interpreter calls this method when building a class to obtain the tuple
+    of superclasses stored in the `__mro__` attribute of the class. A metaclass can
+    override this method to customize the method resolution order of the class under
+    construction.
+  id: totrans-27
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 解释器在构建类时调用此方法，以获取存储在类的`__mro__`属性中的超类元组。元类可以重写此方法以自定义正在构建的类的方法解析顺序。
+- en: Tip
+  id: totrans-28
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 提示
+- en: None of the attributes mentioned in this section are listed by the `dir(…)`
+    function.
+  id: totrans-29
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 此部分提到的属性都不会被`dir(…)`函数列出。
+- en: Now, if a class is an object, what is the class of a class?
+  id: totrans-30
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在，如果一个类是一个对象，那么一个类的类是什么？
+- en: 'type: The Built-In Class Factory'
+  id: totrans-31
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 类型：内置类工厂
+- en: 'We usually think of `type` as a function that returns the class of an object,
+    because that’s what `type(my_object)` does: it returns `my_object.__class__`.'
+  id: totrans-32
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们通常认为`type`是一个返回对象类的函数，因为`type(my_object)`的作用是返回`my_object.__class__`。
+- en: However, `type` is a class that creates a new class when invoked with three
+    arguments.
+  id: totrans-33
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 然而，`type`是一个在用三个参数调用时创建新类的类。
+- en: 'Consider this simple class:'
+  id: totrans-34
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 考虑这个简单的类：
+- en: '[PRE0]'
+  id: totrans-35
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE0]'
+- en: 'Using the `type` constructor, you can create `MyClass` at runtime with this
+    code:'
+  id: totrans-36
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 使用`type`构造函数，你可以用这段代码在运行时创建`MyClass`：
+- en: '[PRE1]'
+  id: totrans-37
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE1]'
+- en: That `type` call is functionally equivalent to the previous `class MyClass…`
+    block statement.
+  id: totrans-38
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 那个`type`调用在功能上等同于之前的`class MyClass…`块语句。
+- en: 'When Python reads a `class` statement, it calls `type` to build the class object
+    with these parameters:'
+  id: totrans-39
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当Python读取一个`class`语句时，它调用`type`以使用这些参数构建类对象：
+- en: '`name`'
+  id: totrans-40
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`name`'
+- en: The identifier that appears after the `class` keyword, e.g., `MyClass`.
+  id: totrans-41
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 出现在`class`关键字之后的标识符，例如，`MyClass`。
+- en: '`bases`'
+  id: totrans-42
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`bases`'
+- en: The tuple of superclasses given in parentheses after the class identifier, or
+    `(object,)` if superclasses are not mentioned in the `class` statement.
+  id: totrans-43
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在类标识符之后的括号中给出的超类元组，如果在`class`语句中未提及超类，则为`(object,)`。
+- en: '`dict`'
+  id: totrans-44
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`dict`'
+- en: A mapping of attribute names to values. Callables become methods, as we saw
+    in [“Methods Are Descriptors”](ch23.html#methods_are_descriptors_sec). Other values
+    become class attributes.
+  id: totrans-45
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 属性名称到值的映射。可调用对象变成方法，就像我们在[“方法是描述符”](ch23.html#methods_are_descriptors_sec)中看到的那样。其他值变成类属性。
+- en: Note
+  id: totrans-46
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 注意
+- en: The `type` constructor accepts optional keyword arguments, which are ignored
+    by `type` itself, but are passed untouched into `__init_subclass__`, which must
+    consume them. We’ll study that special method in [“Introducing __init_subclass__”](#enhancing_with_init_subclass),
+    but I won’t cover the use of keyword arguments. For more, please read [PEP 487—Simpler
+    customization of class creation](https://fpy.li/pep487).
+  id: totrans-47
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`type`构造函数接受可选的关键字参数，这些参数会被`type`本身忽略，但会原封不动地传递到`__init_subclass__`中，后者必须消耗这些参数。我们将在[“介绍__init_subclass__”](#enhancing_with_init_subclass)中学习这个特殊方法，但我不会涉及关键字参数的使用。更多信息，请阅读[PEP
+    487—更简单的类创建自定义](https://fpy.li/pep487)。'
+- en: 'The `type` class is a *metaclass*: a class that builds classes. In other words,
+    instances of the `type` class are classes. The standard library provides a few
+    other metaclasses, but `type` is the default:'
+  id: totrans-48
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`type`类是一个*元类*：一个构建类的类。换句话说，`type`类的实例是类。标准库提供了一些其他元类，但`type`是默认的：'
+- en: '[PRE2]'
+  id: totrans-49
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE2]'
+- en: We’ll build custom metaclasses in [“Metaclasses 101”](#metclass101_sec).
+  id: totrans-50
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们将在[“元类101”](#metclass101_sec)中构建自定义元类。
+- en: Next, we’ll use the `type` built-in to make a function that builds classes.
+  id: totrans-51
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 接下来，我们将使用内置的`type`来创建一个构建类的函数。
+- en: A Class Factory Function
+  id: totrans-52
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 一个类工厂函数
+- en: 'The standard library has a class factory function that appears several times
+    in this book: `collections.namedtuple`. In [Chapter 5](ch05.html#data_class_ch)
+    we also saw `typing.NamedTuple` and `@dataclass`. All of these class builders
+    leverage techniques covered in this chapter.'
+  id: totrans-53
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 标准库有一个类工厂函数，在本书中出现了多次：`collections.namedtuple`。在[第5章](ch05.html#data_class_ch)中，我们还看到了`typing.NamedTuple`和`@dataclass`。所有这些类构建器都利用了本章介绍的技术。
+- en: We’ll start with a super simple factory for classes of mutable objects—the simplest
+    possible replacement for `@dataclass`.
+  id: totrans-54
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们将从一个用于可变对象类的超级简单工厂开始——这是`@dataclass`的最简单替代品。
+- en: 'Suppose I’m writing a pet shop application and I want to store data for dogs
+    as simple records. But I don’t want to write boilerplate like this:'
+  id: totrans-55
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 假设我正在编写一个宠物店应用程序，我想将狗的数据存储为简单记录。但我不想写这样的样板代码：
+- en: '[PRE3]'
+  id: totrans-56
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE3]'
+- en: 'Boring…each field name appears three times, and that boilerplate doesn’t even
+    buy us a nice `repr`:'
+  id: totrans-57
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 无聊…每个字段名称出现三次，而且那些样板代码甚至不能为我们提供一个漂亮的`repr`��
+- en: '[PRE4]'
+  id: totrans-58
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE4]'
+- en: Taking a hint from `collections.namedtuple`, let’s create a `record_factory`
+    that creates simple classes like `Dog` on the fly. [Example 24-1](#record_factory_demo)
+    shows how it should work.
+  id: totrans-59
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 借鉴`collections.namedtuple`，让我们创建一个`record_factory`，可以动态创建像`Dog`这样的简单类。[示例 24-1](#record_factory_demo)展示了它应该如何工作。
+- en: Example 24-1\. Testing `record_factory`, a simple class factory
+  id: totrans-60
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 24-1\. 测试`record_factory`，一个简单的类工厂
+- en: '[PRE5]'
+  id: totrans-61
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE5]'
+- en: '[![1](assets/1.png)](#co_class_metaprogramming_CO1-1)'
+  id: totrans-62
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_class_metaprogramming_CO1-1)'
+- en: 'Factory can be called like `namedtuple`: class name, followed by attribute
+    names separated by spaces in a single string.'
+  id: totrans-63
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 工厂可以像`namedtuple`一样调用：类名，后跟用单个字符串中的空格分隔的属性名称。
+- en: '[![2](assets/2.png)](#co_class_metaprogramming_CO1-2)'
+  id: totrans-64
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_class_metaprogramming_CO1-2)'
+- en: Nice `repr`.
+  id: totrans-65
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 漂亮的`repr`。
+- en: '[![3](assets/3.png)](#co_class_metaprogramming_CO1-3)'
+  id: totrans-66
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_class_metaprogramming_CO1-3)'
+- en: Instances are iterable, so they can be conveniently unpacked on assignment…
+  id: totrans-67
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 实例是可迭代的，因此它们可以在赋值时方便地解包…
+- en: '[![4](assets/4.png)](#co_class_metaprogramming_CO1-4)'
+  id: totrans-68
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_class_metaprogramming_CO1-4)'
+- en: …or when passing to functions like `format`.
+  id: totrans-69
+  prefs: []
+  type: TYPE_NORMAL
+  zh: …或者当传递给`format`等函数时。
+- en: '[![5](assets/5.png)](#co_class_metaprogramming_CO1-5)'
+  id: totrans-70
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_class_metaprogramming_CO1-5)'
+- en: A record instance is mutable.
+  id: totrans-71
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 记录实例是可变的。
+- en: '[![6](assets/6.png)](#co_class_metaprogramming_CO1-6)'
+  id: totrans-72
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![6](assets/6.png)](#co_class_metaprogramming_CO1-6)'
+- en: The newly created class inherits from `object`—no relationship to our factory.
+  id: totrans-73
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 新创建的类继承自`object`——与我们的工厂无关。
+- en: The code for `record_factory` is in [Example 24-2](#record_factory_ex).^([3](ch24.html#idm46582369630768))
+  id: totrans-74
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`record_factory`的代码在[示例 24-2](#record_factory_ex)中。^([3](ch24.html#idm46582369630768))'
+- en: 'Example 24-2\. record_factory.py: a simple class factory'
+  id: totrans-75
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 24-2\. record_factory.py：一个简单的类工厂
+- en: '[PRE6]'
+  id: totrans-76
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE6]'
+- en: '[![1](assets/1.png)](#co_class_metaprogramming_CO2-1)'
+  id: totrans-77
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_class_metaprogramming_CO2-1)'
+- en: User can provide field names as a single string or an iterable of strings.
+  id: totrans-78
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 用户可以将字段名称提供为单个字符串或字符串的可迭代对象。
+- en: '[![2](assets/2.png)](#co_class_metaprogramming_CO2-2)'
+  id: totrans-79
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_class_metaprogramming_CO2-2)'
+- en: Accept arguments like the first two of `collections.namedtuple`; return a `type`—i.e.,
+    a class that behaves like a `tuple`.
+  id: totrans-80
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 接受类似于`collections.namedtuple`的前两个参数；返回一个`type`，即一个类，其行为类似于`tuple`。
+- en: '[![3](assets/3.png)](#co_class_metaprogramming_CO2-3)'
+  id: totrans-81
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_class_metaprogramming_CO2-3)'
+- en: Build a tuple of attribute names; this will be the `__slots__` attribute of
+    the new class.
+  id: totrans-82
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 构建属性名称的元组；这将是新类的`__slots__`属性。
+- en: '[![4](assets/4.png)](#co_class_metaprogramming_CO2-4)'
+  id: totrans-83
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_class_metaprogramming_CO2-4)'
+- en: This function will become the `__init__` method in the new class. It accepts
+    positional and/or keyword arguments.^([4](ch24.html#idm46582369288640))
+  id: totrans-84
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 此函数将成为新类中的`__init__`方法。它接受位置参数和/或关键字参数。^([4](ch24.html#idm46582369288640))
+- en: '[![5](assets/5.png)](#co_class_metaprogramming_CO2-5)'
+  id: totrans-85
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_class_metaprogramming_CO2-5)'
+- en: Yield the field values in the order given by `__slots__`.
+  id: totrans-86
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 按照`__slots__`给定的顺序产生字段值。
+- en: '[![6](assets/6.png)](#co_class_metaprogramming_CO2-6)'
+  id: totrans-87
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![6](assets/6.png)](#co_class_metaprogramming_CO2-6)'
+- en: Produce the nice `repr`, iterating over `__slots__` and `self`.
+  id: totrans-88
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 生成漂亮的`repr`，遍历`__slots__`和`self`。
+- en: '[![7](assets/7.png)](#co_class_metaprogramming_CO2-7)'
+  id: totrans-89
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![7](assets/7.png)](#co_class_metaprogramming_CO2-7)'
+- en: Assemble a dictionary of class attributes.
+  id: totrans-90
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 组装类属性的字典。
+- en: '[![8](assets/8.png)](#co_class_metaprogramming_CO2-8)'
+  id: totrans-91
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![8](assets/8.png)](#co_class_metaprogramming_CO2-8)'
+- en: Build and return the new class, calling the `type` constructor.
+  id: totrans-92
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 构建并返回新类，调用`type`构造函数。
+- en: '[![9](assets/9.png)](#co_class_metaprogramming_CO2-9)'
+  id: totrans-93
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![9](assets/9.png)](#co_class_metaprogramming_CO2-9)'
+- en: Convert `names` separated by spaces or commas to list of `str`.
+  id: totrans-94
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 将由空格或逗号分隔的`names`转换为`str`列表。
+- en: '[Example 24-2](#record_factory_ex) is the first time we’ve seen `type` in a
+    type hint. If the annotation was just `-> type`, that would mean that `record_factory`
+    returns a class—and it would be correct. But the annotation `-> type[tuple]` is
+    more precise: it says the returned class will be a subclass of `tuple`.'
+  id: totrans-95
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 24-2](#record_factory_ex)是我们第一次在类型提示中看到`type`。如果注释只是`-> type`，那意味着`record_factory`返回一个类，这是正确的。但是注释`->
+    type[tuple]`更精确：它表示返回的类将是`tuple`的子类。'
+- en: The last line of `record_factory` in [Example 24-2](#record_factory_ex) builds
+    a class named by the value of `cls_name`, with `object` as its single immediate
+    base class, and with a namespace loaded with `__slots__`, `__init__`, `__iter__`,
+    and `__repr__`, of which the last three are instance methods.
+  id: totrans-96
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`record_factory`在[示例 24-2](#record_factory_ex)的最后一行构建了一个由`cls_name`的值命名的类，以`object`作为其唯一的直接基类，并且具有一个加载了`__slots__`、`__init__`、`__iter__`和`__repr__`的命名空间，其中最后三个是实例方法。'
+- en: We could have named the `__slots__` class attribute anything else, but then
+    we’d have to implement `__setattr__` to validate the names of attributes being
+    assigned, because for our record-like classes we want the set of attributes to
+    be always the same and in the same order. However, recall that the main feature
+    of `__slots__` is saving memory when you are dealing with millions of instances,
+    and using `__slots__` has some drawbacks, discussed in [“Saving Memory with __slots__”](ch11.html#slots_section).
+  id: totrans-97
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们可以将`__slots__`类属性命名为其他任何名称，但然后我们必须实现`__setattr__`来验证被分配的属性名称，因为对于类似记录的类，我们希望属性集始终相同且顺序相同。但是，请记住，`__slots__`的主要特点是在处理数百万个实例时节省内存，并且使用`__slots__`有一些缺点，讨论在[“使用__slots__节省内存”](ch11.html#slots_section)中。
+- en: Warning
+  id: totrans-98
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 警告
+- en: Instances of classes created by `record_factory` are not serializable—that is,
+    they can’t be exported with the `dump` function from the `pickle` module. Solving
+    this problem is beyond the scope of this example, which aims to show the `type`
+    class in action in a simple use case. For the full solution, study the source
+    code for [`collections.namedtuple`](https://fpy.li/24-4); search for the word
+    “pickling.”
+  id: totrans-99
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 由`record_factory`创建的类的实例不可序列化，也就是说，它们无法使用`pickle`模块的`dump`函数导出。解决这个问题超出了本示例的范围，本示例旨在展示`type`类在简单用例中的应用。要获取完整解决方案，请查看[`collections.namedtuple`](https://fpy.li/24-4)的源代码；搜索“pickling”一词。
+- en: Now let’s see how to emulate more modern class builders like `typing.NamedTuple`,
+    which takes a user-defined class written as a `class` statement, and automatically
+    enhances it with more functionality.
+  id: totrans-100
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在让我们看看如何模拟更现代的类构建器，比如`typing.NamedTuple`，它接受一个用户定义的`class`语句编写的类，并自动增强其功能。
+- en: Introducing __init_subclass__
+  id: totrans-101
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 引入`__init_subclass__`。
+- en: 'Both `__init_subclass__` and `__set_name__` were proposed in [PEP 487—Simpler
+    customization of class creation](https://fpy.li/pep487). We saw the `__set_name__`
+    special method for descriptors for the first time in [“LineItem Take #4: Automatic
+    Naming of Storage Attributes”](ch23.html#auto_storage_sec). Now let’s study `__init_subclass__`.'
+  id: totrans-102
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`__init_subclass__`和`__set_name__`都在[PEP 487—更简单的类创建自定义](https://fpy.li/pep487)中提出。我们第一次在[“LineItem
+    Take #4: Automatic Naming of Storage Attributes”](ch23.html#auto_storage_sec)中看到描述符的`__set_name__`特殊方法。现在让我们研究`__init_subclass__`。'
+- en: In [Chapter 5](ch05.html#data_class_ch), we saw that `typing.NamedTuple` and
+    `@dataclass` let programmers use the `class` statement to specify attributes for
+    a new class, which is then enhanced by the class builder with the automatic addition
+    of essential methods like `__init__`, `__repr__`, `__eq__`, etc.
+  id: totrans-103
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在[第5章](ch05.html#data_class_ch)中，我们看到`typing.NamedTuple`和`@dataclass`允许程序员使用`class`语句为新类指定属性，然后通过类构建器增强该类，自动添加必要的方法如`__init__`，`__repr__`，`__eq__`等。
+- en: Both of these class builders read type hints in the user’s `class` statement
+    to enhance the class. Those type hints also allow static type checkers to validate
+    code that sets or gets those attributes. However, `NamedTuple` and `@dataclass`
+    do not take advantage of the type hints for attribute validation at runtime. The
+    `Checked` class in the next example does.
+  id: totrans-104
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这两个类构建器都会读取用户`class`语句中的类型提示以增强类。这些类型提示还允许静态类型检查器验证设置或获取这些属性的代码。然而，`NamedTuple`和`@dataclass`在运行时不利用类型提示进行属性验证。下一个示例中的`Checked`类会这样做。
+- en: Note
+  id: totrans-105
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 注意
+- en: It is not possible to support every conceivable static type hint for runtime
+    type checking, which is probably why `typing.NamedTuple` and `@dataclass` don’t
+    even try it. However, some types that are also concrete classes can be used with
+    `Checked`. This includes simple types often used for field contents, such as `str`,
+    `int`, `float`, and `bool`, as well as lists of those types.
+  id: totrans-106
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 不可能支持每种可能的静态类型提示进行运行时类型检查，这可能是为什么`typing.NamedTuple`和`@dataclass`甚至不尝试的原因。然而，一些也是具体类的类型可以与`Checked`一起使用。这包括通常用于字段内容的简单类型，如`str`，`int`，`float`和`bool`，以及这些类型的列表。
+- en: '[Example 24-3](#checked_demo1_ex) shows how to use `Checked` to build a `Movie`
+    class.'
+  id: totrans-107
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 24-3](#checked_demo1_ex)展示了如何使用`Checked`构建`Movie`类。'
+- en: 'Example 24-3\. initsub/checkedlib.py: doctest for creating a `Movie` subclass
+    of `Checked`'
+  id: totrans-108
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 24-3\. initsub/checkedlib.py：创建`Checked`的`Movie`子类的doctest
+- en: '[PRE7]'
+  id: totrans-109
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE7]'
+- en: '[![1](assets/1.png)](#co_class_metaprogramming_CO3-1)'
+  id: totrans-110
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_class_metaprogramming_CO3-1)'
+- en: '`Movie` inherits from `Checked`—which we’ll define later in [Example 24-5](#checked_class_top_ex).'
+  id: totrans-111
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`Movie`继承自`Checked`—我们稍后将在[示例 24-5](#checked_class_top_ex)中定义。'
+- en: '[![2](assets/2.png)](#co_class_metaprogramming_CO3-2)'
+  id: totrans-112
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_class_metaprogramming_CO3-2)'
+- en: Each attribute is annotated with a constructor. Here I used built-in types.
+  id: totrans-113
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 每个属性都用构造函数进行了注释。这里我使用了内置类型。
+- en: '[![3](assets/3.png)](#co_class_metaprogramming_CO3-3)'
+  id: totrans-114
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_class_metaprogramming_CO3-3)'
+- en: '`Movie` instances must be created using keyword arguments.'
+  id: totrans-115
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 必须使用关键字参数创建`Movie`实例。
+- en: '[![4](assets/4.png)](#co_class_metaprogramming_CO3-4)'
+  id: totrans-116
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_class_metaprogramming_CO3-4)'
+- en: In return, you get a nice `__repr__`.
+  id: totrans-117
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 作为回报，您会得到一个漂亮的`__repr__`。
+- en: The constructors used as the attribute type hints may be any callable that takes
+    zero or one argument and returns a value suitable for the intended field type,
+    or rejects the argument by raising `TypeError` or `ValueError`.
+  id: totrans-118
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 用作属性类型提示的构造函数可以是任何可调用的函数，接受零个或一个参数并返回适合预期字段类型的值，或者通过引发`TypeError`或`ValueError`拒绝参数。
+- en: Using built-in types for the annotations in [Example 24-3](#checked_demo1_ex)
+    means the values must be acceptable by the constructor of the type. For `int`,
+    this means any `x` such that `int(x)` returns an `int`. For `str`, anything goes
+    at runtime, because `str(x)` works with any `x` in Python.^([5](ch24.html#idm46582368980672))
+  id: totrans-119
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在[示例 24-3](#checked_demo1_ex)中使用内置类型作为注释意味着这些值必须被类型的构造函数接受。对于`int`，这意味着任何`x`，使得`int(x)`返回一个`int`。对于`str`，在运行时任何值都可以，因为`str(x)`在Python中适用于任何`x`。^([5](ch24.html#idm46582368980672))
+- en: When called with no arguments, the constructor should return a default value
+    of its type.^([6](ch24.html#idm46582368978384))
+  id: totrans-120
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当不带参数调用时，构造函数应返回其类型的默认值。^([6](ch24.html#idm46582368978384))
+- en: 'This is standard behavior for Python’s built-in constructors:'
+  id: totrans-121
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这是Python内置构造函数的标准行为：
+- en: '[PRE8]'
+  id: totrans-122
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE8]'
+- en: 'In a `Checked` subclass like `Movie`, missing parameters create instances with
+    default values returned by the field constructors. For example:'
+  id: totrans-123
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在`Movie`这样的`Checked`子类中，缺少参数会导致实例使用字段构造函数返回的默认值。例如：
+- en: '[PRE9]'
+  id: totrans-124
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE9]'
+- en: 'The constructors are used for validation during instantiation and when an attribute
+    is set directly on an instance:'
+  id: totrans-125
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 构造函数在实例化期间和在实例上直接设置属性时用于验证：
+- en: '[PRE10]'
+  id: totrans-126
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE10]'
+- en: Checked Subclasses and Static Type Checking
+  id: totrans-127
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: Checked子类和静态类型检查
+- en: 'In a *.py* source file with a `movie` instance of `Movie`, as defined in [Example 24-3](#checked_demo1_ex),
+    Mypy flags this assignment as a type error:'
+  id: totrans-128
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在一个带有`Movie`实例`movie`的*.py*源文件中，如[示例 24-3](#checked_demo1_ex)中定义的，Mypy将此赋值标记为类型错误：
+- en: '[PRE11]'
+  id: totrans-129
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE11]'
+- en: 'However, Mypy can’t detect type errors in this constructor call:'
+  id: totrans-130
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 然而，Mypy无法检测到这个构造函数调用中的类型错误：
+- en: '[PRE12]'
+  id: totrans-131
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE12]'
+- en: That’s because `Movie` inherits `Checked.__init__`, and the signature of that
+    method must accept any keyword arguments to support arbitrary user-defined classes.
+  id: totrans-132
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这是因为`Movie`继承了`Checked.__init__`，该方法的签名必须接受任何关键字参数以支持任意用户定义的类。
+- en: On the other hand, if you declare a `Checked` subclass field with the type hint
+    `list[float]`, Mypy can flag assignments of lists with incompatible contents,
+    but `Checked` will ignore the type parameter and treat that the same as `list`.
+  id: totrans-133
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 另一方面，如果您声明一个带有类型提示`list[float]`的`Checked`子类字段，Mypy可以标记具有不兼容内容的列表的赋值，但`Checked`将忽略类型参数并将其视为`list`。
+- en: Now let’s look at the implementation of *checkedlib.py*. The first class is
+    the `Field` descriptor, as shown in [Example 24-4](#checked_field_ex).
+  id: totrans-134
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在让我们看一下*checkedlib.py*的实现。第一个类是`Field`描述符，如[示例 24-4](#checked_field_ex)所示。
+- en: 'Example 24-4\. initsub/checkedlib.py: the `Field` descriptor class'
+  id: totrans-135
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 24-4\. initsub/checkedlib.py：`Field`描述符类
+- en: '[PRE13]'
+  id: totrans-136
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE13]'
+- en: '[![1](assets/1.png)](#co_class_metaprogramming_CO4-1)'
+  id: totrans-137
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_class_metaprogramming_CO4-1)'
+- en: Recall that since Python 3.9, the `Callable` type for annotations is the ABC
+    in `collections.abc`, and not the deprecated `typing.Callable`.
+  id: totrans-138
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 请注意，自Python 3.9以来，用于注释的`Callable`类型是`collections.abc`中的ABC，而不是已弃用的`typing.Callable`。
+- en: '[![2](assets/2.png)](#co_class_metaprogramming_CO4-2)'
+  id: totrans-139
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_class_metaprogramming_CO4-2)'
+- en: This is a minimal `Callable` type hint; the parameter type and return type for
+    `constructor` are both implicitly `Any`.
+  id: totrans-140
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这是一个最小的`Callable`类型提示；`constructor`的参数类型和返回类型都隐含为`Any`。
+- en: '[![3](assets/3.png)](#co_class_metaprogramming_CO4-3)'
+  id: totrans-141
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_class_metaprogramming_CO4-3)'
+- en: For runtime checking, we use the `callable` built-in.^([7](ch24.html#idm46582368512208))
+    The test against `type(None)` is necessary because Python reads `None` in a type
+    as `NoneType`, the class of `None` (therefore callable), but a useless constructor
+    that only returns `None`.
+  id: totrans-142
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 对于运行时检查，我们使用`callable`内置函数。^([7](ch24.html#idm46582368512208)) 对`type(None)`的测试是必要的，因为Python将类型中的`None`解读为`NoneType`，即`None`的类（因此可调用），但是一个无用的构造函数，只返��`None`。
+- en: '[![4](assets/4.png)](#co_class_metaprogramming_CO4-4)'
+  id: totrans-143
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_class_metaprogramming_CO4-4)'
+- en: If `Checked.__init__` sets the `value` as `...` (the `Ellipsis` built-in object),
+    we call the `constructor` with no arguments.
+  id: totrans-144
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果`Checked.__init__`将`value`设置为`...`（内置对象`Ellipsis`），我们将不带参数调用`constructor`。
+- en: '[![5](assets/5.png)](#co_class_metaprogramming_CO4-5)'
+  id: totrans-145
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_class_metaprogramming_CO4-5)'
+- en: Otherwise, call the `constructor` with the given `value`.
+  id: totrans-146
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 否则，使用给定的`value`调用`constructor`。
+- en: '[![6](assets/6.png)](#co_class_metaprogramming_CO4-6)'
+  id: totrans-147
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![6](assets/6.png)](#co_class_metaprogramming_CO4-6)'
+- en: If `constructor` raises either of these exceptions, we raise `TypeError` with
+    a helpful message including the names of the field and constructor; e.g., `'MMIX'
+    is not compatible with year:int`.
+  id: totrans-148
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果`constructor`引发这些异常中的任何一个，我们将引发`TypeError`，并提供一个包含字段和构造函数名称的有用消息；例如，`'MMIX'与year:int不兼容`。
+- en: '[![7](assets/7.png)](#co_class_metaprogramming_CO4-7)'
+  id: totrans-149
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![7](assets/7.png)](#co_class_metaprogramming_CO4-7)'
+- en: If no exceptions were raised, the `value` is stored in the `instance.__dict__`.
+  id: totrans-150
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果没有引发异常，则将`value`存储在`instance.__dict__`中。
+- en: In `__set__`, we need to catch `TypeError` and `ValueError` because built-in
+    constructors may raise either of them, depending on the argument. For example,
+    `float(None)` raises `TypeError`, but `float('A')` raises `ValueError`. On the
+    other hand, `float('8')` raises no error and returns `8.0`. I hereby declare that
+    this is a feature and not a bug of this toy example.
+  id: totrans-151
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在`__set__`中，我们需要捕获`TypeError`和`ValueError`，因为内置构造函数可能会引发其中之一，具体取决于参数。例如，`float(None)`引发`TypeError`，但`float('A')`引发`ValueError`。另一方面，`float('8')`不会引发错误，并返回`8.0`。我在此声明，这是这个玩具示例的一个特性，而不是一个
+    bug。
+- en: Tip
+  id: totrans-152
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 提示
+- en: 'In [“LineItem Take #4: Automatic Naming of Storage Attributes”](ch23.html#auto_storage_sec),
+    we saw the handy `__set_name__` special method for descriptors. We don’t need
+    it in the `Field` class because the descriptors are not instantiated in client
+    source code; the user declares types that are constructors, as we saw in the `Movie`
+    class ([Example 24-3](#checked_demo1_ex)). Instead, the `Field` descriptor instances
+    are created at runtime by the `Checked.__init_subclass__` method, which we’ll
+    see in [Example 24-5](#checked_class_top_ex).'
+  id: totrans-153
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '在[“LineItem Take #4: 自动命名存储属性”](ch23.html#auto_storage_sec)中，我们看到了描述符的方便`__set_name__`特殊方法。我们在`Field`类中不需要它，因为描述符不是在客户端源代码中实例化的；用户声明的类型是构造函数，正如我们在`Movie`类中看到的([示例
+    24-3](#checked_demo1_ex))。相反，`Field`描述符实例是由`Checked.__init_subclass__`方法在运行时创建的，我们将在[示例
+    24-5](#checked_class_top_ex)中看到。'
+- en: Now let’s focus on the `Checked` class. I split it in two listings. [Example 24-5](#checked_class_top_ex)
+    shows the top of the class, which includes the most important methods in this
+    example. The remaining methods are in [Example 24-6](#checked_class_bottom_ex).
+  id: totrans-154
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在让我们专注于`Checked`类。我将其拆分为两个列表。[示例 24-5](#checked_class_top_ex)显示了该类的顶部，其中包含此示例中最重要的方法。其余方法在[示例
+    24-6](#checked_class_bottom_ex)中。
+- en: 'Example 24-5\. initsub/checkedlib.py: the most important methods of the `Checked`
+    class'
+  id: totrans-155
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 24-5\. initsub/checkedlib.py：`Checked`类的最重要方法
+- en: '[PRE14]'
+  id: totrans-156
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE14]'
+- en: '[![1](assets/1.png)](#co_class_metaprogramming_CO5-1)'
+  id: totrans-157
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_class_metaprogramming_CO5-1)'
+- en: I wrote this class method to hide the call to `typing.get_type_hints` from the
+    rest of the class. If I need to support Python ≥ 3.10 only, I’d call `inspect.get_annotations`
+    instead. Review [“Problems with Annotations at Runtime”](ch15.html#problems_annot_runtime_sec)
+    for the issues with those functions.
+  id: totrans-158
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我编写了这个类方法，以隐藏对`typing.get_type_hints`的调用，使其不被类的其他部分所知晓。如果我需要支持 Python ≥ 3.10，我会调用`inspect.get_annotations`。请查看[“运行时注解的问题”](ch15.html#problems_annot_runtime_sec)以了解这些函数的问题。
+- en: '[![2](assets/2.png)](#co_class_metaprogramming_CO5-2)'
+  id: totrans-159
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_class_metaprogramming_CO5-2)'
+- en: '`__init_subclass__` is called when a subclass of the current class is defined.
+    It gets that new subclass as its first argument—which is why I named the argument
+    `subclass` instead of the usual `cls`. For more on this, see [“__init_subclass__
+    Is Not a Typical Class Method”](#init_subclass_not_typical_box).'
+  id: totrans-160
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当定义当前类的子类时，会调用`__init_subclass__`。它将新的子类作为第一个参数传递进来，这就是为什么我将参数命名为`subclass`而不是通常的`cls`。有关更多信息，请参阅[“__init_subclass__不是典型的类方法”](#init_subclass_not_typical_box)。
+- en: '[![3](assets/3.png)](#co_class_metaprogramming_CO5-3)'
+  id: totrans-161
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_class_metaprogramming_CO5-3)'
+- en: '`super().__init_subclass__()` is not strictly necessary, but should be invoked
+    to play nice with other classes that might implement `.__init_subclass__()` in
+    the same inheritance graph. See [“Multiple Inheritance and Method Resolution Order”](ch14.html#mro_section).'
+  id: totrans-162
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`super().__init_subclass__()`并非绝对必要，但应该被调用，以便与可能在相同继承图中实现`.__init_subclass__()`的其他类友好相处。请参阅[“多重继承和方法解析顺序”](ch14.html#mro_section)。'
+- en: '[![4](assets/4.png)](#co_class_metaprogramming_CO5-4)'
+  id: totrans-163
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_class_metaprogramming_CO5-4)'
+- en: Iterate over each field `name` and `constructor`…
+  id: totrans-164
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 遍历每个字段的`name`和`constructor`…
+- en: '[![5](assets/5.png)](#co_class_metaprogramming_CO5-5)'
+  id: totrans-165
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_class_metaprogramming_CO5-5)'
+- en: …creating an attribute on `subclass` with that `name` bound to a `Field` descriptor
+    parameterized with `name` and `constructor`.
+  id: totrans-166
+  prefs: []
+  type: TYPE_NORMAL
+  zh: …在`subclass`上创建一个属性，该属性的`name`绑定到一个使用`name`和`constructor`参数化的`Field`描述符。
+- en: '[![6](assets/6.png)](#co_class_metaprogramming_CO5-6)'
+  id: totrans-167
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![6](assets/6.png)](#co_class_metaprogramming_CO5-6)'
+- en: For each `name` in the class fields…
+  id: totrans-168
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 对于类字段中的每个`name`…
+- en: '[![7](assets/7.png)](#co_class_metaprogramming_CO5-7)'
+  id: totrans-169
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![7](assets/7.png)](#co_class_metaprogramming_CO5-7)'
+- en: …get the corresponding `value` from `kwargs` and remove it from `kwargs`. Using
+    `...` (the `Ellipsis` object) as default allows us to distinguish between arguments
+    given the value `None` from arguments that were not given.^([8](ch24.html#idm46582368159120))
+  id: totrans-170
+  prefs: []
+  type: TYPE_NORMAL
+  zh: …从`kwargs`中获取相应的`value`并将其从`kwargs`中删除。使用`...`（`Ellipsis`对象）作为默认值允许我们区分给定值为`None`的参数和未给定的参数。^([8](ch24.html#idm46582368159120))
+- en: '[![8](assets/8.png)](#co_class_metaprogramming_CO5-8)'
+  id: totrans-171
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![8](assets/8.png)](#co_class_metaprogramming_CO5-8)'
+- en: This `setattr` call triggers `Checked.__setattr__`, shown in [Example 24-6](#checked_class_bottom_ex).
+  id: totrans-172
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这个`setattr`调用触发了`Checked.__setattr__`，如[示例24-6](#checked_class_bottom_ex)所示。
+- en: '[![9](assets/9.png)](#co_class_metaprogramming_CO5-9)'
+  id: totrans-173
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![9](assets/9.png)](#co_class_metaprogramming_CO5-9)'
+- en: If there are remaining items in `kwargs`, their names do not match any of the
+    declared fields, and `__init__` will fail.
+  id: totrans-174
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果`kwargs`中还有剩余项，它们的名称与声明的字段不匹配，`__init__`将失败。
+- en: '[![10](assets/10.png)](#co_class_metaprogramming_CO5-10)'
+  id: totrans-175
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![10](assets/10.png)](#co_class_metaprogramming_CO5-10)'
+- en: The error is reported by `__flag_unknown_attrs`, listed in [Example 24-6](#checked_class_bottom_ex).
+    It takes a `*names` argument with the unknown attribute names. I used a single
+    asterisk in `*kwargs` to pass its keys as a sequence of arguments.
+  id: totrans-176
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 错误由`__flag_unknown_attrs`报告，列在[示例24-6](#checked_class_bottom_ex)中。它使用`*names`参数来传递未知属性名称。我在`*kwargs`中使用单个星号将其键作为参数序列传递。
+- en: 'Now let’s see the remaining methods of the `Checked` class, continuing from
+    [Example 24-5](#checked_class_top_ex). Note that I prepended `_` to the `_fields`
+    and `_asdict` method names for the same reason the `collections.namedtuple` API
+    does: to reduce the chance of name clashes with user-defined field names.'
+  id: totrans-177
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在让我们看看`Checked`类的剩余方法，从[示例24-5](#checked_class_top_ex)继续。请注意，我在`_fields`和`_asdict`方法名称前加上`_`的原因与`collections.namedtuple`
+    API相同：为了减少与用户定义的字段名称发生冲突的机会。
+- en: 'Example 24-6\. initsub/checkedlib.py: remaining methods of the `Checked` class'
+  id: totrans-178
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例24-6\. initsub/checkedlib.py：`Checked`类的剩余方法
+- en: '[PRE15]'
+  id: totrans-179
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE15]'
+- en: '[![1](assets/1.png)](#co_class_metaprogramming_CO6-1)'
+  id: totrans-180
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_class_metaprogramming_CO6-1)'
+- en: Intercept all attempts to set an instance attribute. This is needed to prevent
+    setting an unknown attribute.
+  id: totrans-181
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 拦截所有尝试设置实例属性。这是为了防止设置未知属性。
+- en: '[![2](assets/2.png)](#co_class_metaprogramming_CO6-2)'
+  id: totrans-182
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_class_metaprogramming_CO6-2)'
+- en: If the attribute `name` is known, fetch the corresponding `descriptor`.
+  id: totrans-183
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果属性`name`已知，则获取相应的`descriptor`。
+- en: '[![3](assets/3.png)](#co_class_metaprogramming_CO6-3)'
+  id: totrans-184
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_class_metaprogramming_CO6-3)'
+- en: Usually we don’t need to call the descriptor `__set__` explicitly. It was necessary
+    in this case because `__setattr__` intercepts all attempts to set an attribute
+    on the instance, including in the presence of an overriding descriptor such as
+    `Field`.^([9](ch24.html#idm46582367837152))
+  id: totrans-185
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 通常我们不需要显式调用描述符`__set__`。在这种情况下是必要的，因为`__setattr__`拦截所有尝试在实例上设置属性的尝试，包括在存在覆盖描述符（如`Field`）的情况下。^([9](ch24.html#idm46582367837152))
+- en: '[![4](assets/4.png)](#co_class_metaprogramming_CO6-4)'
+  id: totrans-186
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_class_metaprogramming_CO6-4)'
+- en: Otherwise, the attribute `name` is unknown, and an exception will be raised
+    by `__flag_unknown_attrs`.
+  id: totrans-187
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 否则，属性`name`是未知的，`__flag_unknown_attrs`将引发异常。
+- en: '[![5](assets/5.png)](#co_class_metaprogramming_CO6-5)'
+  id: totrans-188
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_class_metaprogramming_CO6-5)'
+- en: Build a helpful error message listing all unexpected arguments, and raise `AttributeError`.
+    This is a rare example of the `NoReturn` special type, covered in [“NoReturn”](ch08.html#noreturn_sec).
+  id: totrans-189
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 构建一个有用的错误消息，列出所有意外参数，并引发`AttributeError`。这是`NoReturn`特殊类型的一个罕见例子，详见[“NoReturn”](ch08.html#noreturn_sec)。
+- en: '[![6](assets/6.png)](#co_class_metaprogramming_CO6-6)'
+  id: totrans-190
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![6](assets/6.png)](#co_class_metaprogramming_CO6-6)'
+- en: Create a `dict` from the attributes of a `Movie` object. I’d call this method
+    `_as_dict`, but I followed the convention started by the `_asdict` method in `collections.namedtuple`.
+  id: totrans-191
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 从`Movie`对象的属性创建一个`dict`。我会将这个方法命名为`_as_dict`，但我遵循了`collections.namedtuple`中`_asdict`方法开始的惯例。
+- en: '[![7](assets/7.png)](#co_class_metaprogramming_CO6-7)'
+  id: totrans-192
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![7](assets/7.png)](#co_class_metaprogramming_CO6-7)'
+- en: Implementing a nice `__repr__` is the main reason for having `_asdict` in this
+    example.
+  id: totrans-193
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 实现一个好的`__repr__`是在这个例子中拥有`_asdict`的主要原因。
+- en: The `Checked` example illustrates how to handle overriding descriptors when
+    implementing `__setattr__` to block arbitrary attribute setting after instantiation.
+    It is debatable whether implementing `__setattr__` is worthwhile in this example.
+    Without it, setting `movie.director = 'Greta Gerwig'` would succeed, but the `director`
+    attribute would not be checked in any way, and would not appear in the `__repr__`
+    nor would it be included in the `dict` returned by `_asdict`—both defined in [Example 24-6](#checked_class_bottom_ex).
+  id: totrans-194
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`Checked`示例说明了在实现`__setattr__`以阻止实例化后设置任意属性时如何处理覆盖描述符。在这个例子中，实现`__setattr__`是否值得讨论是有争议的。如果没有��，设置`movie.director
+    = ''Greta Gerwig''`将成功，但`director`属性不会以任何方式被检查，并且不会出现在`__repr__`中，也不会包含在`_asdict`返回的`dict`中——这两者在[示例24-6](#checked_class_bottom_ex)中定义。'
+- en: In *record_factory.py* ([Example 24-2](#record_factory_ex)) I solved this issue
+    using the `__slots__` class attribute. However, this simpler solution is not viable
+    in this case, as explained next.
+  id: totrans-195
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在*record_factory.py*（[示例24-2](#record_factory_ex)）中，我使用`__slots__`类属性解决了这个问题。然而，在这种情况下，这种更简单的解决方案是不可行的，如下所述。
+- en: Why __init_subclass__ Cannot Configure __slots__
+  id: totrans-196
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 为什么`__init_subclass__`无法配置`__slots__`
+- en: 'The `__slots__` attribute is only effective if it is one of the entries in
+    the class namespace passed to `type.__new__`. Adding `__slots__` to an existing
+    class has no effect. Python invokes `__init_subclass__` only after the class is
+    built—by then it’s too late to configure `__slots__`. A class decorator can’t
+    configure `__slots__` either, because it is applied even later than `__init_subclass__`.
+    We’ll explore these timing issues in [“What Happens When: Import Time Versus Runtime”](#import_v_runtime_sec).'
+  id: totrans-197
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`__slots__`属性仅在它是传递给`type.__new__`的类命名空间中的条目之一时才有效。向现有类添加`__slots__`没有效果。Python仅在类构建后调用`__init_subclass__`，此时配置`__slots__`已经太晚了。类装饰器也无法配置`__slots__`，因为它甚至比`__init_subclass__`应用得更晚。我们将在[“发生了什么：导入时间与运行时”](#import_v_runtime_sec)中探讨这些时间问题。'
+- en: To configure `__slots__` at runtime, your own code must build the class namespace
+    passed as the last argument of `type.__new__`. To do that, you can write a class
+    factory function, like *record_factory.py*, or you can take the nuclear option
+    and implement a metaclass. We will see how to dynamically configure `__slots__`
+    in [“Metaclasses 101”](#metclass101_sec).
+  id: totrans-198
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 要在运行时配置 `__slots__`，您自己的代码必须构建作为 `type.__new__` 的最后一个参数传递的类命名空间���为此，您可以编写一个类工厂函数，例如
+    *record_factory.py*，或者您可以采取核心选项并实现一个元类。我们将看到如何在 [“元类 101”](#metclass101_sec) 中动态配置
+    `__slots__`。
+- en: Before [PEP 487](https://fpy.li/pep487) simplified the customization of class
+    creation with `__init_subclass__` in Python 3.7, similar functionality had to
+    be implemented using a class decorator. That’s the focus of the next section.
+  id: totrans-199
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在 [PEP 487](https://fpy.li/pep487) 简化了 Python 3.7 中使用 `__init_subclass__` 自定义类创建的过程之前，类似的功能必须使用类装饰器来实现。这是下一节的重点。
+- en: Enhancing Classes with a Class Decorator
+  id: totrans-200
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 使用类装饰器增强类
+- en: 'A class decorator is a callable that behaves similarly to a function decorator:
+    it gets the decorated class as an argument, and should return a class to replace
+    the decorated class. Class decorators often return the decorated class itself,
+    after injecting more methods in it via attribute assignment.'
+  id: totrans-201
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 类装饰器是一个可调用对象，类似于函数装饰器：它以装饰的类作为参数，并应返回一个用于替换装饰类的类。类装饰器通常通过属性赋值在装饰类本身后注入更多方法后返回装饰类本身。
+- en: Probably the most common reason to choose a class decorator over the simpler
+    `__init_subclass__` is to avoid interfering with other class features, such as
+    inheritance and metaclasses.^([10](ch24.html#idm46582367752592))
+  id: totrans-202
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 选择类装饰器而不是更简单的 `__init_subclass__` 最常见的原因可能是为了避免干扰其他类特性，如继承和元类。^([10](ch24.html#idm46582367752592))
+- en: In this section, we’ll study *checkeddeco.py*, which provides the same service
+    as *checkedlib.py*, but using a class decorator. As usual, we’ll start by looking
+    at a usage example, extracted from the doctests in *checkeddeco.py* ([Example 24-7](#checkeddeco_demo1_ex)).
+  id: totrans-203
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在本节中，我们将学习 *checkeddeco.py*，它提供了与 *checkedlib.py* 相同的服务，但使用了类装饰器。和往常一样，我们将从
+    *checkeddeco.py* 中的 doctests 中提取的用法示例开始查看（[示例 24-7](#checkeddeco_demo1_ex)）。
+- en: 'Example 24-7\. checkeddeco.py: creating a `Movie` class decorated with `@checked`'
+  id: totrans-204
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 24-7\. checkeddeco.py：创建使用 `@checked` 装饰的 `Movie` 类
+- en: '[PRE16]'
+  id: totrans-205
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE16]'
+- en: 'The only difference between [Example 24-7](#checkeddeco_demo1_ex) and [Example 24-3](#checked_demo1_ex)
+    is the way the `Movie` class is declared: it is decorated with `@checked` instead
+    of subclassing `Checked`. Otherwise, the external behavior is the same, including
+    the type validation and default value assignments shown after [Example 24-3](#checked_demo1_ex)
+    in [“Introducing __init_subclass__”](#enhancing_with_init_subclass).'
+  id: totrans-206
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 24-7](#checkeddeco_demo1_ex) 和 [示例 24-3](#checked_demo1_ex) 之间唯一的区别是 `Movie`
+    类的声明方式：它使用 `@checked` 装饰而不是继承 `Checked`。否则，外部行为相同，包括类型验证和默认值分配在 [“引入 __init_subclass__”](#enhancing_with_init_subclass)
+    中示例 24-3 之后显示的内容。'
+- en: Now let’s look at the implementation of *checkeddeco.py*. The imports and `Field`
+    class are the same as in *checkedlib.py*, listed in [Example 24-4](#checked_field_ex).
+    There is no other class, only functions in *checkeddeco.py*.
+  id: totrans-207
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在让我们看看 *checkeddeco.py* 的实现。导入和 `Field` 类与 *checkedlib.py* 中的相同，列在 [示例 24-4](#checked_field_ex)
+    中。没有其他类，只有 *checkeddeco.py* 中的函数。
+- en: The logic previously implemented in `__init_subclass__` is now part of the `checked`
+    function—the class decorator listed in [Example 24-8](#checkeddeco_decorators_ex).
+  id: totrans-208
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 之前在 `__init_subclass__` 中实现的逻辑现在是 `checked` 函数的一部分——类装饰器列在 [示例 24-8](#checkeddeco_decorators_ex)
+    中。
+- en: 'Example 24-8\. checkeddeco.py: the class decorator'
+  id: totrans-209
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 24-8\. checkeddeco.py：类装饰器
+- en: '[PRE17]'
+  id: totrans-210
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE17]'
+- en: '[![1](assets/1.png)](#co_class_metaprogramming_CO7-1)'
+  id: totrans-211
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_class_metaprogramming_CO7-1)'
+- en: 'Recall that classes are instances of `type`. These type hints strongly suggest
+    this is a class decorator: it takes a class and returns a class.'
+  id: totrans-212
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 请记住，类是 `type` 的实例。这些类型提示强烈暗示这是一个类装饰器：它接受一个类并返回一个类。
+- en: '[![2](assets/2.png)](#co_class_metaprogramming_CO7-2)'
+  id: totrans-213
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_class_metaprogramming_CO7-2)'
+- en: '`_fields` is a top-level function defined later in the module (in [Example 24-9](#checkeddeco_methods_ex)).'
+  id: totrans-214
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`_fields` 是模块中稍后定义的顶层函数（在 [示例 24-9](#checkeddeco_methods_ex) 中）。'
+- en: '[![3](assets/3.png)](#co_class_metaprogramming_CO7-3)'
+  id: totrans-215
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_class_metaprogramming_CO7-3)'
+- en: Replacing each attribute returned by `_fields` with a `Field` descriptor instance
+    is what `__init_subclass__` did in [Example 24-5](#checked_class_top_ex). Here
+    there is more work to do…
+  id: totrans-216
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 用 `Field` 描述符实例替换 `_fields` 返回的每个属性是 `__init_subclass__` 在 [示例 24-5](#checked_class_top_ex)
+    中所做的。这里还有更多的工作要做...
+- en: '[![4](assets/4.png)](#co_class_metaprogramming_CO7-4)'
+  id: totrans-217
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_class_metaprogramming_CO7-4)'
+- en: 'Build a class method from `_fields`, and add it to the decorated class. The
+    `type: ignore` comment is needed because Mypy complains that `type` has no `_fields`
+    attribute.'
+  id: totrans-218
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '从 `_fields` 中构建一个类方法，并将其添加到装饰类中。`type: ignore` 注释是必需的，因为 Mypy 抱怨 `type` 没有
+    `_fields` 属性。'
+- en: '[![5](assets/5.png)](#co_class_metaprogramming_CO7-5)'
+  id: totrans-219
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_class_metaprogramming_CO7-5)'
+- en: Module-level functions that will become instance methods of the decorated class.
+  id: totrans-220
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 将成为装饰类的实例方法的模块级函数。
+- en: '[![6](assets/6.png)](#co_class_metaprogramming_CO7-6)'
+  id: totrans-221
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![6](assets/6.png)](#co_class_metaprogramming_CO7-6)'
+- en: Add each of the `instance_methods` to `cls`.
+  id: totrans-222
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 将每个 `instance_methods` 添加到 `cls` 中。
+- en: '[![7](assets/7.png)](#co_class_metaprogramming_CO7-7)'
+  id: totrans-223
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![7](assets/7.png)](#co_class_metaprogramming_CO7-7)'
+- en: Return the decorated `cls`, fulfilling the essential contract of a class decorator.
+  id: totrans-224
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 返回装饰后的 `cls`，实现类装饰器的基本约定。
+- en: 'Every top-level function in *checkeddeco.py* is prefixed with an underscore,
+    except the `checked` decorator. This naming convention makes sense for a couple
+    of reasons:'
+  id: totrans-225
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*checkeddeco.py* 中的每个顶层函数都以下划线开头，除了 `checked` 装饰器。这种命名约定有几个原因是合理的：'
+- en: '`checked` is part of the public interface of the *checkeddeco.py* module, but
+    the other functions are not.'
+  id: totrans-226
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '`checked` 是 *checkeddeco.py* 模块的公共接口的一部分，但其他函数不是。'
+- en: The functions in [Example 24-9](#checkeddeco_methods_ex) will be injected in
+    the decorated class, and the leading `_` reduces the chance of naming conflicts
+    with user-defined attributes and methods of the decorated class.
+  id: totrans-227
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '[示例 24-9](#checkeddeco_methods_ex)中的函数将被注入到装饰类中，而前导的`_`减少了与装饰类的用户定义属性和方法的命名冲突的机会。'
+- en: The rest of *checkeddeco.py* is listed in [Example 24-9](#checkeddeco_methods_ex).
+    Those module-level functions have the same code as the corresponding methods of
+    the `Checked` class of *checkedlib.py*. They were explained in Examples [24-5](#checked_class_top_ex)
+    and [24-6](#checked_class_bottom_ex).
+  id: totrans-228
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*checkeddeco.py*的其余部分列在[示例 24-9](#checkeddeco_methods_ex)中。这些模块级函数与*checkedlib.py*的`Checked`类的相应方法具有相同的代码。它们在示例[24-5](#checked_class_top_ex)和[24-6](#checked_class_bottom_ex)中有解释。'
+- en: Note that the `_fields` function does double duty in *checkeddeco.py*. It is
+    used as a regular function in the first line of the `checked` decorator, and it
+    will also be injected as a class method of the decorated class.
+  id: totrans-229
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 请注意，`_fields`函数在*checkeddeco.py*中承担了双重职责。它在`checked`装饰器的第一行中用作常规函数，并且还将被注入为装饰类的类方法。
+- en: 'Example 24-9\. checkeddeco.py: the methods to be injected in the decorated
+    class'
+  id: totrans-230
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 24-9\. checkeddeco.py：要注入到装饰类中的方法
+- en: '[PRE18]'
+  id: totrans-231
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE18]'
+- en: The *checkeddeco.py* module implements a simple but usable class decorator.
+    Python’s `@dataclass` does a lot more. It supports many configuration options,
+    adds more methods to the decorated class, handles or warns about conflicts with
+    user-defined methods in the decorated class, and even traverses the `__mro__`
+    to collect user-defined attributes declared in the superclasses of the decorated
+    class. The [source code](https://fpy.li/24-10) of the `dataclasses` package in
+    Python 3.9 is more than 1,200 lines long.
+  id: totrans-232
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*checkeddeco.py*模块实现了一个简单但可用的类装饰器。Python的`@dataclass`做了更多的事情。它支持许多配置选项，向装饰类添加更多方法，处理或警告有关与装饰类中的用户定义方法的冲突，并甚至遍历`__mro__`以收集在装饰类的超类中声明的用户定义属性。Python
+    3.9中`dataclasses`包的[源代码](https://fpy.li/24-10)超过1200行。'
+- en: For metaprogramming classes, we must be aware of when the Python interpreter
+    evaluates each block of code during the construction of a class. This is covered
+    next.
+  id: totrans-233
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 对于元编程类，我们必须意识到Python解释器在构建类时何时评估代码块。接下来将介绍这一点。
+- en: 'What Happens When: Import Time Versus Runtime'
+  id: totrans-234
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 当发生什么时：导入时间与运行时
+- en: Python programmers talk about “import time” versus “runtime,” but the terms
+    are not strictly defined and there is a gray area between them.
+  id: totrans-235
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Python程序员谈论“导入时间”与“运行时”，但这些术语并没有严格定义，它们之间存在一个灰色地带。
+- en: 'At import time, the interpreter:'
+  id: totrans-236
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在导入时，解释器：
+- en: Parses the source code of a *.py* module in one pass from top to bottom. This
+    is when a `SyntaxError` may occur.
+  id: totrans-237
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 从顶部到底部一次性解析一个*.py*模块的源代码。这是可能发生`SyntaxError`的时候。
+- en: Compiles the bytecode to be executed.
+  id: totrans-238
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 编译要执行的字节码。
+- en: Executes the top-level code of the compiled module.
+  id: totrans-239
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 执行编译模块的顶层代码。
+- en: If there is an up-to-date *.pyc* file available in the local `__pycache__`,
+    parsing and compiling are skipped because the bytecode is ready to run.
+  id: totrans-240
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果本地`__pycache__`中有最新的*.pyc*文件可用，则解析和编译将被跳过，因为字节码已准备就绪。
+- en: Although parsing and compiling are definitely “import time” activities, other
+    things may happen at that time, because almost every statement in Python is executable
+    in the sense that they can potentially run user code and may change the state
+    of the user program.
+  id: totrans-241
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 尽管解析和编译明显是“导入时间”活动，但在那个时候可能会发生其他事情，因为Python中的几乎每个语句都是可执行的，它们可能运行用户代码并可能改变用户程序的状态。
+- en: 'In particular, the `import` statement is not merely a declaration,^([11](ch24.html#idm46582367217808))
+    but it actually runs all the top-level code of a module when it is imported for
+    the first time in the process. Further imports of the same module will use a cache,
+    and then the only effect will be binding the imported objects to names in the
+    client module. That top-level code may do anything, including actions typical
+    of “runtime,” such as writing to a log or connecting to a database.^([12](ch24.html#idm46582367216544))
+    That’s why the border between “import time” and “runtime” is fuzzy: the `import`
+    statement can trigger all sorts of “runtime” behavior. Conversely, “import time”
+    can also happen deep inside runtime, because the `import` statement and the `__import__()`
+    built-in can be used inside any regular function.'
+  id: totrans-242
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 特别是，`import`语句不仅仅是一个声明，^([11](ch24.html#idm46582367217808))，而且当模块在进程中首次导入时，它实际上运行模块的所有顶层代码。对同一模块的进一步导入将使用缓存，然后唯一的效果将是将导入的对象绑定到客户模块中的名称。该顶层代码可以执行任何操作，包括典型的“运行时”操作，例如写入日志或连接到数据库。^([12](ch24.html#idm46582367216544))这就是为什么“导入时间”和“运行时”之间的边界模糊：`import`语句可以触发各种“运行时”行为。反过来，“导入时间”也可能发生在运行时的深处，因为`import`语句和`__import__()`内置可以在任何常规函数内使用。
+- en: This is all rather abstract and subtle, so let’s do some experiments to see
+    what happens when.
+  id: totrans-243
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这一切都相当抽象和微妙，所以让我们做一些实验，看看发生了什么。
+- en: Evaluation Time Experiments
+  id: totrans-244
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 评估时间实验
+- en: Consider an *evaldemo.py* script that uses a class decorator, a descriptor,
+    and a class builder based on `__init_subclass__`, all defined in a *builderlib.py*
+    module. The modules have several `print` calls to show what happens under the
+    covers. Otherwise, they don’t perform anything useful. The goal of these experiments
+    is to observe the order in which these `print` calls happen.
+  id: totrans-245
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 考虑一个*evaldemo.py*脚本，它使用了一个类装饰器、一个描述符和一个基于`__init_subclass__`的类构建器，所有这些都在*builderlib.py*模块中定义。这些模块有几个`print`调用来展示发生了什么。否则，它们不执行任何有用的操作。这些实验的目标是观察这些`print`调用发生的顺序。
+- en: Warning
+  id: totrans-246
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 警告
+- en: Applying a class decorator and a class builder with `__init_subclass__` together
+    in single class is likely a sign of overengineering or desperation. This unusual
+    combination is useful in these experiments to show the timing of the changes that
+    a class decorator and `__init_subclass__` can apply to a class.
+  id: totrans-247
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在单个类中同时应用类装饰器和`__init_subclass__`类构建器很可能是过度设计或绝望的迹象。这种不寻常的组合在这些实验中很有用，可以展示类装饰器和`__init_subclass__`对类应用的更改的时间。
+- en: 'Let’s start by checking out *builderlib.py*, split into two parts: [Example 24-10](#builderlib_top_ex)
+    and [Example 24-11](#builderlib_bottom_ex).'
+  id: totrans-248
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 让我们从*builderlib.py*开始，分为两部分：[示例 24-10](#builderlib_top_ex)和[示例 24-11](#builderlib_bottom_ex)。
+- en: 'Example 24-10\. builderlib.py: top of the module'
+  id: totrans-249
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 24-10\. *builderlib.py*：模块顶部
+- en: '[PRE19]'
+  id: totrans-250
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE19]'
+- en: '[![1](assets/1.png)](#co_class_metaprogramming_CO8-1)'
+  id: totrans-251
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_class_metaprogramming_CO8-1)'
+- en: This is a class builder to implement…
+  id: totrans-252
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这是一个类构建器，用于实现…
+- en: '[![2](assets/2.png)](#co_class_metaprogramming_CO8-2)'
+  id: totrans-253
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_class_metaprogramming_CO8-2)'
+- en: …an `__init_subclass__` method.
+  id: totrans-254
+  prefs: []
+  type: TYPE_NORMAL
+  zh: …一个`__init_subclass__`方法。
+- en: '[![3](assets/3.png)](#co_class_metaprogramming_CO8-3)'
+  id: totrans-255
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_class_metaprogramming_CO8-3)'
+- en: Define a function to be added to the subclass in the assignment below.
+  id: totrans-256
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 定义一个函数，将在下面的赋值中添加到子类中。
+- en: '[![4](assets/4.png)](#co_class_metaprogramming_CO8-4)'
+  id: totrans-257
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_class_metaprogramming_CO8-4)'
+- en: A class decorator.
+  id: totrans-258
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 一个类装饰器。
+- en: '[![5](assets/5.png)](#co_class_metaprogramming_CO8-5)'
+  id: totrans-259
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_class_metaprogramming_CO8-5)'
+- en: Function to be added to the decorated class.
+  id: totrans-260
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 要添加到装饰类的函数。
+- en: '[![6](assets/6.png)](#co_class_metaprogramming_CO8-6)'
+  id: totrans-261
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![6](assets/6.png)](#co_class_metaprogramming_CO8-6)'
+- en: Return the class received as an argument.
+  id: totrans-262
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 返回作为参数接收的类。
+- en: Continuing with *builderlib.py* in [Example 24-11](#builderlib_bottom_ex)…
+  id: totrans-263
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 继续查看[示例 24-11](#builderlib_bottom_ex)中的*builderlib.py*…
+- en: 'Example 24-11\. builderlib.py: bottom of the module'
+  id: totrans-264
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 24-11\. builderlib.py：模块底部
+- en: '[PRE20]'
+  id: totrans-265
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE20]'
+- en: '[![1](assets/1.png)](#co_class_metaprogramming_CO9-1)'
+  id: totrans-266
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_class_metaprogramming_CO9-1)'
+- en: A descriptor class to demonstrate when…
+  id: totrans-267
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 一个描述符类，用于演示当…
+- en: '[![2](assets/2.png)](#co_class_metaprogramming_CO9-2)'
+  id: totrans-268
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_class_metaprogramming_CO9-2)'
+- en: …a descriptor instance is created, and when…
+  id: totrans-269
+  prefs: []
+  type: TYPE_NORMAL
+  zh: …创建���个描述符实例，当…
+- en: '[![3](assets/3.png)](#co_class_metaprogramming_CO9-3)'
+  id: totrans-270
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_class_metaprogramming_CO9-3)'
+- en: …`__set_name__` will be invoked during the `owner` class construction.
+  id: totrans-271
+  prefs: []
+  type: TYPE_NORMAL
+  zh: …`__set_name__`将在`owner`类构建期间被调用。
+- en: '[![4](assets/4.png)](#co_class_metaprogramming_CO9-4)'
+  id: totrans-272
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_class_metaprogramming_CO9-4)'
+- en: Like the other methods, this `__set__` doesn’t do anything except display its
+    arguments.
+  id: totrans-273
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 像其他方法一样，这个`__set__`除了显示其参数外什么也不做。
+- en: 'If you import *builderlib.py* in the Python console, this is what you get:'
+  id: totrans-274
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果你在Python控制台中导入*builderlib.py*，你会得到以下内容：
+- en: '[PRE21]'
+  id: totrans-275
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE21]'
+- en: Note that the lines printed by *builderlib.py* are prefixed with `@`.
+  id: totrans-276
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意*builderlib.py*打印的行前缀为`@`。
+- en: Now let’s turn to *evaldemo.py*, which will trigger special methods in *builderlib.py*
+    ([Example 24-12](#evaldemo_ex)).
+  id: totrans-277
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在让我们转向*evaldemo.py*，它将触发*builderlib.py*中的特殊方法（[示例 24-12](#evaldemo_ex)）。
+- en: 'Example 24-12\. evaldemo.py: script to experiment with *builderlib.py*'
+  id: totrans-278
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 24-12\. *evaldemo.py*：用于实验*builderlib.py*的脚本
+- en: '[PRE22]'
+  id: totrans-279
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE22]'
+- en: '[![1](assets/1.png)](#co_class_metaprogramming_CO10-1)'
+  id: totrans-280
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_class_metaprogramming_CO10-1)'
+- en: Apply a decorator.
+  id: totrans-281
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 应用一个装饰器。
+- en: '[![2](assets/2.png)](#co_class_metaprogramming_CO10-2)'
+  id: totrans-282
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_class_metaprogramming_CO10-2)'
+- en: Subclass `Builder` to trigger its `__init_subclass__`.
+  id: totrans-283
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 子类化`Builder`以触发其`__init_subclass__`。
+- en: '[![3](assets/3.png)](#co_class_metaprogramming_CO10-3)'
+  id: totrans-284
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_class_metaprogramming_CO10-3)'
+- en: Instantiate the descriptor.
+  id: totrans-285
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 实例化描述符。
+- en: '[![4](assets/4.png)](#co_class_metaprogramming_CO10-4)'
+  id: totrans-286
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_class_metaprogramming_CO10-4)'
+- en: This will only be called if the module is run as the main program.
+  id: totrans-287
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这只会在模块作为主程序运行时调用。
+- en: The `print` calls in *evaldemo.py* show a `#` prefix. If you open the console
+    again and import *evaldemo.py*, [Example 24-13](#evaldemo_console_ex) is the output.
+  id: totrans-288
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*evaldemo.py*中的`print`调用显示了`#`前缀。如果你再次打开控制台并导入*evaldemo.py*，[示例 24-13](#evaldemo_console_ex)就是输出结果。'
+- en: Example 24-13\. Console experiment with *evaldemo.py*
+  id: totrans-289
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 24-13\. *evaldemo.py*的控制台实验
+- en: '[PRE23]'
+  id: totrans-290
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE23]'
+- en: '[![1](assets/1.png)](#co_class_metaprogramming_CO11-1)'
+  id: totrans-291
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_class_metaprogramming_CO11-1)'
+- en: The top four lines are the result of `from builderlib import…` . They will not
+    appear if you didn’t close the console after the previous experiment, because
+    *builderlib.py* is already loaded.
+  id: totrans-292
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 前四行是`from builderlib import…`的结果。如果你在之前的实验后没有关闭控制台，它们将不会出现，因为*builderlib.py*已经被加载。
+- en: '[![2](assets/2.png)](#co_class_metaprogramming_CO11-2)'
+  id: totrans-293
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_class_metaprogramming_CO11-2)'
+- en: This signals that Python started reading the body of `Klass`. At this point,
+    the class object does not exist yet.
+  id: totrans-294
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这表明Python开始读取`Klass`的主体。此时，类对象还不存在。
+- en: '[![3](assets/3.png)](#co_class_metaprogramming_CO11-3)'
+  id: totrans-295
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_class_metaprogramming_CO11-3)'
+- en: 'The descriptor instance is created and bound to `attr` in the namespace that
+    Python will pass to the default class object constructor: `type.__new__`.'
+  id: totrans-296
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 描述符实例被创建并绑定到命名空间中的`attr`，Python将把它传递给默认的类对象构造函数：`type.__new__`。
+- en: '[![4](assets/4.png)](#co_class_metaprogramming_CO11-4)'
+  id: totrans-297
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_class_metaprogramming_CO11-4)'
+- en: At this point, Python’s built-in `type.__new__` has created the `Klass` object
+    and calls `__set_name__` on each descriptor instance of descriptor classes that
+    provide that method, passing `Klass` as the `owner` argument.
+  id: totrans-298
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 此时，Python内置的`type.__new__`已经创建了`Klass`对象，并在每个提供该方法的描述符类的描述符实例上调用`__set_name__`，将`Klass`作为`owner`参数传递。
+- en: '[![5](assets/5.png)](#co_class_metaprogramming_CO11-5)'
+  id: totrans-299
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_class_metaprogramming_CO11-5)'
+- en: '`type.__new__` then calls `__init_subclass__` on the superclass of `Klass`,
+    passing `Klass` as the single argument.'
+  id: totrans-300
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 然后`type.__new__`在`Klass`的超类上调用`__init_subclass__`，将`Klass`作为唯一参数传递。
+- en: '[![6](assets/6.png)](#co_class_metaprogramming_CO11-6)'
+  id: totrans-301
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![6](assets/6.png)](#co_class_metaprogramming_CO11-6)'
+- en: When `type.__new__` returns the class object, Python applies the decorator.
+    In this example, the class returned by `deco` is bound to `Klass` in the module
+    namespace.
+  id: totrans-302
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当`type.__new__`返回类对象时，Python会应用装饰器。在这个例子中，`deco`返回的类会绑定到模块命名空间中的`Klass`。
+- en: The implementation of `type.__new__` is written in C. The behavior I just described
+    is documented in the [“Creating the class object”](https://fpy.li/24-11) section
+    of Python’s [“Data Model”](https://fpy.li/dtmodel) reference.
+  id: totrans-303
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`type.__new__`的实现是用C语言编写的。我刚描述的行为在Python的[“数据模型”](https://fpy.li/dtmodel)参考中的[“创建类对象”](https://fpy.li/24-11)部分有文档记录。'
+- en: 'Note that the `main()` function of *evaldemo.py* ([Example 24-12](#evaldemo_ex))
+    was not executed in the console session ([Example 24-13](#evaldemo_console_ex)),
+    therefore no instance of `Klass` was created. All the action we saw was triggered
+    by “import time” operations: importing `builderlib` and defining `Klass`.'
+  id: totrans-304
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 请注意，*evaldemo.py*的`main()`函数（[示例 24-12](#evaldemo_ex)）没有在控制台会话中执行（[示例 24-13](#evaldemo_console_ex)），因此没有创建`Klass`的实例。我们看到的所有操作都是由“import
+    time”操作触发的：导入`builderlib`和定义`Klass`。
+- en: If you run *evaldemo.py* as a script, you will see the same output as [Example 24-13](#evaldemo_console_ex)
+    with extra lines right before the end. The extra lines are the result of running
+    `main()` ([Example 24-14](#evaldemo_script_ex)).
+  id: totrans-305
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果你将*evaldemo.py*作为脚本运行，你将看到与[示例 24-13](#evaldemo_console_ex)相同的输出，但在最后之前会有额外的行。额外的行是运行`main()`（[示例 24-14](#evaldemo_script_ex)）的结果。
+- en: Example 24-14\. Running *evaldemo.py* as a program
+  id: totrans-306
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 24-14。作为程序运行*evaldemo.py*
+- en: '[PRE24]'
+  id: totrans-307
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE24]'
+- en: '[![1](assets/1.png)](#co_class_metaprogramming_CO12-1)'
+  id: totrans-308
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_class_metaprogramming_CO12-1)'
+- en: The top 10 lines—including this one—are the same as shown in [Example 24-13](#evaldemo_console_ex).
+  id: totrans-309
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 前10行（包括这一行）与[示例 24-13](#evaldemo_console_ex)中显示的相同。
+- en: '[![2](assets/2.png)](#co_class_metaprogramming_CO12-2)'
+  id: totrans-310
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_class_metaprogramming_CO12-2)'
+- en: Triggered by `super().__init__()` in `Klass.__init__`.
+  id: totrans-311
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在`Klass.__init__`中由`super().__init__()`触发。
+- en: '[![3](assets/3.png)](#co_class_metaprogramming_CO12-3)'
+  id: totrans-312
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_class_metaprogramming_CO12-3)'
+- en: Triggered by `obj.method_a()` in `main`; `method_a` was injected by `SuperA.__init_subclass__`.
+  id: totrans-313
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在`main`中由`obj.method_a()`触发；`method_a`是由`SuperA.__init_subclass__`注入的。
+- en: '[![4](assets/4.png)](#co_class_metaprogramming_CO12-4)'
+  id: totrans-314
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_class_metaprogramming_CO12-4)'
+- en: Triggered by `obj.method_b()` in `main`; `method_b` was injected by `deco`.
+  id: totrans-315
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在`main`中由`obj.method_b()`触发；`method_b`是由`deco`注入的。
+- en: '[![5](assets/5.png)](#co_class_metaprogramming_CO12-5)'
+  id: totrans-316
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_class_metaprogramming_CO12-5)'
+- en: Triggered by `obj.attr = 999` in `main`.
+  id: totrans-317
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在`main`中由`obj.attr = 999`触发。
+- en: A base class with `__init_subclass__` and a class decorator are powerful tools,
+    but they are limited to working with a class already built by `type.__new__` under
+    the covers. In the rare occasions when you need to adjust the arguments passed
+    to `type.__new__`, you need a metaclass. That’s the final destination of this
+    chapter—and this book.
+  id: totrans-318
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 具有`__init_subclass__`和类装饰器的基类是强大的工具，但它们仅限于使用`type.__new__`在内部构建的类。在需要调整传递给`type.__new__`的参数的罕见情况下，您需要一个元类。这是本章和本书的最终目的地。
+- en: Metaclasses 101
+  id: totrans-319
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 元类 101
+- en: '[Metaclasses] are deeper magic than 99% of users should ever worry about. If
+    you wonder whether you need them, you don’t (the people who actually need them
+    know with certainty that they need them, and don’t need an explanation about why).'
+  id: totrans-320
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+  zh: '[元类]比99%的用户应该担心的更深奥。如果你想知道是否需要它们，那就不需要（真正需要它们的人确信自己需要它们，并不需要解释为什么）。'
+- en: ''
+  id: totrans-321
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: Tim Peters, inventor of the Timsort algorithm and prolific Python contributor^([13](ch24.html#idm46582366318608))
+  id: totrans-322
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+  zh: Tim Peters，Timsort算法的发明者和多产的Python贡献者^([13](ch24.html#idm46582366318608))
+- en: 'A metaclass is a class factory. In contrast with `record_factory` from [Example 24-2](#record_factory_ex),
+    a metaclass is written as a class. In other words, a metaclass is a class whose
+    instances are classes. [Figure 24-1](#meta_class_and_class_mgn) depicts a metaclass
+    using the Mills & Gizmos Notation: a mill producing another mill.'
+  id: totrans-323
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 元类是一个类工厂。与[示例 24-2](#record_factory_ex)中的`record_factory`相比，元类是作为一个类编写的。换句话说，元类是一个其实例是类的类。[图 24-1](#meta_class_and_class_mgn)使用
+    Mills & Gizmos 符号表示了一个元类：一个生产另一个元类的工厂。
+- en: '![MGN diagrams with metaclass and class.](assets/flpy_2401.png)'
+  id: totrans-324
+  prefs: []
+  type: TYPE_IMG
+  zh: '![具有元类和类的MGN图表。](assets/flpy_2401.png)'
+- en: Figure 24-1\. A metaclass is a class that builds classes.
+  id: totrans-325
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 图 24-1。元类是一个构建类的类。
+- en: 'Consider the Python object model: classes are objects, therefore each class
+    must be an instance of some other class. By default, Python classes are instances
+    of `type`. In other words, `type` is the metaclass for most built-in and user-defined
+    classes:'
+  id: totrans-326
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 考虑Python对象模型：类是对象，因此每个类必须是另一个类的实例。默认情况下，Python类是`type`的实例。换句话说，`type`是大多数内置和用户定义类的元类：
+- en: '[PRE25]'
+  id: totrans-327
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE25]'
+- en: To avoid infinite regress, the class of `type` is `type`, as the last line shows.
+  id: totrans-328
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了避免无限递归，`type`的类是`type`，正如最后一行所示。
+- en: Note that I am not saying that `str` or `LineItem` are subclasses of `type`.
+    What I am saying is that `str` and `LineItem` are instances of `type`. They all
+    are subclasses of `object`. [Figure 24-2](#class_hier_2tops_uml) may help you
+    confront this strange reality.
+  id: totrans-329
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 请注意，我并不是说`str`或`LineItem`是`type`的子类。我要说的是`str`和`LineItem`是`type`的实例。它们都是`object`的子类。[图 24-2](#class_hier_2tops_uml)可能会帮助您面对这个奇怪的现实。
+- en: '![UML class diagrams with `object` and `type` relationships.](assets/flpy_2402.png)'
+  id: totrans-330
+  prefs: []
+  type: TYPE_IMG
+  zh: '![具有`object`和`type`关系的UML类图。](assets/flpy_2402.png)'
+- en: Figure 24-2\. Both diagrams are true. The left one emphasizes that `str`, `type`,
+    and `LineItem` are subclasses of object. The right one makes it clear that `str`,
+    `object`, and `LineItem` are instances `type`, because they are all classes.
+  id: totrans-331
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 图 24-2。两个图表都是正确的。左边的图表强调`str`、`type`和`LineItem`是`object`的子类。右边的图表清楚地表明`str`、`object`和`LineItem`是`type`的实例，因为它们都是类。
+- en: Note
+  id: totrans-332
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 注意
+- en: 'The classes `object` and `type` have a unique relationship: `object` is an
+    instance of `type`, and `type` is a subclass of `object`. This relationship is
+    “magic”: it cannot be expressed in Python because either class would have to exist
+    before the other could be defined. The fact that `type` is an instance of itself
+    is also magical.'
+  id: totrans-333
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 类`object`和`type`有一个独特的关系：`object`是`type`的一个实例，而`type`是`object`的一个子类。这种关系是“魔法”的：它不能在Python中表达，因为任何一个类都必须在另一个类定义之前存在。`type`是其自身的实例的事实也是神奇的。
+- en: 'The next snippet shows that the class of `collections.Iterable` is `abc.ABCMeta`.
+    Note that `Iterable` is an abstract class, but `ABCMeta` is a concrete class—after
+    all, `Iterable` is an instance of `ABCMeta`:'
+  id: totrans-334
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 下一个片段显示`collections.Iterable`的类是`abc.ABCMeta`。请注意，`Iterable`是一个抽象类，但`ABCMeta`是一个具体类——毕竟，`Iterable`是`ABCMeta`的一个实例：
+- en: '[PRE26]'
+  id: totrans-335
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE26]'
+- en: 'Ultimately, the class of `ABCMeta` is also `type`. Every class is an instance
+    of `type`, directly or indirectly, but only metaclasses are also subclasses of
+    `type`. That’s the most important relationship to understand metaclasses: a metaclass,
+    such as `ABCMeta`, inherits from `type` the power to construct classes. [Figure 24-3](#metaclass_abcmeta_uml)
+    illustrates this crucial relationship.'
+  id: totrans-336
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 最终，`ABCMeta`的类也是`type`。 每个类都是`type`的实例，直接或间接，但只有元类也是`type`的子类。 这是理解元类最重要的关系：元类（例如`ABCMeta`）从`type`继承了构造类的能力。
+    [图24-3](#metaclass_abcmeta_uml)说明了这种关键关系。
+- en: '![UML class diagrams with `Iterable` and `ABCMeta` relationships.](assets/flpy_2403.png)'
+  id: totrans-337
+  prefs: []
+  type: TYPE_IMG
+  zh: '![带有`Iterable`和`ABCMeta`关系的UML类图。](assets/flpy_2403.png)'
+- en: Figure 24-3\. `Iterable` is a subclass of `object` and an instance of `ABCMeta`.
+    Both `object` and `ABCMeta` are instances of type, but the key relationship here
+    is that `ABCMeta` is also a subclass of `type`, because `ABCMeta` is a metaclass.
+    In this diagram, `Iterable` is the only abstract class.
+  id: totrans-338
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 图24-3。`Iterable`是`object`的子类，也是`ABCMeta`的实例。 `object`和`ABCMeta`都是`type`的实例，但这里的关键关系是`ABCMeta`也是`type`的子类，因为`ABCMeta`是一个元类。
+    在这个图表中，`Iterable`是唯一的抽象类。
+- en: The important takeaway here is that metaclasses are subclasses of `type`, and
+    that’s what makes them work as class factories. A metaclass can customize its
+    instances by implementing special methods, as the next sections demonstrate.
+  id: totrans-339
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这里的重要要点是元类是`type`的子类，这就是使它们作为类工厂运作的原因。 通过实现特殊方法，元类可以定制其实例，如下一节所示。
+- en: How a Metaclass Customizes a Class
+  id: totrans-340
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 元类如何定制类
+- en: To use a metaclass, it’s critical to understand how `__new__` works on any class.
+    This was discussed in [“Flexible Object Creation with __new__”](ch22.html#flexible_new_sec).
+  id: totrans-341
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 要使用元类，了解`__new__`如何在任何类上运行至关重要。 这在[“使用__new__进行灵活的对象创建”](ch22.html#flexible_new_sec)中讨论过。
+- en: 'The same mechanics happen at a “meta” level when a metaclass is about to create
+    a new instance, which is a class. Consider this declaration:'
+  id: totrans-342
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当元类即将创建一个新实例（即类）时，类似的机制发生在“元”级别。 考虑这个声明：
+- en: '[PRE27]'
+  id: totrans-343
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE27]'
+- en: 'To process that `class` statement, Python calls `MetaKlass.__new__` with these
+    arguments:'
+  id: totrans-344
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 要处理该`class`语句，Python使用这些参数调用`MetaKlass.__new__`：
+- en: '`meta_cls`'
+  id: totrans-345
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`meta_cls`'
+- en: The metaclass itself (`MetaKlass`), because `__new__` works as class method.
+  id: totrans-346
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 元类本身（`MetaKlass`），因为`__new__`作为类方法运行。
+- en: '`cls_name`'
+  id: totrans-347
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`cls_name`'
+- en: The string `Klass`.
+  id: totrans-348
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 字符串`Klass`。
+- en: '`bases`'
+  id: totrans-349
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`bases`'
+- en: The single-element tuple `(SuperKlass,)`, with more elements in the case of
+    multiple inheritance.
+  id: totrans-350
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 单元素元组`(SuperKlass,)`，在多重继承的情况下有更多元素。
+- en: '`cls_dict`'
+  id: totrans-351
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`cls_dict`'
+- en: 'A mapping like:'
+  id: totrans-352
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 一个类似于：
+- en: '[PRE28]'
+  id: totrans-353
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE28]'
+- en: When you implement `MetaKlass.__new__`, you can inspect and change those arguments
+    before passing them to `super().__new__`, which will eventually call `type.__new__`
+    to create the new class object.
+  id: totrans-354
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当您实现`MetaKlass.__new__`时，您可以检查并更改这些参数，然后将它们传递给`super().__new__`，后者最终将调用`type.__new__`来创建新的类对象。
+- en: After `super().__new__` returns, you can also apply further processing to the
+    newly created class before returning it to Python. Python then calls `SuperKlass.__init_subclass__`,
+    passing the class you created, and then applies a class decorator to it, if one
+    is present. Finally, Python binds the class object to its name in the surrounding
+    namespace—usually the global namespace of a module, if the `class` statement was
+    a top-level statement.
+  id: totrans-355
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在`super().__new__`返回后，您还可以对新创建的类进行进一步处理，然后将其返回给Python。 然后，Python调用`SuperKlass.__init_subclass__`，传递您创建的类，然后对其应用类装饰器（如果存在）。
+    最后，Python将类对象绑定到其名称在周围的命名空间中 - 通常是模块的全局命名空间，如果`class`语句是顶级语句。
+- en: The most common processing made in a metaclass `__new__` is to add or replace
+    items in the `cls_dict`—the mapping that represents the namespace of the class
+    under construction. For instance, before calling `super().__new__`, you can inject
+    methods in the class under construction by adding functions to `cls_dict`. However,
+    note that adding methods can also be done after the class is built, which is why
+    we were able to do it using `__init_subclass__` or a class decorator.
+  id: totrans-356
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 元类`__new__`中最常见的处理是向`cls_dict`中添加或替换项目 - 代表正在构建的类的命名空间的映射。 例如，在调用`super().__new__`之前，您可以通过向`cls_dict`添加函数来向正在构建的类中注入方法。
+    但是，请注意，添加方法也可以在构建类之后完成，这就是为什么我们能够使用`__init_subclass__`或类装饰器来完成的原因。
+- en: One attribute that you must add to the `cls_dict` before `type.__new__` runs
+    is `__slots__`, as discussed in [“Why __init_subclass__ Cannot Configure __slots__”](#why_cannot_config_slots_sec).
+    The `__new__` method of a metaclass is the ideal place to configure `__slots__`.
+    The next section shows how to do that.
+  id: totrans-357
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在`type.__new__`运行之前，您必须向`cls_dict`添加的一个属性是`__slots__`，如[“为什么__init_subclass__无法配置__slots__”](#why_cannot_config_slots_sec)中讨论的那样。
+    元类的`__new__`方法是配置`__slots__`的理想位置。 下一节将展示如何做到这一点。
+- en: A Nice Metaclass Example
+  id: totrans-358
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 一个很好的元类示例
+- en: The `MetaBunch` metaclass presented here is a variation of the last example
+    in Chapter 4 of [*Python in a Nutshell*, 3rd ed.](https://fpy.li/pynut3), by Alex
+    Martelli, Anna Ravenscroft, and Steve Holden, written to run on Python 2.7 and
+    3.5.^([14](ch24.html#idm46582366098400)) Assuming Python 3.6 or later, I was able
+    to further simplify the code.
+  id: totrans-359
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这里介绍的`MetaBunch`元类是[*Python in a Nutshell*，第3版](https://fpy.li/pynut3)第4章中最后一个示例的变体，作者是Alex
+    Martelli，Anna Ravenscroft和Steve Holden，编写以在Python 2.7和3.5上运行。 假设是Python 3.6或更高版本，我能够进一步简化代码。
+- en: 'First, let’s see what the `Bunch` base class provides:'
+  id: totrans-360
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 首先，让我们看看`Bunch`基类提供了什么：
+- en: '[PRE29]'
+  id: totrans-361
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE29]'
+- en: Remember that `Checked` assigns names to the `Field` descriptors in subclasses
+    based on class variable type hints, which do not actually become attributes on
+    the class since they don’t have values.
+  id: totrans-362
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 请记住，`Checked`根据类变量类型提示为子类中的`Field`描述符分配名称，这些描述符实际上不会成为类的属性，因为它们没有值。
+- en: '`Bunch` subclasses, on the other hand, use actual class attributes with values,
+    which then become the default values of the instance attributes. The generated
+    `__repr__` omits the arguments for attributes that are equal to the defaults.'
+  id: totrans-363
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 另一方面，`Bunch` 的子类使用具有值的实际类属性，然后这些值成为实例属性的默认值。生成的 `__repr__` 省略了等于默认值的属性的参数。
+- en: '`MetaBunch`—the metaclass of `Bunch`—generates `__slots__` for the new class
+    from the class attributes declared in the user’s class. This blocks the instantiation
+    and later assignment of undeclared attributes:'
+  id: totrans-364
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`MetaBunch` — `Bunch` 的元类 — 从用户类中声明的类属性生成新类的 `__slots__`。这阻止了未声明属性的实例化和后续赋值：'
+- en: '[PRE30]'
+  id: totrans-365
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE30]'
+- en: Now let’s dive into the elegant code of `MetaBunch` in [Example 24-15](#metabunch_ex).
+  id: totrans-366
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在让我们深入研究 [示例 24-15](#metabunch_ex) 中 `MetaBunch` 的优雅代码。
+- en: 'Example 24-15\. metabunch/from3.6/bunch.py: `MetaBunch` metaclass and `Bunch`
+    class'
+  id: totrans-367
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 24-15\. metabunch/from3.6/bunch.py：`MetaBunch` 元类和 `Bunch` 类
+- en: '[PRE31]'
+  id: totrans-368
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE31]'
+- en: '[![1](assets/1.png)](#co_class_metaprogramming_CO13-1)'
+  id: totrans-369
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_class_metaprogramming_CO13-1)'
+- en: To create a new metaclass, inherit from `type`.
+  id: totrans-370
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 要创建一个新的元类，继承自 `type`。
+- en: '[![2](assets/2.png)](#co_class_metaprogramming_CO13-2)'
+  id: totrans-371
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_class_metaprogramming_CO13-2)'
+- en: '`__new__` works as a class method, but the class is a metaclass, so I like
+    to name the first argument `meta_cls` (`mcs` is a common alternative). The remaining
+    three arguments are the same as the three-argument signature for calling `type()`
+    directly to create a class.'
+  id: totrans-372
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`__new__` 作为一个类方法工作，但类是一个元类，所以我���欢将第一个参数命名为 `meta_cls`（`mcs` 是一个常见的替代方案）。其余三个参数与直接调用
+    `type()` 创建类的三参数签名相同。'
+- en: '[![3](assets/3.png)](#co_class_metaprogramming_CO13-3)'
+  id: totrans-373
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_class_metaprogramming_CO13-3)'
+- en: '`defaults` will hold a mapping of attribute names and their default values.'
+  id: totrans-374
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`defaults` 将保存属性名称和它们的默认值的映射。'
+- en: '[![4](assets/4.png)](#co_class_metaprogramming_CO13-4)'
+  id: totrans-375
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_class_metaprogramming_CO13-4)'
+- en: This will be injected into the new class.
+  id: totrans-376
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这将被注入到新类中。
+- en: '[![5](assets/5.png)](#co_class_metaprogramming_CO13-5)'
+  id: totrans-377
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_class_metaprogramming_CO13-5)'
+- en: Read the `defaults` and set the corresponding instance attribute with a value
+    popped from `kwargs` or a default.
+  id: totrans-378
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 读取 `defaults` 并使用从 `kwargs` 弹出的值或默认值设置相应的实例属性。
+- en: '[![6](assets/6.png)](#co_class_metaprogramming_CO13-6)'
+  id: totrans-379
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![6](assets/6.png)](#co_class_metaprogramming_CO13-6)'
+- en: If there is still any item in `kwargs`, it means there are no slots left where
+    we can place them. We believe in *failing fast* as best practice, so we don’t
+    want to silently ignore extra items. A quick and effective solution is to pop
+    one item from `kwargs` and try to set it on the instance, triggering an `AttributeError`
+    on purpose.
+  id: totrans-380
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果 `kwargs` 中仍有任何项，这意味着没有剩余的插槽可以放置它们。我们认为*快速失败*是最佳实践，因此我们不希望悄悄地忽略额外的项。一个快速有效的解决方案是从
+    `kwargs` 中弹出一项并尝试在实例上设置它，故意触发 `AttributeError`。
+- en: '[![7](assets/7.png)](#co_class_metaprogramming_CO13-7)'
+  id: totrans-381
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![7](assets/7.png)](#co_class_metaprogramming_CO13-7)'
+- en: '`__repr__` returns a string that looks like a constructor call—e.g., `Point(x=3)`,
+    omitting the keyword arguments with default values.'
+  id: totrans-382
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`__repr__` 返回一个看起来像构造函数调用的字符串 — 例如，`Point(x=3)`，省略了具有默认值的关键字参数。'
+- en: '[![8](assets/8.png)](#co_class_metaprogramming_CO13-8)'
+  id: totrans-383
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![8](assets/8.png)](#co_class_metaprogramming_CO13-8)'
+- en: Initialize namespace for the new class.
+  id: totrans-384
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 初始化新类的命名空间。
+- en: '[![9](assets/9.png)](#co_class_metaprogramming_CO13-9)'
+  id: totrans-385
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![9](assets/9.png)](#co_class_metaprogramming_CO13-9)'
+- en: Iterate over the namespace of the user’s class.
+  id: totrans-386
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 遍历用户类的命名空间。
+- en: '[![10](assets/10.png)](#co_class_metaprogramming_CO13-10)'
+  id: totrans-387
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![10](assets/10.png)](#co_class_metaprogramming_CO13-10)'
+- en: If a dunder `name` is found, copy the item to the new class namespace, unless
+    it’s already there. This prevents users from overwriting `__init__`, `__repr__`,
+    and other attributes set by Python, such as `__qualname__` and `__module__`.
+  id: totrans-388
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果找到双下划线 `name`，则将项目复制到新类命名空间，除非它已经存在。这可以防止用户覆盖由 Python 设置的 `__init__`、`__repr__`
+    和其他属性，如 `__qualname__` 和 `__module__`。
+- en: '[![11](assets/11.png)](#co_class_metaprogramming_CO13-11)'
+  id: totrans-389
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![11](assets/11.png)](#co_class_metaprogramming_CO13-11)'
+- en: If not a dunder `name`, append to `__slots__` and save its `value` in `defaults`.
+  id: totrans-390
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果不是双下划线 `name`，则追加到 `__slots__` 并将其 `value` 保存在 `defaults` 中。
+- en: '[![12](assets/12.png)](#co_class_metaprogramming_CO13-12)'
+  id: totrans-391
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![12](assets/12.png)](#co_class_metaprogramming_CO13-12)'
+- en: Build and return the new class.
+  id: totrans-392
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 构建并返回新类。
+- en: '[![13](assets/13.png)](#co_class_metaprogramming_CO13-13)'
+  id: totrans-393
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![13](assets/13.png)](#co_class_metaprogramming_CO13-13)'
+- en: Provide a base class, so users don’t need to see `MetaBunch`.
+  id: totrans-394
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 提供一个基类，这样用户就不需要看到 `MetaBunch`。
+- en: '`MetaBunch` works because it is able to configure `__slots__` before calling
+    `super().__new__` to build the final class. As usual when metaprogramming, understanding
+    the sequence of actions is key. Let’s do another evaluation time experiment, now
+    with a metaclass.'
+  id: totrans-395
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`MetaBunch` 起作用是因为它能够在调用 `super().__new__` 之前配置 `__slots__` 以构建最终类。通常在元编程时，理解操作的顺序至关重要。让我们进行另一个评估时间实验，这次使用元类。'
+- en: Metaclass Evaluation Time Experiment
+  id: totrans-396
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 元类评估时间实验
+- en: This is a variation of [“Evaluation Time Experiments”](#evaldemo_sec), adding
+    a metaclass to the mix. The *builderlib.py* module is the same as before, but
+    the main script is now *evaldemo_meta.py*, listed in [Example 24-16](#evaldemo_meta_ex).
+  id: totrans-397
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这是 [“评估时间实验”](#evaldemo_sec) 的一个变体，加入了一个元类。*builderlib.py* 模块与之前相同，但主脚本现在是 *evaldemo_meta.py*，列在
+    [示例 24-16](#evaldemo_meta_ex) 中。
+- en: 'Example 24-16\. evaldemo_meta.py: experimenting with a metaclass'
+  id: totrans-398
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 24-16\. evaldemo_meta.py：尝试使用元类进行实验
+- en: '[PRE32]'
+  id: totrans-399
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE32]'
+- en: '[![1](assets/1.png)](#co_class_metaprogramming_CO14-1)'
+  id: totrans-400
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_class_metaprogramming_CO14-1)'
+- en: Import `MetaKlass` from *metalib.py*, which we’ll see in [Example 24-18](#metalib_bottom_ex).
+  id: totrans-401
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 从 *metalib.py* 导入 `MetaKlass`，我们将在 [示例 24-18](#metalib_bottom_ex) 中看到。
+- en: '[![2](assets/2.png)](#co_class_metaprogramming_CO14-2)'
+  id: totrans-402
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_class_metaprogramming_CO14-2)'
+- en: Declare `Klass` as a subclass of `Builder` and an instance of `MetaKlass`.
+  id: totrans-403
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 将 `Klass` 声明为 `Builder` 的子类和 `MetaKlass` 的实例。
+- en: '[![3](assets/3.png)](#co_class_metaprogramming_CO14-3)'
+  id: totrans-404
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_class_metaprogramming_CO14-3)'
+- en: This method is injected by `MetaKlass.__new__`, as we’ll see.
+  id: totrans-405
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 此方法是由 `MetaKlass.__new__` 注入的，我们将会看到。
+- en: Warning
+  id: totrans-406
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 警告
+- en: 'In the interest of science, [Example 24-16](#evaldemo_meta_ex) defies all reason
+    and applies three different metaprogramming techniques together on `Klass`: a
+    decorator, a base class using `__init_subclass__`, and a custom metaclass. If
+    you do this in production code, please don’t blame me. Again, the goal is to observe
+    the order in which the three techniques interfere in the class construction process.'
+  id: totrans-407
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了科学研究，[示例 24-16](#evaldemo_meta_ex) 违背一切理性，将三种不同的元编程技术应用于 `Klass`：一个装饰器，一个使用
+    `__init_subclass__` 的基类，以及一个自定义元类。如果你在生产代码中这样做，请不要责怪我。再次强调，目标是观察这三种技术干扰类构建过程的顺序。
+- en: As in the previous evaluation time experiment, this example does nothing but
+    print messages revealing the flow of execution. [Example 24-17](#metalib_top_ex)
+    shows the code for the top part of *metalib.py*—the rest is in [Example 24-18](#metalib_bottom_ex).
+  id: totrans-408
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 与之前的评估时间实验一样，这个例子除了打印显示执行流程的消息外什么也不做。[示例 24-17](#metalib_top_ex) 展示了 *metalib.py*
+    顶部部分的代码—其余部分在 [示例 24-18](#metalib_bottom_ex) 中。
+- en: 'Example 24-17\. metalib.py: the `NosyDict` class'
+  id: totrans-409
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 24-17\. metalib.py：`NosyDict` 类
+- en: '[PRE33]'
+  id: totrans-410
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE33]'
+- en: I wrote the `NosyDict` class to override `__setitem__` to display each `key`
+    and `value` as they are set. The metaclass will use a `NosyDict` instance to hold
+    the namespace of the class under construction, revealing more of Python’s inner
+    workings.
+  id: totrans-411
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我编写了 `NosyDict` 类来重写 `__setitem__` 以显示每个 `key` 和 `value` 在设置时的情况。元类将使用一个 `NosyDict`
+    实例来保存正在构建的类的命名空间，揭示 Python 更多的内部工作原理。
+- en: The main attraction of *metalib.py* is the metaclass in [Example 24-18](#metalib_bottom_ex).
+    It implements the `__prepare__` special method, a class method that Python only
+    invokes on metaclasses. The `__prepare__` method provides the earliest opportunity
+    to influence the process of creating a new class.
+  id: totrans-412
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*metalib.py* 的主要吸引力在于 [示例 24-18](#metalib_bottom_ex) 中的元类。它实现了 `__prepare__`
+    特殊方法，这是 Python 仅在元类上调用的类方法。`__prepare__` 方法提供了影响创建新类过程的最早机会。'
+- en: Tip
+  id: totrans-413
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 提示
+- en: 'When coding a metaclass, I find it useful to adopt this naming convention for
+    special method arguments:'
+  id: totrans-414
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在编写元类时，我发现采用这种特殊方法参数的命名约定很有用：
+- en: Use `cls` instead of `self` for instance methods, because the instance is a
+    class.
+  id: totrans-415
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 对于实例方法，使用 `cls` 而不是 `self`，因为实例是一个类。
+- en: Use `meta_cls` instead of `cls` for class methods, because the class is a metaclass.
+    Recall that `__new__` behaves as a class method even without the `@classmethod`
+    decorator.
+  id: totrans-416
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 对于类方法，使用 `meta_cls` 而不是 `cls`，因为类是一个元类。请记住，`__new__` 表现为类方法，即使没有 `@classmethod`
+    装饰器。
+- en: 'Example 24-18\. metalib.py: the `MetaKlass`'
+  id: totrans-417
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 24-18\. metalib.py：`MetaKlass`
+- en: '[PRE34]'
+  id: totrans-418
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE34]'
+- en: '[![1](assets/1.png)](#co_class_metaprogramming_CO15-1)'
+  id: totrans-419
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_class_metaprogramming_CO15-1)'
+- en: '`__prepare__` should be declared as a class method. It is not an instance method
+    because the class under construction does not exist yet when Python calls `__prepare__`.'
+  id: totrans-420
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`__prepare__` 应该声明为类方法。它不是实例方法，因为在 Python 调用 `__prepare__` 时正在构建的类还不存在。'
+- en: '[![2](assets/2.png)](#co_class_metaprogramming_CO15-2)'
+  id: totrans-421
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_class_metaprogramming_CO15-2)'
+- en: Python calls `__prepare__` on a metaclass to obtain a mapping to hold the namespace
+    of the class under construction.
+  id: totrans-422
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Python 调用元类的 `__prepare__` 来获取一个映射，用于保存正在构建的类的命名空间。
+- en: '[![3](assets/3.png)](#co_class_metaprogramming_CO15-3)'
+  id: totrans-423
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_class_metaprogramming_CO15-3)'
+- en: Return `NosyDict` instance to be used as the namespace.
+  id: totrans-424
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 返回 `NosyDict` 实例以用作命名空间。
+- en: '[![4](assets/4.png)](#co_class_metaprogramming_CO15-4)'
+  id: totrans-425
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_class_metaprogramming_CO15-4)'
+- en: '`cls_dict` is a `NosyDict` instance returned by `__prepare__`.'
+  id: totrans-426
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`cls_dict` 是由 `__prepare__` 返回的 `NosyDict` 实例。'
+- en: '[![5](assets/5.png)](#co_class_metaprogramming_CO15-5)'
+  id: totrans-427
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_class_metaprogramming_CO15-5)'
+- en: '`type.__new__` requires a real `dict` as the last argument, so I give it the
+    `data` attribute of `NosyDict`, inherited from `UserDict`.'
+  id: totrans-428
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`type.__new__` 要求最后一个参数是一个真实的 `dict`，所以我给了它从 `UserDict` 继承的 `NosyDict` 的 `data`
+    属性。'
+- en: '[![6](assets/6.png)](#co_class_metaprogramming_CO15-6)'
+  id: totrans-429
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![6](assets/6.png)](#co_class_metaprogramming_CO15-6)'
+- en: Inject a method in the newly created class.
+  id: totrans-430
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在新创建的类中注入一个方法。
+- en: '[![7](assets/7.png)](#co_class_metaprogramming_CO15-7)'
+  id: totrans-431
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![7](assets/7.png)](#co_class_metaprogramming_CO15-7)'
+- en: As usual, `__new__` must return the object just created—in this case, the new
+    class.
+  id: totrans-432
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 像往常一样，`__new__` 必须返回刚刚创建的对象—在这种情况下是新类。
+- en: '[![8](assets/8.png)](#co_class_metaprogramming_CO15-8)'
+  id: totrans-433
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![8](assets/8.png)](#co_class_metaprogramming_CO15-8)'
+- en: Defining `__repr__` on a metaclass allows customizing the `repr()` of class
+    objects.
+  id: totrans-434
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在元类上定义 `__repr__` 允许自定义类对象的 `repr()`。
+- en: The main use case for `__prepare__` before Python 3.6 was to provide an `OrderedDict`
+    to hold the attributes of the class under construction, so that the metaclass
+    `__new__` could process those attributes in the order in which they appear in
+    the source code of the user’s class definition. Now that `dict` preserves the
+    insertion order, `__prepare__` is rarely needed. You will see a creative use for
+    it in [“A Metaclass Hack with __prepare__”](#metahack_sec).
+  id: totrans-435
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在 Python 3.6 之前，`__prepare__` 的主要用途是提供一个 `OrderedDict` 来保存正在构建的类的属性，以便元类 `__new__`
+    可以按照用户类定义源代码中的顺序处理这些属性。现在 `dict` 保留插入顺序，`__prepare__` 很少被需要。你将在 [“使用 __prepare__
+    进行元类黑客”](#metahack_sec) 中看到它的创造性用法。
+- en: 'Importing *metalib.py* in the Python console is not very exciting. Note the
+    use of `%` to prefix the lines output by this module:'
+  id: totrans-436
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在 Python 控制台中导入 *metalib.py* 并不是很令人兴奋。请注意使用 `%` 作为此模块输出的行的前缀：
+- en: '[PRE35]'
+  id: totrans-437
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE35]'
+- en: Lots of things happen if you import *evaldemo_meta.py*, as you can see in [Example 24-19](#evaldemo_meta_console_ex).
+  id: totrans-438
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果导入 *evaldemo_meta.py*，会发生很多事情，正如你在 [示例 24-19](#evaldemo_meta_console_ex) 中所看到的。
+- en: Example 24-19\. Console experiment with *evaldemo_meta.py*
+  id: totrans-439
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 24-19\. 使用 *evaldemo_meta.py* 的控制台实验
+- en: '[PRE36]'
+  id: totrans-440
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE36]'
+- en: '[![1](assets/1.png)](#co_class_metaprogramming_CO16-1)'
+  id: totrans-441
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_class_metaprogramming_CO16-1)'
+- en: The lines before this are the result of importing *builderlib.py* and *metalib.py*.
+  id: totrans-442
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在此之前的行是导入 *builderlib.py* 和 *metalib.py* 的结果。
+- en: '[![2](assets/2.png)](#co_class_metaprogramming_CO16-2)'
+  id: totrans-443
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_class_metaprogramming_CO16-2)'
+- en: Python invokes `__prepare__` to start processing a `class` statement.
+  id: totrans-444
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Python 调用 `__prepare__` 来开始处理 `class` 语句。
+- en: '[![3](assets/3.png)](#co_class_metaprogramming_CO16-3)'
+  id: totrans-445
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_class_metaprogramming_CO16-3)'
+- en: Before parsing the class body, Python adds the `__module__` and `__qualname__`
+    entries to the namespace of the class under construction.
+  id: totrans-446
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在解析类体之前，Python将`__module__`和`__qualname__`条目添加到正在构建的类的命名空间中。
+- en: '[![4](assets/4.png)](#co_class_metaprogramming_CO16-4)'
+  id: totrans-447
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_class_metaprogramming_CO16-4)'
+- en: The descriptor instance is created…
+  id: totrans-448
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 创建描述符实例…
+- en: '[![5](assets/5.png)](#co_class_metaprogramming_CO16-5)'
+  id: totrans-449
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_class_metaprogramming_CO16-5)'
+- en: …and bound to `attr` in the class namespace.
+  id: totrans-450
+  prefs: []
+  type: TYPE_NORMAL
+  zh: …并绑定到类命名空间中的`attr`。
+- en: '[![6](assets/6.png)](#co_class_metaprogramming_CO16-6)'
+  id: totrans-451
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![6](assets/6.png)](#co_class_metaprogramming_CO16-6)'
+- en: '`__init__` and `__repr__` methods are defined and added to the namespace.'
+  id: totrans-452
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`__init__`和`__repr__`方法被定义并添加到命名空间中。'
+- en: '[![7](assets/7.png)](#co_class_metaprogramming_CO16-7)'
+  id: totrans-453
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![7](assets/7.png)](#co_class_metaprogramming_CO16-7)'
+- en: Once Python finishes processing the class body, it calls `MetaKlass.__new__`.
+  id: totrans-454
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Python完成处理类体后，调用`MetaKlass.__new__`。
+- en: '[![8](assets/8.png)](#co_class_metaprogramming_CO16-8)'
+  id: totrans-455
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![8](assets/8.png)](#co_class_metaprogramming_CO16-8)'
+- en: '`__set_name__`, `__init_subclass__`, and the decorator are invoked in this
+    order, after the `__new__` method of the metaclass returns the newly constructed
+    class.'
+  id: totrans-456
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`__set_name__`、`__init_subclass__`和装饰器按照这个顺序被调用，在元类的`__new__`方法返回新构造的类之后。'
+- en: If you run *evaldemo_meta.py* as script, `main()` is called, and a few more
+    things happen ([Example 24-20](#evaldemo_meta_script_ex)).
+  id: totrans-457
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果将*evaldemo_meta.py*作为脚本运行，将调用`main()`，并会发生一些其他事情（[示例 24-20](#evaldemo_meta_script_ex)）。
+- en: Example 24-20\. Running *evaldemo_meta.py* as a program
+  id: totrans-458
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 24-20。将*evaldemo_meta.py*作为程序运行
+- en: '[PRE37]'
+  id: totrans-459
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE37]'
+- en: '[![1](assets/1.png)](#co_class_metaprogramming_CO17-1)'
+  id: totrans-460
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_class_metaprogramming_CO17-1)'
+- en: The top 21 lines—including this one—are the same shown in [Example 24-19](#evaldemo_meta_console_ex).
+  id: totrans-461
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 前 21 行，包括这一行，与[示例 24-19](#evaldemo_meta_console_ex)中显示的相同。
+- en: '[![2](assets/2.png)](#co_class_metaprogramming_CO17-2)'
+  id: totrans-462
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_class_metaprogramming_CO17-2)'
+- en: Triggered by `obj.method_c()` in `main`; `method_c` was injected by `MetaKlass.__new__`.
+  id: totrans-463
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 由`main`中的`obj.method_c()`触发；`method_c`是由`MetaKlass.__new__`注入的。
+- en: Let’s now go back to the idea of the `Checked` class with the `Field` descriptors
+    implementing runtime type validation, and see how it can be done with a metaclass.
+  id: totrans-464
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在让我们回到`Checked`类的概念，其中`Field`描述符实现了运行时类型验证，并看看如何使用元类来实现。
+- en: A Metaclass Solution for Checked
+  id: totrans-465
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 用于 Checked 的元类解决方案
+- en: I don’t want to encourage premature optimization and overengineering, so here
+    is a make-believe scenario to justify rewriting *checkedlib.py* with `__slots__`,
+    which requires the application of a metaclass. Feel free to skip it.
+  id: totrans-466
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我不想鼓励过早优化和过度设计，所以这里有一个虚构的场景来证明使用`__slots__`重写*checkedlib.py*的合理性，这需要应用元类。随意跳过。
+- en: The *metaclass/checkedlib.py* module we’ll study next is a drop-in replacement
+    for *initsub/checkedlib.py*. The doctests embedded in them are identical, as well
+    as the *checkedlib_test.py* files for *pytest*.
+  id: totrans-467
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们接下来将研究的*metaclass/checkedlib.py*模块是*initsub/checkedlib.py*的一个可替换项。它们中嵌入的 doctests
+    是相同的，以及用于 *pytest* 的*checkedlib_test.py* 文件。
+- en: 'The complexity in *checkedlib.py* is abstracted away from the user. Here is
+    the source code of a script using the package:'
+  id: totrans-468
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*checkedlib.py*中的复杂性对用户进行了抽象。这里是使用该包的脚本的源代码：'
+- en: '[PRE38]'
+  id: totrans-469
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE38]'
+- en: That concise `Movie` class definition leverages three instances of the `Field`
+    validating descriptor, a `__slots__` configuration, five methods inherited from
+    `Checked`, and a metaclass to put it all together. The only visible part of `checkedlib`
+    is the `Checked` base class.
+  id: totrans-470
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这个简洁的`Movie`类定义利用了三个`Field`验证描述符的实例，一个`__slots__`配置，从`Checked`继承的五个方法，以及一个元类将它们全部整合在一起。`checkedlib`的唯一可见部分是`Checked`基类。
+- en: Consider [Figure 24-4](#checkedlib_uml_mgn). The Mills & Gizmos Notation complements
+    the UML class diagram by making the relationship between classes and instances
+    more visible.
+  id: totrans-471
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 考虑[图 24-4](#checkedlib_uml_mgn)。 Mills & Gizmos Notation通过使类和实例之间的关系更加可见来补充
+    UML 类图。
+- en: For example, a `Movie` class using the new *checkedlib.py* is an instance of
+    `CheckedMeta`, and a subclass of `Checked`. Also, the `title`, `year`, and `box_office`
+    class attributes of `Movie` are three separate instances of `Field`. Each `Movie`
+    instance has its own `_title`, `_year`, and `_box_office` attributes, to store
+    the values of the corresponding fields.
+  id: totrans-472
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 例如，使用新的*checkedlib.py*的`Movie`类是`CheckedMeta`的一个实例，并且是`Checked`的一个子类。此外，`Movie`的`title`、`year`和`box_office`类属性是`Field`的三个单独实例。每个`Movie`实例都有自己的`_title`、`_year`和`_box_office`属性，用于存储相应字段的值。
+- en: Now let’s study the code, starting with the `Field` class, shown in [Example 24-21](#checked_field_meta_ex).
+  id: totrans-473
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在让我们从`Field`类开始研究代码，如[示例 24-21](#checked_field_meta_ex)所示。
+- en: The `Field` descriptor class is now a bit different. In the previous examples,
+    each `Field` descriptor instance stored its value in the managed instance using
+    an attribute of the same name. For example, in the `Movie` class, the `title`
+    descriptor stored the field value in a `title` attribute in the managed instance.
+    This made it unnecessary for `Field` to provide a `__get__` method.
+  id: totrans-474
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`Field`描述符类现在有点不同。在先前的示例中，每个`Field`描述符实例将其值存储在具有相同名称的属性中。例如，在`Movie`类中，`title`描述符将字段值存储在托管实例中的`title`属性中。这使得`Field`不需要提供`__get__`方法。'
+- en: However, when a class like `Movie` uses `__slots__`, it cannot have class attributes
+    and instance attributes with the same name. Each descriptor instance is a class
+    attribute, and now we need separate per-instance storage attributes. The code
+    uses the descriptor name prefixed with a single `_`. Therefore `Field` instances
+    have separate `name` and `storage_name` attributes, and we implement `Field.__get__`.
+  id: totrans-475
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 然而，当类像`Movie`一样使用`__slots__`时，不能同时拥有相同名称的类属性和实例属性。每个描述符实例都是一个类属性，现在我们需要单独的每个实例存储属性。代码使用带有单个`_`前缀的描述符名称。因此，`Field`实例有单独的`name`和`storage_name`属性，并且我们实现`Field.__get__`。
+- en: '![UML+MGN class diagram for `CheckedMeta`, `Movie` etc.](assets/flpy_2404.png)'
+  id: totrans-476
+  prefs: []
+  type: TYPE_IMG
+  zh: '![`CheckedMeta`、`Movie`等的 UML+MGN 类图](assets/flpy_2404.png)'
+- en: 'Figure 24-4\. UML class diagram annotated with MGN: the `CheckedMeta` meta-mill
+    builds the `Movie` mill. The `Field` mill builds the `title`, `year`, and `box_office`
+    descriptors, which are class attributes of `Movie`. The per-instance data for
+    the fields is stored in the `_title`, `_year`, and `_box_office` instance attributes
+    of `Movie`. Note the package boundary of `checkedlib`. The developer of `Movie`
+    doesn’t need to grok all the machinery inside *checkedlib.py*.'
+  id: totrans-477
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 图24-4。带有MGN注释的UML类图：`CheckedMeta`元工厂构建`Movie`工厂。`Field`工厂构建`title`、`year`和`box_office`描述符，它们是`Movie`的类属性。字段的每个实例数据存储在`Movie`的`_title`、`_year`和`_box_office`实例属性中。请注意`checkedlib`的包边界。`Movie`的开发者不需要理解*checkedlib.py*内部的所有机制。
+- en: '[Example 24-21](#checked_field_meta_ex) shows the source code for `Field`,
+    with callouts describing only the changes in this version.'
+  id: totrans-478
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 24-21](#checked_field_meta_ex)显示了带有`storage_name`和`__get__`的`Field`描述符的源代码。'
+- en: 'Example 24-21\. metaclass/checkedlib.py: the `Field` descriptor with `storage_name`
+    and `__get__`'
+  id: totrans-479
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例24-21。元类/checkedlib.py：带有`storage_name`和`__get__`的`Field`描述符
+- en: '[PRE39]'
+  id: totrans-480
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE39]'
+- en: '[![1](assets/1.png)](#co_class_metaprogramming_CO18-1)'
+  id: totrans-481
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_class_metaprogramming_CO18-1)'
+- en: Compute `storage_name` from the `name` argument.
+  id: totrans-482
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 从`name`参数计算`storage_name`。
+- en: '[![2](assets/2.png)](#co_class_metaprogramming_CO18-2)'
+  id: totrans-483
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_class_metaprogramming_CO18-2)'
+- en: If `__get__` gets `None` as the `instance` argument, the descriptor is being
+    read from the managed class itself, not a managed instance. So we return the descriptor.
+  id: totrans-484
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果`__get__`的`instance`参数为`None`，则描述符是从托管类本身而不是托管实例中读取的。因此我们返回描述符。
+- en: '[![3](assets/3.png)](#co_class_metaprogramming_CO18-3)'
+  id: totrans-485
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_class_metaprogramming_CO18-3)'
+- en: Otherwise, return the value stored in the attribute named `storage_name`.
+  id: totrans-486
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 否则，返回存储在名为`storage_name`的属性中的值。
+- en: '[![4](assets/4.png)](#co_class_metaprogramming_CO18-4)'
+  id: totrans-487
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_class_metaprogramming_CO18-4)'
+- en: '`__set__` now uses `setattr` to set or update the managed attribute.'
+  id: totrans-488
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`__set__`现在使用`setattr`来设置或更新托管属性。'
+- en: '[Example 24-22](#checked_metaclass_ex) shows the code for the metaclass that
+    drives this example.'
+  id: totrans-489
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 24-22](#checked_metaclass_ex)显示了驱动此示例的元类的代码。'
+- en: 'Example 24-22\. metaclass/checkedlib.py: the `CheckedMeta` metaclass'
+  id: totrans-490
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例24-22。元类/checkedlib.py：`CheckedMeta`元类
+- en: '[PRE40]'
+  id: totrans-491
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE40]'
+- en: '[![1](assets/1.png)](#co_class_metaprogramming_CO19-1)'
+  id: totrans-492
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_class_metaprogramming_CO19-1)'
+- en: '`__new__` is the only method implemented in `CheckedMeta`.'
+  id: totrans-493
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`__new__`是`CheckedMeta`中唯一实现的方法。'
+- en: '[![2](assets/2.png)](#co_class_metaprogramming_CO19-2)'
+  id: totrans-494
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_class_metaprogramming_CO19-2)'
+- en: Only enhance the class if its `cls_dict` doesn’t include `__slots__`. If `__slots__`
+    is already present, assume it is the `Checked` base class and not a user-defined
+    subclass, and build the class as is.
+  id: totrans-495
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 仅在`cls_dict`不包含`__slots__`时增强类。如果`__slots__`已经存在，则假定它是`Checked`基类，而不是用户定义的子类，并按原样构建类。
+- en: '[![3](assets/3.png)](#co_class_metaprogramming_CO19-3)'
+  id: totrans-496
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_class_metaprogramming_CO19-3)'
+- en: To get the type hints in prior examples, we used `typing.get_type_hints`, but
+    that requires an existing class as the first argument. At this point, the class
+    we are configuring does not exist yet, so we need to retrieve the `__annotations__`
+    directly from the `cls_dict`—the namespace of the class under construction, which
+    Python passes as the last argument to the metaclass `__new__`.
+  id: totrans-497
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了获取之前示例中的类型提示，我们使用`typing.get_type_hints`，但这需要一个现有的类作为第一个参数。此时，我们正在配置的类尚不存在，因此我们需要直接从`cls_dict`（Python作为元类`__new__`的最后一个参数传递的正在构建的类的命名空间）中检索`__annotations__`。
+- en: '[![4](assets/4.png)](#co_class_metaprogramming_CO19-4)'
+  id: totrans-498
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_class_metaprogramming_CO19-4)'
+- en: Iterate over `type_hints` to…
+  id: totrans-499
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 迭代`type_hints`以…
+- en: '[![5](assets/5.png)](#co_class_metaprogramming_CO19-5)'
+  id: totrans-500
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_class_metaprogramming_CO19-5)'
+- en: …build a `Field` for each annotated attribute…
+  id: totrans-501
+  prefs: []
+  type: TYPE_NORMAL
+  zh: …为每个注释属性构建一个`Field`…
+- en: '[![6](assets/6.png)](#co_class_metaprogramming_CO19-6)'
+  id: totrans-502
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![6](assets/6.png)](#co_class_metaprogramming_CO19-6)'
+- en: …overwrite the corresponding entry in `cls_dict` with the `Field` instance…
+  id: totrans-503
+  prefs: []
+  type: TYPE_NORMAL
+  zh: …用`Field`实例覆盖`cls_dict`中的相应条目…
+- en: '[![7](assets/7.png)](#co_class_metaprogramming_CO19-7)'
+  id: totrans-504
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![7](assets/7.png)](#co_class_metaprogramming_CO19-7)'
+- en: …and append the `storage_name` of the field in the list we’ll use to…
+  id: totrans-505
+  prefs: []
+  type: TYPE_NORMAL
+  zh: …并将字段的`storage_name`追加到我们将用于的列表中…
+- en: '[![8](assets/8.png)](#co_class_metaprogramming_CO19-8)'
+  id: totrans-506
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![8](assets/8.png)](#co_class_metaprogramming_CO19-8)'
+- en: …populate the `__slots__` entry in `cls_dict`—the namespace of the class under
+    construction.
+  id: totrans-507
+  prefs: []
+  type: TYPE_NORMAL
+  zh: …填充`cls_dict`中的`__slots__`条目——正在构建的类的命名空间。
+- en: '[![9](assets/9.png)](#co_class_metaprogramming_CO19-9)'
+  id: totrans-508
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![9](assets/9.png)](#co_class_metaprogramming_CO19-9)'
+- en: Finally, we call `super().__new__`.
+  id: totrans-509
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 最后，我们调用`super().__new__`。
+- en: The last part of *metaclass/checkedlib.py* is the `Checked` base class that
+    users of this library will subclass to enhance their classes, like `Movie`.
+  id: totrans-510
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*metaclass/checkedlib.py*的最后部分是`Checked`基类，这个库的用户将从中派生类来增强他们的类，如`Movie`。'
+- en: 'The code for this version of `Checked` is the same as `Checked` in *initsub/checkedlib.py*
+    (listed in [Example 24-5](#checked_class_top_ex) and [Example 24-6](#checked_class_bottom_ex)),
+    with three changes:'
+  id: totrans-511
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这个版本的`Checked`的代码与*initsub/checkedlib.py*中的`Checked`相同（在[示例 24-5](#checked_class_top_ex)和[示例 24-6](#checked_class_bottom_ex)中列出），有三个变化：
+- en: Added an empty `__slots__` to signal to `CheckedMeta.__new__` that this class
+    doesn’t require special processing.
+  id: totrans-512
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 添加一个空的`__slots__`，以向`CheckedMeta.__new__`表明这个类不需要特殊处理。
+- en: Removed `__init_subclass__`. Its job is now done by `CheckedMeta.__new__`.
+  id: totrans-513
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 移除`__init_subclass__`。它的工作现在由`CheckedMeta.__new__`完成。
+- en: Removed `__setattr__`. It became redundant because adding `__slots__` to the
+    user-defined class prevents setting undeclared attributes.
+  id: totrans-514
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 移除`__setattr__`。它变得多余，因为向用户定义的类添加`__slots__`可以防止设置未声明的属性。
+- en: '[Example 24-23](#checked_baseclass_ex) is a complete listing of the final version
+    of `Checked`.'
+  id: totrans-515
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 24-23](#checked_baseclass_ex)是`Checked`的最终版本的完整列表。'
+- en: 'Example 24-23\. metaclass/checkedlib.py: the `Checked` base class'
+  id: totrans-516
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例24-23。元类/checkedlib.py：`Checked`基类
+- en: '[PRE41]'
+  id: totrans-517
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE41]'
+- en: This concludes the third rendering of a class builder with validated descriptors.
+  id: totrans-518
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这结束了一个带有验证描述符的类构建器的第三次渲染。
+- en: The next section covers some general issues related to metaclasses.
+  id: totrans-519
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 下一节涵盖了与元类相关的一些一般问题。
+- en: Metaclasses in the Real World
+  id: totrans-520
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 真实世界中的元类
+- en: Metaclasses are powerful, but tricky. Before deciding to implement a metaclass,
+    consider the following points.
+  id: totrans-521
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 元类很强大，但也很棘手。在决定实现元类之前，请考虑以下几点。
+- en: Modern Features Simplify or Replace Metaclasses
+  id: totrans-522
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 现代特性简化或替代元类
+- en: 'Over time, several common use cases of metaclasses were made redundant by new
+    language features:'
+  id: totrans-523
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 随着时间的推移，几种常见的元类用法被新的语言特性所取代：
+- en: Class decorators
+  id: totrans-524
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 类装饰器
+- en: Simpler to understand than metaclasses, and less likely to cause conflicts with
+    base classes and metaclasses.
+  id: totrans-525
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 比元类更容易理解，更不太可能与基类和元类发生冲突。
+- en: '`__set_name__`'
+  id: totrans-526
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`__set_name__`'
+- en: Avoids the need for custom metaclass logic to automatically set the name of
+    a descriptor.^([15](ch24.html#idm46582364050896))
+  id: totrans-527
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 避免需要自定义元类逻辑来自动设置描述符的名称。^([15](ch24.html#idm46582364050896))
+- en: '`__init_subclass__`'
+  id: totrans-528
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`__init_subclass__`'
+- en: Provides a way to customize class creation that is transparent to the end user
+    and even simpler than a decorator—but may introduce conflicts in a complex class
+    hierarchy.
+  id: totrans-529
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 提供了一种透明对终端用户进行自定义类创建的方式，甚至比装饰器更简单——但可能会在复杂的类层次结构中引入冲突。
+- en: Built-in `dict` preserving key insertion order
+  id: totrans-530
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 内置`dict`保留键插入顺序
+- en: 'Eliminated the #1 reason to use `__prepare__`: to provide an `OrderedDict`
+    to store the namespace of the class under construction. Python only calls `__prepare__`
+    on metaclasses, so if you needed to process the class namespace in the order it
+    appears in the source code, you had to use a metaclass before Python 3.6.'
+  id: totrans-531
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 消除了使用`__prepare__`的#1原因：提供一个`OrderedDict`来存储正在构建的类的命名空间。Python只在元类上调用`__prepare__`，因此如果您需要按照源代码中出现的顺序处理类命名空间，则必须在Python
+    3.6之前使用元类。
+- en: As of 2021, every actively maintained version of CPython supports all the features
+    just listed.
+  id: totrans-532
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 截至2021年，CPython的每个活跃维护版本都支持刚才列出的所有功能。
+- en: I keep advocating these features because I see too much unnecessary complexity
+    in our profession, and metaclasses are a gateway to complexity.
+  id: totrans-533
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我一直在倡导这些特性，因为我看���我们行业中有太多不必要的复杂性，而元类是复杂性的入口。
+- en: Metaclasses Are Stable Language Features
+  id: totrans-534
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 元类是稳定的语言特性
+- en: Metaclasses were introduced in Python 2.2 in 2002, together with so-called “new-style
+    classes,” descriptors, and properties.
+  id: totrans-535
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 元类是在2002年与所谓的“新式类”、描述符和属性一起在Python 2.2中引入的。
+- en: It is remarkable that the `MetaBunch` example, first posted by Alex Martelli
+    in July 2002, still works in Python 3.9—the only change being the way to specify
+    the metaclass to use, which in Python 3 is done with the syntax `class Bunch(metaclass=MetaBunch):`.
+  id: totrans-536
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 令人惊讶的是，Alex Martelli于2002年7月首次发布的`MetaBunch`示例在Python 3.9中仍然有效——唯一的变化是在Python
+    3中指定要使用的元类的方式，即使用语法`class Bunch(metaclass=MetaBunch):`。
+- en: None of the additions I mentioned in [“Modern Features Simplify or Replace Metaclasses”](#metaclass_modern_features_sec)
+    broke existing code using metaclasses. But legacy code using metaclasses can often
+    be simplified by leveraging those features, especially if you can drop support
+    to Python versions before 3.6—which are no longer maintained.
+  id: totrans-537
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我提到的[“现代特性简化或替代元类”](#metaclass_modern_features_sec)中的任何添加都不会破坏使用元类的现有代码。但是，使用元类的遗留代码通常可以通过利用这些特性来简化，尤其是如果可以放弃对不再维护的Python版本（3.6之前的版本）的支持。
+- en: A Class Can Only Have One Metaclass
+  id: totrans-538
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 一个类只能有一个元类
+- en: 'If your class declaration involves two or more metaclasses, you will see this
+    puzzling error message:'
+  id: totrans-539
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果您的类声明涉及两个或更多个元类，您将看到这个令人困惑的错误消息：
+- en: '[PRE42]'
+  id: totrans-540
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE42]'
+- en: 'This may happen even without multiple inheritance. For example, a declaration
+    like this could trigger that `TypeError`:'
+  id: totrans-541
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这可能发生在没有多重继承的情况下。例如，像这样的声明可能触发`TypeError`：
+- en: '[PRE43]'
+  id: totrans-542
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE43]'
+- en: We saw that `abc.ABC` is an instance of the `abc.ABCMeta` metaclass. If that
+    `Persistent` metaclass is not itself a subclass of `abc.ABCMeta`, you get a metaclass
+    conflict.
+  id: totrans-543
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们看到`abc.ABC`是`abc.ABCMeta`元类的一个实例。如果`Persistent`元类本身不是`abc.ABCMeta`的子类，则会出现元类冲突。
+- en: 'There are two ways of dealing with that error:'
+  id: totrans-544
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 处理该错误有两种方法：
+- en: Find some other way of doing what you need to do, while avoiding at least one
+    of the metaclasses involved.
+  id: totrans-545
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 找到其他方法来做你需要做的事情，同时避免涉及到的元类之一。
+- en: Write your own `PersistentABCMeta` metaclass as a subclass of both `abc.ABCMeta`
+    and `PersistentMeta`, using multiple inheritance, and use that as the only metaclass
+    for `Record`.^([16](ch24.html#idm46582363814688))
+  id: totrans-546
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 编写自己的`PersistentABCMeta`元类，作为`abc.ABCMeta`和`PersistentMeta`的子类，使用多重继承，并将其作为`Record`的唯一元类。^([16](ch24.html#idm46582363814688))
+- en: Tip
+  id: totrans-547
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 提示
+- en: I can imagine the solution of the metaclass with two base metaclasses implemented
+    to meet a deadline. In my experience, metaclass programming always takes longer
+    than anticipated, which makes this approach risky before a hard deadline. If you
+    do it and make the deadline, the code may contain subtle bugs. Even in the absence
+    of known bugs, you should consider this approach as technical debt simply because
+    it is hard to understand and maintain.
+  id: totrans-548
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我可以想象实现满足截止日期的两个基本元类的元类的解决方案。根据我的经验，元类编程总是比预期时间长，这使得在严格的截止日期之前采用这种方法是有风险的。如果您这样做并且达到了截止日期，代码可能会包含微妙的错误。即使没有已知的错误，您也应该将这种方法视为技术债务，因为它很难理解和维护。
+- en: Metaclasses Should Be Implementation Details
+  id: totrans-549
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 元类应该是实现细节
+- en: Besides `type`, there are only six metaclasses in the entire Python 3.9 standard
+    library. The better known metaclasses are probably `abc.ABCMeta`, `typing.NamedTupleMeta`,
+    and `enum.EnumMeta`. None of them are intended to appear explicitly in user code.
+    We may consider them implementation details.
+  id: totrans-550
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 除了`type`，整个Python 3.9标准库中只有六个元类。较为知名的元类可能是`abc.ABCMeta`、`typing.NamedTupleMeta`和`enum.EnumMeta`。它们中没有一个旨在明确出现在用户代码中。我们可能将它们视为实现细节。
+- en: Although you can do some really wacky metaprogramming with metaclasses, it’s
+    best to heed the [principle of least astonishment](https://fpy.li/24-15) so that
+    most users can indeed regard metaclasses as implementation details.^([17](ch24.html#idm46582363807680))
+  id: totrans-551
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 尽管您可以使用元类进行一些非常古怪的元编程，但最好遵循[最少惊讶原则](https://fpy.li/24-15)，以便大多数用户确实将元类视为实现细节。^([17](ch24.html#idm46582363807680))
+- en: In recent years, some metaclasses in the Python standard library were replaced
+    by other mechanisms, without breaking the public API of their packages. The simplest
+    way to future-proof such APIs is to offer a regular class that users subclass
+    to access the functionality provided by the metaclass, as we’ve done in our examples.
+  id: totrans-552
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 近年来，Python标准库中的一些元类已被其他机制替换，而不会破坏其包的公共API。未来保护这类API的最简单方法是提供一个常规类，供用户子类化以访问元类提供的功能，就像我们在示例中所做的那样。
+- en: To wrap up our coverage of class metaprogramming, I will share with you the
+    coolest, small example of metaclass I found as I researched this chapter.
+  id: totrans-553
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了总结我们对类元编程的覆盖范围，我将与您分享我在研究本章时发现的最酷、最小的元类示例。
+- en: A Metaclass Hack with __prepare__
+  id: totrans-554
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 使用__prepare__的元类技巧
+- en: When I updated this chapter for the second edition, I needed to find simple
+    but illuminating examples to replace the *bulkfood* `LineItem` code that no longer
+    require metaclasses since Python 3.6.
+  id: totrans-555
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当我为第二版更新这一章节时，我需要找到简单但具有启发性的示例来替换自Python 3.6以来不再需要元类的*bulkfood* `LineItem`代码。
+- en: 'The simplest and most interesting metaclass idea was given to me by João S.
+    O. Bueno—better known as JS in the Brazilian Python community. One application
+    of his idea is to create a class that autogenerates numeric constants:'
+  id: totrans-556
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 最简单且最有趣的元类概念是由巴西Python社区中更为人熟知的João S. O. Bueno（简称JS）给我的。他的想法之一是创建一个自动生成数值常量的类：
+- en: '[PRE44]'
+  id: totrans-557
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE44]'
+- en: Yes, that code works as shown! That’s actually a doctest in *autoconst_demo.py*.
+  id: totrans-558
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 是的，代码如图所示是有效的！实际上，这是*autoconst_demo.py*中的一个doctest。
+- en: 'Here is the user-friendly `AutoConst` base class and the metaclass behind it,
+    implemented in *autoconst.py*:'
+  id: totrans-559
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这里是用户友好的`AutoConst`基类和其背后的元类，实现在*autoconst.py*中：
+- en: '[PRE45]'
+  id: totrans-560
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE45]'
+- en: That’s it.
+  id: totrans-561
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 就是这样。
+- en: Clearly the trick is in `WilyDict`.
+  id: totrans-562
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 显然，技巧在于`WilyDict`。
+- en: 'When Python processes the namespace of the user’s class and reads `banana`,
+    it looks up that name in the mapping provided by `__prepare__`: an instance of
+    `WilyDict`. `WilyDict` implements `__missing__`, covered in [“The __missing__
+    Method”](ch03.html#missing_method). The `WilyDict` instance initially has no `''banana''`
+    key, so the `__missing__` method is triggered. It makes an item on the fly with
+    the key `''banana''` and the value `0`, returning that value. Python is happy
+    with that, then tries to retrieve `''coconut''`. `WilyDict` promptly adds that
+    entry with the value `1`, returning it. The same happens with `''vanilla''`, which
+    is then mapped to `2`.'
+  id: totrans-563
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当Python处理用户类的命名空间并读取`banana`时，它在`__prepare__`提供的映射中查找该名称：一个`WilyDict`的实例。`WilyDict`实现了`__missing__`，在[“__missing__方法”](ch03.html#missing_method)中有介绍。`WilyDict`实例最初没有`'banana'`键，因此触发了`__missing__`方法。它会即时创建一个具有键`'banana'`和值`0`的项目��并返回该值。Python对此很满意，然后尝试检索`'coconut'`。`WilyDict`立即添加该条目，值为`1`，并返回它。同样的情况也发生在`'vanilla'`，然后映射到`2`。
+- en: We’ve seen `__prepare__` and `__missing__` before. The real innovation is how
+    JS put them together.
+  id: totrans-564
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们之前已经看到了`__prepare__`和`__missing__`。真正的创新在于JS如何将它们结合在一起。
+- en: 'Here is the source code for `WilyDict`, also from *autoconst.py*:'
+  id: totrans-565
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这里是`WilyDict`的源代码，也来自*autoconst.py*：
+- en: '[PRE46]'
+  id: totrans-566
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE46]'
+- en: While experimenting, I found that Python looked up `__name__` in the namespace
+    of the class under construction, causing `WilyDict` to add a `__name__` entry,
+    and increment `__next_value`. So I added that `if` statement in `__missing__`
+    to raise `KeyError` for keys that look like dunder attributes.
+  id: totrans-567
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在实验过程中，我发现Python在正在构建的类的命名空间中查找`__name__`，导致`WilyDict`添加了一个`__name__`条目，并增加了`__next_value`。因此，我在`__missing__`中添加了那个`if`语句，以便为看起来像dunder属性的键引发`KeyError`。
+- en: The *autoconst.py* package both requires and illustrates mastery of Python’s
+    dynamic class building machinery.
+  id: totrans-568
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*autoconst.py*包既需要又展示了对Python动态类构建机制的掌握。'
+- en: I had a great time adding more functionality to `AutoConstMeta` and `AutoConst`,
+    but instead of sharing my experiments, I will let you have fun playing with JS’s
+    ingenious hack.
+  id: totrans-569
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我很高兴为`AutoConstMeta`和`AutoConst`添加更多功能，但是我不会分享我的实验，而是让您享受JS的巧妙技巧。
+- en: 'Here are some ideas:'
+  id: totrans-570
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 以下是一些想法：
+- en: Make it possible to retrieve the constant name if you have the value. For example,
+    `Flavor[2]` could return `'vanilla'`. You can to this by implementing `__getitem__`
+    in `AutoConstMeta`. Since Python 3.9, you can implement [`__class_getitem__`](https://fpy.li/24-16)
+    in `AutoConst` itself.
+  id: totrans-571
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 如果你有值，可以检索常量名称。例如，`Flavor[2]`可以返回`'vanilla'`。您可以通过在`AutoConstMeta`中实现`__getitem__`来实现这一点。自Python
+    3.9起，您可以在`AutoConst`本身中实现[`__class_getitem__`](https://fpy.li/24-16)。
+- en: Support iteration over the class, by implementing `__iter__` on the metaclass.
+    I would make the `__iter__` yield the constants as `(name, value)` pairs.
+  id: totrans-572
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 支持对类进行迭代，通过在元类上实现`__iter__`。我会让`__iter__`产生常量作为`(name, value)`对。
+- en: Implement a new `Enum` variant. This would be a major undertaking, because the
+    `enum` package is full of tricks, including the `EnumMeta` metaclass with hundreds
+    of lines of code and a nontrivial `__prepare__` method.
+  id: totrans-573
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 实现一个新的`Enum`变体。这将是一项重大工作，因为`enum`包中充满了技巧，包括具有数百行代码和非平凡`__prepare__`方法的`EnumMeta`元类。
+- en: Enjoy!
+  id: totrans-574
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 尽情享受！
+- en: Note
+  id: totrans-575
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 注意
+- en: 'The `__class_getitem__` special method was added in Python 3.9 to support generic
+    types, as part of [PEP 585—Type Hinting Generics In Standard Collections](https://fpy.li/pep585).
+    Thanks to `__class_getitem__`, Python’s core developers did not have to write
+    a new metaclass for the built-in types to implement `__getitem__` so that we could
+    write generic type hints like `list[int]`. This is a narrow feature, but representative
+    of a wider use case for metaclasses: implementing operators and other special
+    methods to work at the class level, such as making the class itself iterable,
+    just like `Enum` subclasses.'
+  id: totrans-576
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`__class_getitem__`特殊方法是在Python 3.9中添加的，以支持通用类型，作为[PEP 585—标准集合中的类型提示通用](https://fpy.li/pep585)的一部分。由于`__class_getitem__`，Python的核心开发人员不必为内置类型编写新的元类来实现`__getitem__`，以便我们可以编写像`list[int]`这样的通用类型提示。这是一个狭窄的功能，但代表了元类的更广泛用例：实现运算符和其他特殊方法以在类级别工作，例如使类本身可迭代，就像`Enum`子类一样。'
+- en: Wrapping Up
+  id: totrans-577
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 总结
+- en: 'Metaclasses, as well as class decorators and `__init_subclass__` are useful
+    for:'
+  id: totrans-578
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 元类、类装饰器以及`__init_subclass__`对以下方面很有用：
+- en: Subclass registration
+  id: totrans-579
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 子类注册
+- en: Subclass structural validation
+  id: totrans-580
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 子类结构验证
+- en: Applying decorators to many methods at once
+  id: totrans-581
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 将装饰器应用于多个方法
+- en: Object serialization
+  id: totrans-582
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 对象序列化
+- en: Object-relational mapping
+  id: totrans-583
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 对象关系映射
+- en: Object-based persistence
+  id: totrans-584
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 基于对象的持久性
+- en: Implementing special methods at the class level
+  id: totrans-585
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 在类级别实现特殊方法
+- en: Implementing class features found in other languages, such as [traits](https://fpy.li/24-17)
+    and [aspect-oriented programming](https://fpy.li/24-18)
+  id: totrans-586
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 实现其他语言中的类特性，比如[特性](https://fpy.li/24-17)和[面向方面的编程](https://fpy.li/24-18)
+- en: Class metaprogramming can also help with performance issues in some cases, by
+    performing tasks at import time that otherwise would execute repeatedly at runtime.
+  id: totrans-587
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在某些情况下，类元编程也可以帮助解决性能问题，通过在导入时执行通常在运行时重复执行的任务。
+- en: 'To wrap up, let’s recall Alex Martelli’s final advice from his essay [“Waterfowl
+    and ABCs”](ch13.html#waterfowl_essay):'
+  id: totrans-588
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 最后，让我们回顾一下亚历克斯·马特利在他的文章[“水禽和ABC”](ch13.html#waterfowl_essay)中的最终建议：
+- en: And, *don’t* define custom ABCs (or metaclasses) in production code… if you
+    feel the urge to do so, I’d bet it’s likely to be a case of “all problems look
+    like a nail”-syndrome for somebody who just got a shiny new hammer—you (and future
+    maintainers of your code) will be much happier sticking with straightforward and
+    simple code, eschewing such depths.
+  id: totrans-589
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+  zh: 而且，*不要*在生产代码中定义自定义 ABCs（或元类）…如果你有这种冲动，我敢打赌这很可能是“所有问题看起来都像钉子”综合症的情况，对于刚刚得到闪亮新锤子的人来说，你（以及未来维护你代码的人）将更喜欢坚持简单直接的代码，避免深入这样的领域。
+- en: I believe Martelli’s advice applies not only to ABCs and metaclasses, but also
+    to class hierarchies, operator overloading, function decorators, descriptors,
+    class decorators, and class builders using `__init_subclass__`.
+  id: totrans-590
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我相信马特利的建议不仅适用于ABCs和元类，还适用于类层次结构、运算符重载、函数装饰器、描述符、类装饰器以及使用`__init_subclass__`的类构建器。
+- en: Those powerful tools exist primarily to support library and framework development.
+    Applications naturally should *use* those tools, as provided by the Python standard
+    library or external packages. But *implementing* them in application code is often
+    premature abstraction.
+  id: totrans-591
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这些强大的工具主要用于支持库和框架开发。应用程序自然应该*使用*这些工具，如 Python 标准库或外部包提供的那样。但在应用程序代码中*实现*它们通常是过早的抽象。
+- en: Good frameworks are extracted, not invented.^([18](ch24.html#idm46582363498656))
+  id: totrans-592
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+  zh: 好的框架是被提取出来的，而不是被发明的。^([18](ch24.html#idm46582363498656))
+- en: ''
+  id: totrans-593
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: David Heinemeier Hansson, creator of Ruby on Rails
+  id: totrans-594
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+  zh: 大卫·海涅迈尔·汉森，Ruby on Rails 的创始人
+- en: Chapter Summary
+  id: totrans-595
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 章节总结
+- en: This chapter started with an overview of attributes found in class objects,
+    such as `__qualname__` and the `__subclasses__()` method. Next, we saw how the
+    `type` built-in can be used to construct classes at runtime.
+  id: totrans-596
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 本章以类对象中发现的属性概述开始，比如`__qualname__`和`__subclasses__()`方法。接下来，我们看到了`type`内置函数如何用于在运行时构建类。
+- en: The `__init_subclass__` special method was introduced, with the first iteration
+    of a `Checked` base class designed to replace attribute type hints in user-defined
+    subclasses with `Field` instances that apply constructors to enforce the type
+    of those attributes at runtime.
+  id: totrans-597
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 引入了`__init_subclass__`特殊方法，设计了第一个旨在用`Field`实例替换用户定义子类中属性类型提示的`Checked`基类，这些实例应用构造函数以在运行时强制执行这些属性的类型。
+- en: The same idea was implemented with a `@checked` class decorator that adds features
+    to user-defined classes, similar to what `__init_subclass__` allows. We saw that
+    neither `__init_subclass__` nor a class decorator can dynamically configure `__slots__`,
+    because they operate only after a class is created.
+  id: totrans-598
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 通过一个`@checked`类装饰器实现了相同的想法，它为用户定义的类添加特性，类似于`__init_subclass__`允许的。我们看到，无论是`__init_subclass__`还是类装饰器都无法动态配置`__slots__`，因为它们只在类创建后操作。
+- en: The concepts of “import time” and “runtime” were clarified with experiments
+    showing the order in which Python code is executed when modules, descriptors,
+    class decorators, and `__init_subclass__` is involved.
+  id: totrans-599
+  prefs: []
+  type: TYPE_NORMAL
+  zh: “导入时间”和“运行时”概念通过实验证明了涉及模块、描述符、类装饰器和`__init_subclass__`时 Python 代码执行顺序的清晰。
+- en: Our coverage of metaclasses began with an overall explanation of `type` as a
+    metaclass, and how user-defined metaclasses can implement `__new__` to customize
+    the classes it builds. We then saw our first custom metaclass, the classic `MetaBunch`
+    example using `__slots__`. Next, another evaluation time experiment demonstrated
+    how the `__prepare__` and `__new__` methods of a metaclass are invoked earlier
+    than `__init_subclass__` and class decorators, providing opportunities for deeper
+    class customization.
+  id: totrans-600
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们对元类的覆盖始于对`type`作为元类的整体解释，以及用户定义的元类如何实现`__new__`以自定义它构建的类。然后我们看到了我们的第一个自定义元类，经典的`MetaBunch`示例使用`__slots__`。接下来，另一个评估时间实验展示了元类的`__prepare__`和`__new__`方法在`__init_subclass__`和类装饰器之前被调用，为更深层次的类定制提供了机会。
+- en: The third iteration of a `Checked` class builder with `Field` descriptors and
+    custom `__slots__` configuration was presented, followed by some general considerations
+    about metaclass usage in practice.
+  id: totrans-601
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 第三次迭代的`Checked`类构建器使用`Field`描述符和自定义`__slots__`配置，随后是关于实践中元类使用的一些一般考虑。
+- en: Finally, we saw the `AutoConst` hack invented by João S. O. Bueno, based on
+    the cunning idea of a metaclass with `__prepare__` returning a mapping that implements
+    `__missing__`. In less than 20 lines of code, *autoconst.py* showcases the power
+    of combining Python metaprogramming techniques
+  id: totrans-602
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 最后，我们看到了由乔昂·S·O·布恩诺发明的`AutoConst`黑客，基于一个具有`__prepare__`返回实现`__missing__`的映射的元类的狡猾想法。在不到20行的代码中，*autoconst.py*展示了结合
+    Python 元编程技术的强大力量。
+- en: I haven’t yet found a language that manages to be easy for beginners, practical
+    for professionals, and exciting for hackers in the way that Python is. Thanks,
+    Guido van Rossum and everybody else who makes it so.
+  id: totrans-603
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我还没有找到一种语言能像 Python 一样，既适合初学者，又适合专业人士，又能激发黑客的兴趣。感谢 Guido van Rossum 和所有使之如此的人。
+- en: Further Reading
+  id: totrans-604
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 进一步阅读
+- en: 'Caleb Hattingh—a technical reviewer of this book—wrote the [*autoslot*](https://fpy.li/24-20)
+    package, providing a metaclass to automatically create a `__slots__` attribute
+    in a user-defined class by inspecting the bytecode of `__init__` and finding all
+    assignments to attributes of `self`. It’s useful and also an excellent example
+    to study: only 74 lines of code in *autoslot.py*, including 20 lines of comments
+    explaining the most difficult parts.'
+  id: totrans-605
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Caleb Hattingh——本书的技术审阅者——编写了[*autoslot*](https://fpy.li/24-20)包，提供了一个元类，通过检查`__init__`的字节码并找到对`self`属性的所有赋值来自动创建一个`__slots__`属性在用户定义的类中。这非常有用，也是一个优秀的学习示例：*autoslot.py*中只有74行代码，包括20行注释解释最困难的部分。
+- en: The essential references for this chapter in the Python documentation are [“3.3.3\.
+    Customizing class creation”](https://fpy.li/24-21) in the “Data Model” chapter
+    of *The Python Language Reference*, which covers `__init_subclass__` and metaclasses.
+    The [`type` class documentation](https://fpy.li/24-22) in the “Built-in Functions”
+    page, and [“4.13\. Special Attributes”](https://fpy.li/24-1) of the “Built-in
+    Types” chapter in the *The Python Standard Library* are also essential reading.
+  id: totrans-606
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 本章在Python文档中的基本参考资料是[*Python语言参考*](https://fpy.li/24-21)中“数据模型”章节中的“3.3.3\.
+    自定义类创建”，涵盖了`__init_subclass__`和元类。在“内置函数”页面的[`type`类文档](https://fpy.li/24-22)，以及*Python标准库*中“内置类型”章节的[“4.13\.
+    特殊属性”](https://fpy.li/24-1)也是必读的。
+- en: 'In the *The Python Standard Library*, the [`types` module documentation](https://fpy.li/24-24)
+    covers two functions added in Python 3.3 that simplify class metaprogramming:
+    `types.new_class` and `types.prepare_class`.'
+  id: totrans-607
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在*Python标准库*中，[`types`模块文档](https://fpy.li/24-24)涵盖了Python 3.3中添加的两个简化类元编程的函数：`types.new_class`和`types.prepare_class`。
+- en: 'Class decorators were formalized in [PEP 3129—Class Decorators](https://fpy.li/24-25),
+    written by Collin Winter, with the reference implementation authored by Jack Diederich.
+    The PyCon 2009 talk “Class Decorators: Radically Simple” ([video](https://fpy.li/24-26)),
+    also by Jack Diederich, is a quick introduction to the feature. Besides `@dataclass`,
+    an interesting—and much simpler—example of a class decorator in Python’s standard
+    library is [`functools.total_ordering`](https://fpy.li/24-27) that generates special
+    methods for object comparison.'
+  id: totrans-608
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 类装饰器在[PEP 3129—类装饰器](https://fpy.li/24-25)中得到正式规范，由Collin Winter编写，参考实现由Jack
+    Diederich编写。PyCon 2009年的演讲“类装饰器：彻底简化”（[视频](https://fpy.li/24-26)），也是由Jack Diederich主持，是该功能的一个快速介绍。除了`@dataclass`之外，在Python标准库中一个有趣且简单得多的类装饰器示例是[`functools.total_ordering`](https://fpy.li/24-27)，它为对象比较生成特殊方法。
+- en: For metaclasses, the main reference in Python’s documentation is [PEP 3115—Metaclasses
+    in Python 3000](https://fpy.li/pep3115), in which the `__prepare__` special method
+    was introduced.
+  id: totrans-609
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 对于元类，在Python文档中的主要参考资料是[PEP 3115—Python 3000中的元类](https://fpy.li/pep3115)，其中引入了`__prepare__`特殊方法。
+- en: '[*Python in a Nutshell*](https://fpy.li/pynut3), 3rd ed., by Alex Martelli,
+    Anna Ravenscroft, and Steve Holden, is authoritative, but was written before [PEP
+    487—Simpler customization of class creation](https://fpy.li/pep487) came out.
+    The main metaclass example in that book—`MetaBunch`—is still valid, because it
+    can’t be written with simpler mechanisms. Brett Slatkin’s [*Effective Python*](https://fpy.li/effectpy),
+    2nd ed. (Addison-Wesley) has several up-to-date examples of class building techniques,
+    including metaclasses.'
+  id: totrans-610
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[*Python速查手册*](https://fpy.li/pynut3)，第3版，由Alex Martelli、Anna Ravenscroft和Steve
+    Holden编写，权威性很高，但是在[PEP 487—简化类创建](https://fpy.li/pep487)发布之前编写。该书中的主要元类示例——`MetaBunch`——仍然有效，因为它不能用更简单的机制编写。Brett
+    Slatkin的[*Effective Python*](https://fpy.li/effectpy)，第2版（Addison-Wesley）包含了几个关于类构建技术的最新示例，包括元类。'
+- en: 'To learn about the origins of class metaprogramming in Python, I recommend
+    Guido van Rossum’s paper from 2003, [“Unifying types and classes in Python 2.2”](https://fpy.li/24-28).
+    The text applies to modern Python as well, as it covers what were then called
+    the “new-style” class semantics—the default semantics in Python 3—including descriptors
+    and metaclasses. One of the references cited by Guido is *Putting Metaclasses
+    to Work: a New Dimension in Object-Oriented Programming*, by Ira R. Forman and
+    Scott H. Danforth (Addison-Wesley), a book to which he gave five stars on *Amazon.com*,
+    adding the following review:'
+  id: totrans-611
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '要了解Python中类元编程的起源，我推荐Guido van Rossum在2003年的论文[“统��Python 2.2中的类型和类”](https://fpy.li/24-28)。该文本也适用于现代Python，因为它涵盖了当时称为“新式”类语义的内容——Python
+    3中的默认语义，包括描述符和元类。Guido引用的参考文献之一是*Ira R. Forman和Scott H. Danforth*的*Putting Metaclasses
+    to Work: a New Dimension in Object-Oriented Programming*（Addison-Wesley），这本书在*Amazon.com*上获得了五星评价，他在评论中补充说：'
+- en: '**This book contributed to the design for metaclasses in Python 2.2**'
+  id: totrans-612
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+  zh: '**这本书为Python 2.2中的元类设计做出了贡献**'
+- en: ''
+  id: totrans-613
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: Too bad this is out of print; I keep referring to it as the best tutorial I
+    know for the difficult subject of cooperative multiple inheritance, supported
+    by Python via the `super()` function.^([19](ch24.html#idm46582363449648))
+  id: totrans-614
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+  zh: 真遗憾这本书已经绝版；我一直认为这是我所知道的关于协同多重继承这一困难主题的最佳教程，通过Python的`super()`函数支持。^([19](ch24.html#idm46582363449648))
+- en: 'If you are keen on metaprogramming, you may wish Python had the ultimate metaprogramming
+    feature: syntactic macros, as offered in the Lisp family of languages and—more
+    recently—by Elixir and Rust. Syntactic macros are more powerful and less error
+    prone than the primitive code substitution macros in the C language. They are
+    special functions that rewrite source code using custom syntax into standard code
+    before the compilation step, enabling developers to introduce new language constructs
+    without changing the compiler. Like operator overloading, syntactic macros can
+    be abused. But as long as the community understands and manages the downsides,
+    they support powerful and user-friendly abstractions, like DSLs (Domain-Specific
+    Languages). In September 2020, Python core developer Mark Shannon posted [PEP
+    638—Syntactic Macros](https://fpy.li/pep638), advocating just that. A year after
+    it was initially published, PEP 638 was still in draft and there were no ongoing
+    discussions about it. Clearly it’s not a top priority for the Python core developers.
+    I would like to see PEP 638 further discussed and eventually approved. Syntactic
+    macros would allow the Python community to experiment with controversial new features,
+    such as the walrus operator ([PEP 572](https://fpy.li/pep572)), pattern matching
+    ([PEP 634](https://fpy.li/pep634)), and alternative rules for evaluating type
+    hints (PEPs [563](https://fpy.li/pep563) and [649](https://fpy.li/pep649)) before
+    making permanent changes to the core language. Meanwhile, you can get a taste
+    of syntactic macros with the [MacroPy](https://fpy.li/24-29) package.'
+  id: totrans-615
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果你对元编程感兴趣，你可能希望 Python 拥有终极的元编程特性：语法宏，就像 Lisp 系列语言以及最近的 Elixir 和 Rust 所提供的那样。语法宏比
+    C 语言中的原始代码替换宏更强大且更不容易出错。它们是特殊函数，可以在编译步骤之前使用自定义语法重写源代码为标准代码，使开发人员能够引入新的语言构造而不改变编译器。就像运算符重载一样，语法宏可能会被滥用。但只要社区理解并管理这些缺点，它们支持强大且用户友好的抽象，比如
+    DSL（领域特定语言）。2020 年 9 月，Python 核心开发者 Mark Shannon 发布了[PEP 638—语法宏](https://fpy.li/pep638)，提倡这一点。在最初发布一年后，PEP
+    638 仍处于草案阶段，没有关于它的讨论。显然，这不是 Python 核心开发者的首要任务。我希望看到 PEP 638 进一步讨论并最终获得批准。语法宏将允许
+    Python 社区在对核心语言进行永久更改之前尝试具有争议性的新功能，比如海象操作符（[PEP 572](https://fpy.li/pep572)）、模式匹配（[PEP
+    634](https://fpy.li/pep634)）以及评估类型提示的替代规则（PEP [563](https://fpy.li/pep563) 和 [649](https://fpy.li/pep649)）。与此同时，你可以通过[MacroPy](https://fpy.li/24-29)包尝试语法宏的味道。
+- en: ^([1](ch24.html#idm46582370208288-marker)) Quote from Chapter 2, “Expression”
+    of *The Elements of Programming Style*, 2nd ed. (McGraw-Hill), page 10.
+  id: totrans-616
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([1](ch24.html#idm46582370208288-marker)) 引自《编程风格的要素》第二版第2章“表达式”，第10页。
+- en: ^([2](ch24.html#idm46582370203888-marker)) That doesn’t mean PEP 487 broke code
+    that used those features. It just means that some code that used class decorators
+    or metaclasses prior to Python 3.6 can now be refactored to use plain classes,
+    resulting in simpler and possibly more efficient code.
+  id: totrans-617
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([2](ch24.html#idm46582370203888-marker)) 这并不意味着 PEP 487 打破了使用这些特性的代码。这只是意味着一些在
+    Python 3.6 之前使用类装饰器或元类的代码现在可以重构为使用普通类，从而简化并可能提高效率。
+- en: ^([3](ch24.html#idm46582369630768-marker)) Thanks to my friend J. S. O. Bueno
+    for contributing to this example.
+  id: totrans-618
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([3](ch24.html#idm46582369630768-marker)) 感谢我的朋友 J. S. O. Bueno 对这个示例的贡献。
+- en: ^([4](ch24.html#idm46582369288640-marker)) I did not add type hints to the arguments
+    because the actual types are `Any`. I put the return type hint because otherwise
+    Mypy will not check inside the method.
+  id: totrans-619
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([4](ch24.html#idm46582369288640-marker)) 我没有为参数添加类型提示，因为实际类型是`Any`。我添加了返回类型提示，否则
+    Mypy 将不会检查方法内部。
+- en: ^([5](ch24.html#idm46582368980672-marker)) That’s true for any object, except
+    when its class overrides the `__str__` or `__repr__` methods inherited from `object`
+    with broken implementations.
+  id: totrans-620
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([5](ch24.html#idm46582368980672-marker)) 对于任何对象来说都是如此，除非它的类重写了从`object`继承的`__str__`或`__repr__`方法并具有错误的实现。
+- en: '^([6](ch24.html#idm46582368978384-marker)) This solution avoids using `None`
+    as a default. Avoiding null values is a [good idea](https://fpy.li/24-5). They
+    are hard to avoid in general, but easy in some cases. In Python as well as SQL,
+    I prefer to represent missing data in a text field with an empty string instead
+    of `None` or `NULL`. Learning Go reinforced this idea: variables and struct fields
+    of primitive types in Go are initialized by default with a “zero value.” See [“Zero
+    values” in the online *Tour of Go*](https://fpy.li/24-6) if you are curious.'
+  id: totrans-621
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([6](ch24.html#idm46582368978384-marker)) 这个解决方案避免使用`None`作为默认值。避免空值是一个[好主意](https://fpy.li/24-5)。一般情况下很难避免，但在某些情况下很容易。在
+    Python 和 SQL 中，我更喜欢用空字符串代替`None`或`NULL`来表示缺失的数据。学习 Go 强化了这个想法：在 Go 中，原始类型的变量和结构字段默认初始化为“零值”。如果你感兴趣，可以查看[在线
+    *Go 之旅*中的“零值”](https://fpy.li/24-6)。
+- en: ^([7](ch24.html#idm46582368512208-marker)) I believe that `callable` should
+    be made suitable for type hinting. As of May 6, 2021, this is an [open issue](https://fpy.li/24-7).
+  id: totrans-622
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([7](ch24.html#idm46582368512208-marker)) 我认为`callable`应该适用于类型提示。截至 2021 年
+    5 月 6 日，这是一个[未解决的问题](https://fpy.li/24-7)。
+- en: ^([8](ch24.html#idm46582368159120-marker)) As mentioned in [“Loops, Sentinels,
+    and Poison Pills”](ch19.html#good_poison_pill_tip), the `Ellipsis` object is a
+    convenient and safe sentinel value. It has been around for a long time, but recently
+    people are finding more uses for it, as we see in type hints and NumPy.
+  id: totrans-623
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([8](ch24.html#idm46582368159120-marker)) 如在[“循环、哨兵和毒丸”](ch19.html#good_poison_pill_tip)中提到的，`Ellipsis`对象是一个方便且安全的哨兵值。它已经存在很长时间了，但最近人们发现它有更多的用途，正如我们在类型提示和
+    NumPy 中看到的。
+- en: ^([9](ch24.html#idm46582367837152-marker)) The subtle concept of an overriding
+    descriptor was explained in [“Overriding Descriptors”](ch23.html#overriding_descriptor_sec).
+  id: totrans-624
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([9](ch24.html#idm46582367837152-marker)) 重写描述符的微妙概念在[“重写描述符”](ch23.html#overriding_descriptor_sec)中有解释。
+- en: ^([10](ch24.html#idm46582367752592-marker)) This rationale appears in the abstract
+    of [PEP 557–Data Classes](https://fpy.li/24-9) to explain why it was implemented
+    as a class decorator.
+  id: totrans-625
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([10](ch24.html#idm46582367752592-marker)) 这个理由出现在[PEP 557–数据类](https://fpy.li/24-9)的摘要中，解释了为什么它被实现为一个类装饰器。
+- en: ^([11](ch24.html#idm46582367217808-marker)) Contrast with the `import` statement
+    in Java, which is just a declaration to let the compiler know that certain packages
+    are required.
+  id: totrans-626
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([11](ch24.html#idm46582367217808-marker)) 与Java中的`import`语句相比，后者只是一个声明，让编译器知道需要某些包。
+- en: ^([12](ch24.html#idm46582367216544-marker)) I’m not saying opening a database
+    connection just because a module is imported is a good idea, only pointing out
+    it can be done.
+  id: totrans-627
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([12](ch24.html#idm46582367216544-marker)) 我并不是说仅仅因为导入模块就打开数据库连接是一个好主意，只是指出这是可以做到的。
+- en: '^([13](ch24.html#idm46582366318608-marker)) Message to comp.lang.python, subject:
+    [“Acrimony in c.l.p.”](https://fpy.li/24-12). This is another part of the same
+    message from December 23, 2002, quoted in the [Preface](preface01.html#preface_sec).
+    The TimBot was inspired that day.'
+  id: totrans-628
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([13](ch24.html#idm46582366318608-marker)) 发送给comp.lang.python的消息，主题：[“c.l.p.中的尖刻”](https://fpy.li/24-12)。这是2002年12月23日同一消息的另一部分，在[前言](preface01.html#preface_sec)中引用。那天TimBot受到启发。
+- en: '^([14](ch24.html#idm46582366098400-marker)) The authors kindly gave me permission
+    to use their example. `MetaBunch` first appeared in a message posted by Martelli
+    in the comp.lang.python group on July 7, 2002, with the subject line [“a nice
+    metaclass example (was Re: structs in python)”](https://fpy.li/24-13), following
+    a discussion about record-like data structures in Python. Martelli’s original
+    code for Python 2.2 still runs after a single change: to use a metaclass in Python
+    3, you must use the metaclass keyword argument in the class declaration, e.g.,
+    `Bunch(metaclass=MetaBunch)`, instead of the older convention of adding a `__metaclass__`
+    class-level attribute.'
+  id: totrans-629
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([14](ch24.html#idm46582366098400-marker)) 作者们很友好地允许我使用他们的例子。`MetaBunch`首次出现在Martelli于2002年7月7日在comp.lang.python组发布的消息中，主题是[“一个不错的元类示例（回复：Python中的结构）”](https://fpy.li/24-13)，在讨论Python中类似记录的数据结构之后。Martelli的原始代码适用于Python
+    2.2，只需进行一次更改即可在Python 3中使用元类，您必须在类声明中使用metaclass关键字参数，例如，`Bunch(metaclass=MetaBunch)`，而不是旧的约定，即添加一个`__metaclass__`类级属性。
+- en: ^([15](ch24.html#idm46582364050896-marker)) In the first edition of *Fluent
+    Python*, the more advanced versions of the `LineItem` class used a metaclass just
+    to set the storage name of the attributes. See the code in the metaclasses of
+    [bulkfood in the first edition code repository](https://fpy.li/24-14).
+  id: totrans-630
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([15](ch24.html#idm46582364050896-marker)) 在《流畅的Python》第一版中，更高级版本的`LineItem`类使用元类仅仅是为了设置属性的存储名称。请查看第一版代码库中[bulkfood的元类代码](https://fpy.li/24-14)。
+- en: ^([16](ch24.html#idm46582363814688-marker)) If you just got dizzy considering
+    the implications of multiple inheritance with metaclasses, good for you. I’d stay
+    way from this solution as well.
+  id: totrans-631
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([16](ch24.html#idm46582363814688-marker)) 如果您考虑到使用元类的多重继承的影响而感到头晕，那很好。我也会远离这个解决方案。
+- en: ^([17](ch24.html#idm46582363807680-marker)) I made a living writing Django code
+    for a few years before I decided to study how Django’s model fields were implemented.
+    Only then I learned about descriptors and metaclasses.
+  id: totrans-632
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([17](ch24.html#idm46582363807680-marker)) 在决定研究Django的模型字段是如何实现之前，我靠写Django代码谋生几年。直到那时我才了解描述符和元类。
+- en: ^([18](ch24.html#idm46582363498656-marker)) The phrase is widely quoted. I found
+    an early direct quote in [a post](https://fpy.li/24-19) in DHH’s blog from 2005.
+  id: totrans-633
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([18](ch24.html#idm46582363498656-marker)) 这句话被广泛引用。我在DHH的博客中发现了一个早期的直接引用[帖子](https://fpy.li/24-19)，发布于2005年。
+- en: ^([19](ch24.html#idm46582363449648-marker)) I bought a used copy and found it
+    a very challenging read.
+  id: totrans-634
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([19](ch24.html#idm46582363449648-marker)) 我买了一本二手书，发现它是一本非常具有挑战性的阅读。
+- en: ^([20](ch24.html#idm46582363434976-marker)) See p. xvii. Full text available
+    at [Berkeley.edu](https://fpy.li/24-30).
+  id: totrans-635
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([20](ch24.html#idm46582363434976-marker)) 请参见第xvii页。完整文本可在[Berkeley.edu](https://fpy.li/24-30)上找到。
+- en: '^([21](ch24.html#idm46582363430128-marker)) *Machine Beauty: Elegance and the
+    Heart of Technology* by David Gelernter (Basic Books) opens with an intriguing
+    discussion of elegance and aesthetics in works of engineering, from bridges to
+    software. The later chapters are not great, but the opening is worth the price.'
+  id: totrans-636
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([21](ch24.html#idm46582363430128-marker)) *《机器之美：优雅与技术之心》* 作者David Gelernter（Basic
+    Books）开篇讨论了工程作品中的优雅和美学，从桥梁到软件。后面的章节不是很出色，但开篇值得一读。

@@ -1,0 +1,2444 @@
+- en: Chapter 11\. A Pythonic Object
+  id: totrans-0
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 第11章。一个Python风格的对象
+- en: For a library or framework to be Pythonic is to make it as easy and natural
+    as possible for a Python programmer to pick up how to perform a task.
+  id: totrans-1
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+  zh: 使库或框架成为Pythonic是为了让Python程序员尽可能轻松和自然地学会如何执行任务。
+- en: ''
+  id: totrans-2
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: Martijn Faassen, creator of Python and JavaScript frameworks.^([1](ch11.html#idm46582432889888))
+  id: totrans-3
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+  zh: Python和JavaScript框架的创造者Martijn Faassen。^([1](ch11.html#idm46582432889888))
+- en: 'Thanks to the Python Data Model, your user-defined types can behave as naturally
+    as the built-in types. And this can be accomplished without inheritance, in the
+    spirit of *duck typing*: you just implement the methods needed for your objects
+    to behave as expected.'
+  id: totrans-4
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 由于Python数据模型，您定义的类型可以像内置类型一样自然地行为。而且这可以在不继承的情况下实现，符合*鸭子类型*的精神：你只需实现对象所需的方法，使其行为符合预期。
+- en: In previous chapters, we studied the behavior of many built-in objects. We will
+    now build user-defined classes that behave as real Python objects. Your application
+    classes probably don’t need and should not implement as many special methods as
+    the examples in this chapter. But if you are writing a library or a framework,
+    the programmers who will use your classes may expect them to behave like the classes
+    that Python provides. Fulfilling that expectation is one way of being “Pythonic.”
+  id: totrans-5
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在之前的章节中，我们研究了许多内置对象的行为。现在我们将构建行为像真正的Python对象一样的用户定义类。你的应用程序类可能不需要并且不应该实现本章示例中那么多特殊方法。但是如果你正在编写一个库或框架，那么将使用你的类的程序员可能希望它们的行为像Python提供的类一样。满足这种期望是成为“Pythonic”的一种方式。
+- en: This chapter starts where [Chapter 1](ch01.html#data_model) ended, by showing
+    how to implement several special methods that are commonly seen in Python objects
+    of many different types.
+  id: totrans-6
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 本章从[第1章](ch01.html#data_model)结束的地方开始，展示了如何实现在许多不同类型的Python对象中经常看到的几个特殊方法。
+- en: 'In this chapter, we will see how to:'
+  id: totrans-7
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在本章中，我们将看到如何：
+- en: Support the built-in functions that convert objects to other types (e.g., `repr()`,
+    `bytes()`, `complex()`, etc.)
+  id: totrans-8
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 支持将对象转换为其他类型的内置函数（例如`repr()`、`bytes()`、`complex()`等）
+- en: Implement an alternative constructor as a class method
+  id: totrans-9
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 实现一个作为类方法的替代构造函数
+- en: Extend the format mini-language used by f-strings, the `format()` built-in,
+    and the `str.format()` method
+  id: totrans-10
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 扩展f-strings、`format()`内置函数和`str.format()`方法使用的格式迷你语言
+- en: Provide read-only access to attributes
+  id: totrans-11
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 提供对属性的只读访问
+- en: Make an object hashable for use in sets and as `dict` keys
+  id: totrans-12
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 使对象可哈希以在集合中使用和作为`dict`键
+- en: Save memory with the use of `__slots__`
+  id: totrans-13
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 使用`__slots__`节省内存
+- en: We’ll do all that as we develop `Vector2d`, a simple two-dimensional Euclidean
+    vector type. This code will be the foundation of an N-dimensional vector class
+    in [Chapter 12](ch12.html#user_defined_sequences).
+  id: totrans-14
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当我们开发`Vector2d`时，我们将做所有这些工作，这是一个简单的二维欧几里德向量类型。这段代码将是[第12章](ch12.html#user_defined_sequences)中N维向量类的基础。
+- en: 'The evolution of the example will be paused to discuss two conceptual topics:'
+  id: totrans-15
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 示例的演变将暂停讨论两个概念性主题：
+- en: How and when to use the `@classmethod` and `@staticmethod` decorators
+  id: totrans-16
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 如何以及何时使用`@classmethod`和`@staticmethod`装饰器
+- en: 'Private and protected attributes in Python: usage, conventions, and limitations'
+  id: totrans-17
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: Python中的私有和受保护属性：用法、约定和限制
+- en: What’s New in This Chapter
+  id: totrans-18
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 本章的新内容
+- en: I added a new epigraph and a few words in the second paragraph of the chapter
+    to address the concept of “Pythonic”—which was only discussed at the very end
+    in the first edition.
+  id: totrans-19
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我在本章的第二段中添加了一个新的引语和一些文字，以解释“Pythonic”的概念——这在第一版中只在最后讨论过。
+- en: '[“Formatted Displays”](#format_display_sec) was updated to mention f-strings,
+    introduced in Python 3.6. It’s a small change because f-strings support the same
+    formatting mini-language as the `format()` built-in and the `str.format()` method,
+    so any previously implemented `__format__` methods simply work with f-strings.'
+  id: totrans-20
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[“格式化显示”](#format_display_sec)已更新以提及在Python 3.6中引入的f-strings。这是一个小改变，因为f-strings支持与`format()`内置和`str.format()`方法相同的格式迷你语言，因此以前实现的`__format__`方法可以与f-strings一起使用。'
+- en: The rest of the chapter barely changed—the special methods are mostly the same
+    since Python 3.0, and the core ideas appeared in Python 2.2.
+  id: totrans-21
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 本章的其余部分几乎没有变化——自Python 3.0以来，特殊方法大部分相同，核心思想出现在Python 2.2中。
+- en: Let’s get started with the object representation methods.
+  id: totrans-22
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 让我们开始使用对象表示方法。
+- en: Object Representations
+  id: totrans-23
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 对象表示
+- en: 'Every object-oriented language has at least one standard way of getting a string
+    representation from any object. Python has two:'
+  id: totrans-24
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 每种面向对象的语言至少有一种标准方法可以从任何对象获取字符串表示。Python有两种：
+- en: '`repr()`'
+  id: totrans-25
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`repr()`'
+- en: Return a string representing the object as the developer wants to see it. It’s
+    what you get when the Python console or a debugger shows an object.
+  id: totrans-26
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 返回一个表示开发者想要看到的对象的字符串。当Python控制台或调试器显示一个对象时，你会得到这个。
+- en: '`str()`'
+  id: totrans-27
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`str()`'
+- en: Return a string representing the object as the user wants to see it. It’s what
+    you get when you `print()` an object.
+  id: totrans-28
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 返回一个表示用户想要看到的对象的字符串。当你`print()`一个对象时，你会得到这个。
+- en: The special methods `__repr__` and `__str__` support `repr()` and `str()`, as
+    we saw in [Chapter 1](ch01.html#data_model).
+  id: totrans-29
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 特殊方法`__repr__`和`__str__`支持`repr()`和`str()`，正如我们在[第1章](ch01.html#data_model)中看到的��
+- en: 'There are two additional special methods to support alternative representations
+    of objects: `__bytes__` and `__format__`. The `__bytes__` method is analogous
+    to `__str__`: it’s called by `bytes()` to get the object represented as a byte
+    sequence. Regarding `__format__`, it is used by f-strings, by the built-in function
+    `format()`, and by the `str.format()` method. They call `obj.__format__(format_spec)`
+    to get string displays of objects using special formatting codes. We’ll cover
+    `__bytes__` in the next example, and `__format__` after that.'
+  id: totrans-30
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 有两个额外的特殊方法支持对象的替代表示：`__bytes__`和`__format__`。`__bytes__`方法类似于`__str__`：它被`bytes()`调用以获取对象表示为字节序列。关于`__format__`，它被f-strings、内置函数`format()`和`str.format()`方法使用。它们调用`obj.__format__(format_spec)`以获取使用特殊格式代码的对象的字符串显示。我们将在下一个示例中介绍`__bytes__`，然后介绍`__format__`。
+- en: Warning
+  id: totrans-31
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 警告
+- en: If you’re coming from Python 2, remember that in Python 3 `__repr__`, `__str__`,
+    and `__format__` must always return Unicode strings (type `str`). Only `__bytes__`
+    is supposed to return a byte sequence (type `bytes`).
+  id: totrans-32
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果您从 Python 2 转换而来，请记住，在 Python 3 中，`__repr__`，`__str__` 和 `__format__` 必须始终返回
+    Unicode 字符串（类型 `str`）。 只有 `__bytes__` 应该返回字节序列（类型 `bytes`）。
+- en: Vector Class Redux
+  id: totrans-33
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 向量类 Redux
+- en: In order to demonstrate the many methods used to generate object representations,
+    we’ll use a `Vector2d` class similar to the one we saw in [Chapter 1](ch01.html#data_model).
+    We will build on it in this and future sections. [Example 11-1](#ex_vector2d_v0_demo)
+    illustrates the basic behavior we expect from a `Vector2d` instance.
+  id: totrans-34
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了演示生成对象表示所使用的许多方法，我们将使用类似于我们在[第 1 章](ch01.html#data_model)中看到的 `Vector2d` 类。
+    我们将在本节和未来的章节中继续完善它。 [示例 11-1](#ex_vector2d_v0_demo) 说明了我��从 `Vector2d` 实例中期望的基本行为。
+- en: Example 11-1\. `Vector2d` instances have several representations
+  id: totrans-35
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 11-1。 `Vector2d` 实例有几种表示形式
+- en: '[PRE0]'
+  id: totrans-36
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE0]'
+- en: '[![1](assets/1.png)](#co_a_pythonic_object_CO1-1)'
+  id: totrans-37
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_a_pythonic_object_CO1-1)'
+- en: The components of a `Vector2d` can be accessed directly as attributes (no getter
+    method calls).
+  id: totrans-38
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`Vector2d` 的组件可以直接作为属性访问（无需 getter 方法调用）。'
+- en: '[![2](assets/2.png)](#co_a_pythonic_object_CO1-2)'
+  id: totrans-39
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_a_pythonic_object_CO1-2)'
+- en: A `Vector2d` can be unpacked to a tuple of variables.
+  id: totrans-40
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`Vector2d` 可以解包为一组变量的元组。'
+- en: '[![3](assets/3.png)](#co_a_pythonic_object_CO1-3)'
+  id: totrans-41
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_a_pythonic_object_CO1-3)'
+- en: The `repr` of a `Vector2d` emulates the source code for constructing the instance.
+  id: totrans-42
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`Vector2d` 的 `repr` 模拟了构造实例的源代码。'
+- en: '[![4](assets/4.png)](#co_a_pythonic_object_CO1-4)'
+  id: totrans-43
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_a_pythonic_object_CO1-4)'
+- en: Using `eval` here shows that the `repr` of a `Vector2d` is a faithful representation
+    of its constructor call.^([2](ch11.html#idm46582432549616))
+  id: totrans-44
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在这里使用 `eval` 显示 `Vector2d` 的 `repr` 是其构造函数调用的忠实表示。^([2](ch11.html#idm46582432549616))
+- en: '[![5](assets/5.png)](#co_a_pythonic_object_CO1-5)'
+  id: totrans-45
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_a_pythonic_object_CO1-5)'
+- en: '`Vector2d` supports comparison with `==`; this is useful for testing.'
+  id: totrans-46
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`Vector2d` 支持与 `==` 的比较；这对于测试很有用。'
+- en: '[![6](assets/6.png)](#co_a_pythonic_object_CO1-6)'
+  id: totrans-47
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![6](assets/6.png)](#co_a_pythonic_object_CO1-6)'
+- en: '`print` calls `str`, which for `Vector2d` produces an ordered pair display.'
+  id: totrans-48
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`print` 调用 `str`，对于 `Vector2d` 会产生一个有序对显示。'
+- en: '[![7](assets/7.png)](#co_a_pythonic_object_CO1-7)'
+  id: totrans-49
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![7](assets/7.png)](#co_a_pythonic_object_CO1-7)'
+- en: '`bytes` uses the `__bytes__` method to produce a binary representation.'
+  id: totrans-50
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`bytes` 使用 `__bytes__` 方法生成二进制表示。'
+- en: '[![8](assets/8.png)](#co_a_pythonic_object_CO1-8)'
+  id: totrans-51
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![8](assets/8.png)](#co_a_pythonic_object_CO1-8)'
+- en: '`abs` uses the `__abs__` method to return the magnitude of the `Vector2d`.'
+  id: totrans-52
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`abs` 使用 `__abs__` 方法返回 `Vector2d` 的大小。'
+- en: '[![9](assets/9.png)](#co_a_pythonic_object_CO1-9)'
+  id: totrans-53
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![9](assets/9.png)](#co_a_pythonic_object_CO1-9)'
+- en: '`bool` uses the `__bool__` method to return `False` for a `Vector2d` of zero
+    magnitude or `True` otherwise.'
+  id: totrans-54
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`bool` 使用 `__bool__` 方法，对于零大小的 `Vector2d` 返回 `False`，否则返回 `True`。'
+- en: '`Vector2d` from [Example 11-1](#ex_vector2d_v0_demo) is implemented in *vector2d_v0.py*
+    ([Example 11-2](#ex_vector2d_v0)). The code is based on [Example 1-2](ch01.html#ex_vector2d),
+    except for the methods for the `+` and `*` operations, which we’ll see later in
+    [Chapter 16](ch16.html#operator_overloading). We’ll add the method for `==` since
+    it’s useful for testing. At this point, `Vector2d` uses several special methods
+    to provide operations that a Pythonista expects in a well-designed object.'
+  id: totrans-55
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`Vector2d` 来自[示例 11-1](#ex_vector2d_v0_demo)，在 *vector2d_v0.py* 中实现（[示例 11-2](#ex_vector2d_v0)）。
+    该代码基于[示例 1-2](ch01.html#ex_vector2d)，除了 `+` 和 `*` 操作的方法，我们稍后会看到在[第 16 章](ch16.html#operator_overloading)中。
+    我们将添加 `==` 方法，因为它对于测试很有用。 到目前为止，`Vector2d` 使用了几个特殊方法来提供 Pythonista 在设计良好的对象中期望的操作。'
+- en: 'Example 11-2\. vector2d_v0.py: methods so far are all special methods'
+  id: totrans-56
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 11-2。 vector2d_v0.py：到目前为止，所有方法都是特殊方法
+- en: '[PRE1]'
+  id: totrans-57
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE1]'
+- en: '[![1](assets/1.png)](#co_a_pythonic_object_CO2-1)'
+  id: totrans-58
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_a_pythonic_object_CO2-1)'
+- en: '`typecode` is a class attribute we’ll use when converting `Vector2d` instances
+    to/from `bytes`.'
+  id: totrans-59
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`typecode` 是我们在将 `Vector2d` 实例转换为/从 `bytes` 时将使用的类属性。'
+- en: '[![2](assets/2.png)](#co_a_pythonic_object_CO2-2)'
+  id: totrans-60
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_a_pythonic_object_CO2-2)'
+- en: Converting `x` and `y` to `float` in `__init__` catches errors early, which
+    is helpful in case `Vector2d` is called with unsuitable arguments.
+  id: totrans-61
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在 `__init__` 中将 `x` 和 `y` 转换为 `float` 可以及早捕获错误，这在 `Vector2d` 被使用不合适的参数调用时很有帮助。
+- en: '[![3](assets/3.png)](#co_a_pythonic_object_CO2-3)'
+  id: totrans-62
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_a_pythonic_object_CO2-3)'
+- en: '`__iter__` makes a `Vector2d` iterable; this is what makes unpacking work (e.g,
+    `x, y = my_vector`). We implement it simply by using a generator expression to
+    yield the components one after the other.^([3](ch11.html#idm46582432214800))'
+  id: totrans-63
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`__iter__` 使 `Vector2d` 可迭代；这就是解包工作的原因（例如，`x, y = my_vector`）。 我们简单地通过使用生成器表达式逐个产生组件来实现它。^([3](ch11.html#idm46582432214800))'
+- en: '[![4](assets/4.png)](#co_a_pythonic_object_CO2-4)'
+  id: totrans-64
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_a_pythonic_object_CO2-4)'
+- en: '`__repr__` builds a string by interpolating the components with `{!r}` to get
+    their `repr`; because `Vector2d` is iterable, `*self` feeds the `x` and `y` components
+    to `format`.'
+  id: totrans-65
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`__repr__` 通过使用 `{!r}` 插值组件来构建字符串；因为 `Vector2d` 是可迭代的，`*self` 将 `x` 和 `y` 组件提供给
+    `format`。'
+- en: '[![5](assets/5.png)](#co_a_pythonic_object_CO2-5)'
+  id: totrans-66
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_a_pythonic_object_CO2-5)'
+- en: From an iterable `Vector2d`, it’s easy to build a `tuple` for display as an
+    ordered pair.
+  id: totrans-67
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 从可迭代的 `Vector2d` 中，很容易构建一个用于显示有序对的 `tuple`。
+- en: '[![6](assets/6.png)](#co_a_pythonic_object_CO2-6)'
+  id: totrans-68
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![6](assets/6.png)](#co_a_pythonic_object_CO2-6)'
+- en: To generate `bytes`, we convert the typecode to `bytes` and concatenate…
+  id: totrans-69
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 要生成 `bytes`，我们将类型码转换为 `bytes` 并连接...
+- en: '[![7](assets/7.png)](#co_a_pythonic_object_CO2-7)'
+  id: totrans-70
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![7](assets/7.png)](#co_a_pythonic_object_CO2-7)'
+- en: …`bytes` converted from an `array` built by iterating over the instance.
+  id: totrans-71
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '...通过迭代实例构建的 `array` 转换为的 `bytes`。'
+- en: '[![8](assets/8.png)](#co_a_pythonic_object_CO2-8)'
+  id: totrans-72
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![8](assets/8.png)](#co_a_pythonic_object_CO2-8)'
+- en: To quickly compare all components, build tuples out of the operands. This works
+    for operands that are instances of `Vector2d`, but has issues. See the following
+    warning.
+  id: totrans-73
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 要快速比较所有组件，将操作数构建为元组。 这适用于 `Vector2d` 的实例，但存在问题。 请参阅以下警告。
+- en: '[![9](assets/9.png)](#co_a_pythonic_object_CO2-9)'
+  id: totrans-74
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![9](assets/9.png)](#co_a_pythonic_object_CO2-9)'
+- en: The magnitude is the length of the hypotenuse of the right triangle formed by
+    the `x` and `y` components.
+  id: totrans-75
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 大小是由`x`和`y`分量形成的直角三角形的斜边的长度。
+- en: '[![10](assets/10.png)](#co_a_pythonic_object_CO2-10)'
+  id: totrans-76
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![10](assets/10.png)](#co_a_pythonic_object_CO2-10)'
+- en: '`__bool__` uses `abs(self)` to compute the magnitude, then converts it to `bool`,
+    so `0.0` becomes `False`, nonzero is `True`.'
+  id: totrans-77
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`__bool__`使用`abs(self)`来计算大小，然后将其转换为`bool`，因此`0.0`变为`False`，非零为`True`。'
+- en: Warning
+  id: totrans-78
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 警告
+- en: Method `__eq__` in [Example 11-2](#ex_vector2d_v0) works for `Vector2d` operands
+    but also returns `True` when comparing `Vector2d` instances to other iterables
+    holding the same numeric values (e.g., `Vector(3, 4) == [3, 4]`). This may be
+    considered a feature or a bug. Further discussion needs to wait until [Chapter 16](ch16.html#operator_overloading),
+    when we cover operator overloading.
+  id: totrans-79
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 11-2](#ex_vector2d_v0)中的`__eq__`方法适用于`Vector2d`操作数，但当将`Vector2d`实例与持有相同数值的其他可迭代对象进行比较时也返回`True`（例如，`Vector(3,
+    4) == [3, 4]`）。这可能被视为一个特性或一个错误。进一步讨论需要等到[第16章](ch16.html#operator_overloading)，当我们讨论运算符重载时。'
+- en: We have a fairly complete set of basic methods, but we still need a way to rebuild
+    a `Vector2d` from the binary representation produced by `bytes()`.
+  id: totrans-80
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们有一个相当完整的基本方法集，但我们仍然需要一种方法来从`bytes()`生成的二进制表示中重建`Vector2d`。
+- en: An Alternative Constructor
+  id: totrans-81
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 另一种构造方法
+- en: Since we can export a `Vector2d` as bytes, naturally we need a method that imports
+    a `Vector2d` from a binary sequence. Looking at the standard library for inspiration,
+    we find that `array.array` has a class method named `.frombytes` that suits our
+    purpose—we saw it in [“Arrays”](ch02.html#arrays_sec). We adopt its name and use
+    its functionality in a class method for `Vector2d` in *vector2d_v1.py* ([Example 11-3](#ex_vector2d_v1)).
+  id: totrans-82
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 由于我们可以将`Vector2d`导出为字节，自然我们需要一个从二进制序列导入`Vector2d`的方法。在标准库中寻找灵感时，我们发现`array.array`有一个名为`.frombytes`的类方法，非常适合我们的目的——我们在[“数组”](ch02.html#arrays_sec)中看到了它。我们采用其名称，并在*vector2d_v1.py*中的`Vector2d`类方法中使用其功能（[示例 11-3](#ex_vector2d_v1)）。
+- en: 'Example 11-3\. Part of vector2d_v1.py: this snippet shows only the `frombytes`
+    class method, added to the `Vector2d` definition in vector2d_v0.py ([Example 11-2](#ex_vector2d_v0))'
+  id: totrans-83
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 11-3\. vector2d_v1.py的一部分：此片段仅显示了`frombytes`类方法，添加到vector2d_v0.py中的`Vector2d`定义中（[示例 11-2](#ex_vector2d_v0)）
+- en: '[PRE2]'
+  id: totrans-84
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE2]'
+- en: '[![1](assets/1.png)](#co_a_pythonic_object_CO3-1)'
+  id: totrans-85
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_a_pythonic_object_CO3-1)'
+- en: The `classmethod` decorator modifies a method so it can be called directly on
+    a class.
+  id: totrans-86
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`classmethod`装饰器修改了一个方法，使其可以直接在类上调用。'
+- en: '[![2](assets/2.png)](#co_a_pythonic_object_CO3-2)'
+  id: totrans-87
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_a_pythonic_object_CO3-2)'
+- en: No `self` argument; instead, the class itself is passed as the first argument—conventionally
+    named `cls`.
+  id: totrans-88
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 没有`self`参数；相反，类本身作为第一个参数传递—按照惯例命名为`cls`。
+- en: '[![3](assets/3.png)](#co_a_pythonic_object_CO3-3)'
+  id: totrans-89
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_a_pythonic_object_CO3-3)'
+- en: Read the `typecode` from the first byte.
+  id: totrans-90
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 从第一个字节读取`typecode`。
+- en: '[![4](assets/4.png)](#co_a_pythonic_object_CO3-4)'
+  id: totrans-91
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_a_pythonic_object_CO3-4)'
+- en: Create a `memoryview` from the `octets` binary sequence and use the `typecode`
+    to cast it.^([4](ch11.html#idm46582431979952))
+  id: totrans-92
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 从`octets`二进制序列创建一个`memoryview`，并使用`typecode`进行转换。^([4](ch11.html#idm46582431979952))
+- en: '[![5](assets/5.png)](#co_a_pythonic_object_CO3-5)'
+  id: totrans-93
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_a_pythonic_object_CO3-5)'
+- en: Unpack the `memoryview` resulting from the cast into the pair of arguments needed
+    for the constructor.
+  id: totrans-94
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 将从转换结果中得到的`memoryview`解包为构造函数所需的一对参数。
+- en: I just used a `classmethod` decorator and it is very Python specific, so let’s
+    have a word about it.
+  id: totrans-95
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我刚刚使用了`classmethod`装饰器，它非常特定于Python，所以让我们谈谈它。
+- en: classmethod Versus staticmethod
+  id: totrans-96
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 类方法与静态方法
+- en: The `classmethod` decorator is not mentioned in the Python tutorial, and neither
+    is `staticmethod`. Anyone who has learned OO in Java may wonder why Python has
+    both of these decorators and not just one of them.
+  id: totrans-97
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Python教程中没有提到`classmethod`装饰器，也没有提到`staticmethod`。任何在Java中学习面向对象编程的人可能会想知道为什么Python有这两个装饰器而不是其中的一个。
+- en: 'Let’s start with `classmethod`. [Example 11-3](#ex_vector2d_v1) shows its use:
+    to define a method that operates on the class and not on instances. `classmethod`
+    changes the way the method is called, so it receives the class itself as the first
+    argument, instead of an instance. Its most common use is for alternative constructors,
+    like `frombytes` in [Example 11-3](#ex_vector2d_v1). Note how the last line of
+    `frombytes` actually uses the `cls` argument by invoking it to build a new instance:
+    `cls(*memv)`.'
+  id: totrans-98
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 让我们从`classmethod`开始。[示例 11-3](#ex_vector2d_v1)展示了它的用法：定义一个在类上而不是在实例上操作的方法。`classmethod`改变了方法的调用方式，因此它接收类本身作为第一个参数，而不是一个实例。它最常见的用途是用于替代构造函数，就像[示例 11-3](#ex_vector2d_v1)中的`frombytes`一样。请注意`frombytes`的最后一行实际上通过调用`cls`参数来使用`cls`参数以构建一个新实例：`cls(*memv)`。
+- en: In contrast, the `staticmethod` decorator changes a method so that it receives
+    no special first argument. In essence, a static method is just like a plain function
+    that happens to live in a class body, instead of being defined at the module level.
+    [Example 11-4](#ex_class_staticmethod) contrasts the operation of `classmethod`
+    and `staticmethod`.
+  id: totrans-99
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 相反，`staticmethod`装饰器改变了一个方法，使其不接收特殊的第一个参数。实质上，静态方法就像一个普通函数，只是它存在于类体中，而不是在模块级别定义。[示例 11-4](#ex_class_staticmethod)对比了`classmethod`和`staticmethod`的操作。
+- en: Example 11-4\. Comparing behaviors of `classmethod` and `staticmethod`
+  id: totrans-100
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 11-4\. 比较`classmethod`和`staticmethod`的行为
+- en: '[PRE3]'
+  id: totrans-101
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE3]'
+- en: '[![1](assets/1.png)](#co_a_pythonic_object_CO4-1)'
+  id: totrans-102
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_a_pythonic_object_CO4-1)'
+- en: '`klassmeth` just returns all positional arguments.'
+  id: totrans-103
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`klassmeth`只返回所有位置参数。'
+- en: '[![2](assets/2.png)](#co_a_pythonic_object_CO4-2)'
+  id: totrans-104
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_a_pythonic_object_CO4-2)'
+- en: '`statmeth` does the same.'
+  id: totrans-105
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`statmeth`也是如此。'
+- en: '[![3](assets/3.png)](#co_a_pythonic_object_CO4-3)'
+  id: totrans-106
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_a_pythonic_object_CO4-3)'
+- en: No matter how you invoke it, `Demo.klassmeth` receives the `Demo` class as the
+    first argument.
+  id: totrans-107
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 无论如何调用，`Demo.klassmeth`都将`Demo`类作为第一个参数接收。
+- en: '[![4](assets/4.png)](#co_a_pythonic_object_CO4-4)'
+  id: totrans-108
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_a_pythonic_object_CO4-4)'
+- en: '`Demo.statmeth` behaves just like a plain old function.'
+  id: totrans-109
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`Demo.statmeth`的行为就像一个普通的旧函数。'
+- en: Note
+  id: totrans-110
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 注意
+- en: The `classmethod` decorator is clearly useful, but good use cases for `staticmethod`
+    are very rare in my experience. Maybe the function is closely related even if
+    it never touches the class, so you may want to place it nearby in the code. Even
+    then, defining the function right before or after the class in the same module
+    is close enough most of the time.^([5](ch11.html#idm46582431827696))
+  id: totrans-111
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`classmethod`装饰器显然很有用，但在我的经验中，`staticmethod`的好用例子非常少见。也许这个函数即使从不涉及类也与之密切相关，所以你可能希望将其放在代码附近。即使如此，在同一模块中在类的前面或后面定义函数大多数情况下已经足够接近了。^([5](ch11.html#idm46582431827696))'
+- en: Now that we’ve seen what `classmethod` is good for (and that `staticmethod`
+    is not very useful), let’s go back to the issue of object representation and see
+    how to support formatted output.
+  id: totrans-112
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在我们已经看到了`classmethod`的用途（以及`staticmethod`并不是很有用），让我们回到对象表示的问题，并看看如何支持格式化输出。
+- en: Formatted Displays
+  id: totrans-113
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 格式化显示
+- en: 'The f-strings, the `format()` built-in function, and the `str.format()` method
+    delegate the actual formatting to each type by calling their `.__format__(format_spec)`
+    method. The `format_spec` is a formatting specifier, which is either:'
+  id: totrans-114
+  prefs: []
+  type: TYPE_NORMAL
+  zh: f-strings、`format()`内置函数和`str.format()`方法通过调用它们的`.__format__(format_spec)`方法将实际格式化委托给每种类型。`format_spec`是一个格式说明符，它可以是：
+- en: The second argument in `format(my_obj, format_spec)`, or
+  id: totrans-115
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '`format(my_obj, format_spec)`中的第二个参数，或'
+- en: Whatever appears after the colon in a replacement field delimited with `{}`
+    inside an f-string or the `fmt` in `fmt.str.format()`
+  id: totrans-116
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 无论在f-string中的用`{}`括起来的替换字段中的冒号后面的内容，还是在`fmt.str.format()`中的`fmt`中
+- en: 'For example:'
+  id: totrans-117
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 例如：
+- en: '[PRE4]'
+  id: totrans-118
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE4]'
+- en: '[![1](assets/1.png)](#co_a_pythonic_object_CO5-1)'
+  id: totrans-119
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_a_pythonic_object_CO5-1)'
+- en: Formatting specifier is `'0.4f'`.
+  id: totrans-120
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 格式说明符是`'0.4f'`。
+- en: '[![2](assets/2.png)](#co_a_pythonic_object_CO5-2)'
+  id: totrans-121
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_a_pythonic_object_CO5-2)'
+- en: Formatting specifier is `'0.2f'`. The `rate` part in the replacement field is
+    not part of the formatting specifier. It determines which keyword argument of
+    `.format()` goes into that replacement field.
+  id: totrans-122
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 格式说明符是`'0.2f'`。替换字段中的`rate`部分不是格式说明符的一部分。它确定哪个关键字参数进入该替换字段。
+- en: '[![3](assets/3.png)](#co_a_pythonic_object_CO5-3)'
+  id: totrans-123
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_a_pythonic_object_CO5-3)'
+- en: Again, the specifier is `'0.2f'`. The `1 / brl` expression is not part of it.
+  id: totrans-124
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 再次，说明符是`'0.2f'`。`1 / brl`表达式不是其中的一部分。
+- en: 'The second and third callouts make an important point: a format string such
+    as `''{0.mass:5.3e}''` actually uses two separate notations. The `''0.mass''`
+    to the left of the colon is the `field_name` part of the replacement field syntax,
+    and it can be an arbitrary expression in an f-string. The `''5.3e''` after the
+    colon is the formatting specifier. The notation used in the formatting specifier
+    is called the [Format Specification Mini-Language](https://fpy.li/11-3).'
+  id: totrans-125
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 第二个和第三个标注指出了一个重要的观点：例如`'{0.mass:5.3e}'`这样的格式字符串实际上使用了两种不同的表示法。冒号左边的`'0.mass'`是替换字段语法的`field_name`部分，它可以是f-string中的任意表达式。冒号后面的`'5.3e'`是格式说明符。格式说明符中使用的表示法称为[格式规范迷你语言](https://fpy.li/11-3)。
+- en: Tip
+  id: totrans-126
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 提示
+- en: 'If f-strings, `format()`, and `str.format()` are new to you, classroom experience
+    tells me it’s best to study the `format()` built-in function first, which uses
+    just the [Format Specification Mini-Language](https://fpy.li/fmtspec). After you
+    get the gist of that, read [“Formatted string literals”](https://fpy.li/11-4)
+    and [“Format String Syntax”](https://fpy.li/11-5) to learn about the `{:}` replacement
+    field notation, used in f-strings and the `str.format()` method (including the
+    `!s`, `!r`, and `!a` conversion flags). F-strings don’t make `str.format()` obsolete:
+    most of the time f-strings solve the problem, but sometimes it’s better to specify
+    the formatting string elsewhere, and not where it will be rendered.'
+  id: totrans-127
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果f-strings、`format()`和`str.format()`对你来说是新的，课堂经验告诉我最好先学习`format()`内置函数，它只使用[格式规范迷你语言](https://fpy.li/fmtspec)。在你掌握了这个要领之后，阅读[“格式化字符串字面值”](https://fpy.li/11-4)和[“格式化字符串语法”](https://fpy.li/11-5)来了解在f-strings和`str.format()`方法中使用的`{:}`替换字段符号，包括`!s`、`!r`和`!a`转换标志。f-strings并不使`str.format()`过时：大多数情况下f-strings解决了问题，但有时最好在其他地方指定格式化字符串，而不是在将要呈现的地方。
+- en: 'A few built-in types have their own presentation codes in the Format Specification
+    Mini-Language. For example—among several other codes—the `int` type supports `b`
+    and `x` for base 2 and base 16 output, respectively, while `float` implements
+    `f` for a fixed-point display and `%` for a percentage display:'
+  id: totrans-128
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 一些内置类型在格式规范迷你语言中有自己的表示代码。例如——在几个其他代码中——`int`类型支持分别用于输出基数2和基数16的`b`和`x`，而`float`实现了用于固定点显示的`f`和用于百分比显示的`%`：
+- en: '[PRE5]'
+  id: totrans-129
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE5]'
+- en: 'The Format Specification Mini-Language is extensible because each class gets
+    to interpret the `format_spec` argument as it likes. For instance, the classes
+    in the `datetime` module use the same format codes in the `strftime()` functions
+    and in their `__format__` methods. Here are a couple of examples using the `format()`
+    built-in and the `str.format()` method:'
+  id: totrans-130
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 格式规范迷你语言是可扩展的，因为每个类都可以根据自己的喜好解释`format_spec`参数。例如，`datetime`模块中的类使用`strftime()`函数和它们的`__format__`方法中的相同格式代码。以下是使用`format()`内置函数���`str.format()`方法的几个示例：
+- en: '[PRE6]'
+  id: totrans-131
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE6]'
+- en: 'If a class has no `__format__`, the method inherited from `object` returns
+    `str(my_object)`. Because `Vector2d` has a `__str__`, this works:'
+  id: totrans-132
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果一个类没有`__format__`，则从`object`继承的方法返回`str(my_object)`。因为`Vector2d`有一个`__str__`，所以这样可以：
+- en: '[PRE7]'
+  id: totrans-133
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE7]'
+- en: 'However, if you pass a format specifier, `object.__format__` raises `TypeError`:'
+  id: totrans-134
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 然而，如果传递了格式说明符，`object.__format__`会引发`TypeError`：
+- en: '[PRE8]'
+  id: totrans-135
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE8]'
+- en: 'We will fix that by implementing our own format mini-language. The first step
+    will be to assume the format specifier provided by the user is intended to format
+    each `float` component of the vector. This is the result we want:'
+  id: totrans-136
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们将通过实现自己的格式迷你语言来解决这个问题。第一步是假设用户提供的格式说明符是用于格式化向量的每个`float`组件。这是我们想要的结果：
+- en: '[PRE9]'
+  id: totrans-137
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE9]'
+- en: '[Example 11-5](#ex_format_t1) implements `__format__` to produce the displays
+    just shown.'
+  id: totrans-138
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 11-5](#ex_format_t1)实现了`__format__`以产生刚才显示的内容。'
+- en: 'Example 11-5\. `Vector2d.__format__` method, take #1'
+  id: totrans-139
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 11-5\. `Vector2d.__format__` 方法，第一部分
+- en: '[PRE10]'
+  id: totrans-140
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE10]'
+- en: '[![1](assets/1.png)](#co_a_pythonic_object_CO6-1)'
+  id: totrans-141
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_a_pythonic_object_CO6-1)'
+- en: Use the `format` built-in to apply the `fmt_spec` to each vector component,
+    building an iterable of formatted strings.
+  id: totrans-142
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 使用内置的`format`应用`fmt_spec`到每个向量组件，构建格式化字符串的可迭代对象。
+- en: '[![2](assets/2.png)](#co_a_pythonic_object_CO6-2)'
+  id: totrans-143
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_a_pythonic_object_CO6-2)'
+- en: Plug the formatted strings in the formula `'(x, y)'`.
+  id: totrans-144
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 将格式化字符串插入公式`'(x, y)'`中。
+- en: 'Now let’s add a custom formatting code to our mini-language: if the format
+    specifier ends with a `''p''`, we’ll display the vector in polar coordinates:
+    `<r, θ>`, where `r` is the magnitude and θ (theta) is the angle in radians. The
+    rest of the format specifier (whatever comes before the `''p''`) will be used
+    as before.'
+  id: totrans-145
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在让我们向我们的迷你语言添加自定义格式代码：如果格式说明符以`'p'`结尾，我们将以极坐标形式显示向量：`<r, θ>`，其中`r`是幅度，θ（theta）是弧度角。格式说明符的其余部分（在`'p'`之前的任何内容）将像以前一样使用。
+- en: Tip
+  id: totrans-146
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 提示
+- en: When choosing the letter for the custom format code, I avoided overlapping with
+    codes used by other types. In [Format Specification Mini-Language](https://fpy.li/11-3),
+    we see that integers use the codes `'bcdoxXn'`, floats use `'eEfFgGn%'`, and strings
+    use `'s'`. So I picked `'p'` for polar coordinates. Because each class interprets
+    these codes independently, reusing a code letter in a custom format for a new
+    type is not an error, but may be confusing to users.
+  id: totrans-147
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在选择自定义格式代码的字母时，我避免与其他类型使用的代码重叠。在[格式规范迷你语言](https://fpy.li/11-3)中，我们看到整数使用代码`'bcdoxXn'`，浮点数使用`'eEfFgGn%'`，字符串使用`'s'`。因此，我选择了`'p'`来表示极坐标。因为每个类都独立解释这些代码，所以在新类型的自定义格式中重用代码字母不是错误，但可能会让用户感到困惑。
+- en: 'To generate polar coordinates, we already have the `__abs__` method for the
+    magnitude, and we’ll code a simple `angle` method using the `math.atan2()` function
+    to get the angle. This is the code:'
+  id: totrans-148
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 要生成极坐标，我们已经有了用���幅度的`__abs__`方法，我们将使用`math.atan2()`函数编写一个简单的`angle`方法来获取角度。这是代码：
+- en: '[PRE11]'
+  id: totrans-149
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE11]'
+- en: With that, we can enhance our `__format__` to produce polar coordinates. See
+    [Example 11-6](#ex_format_t2).
+  id: totrans-150
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 有了这个，我们可以增强我们的`__format__`以生成极坐标。参见[示例 11-6](#ex_format_t2)。
+- en: 'Example 11-6\. `Vector2d.__format__` method, take #2, now with polar coordinates'
+  id: totrans-151
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 11-6. `Vector2d.__format__` 方法，第二部分，现在包括极坐标
+- en: '[PRE12]'
+  id: totrans-152
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE12]'
+- en: '[![1](assets/1.png)](#co_a_pythonic_object_CO7-1)'
+  id: totrans-153
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_a_pythonic_object_CO7-1)'
+- en: 'Format ends with `''p''`: use polar coordinates.'
+  id: totrans-154
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 格式以`'p'`结尾：使用极坐标。
+- en: '[![2](assets/2.png)](#co_a_pythonic_object_CO7-2)'
+  id: totrans-155
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_a_pythonic_object_CO7-2)'
+- en: Remove `'p'` suffix from `fmt_spec`.
+  id: totrans-156
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 从`fmt_spec`中删除`'p'`后缀。
+- en: '[![3](assets/3.png)](#co_a_pythonic_object_CO7-3)'
+  id: totrans-157
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_a_pythonic_object_CO7-3)'
+- en: 'Build `tuple` of polar coordinates: `(magnitude, angle)`.'
+  id: totrans-158
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 构建极坐标的`tuple`：`(magnitude, angle)`。
+- en: '[![4](assets/4.png)](#co_a_pythonic_object_CO7-4)'
+  id: totrans-159
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_a_pythonic_object_CO7-4)'
+- en: Configure outer format with angle brackets.
+  id: totrans-160
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 用尖括号配置外部格式。
+- en: '[![5](assets/5.png)](#co_a_pythonic_object_CO7-5)'
+  id: totrans-161
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_a_pythonic_object_CO7-5)'
+- en: Otherwise, use `x, y` components of `self` for rectangular coordinates.
+  id: totrans-162
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 否则，使用`self`的`x, y`组件作为直角坐标。
+- en: '[![6](assets/6.png)](#co_a_pythonic_object_CO7-6)'
+  id: totrans-163
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![6](assets/6.png)](#co_a_pythonic_object_CO7-6)'
+- en: Configure outer format with parentheses.
+  id: totrans-164
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 用括号配置外部格式。
+- en: '[![7](assets/7.png)](#co_a_pythonic_object_CO7-7)'
+  id: totrans-165
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![7](assets/7.png)](#co_a_pythonic_object_CO7-7)'
+- en: Generate iterable with components as formatted strings.
+  id: totrans-166
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 生成组件格式化字符串的可迭代对象。
+- en: '[![8](assets/8.png)](#co_a_pythonic_object_CO7-8)'
+  id: totrans-167
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![8](assets/8.png)](#co_a_pythonic_object_CO7-8)'
+- en: Plug formatted strings into outer format.
+  id: totrans-168
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 将格式化字符串插入外部格式。
+- en: 'With [Example 11-6](#ex_format_t2), we get results similar to these:'
+  id: totrans-169
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 通过[示例 11-6](#ex_format_t2)，我们得到类似于以下结果：
+- en: '[PRE13]'
+  id: totrans-170
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE13]'
+- en: As this section shows, it’s not hard to extend the Format Specification Mini-Language
+    to support user-defined types.
+  id: totrans-171
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 正如本节所示，扩展格式规范迷你语言以支持用户定义的类型并不困难。
+- en: 'Now let’s move to a subject that’s not just about appearances: we will make
+    our `Vector2d` hashable, so we can build sets of vectors, or use them as `dict`
+    keys.'
+  id: totrans-172
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在让我们转向一个不仅仅关于外观的主题：我们将使我们的`Vector2d`可散列，这样我们就可以构建向量集，或者将它们用作`dict`键。
+- en: A Hashable Vector2d
+  id: totrans-173
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 一个可散列的Vector2d
+- en: 'As defined, so far our `Vector2d` instances are unhashable, so we can’t put
+    them in a `set`:'
+  id: totrans-174
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 截至目前，我们的`Vector2d`实例是不可散列的，因此我们无法将它们放入`set`中：
+- en: '[PRE14]'
+  id: totrans-175
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE14]'
+- en: To make a `Vector2d` hashable, we must implement `__hash__` (`__eq__` is also
+    required, and we already have it). We also need to make vector instances immutable,
+    as we’ve seen in [“What Is Hashable”](ch03.html#what_is_hashable).
+  id: totrans-176
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 要使`Vector2d`可散列，我们必须实现`__hash__`（`__eq__`也是必需的，我们已经有了）。我们还需要使向量实例不可变，正如我们在[“什么是可散列”](ch03.html#what_is_hashable)中看到的。
+- en: 'Right now, anyone can do `v1.x = 7`, and there is nothing in the code to suggest
+    that changing a `Vector2d` is forbidden. This is the behavior we want:'
+  id: totrans-177
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在，任何人都可以执行`v1.x = 7`，而代码中没有任何提示表明更改`Vector2d`是被禁止的。这是我们想要的行为：
+- en: '[PRE15]'
+  id: totrans-178
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE15]'
+- en: We’ll do that by making the `x` and `y` components read-only properties in [Example 11-7](#ex_vector2d_v3).
+  id: totrans-179
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们将通过在[示例 11-7](#ex_vector2d_v3)中使`x`和`y`组件成为只读属性来实现这一点。
+- en: 'Example 11-7\. vector2d_v3.py: only the changes needed to make `Vector2d` immutable
+    are shown here; see full listing in [Example 11-11](#ex_vector2d_v3_full)'
+  id: totrans-180
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 11-7. vector2d_v3.py：仅显示使`Vector2d`成为不可变的更改；在[示例 11-11](#ex_vector2d_v3_full)中查看完整清单
+- en: '[PRE16]'
+  id: totrans-181
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE16]'
+- en: '[![1](assets/1.png)](#co_a_pythonic_object_CO8-1)'
+  id: totrans-182
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_a_pythonic_object_CO8-1)'
+- en: Use exactly two leading underscores (with zero or one trailing underscore) to
+    make an attribute private.^([6](ch11.html#idm46582430824752))
+  id: totrans-183
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 使用正好两个前导下划线（零个或一个尾随下划线）使属性私有化。^([6](ch11.html#idm46582430824752))
+- en: '[![2](assets/2.png)](#co_a_pythonic_object_CO8-2)'
+  id: totrans-184
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_a_pythonic_object_CO8-2)'
+- en: The `@property` decorator marks the getter method of a property.
+  id: totrans-185
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`@property`装饰器标记属性的getter方法。'
+- en: '[![3](assets/3.png)](#co_a_pythonic_object_CO8-3)'
+  id: totrans-186
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_a_pythonic_object_CO8-3)'
+- en: 'The getter method is named after the public property it exposes: `x`.'
+  id: totrans-187
+  prefs: []
+  type: TYPE_NORMAL
+  zh: getter方法的名称与其公共属性相对应：`x`。
+- en: '[![4](assets/4.png)](#co_a_pythonic_object_CO8-4)'
+  id: totrans-188
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_a_pythonic_object_CO8-4)'
+- en: Just return `self.__x`.
+  id: totrans-189
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 只需返回`self.__x`。
+- en: '[![5](assets/5.png)](#co_a_pythonic_object_CO8-5)'
+  id: totrans-190
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_a_pythonic_object_CO8-5)'
+- en: Repeat the same formula for `y` property.
+  id: totrans-191
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 重复相同的公式用于`y`属性。
+- en: '[![6](assets/6.png)](#co_a_pythonic_object_CO8-6)'
+  id: totrans-192
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![6](assets/6.png)](#co_a_pythonic_object_CO8-6)'
+- en: Every method that just reads the `x`, `y` components can stay as it was, reading
+    the public properties via `self.x` and `self.y` instead of the private attribute,
+    so this listing omits the rest of the code for the class.
+  id: totrans-193
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 每个仅读取`x`、`y`分量的方法都可以保持原样，通过`self.x`和`self.y`读取公共属性而不是私有属性，因此此列表省略了类的其余代码。
+- en: Note
+  id: totrans-194
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 注意
+- en: '`Vector.x` and `Vector.y` are examples of read-only properties. Read/write
+    properties will be covered in [Chapter 22](ch22.html#dynamic_attributes), where
+    we dive deeper into `@property`.'
+  id: totrans-195
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`Vector.x`和`Vector.y`是只读属性的示例。读/写属性将在[第22章](ch22.html#dynamic_attributes)中介绍，我们将深入探讨`@property`。'
+- en: Now that our vectors are reasonably safe from accidental mutation, we can implement
+    the `__hash__` method. It should return an `int` and ideally take into account
+    the hashes of the object attributes that are also used in the `__eq__` method,
+    because objects that compare equal should have the same hash. The `__hash__` special
+    method [documentation](https://fpy.li/11-7) suggests computing the hash of a tuple
+    with the components, so that’s what we do in [Example 11-8](#ex_vector2d_v3_hash).
+  id: totrans-196
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在，我们的向量相对安全免受意外变异，我们可以实现`__hash__`方法。它应返回一个`int`，理想情况下应考虑在`__eq__`方法中也使用的对象属性的哈希值，因为比较相等的对象应具有相同的哈希值。`__hash__`特殊方法的[文档](https://fpy.li/11-7)建议计算一个包含组件的元组的哈希值，这就是我们在[示例11-8](#ex_vector2d_v3_hash)中所做的。
+- en: 'Example 11-8\. vector2d_v3.py: implementation of *hash*'
+  id: totrans-197
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例11-8。vector2d_v3.py：*hash*的实现
+- en: '[PRE17]'
+  id: totrans-198
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE17]'
+- en: 'With the addition of the `__hash__` method, we now have hashable vectors:'
+  id: totrans-199
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 通过添加`__hash__`方法，我们现在有了可散列的向量：
+- en: '[PRE18]'
+  id: totrans-200
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE18]'
+- en: Tip
+  id: totrans-201
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 提示
+- en: It’s not strictly necessary to implement properties or otherwise protect the
+    instance attributes to create a hashable type. Implementing `__hash__` and `__eq__`
+    correctly is all it takes. But the value of a hashable object is never supposed
+    to change, so this provided a good excuse to talk about read-only properties.
+  id: totrans-202
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 实现属性或以其他方式保护实例属性以创建可散列类型并不是绝对必要的。正确实现`__hash__`和`__eq__`就足够了。但是，可散列对象的值永远不应更改，因此这提供了一个很好的借口来谈论只读属性。
+- en: If you are creating a type that has a sensible scalar numeric value, you may
+    also implement the `__int__` and `__float__` methods, invoked by the `int()` and
+    `float()` constructors, which are used for type coercion in some contexts. There
+    is also a `__complex__` method to support the `complex()` built-in constructor.
+    Perhaps `Vector2d` should provide `__complex__`, but I’ll leave that as an exercise
+    for you.
+  id: totrans-203
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果您正在创建具有合理标量数值的类型，还可以实现`__int__`和`__float__`方法，这些方法由`int()`和`float()`构造函数调用，在某些情况下用于类型强制转换。还有一个`__complex__`方法来支持`complex()`内置构造函数。也许`Vector2d`应该提供`__complex__`，但我会把这留给你作为一个练习。
+- en: Supporting Positional Pattern Matching
+  id: totrans-204
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 支持位置模式匹配
+- en: So far, `Vector2d` instances are compatible with keyword class patterns—covered
+    in [“Keyword Class Patterns”](ch05.html#keyword_class_patterns_sec).
+  id: totrans-205
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 到目前为止，`Vector2d`实例与关键字类模式兼容——在[“关键字类模式”](ch05.html#keyword_class_patterns_sec)中介绍。
+- en: In [Example 11-9](#vector_match_keyword_ex), all of these keyword patterns work
+    as expected.
+  id: totrans-206
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在[示例11-9](#vector_match_keyword_ex)中，所有这些关键字模式都按预期工作。
+- en: Example 11-9\. Keyword patterns for `Vector2d` subjects—requires Python 3.10
+  id: totrans-207
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例11-9。`Vector2d`主题的关键字模式——需要Python 3.10
+- en: '[PRE19]'
+  id: totrans-208
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE19]'
+- en: 'However, if you try to use a positional pattern like this:'
+  id: totrans-209
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 但是，如果您尝试使用这样的位置模式：
+- en: '[PRE20]'
+  id: totrans-210
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE20]'
+- en: 'you get:'
+  id: totrans-211
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 你会得到：
+- en: '[PRE21]'
+  id: totrans-212
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE21]'
+- en: 'To make `Vector2d` work with positional patterns, we need to add a class attribute
+    named `__match_args__` , listing the instance attributes in the order they will
+    be used for positional pattern matching:'
+  id: totrans-213
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 要使`Vector2d`与位置模式配合使用，我们需要添加一个名为`__match_args__`的类属性，按照它们将用于位置模式匹配的顺序列出实例属性：
+- en: '[PRE22]'
+  id: totrans-214
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE22]'
+- en: Now we can save a few keystrokes when writing patterns to match `Vector2d` subjects,
+    as you can see in [Example 11-10](#vector_match_positional_ex).
+  id: totrans-215
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在，当编写用于匹配`Vector2d`主题的模式时，我们可以节省一些按键，如您在[示例11-10](#vector_match_positional_ex)中所见。
+- en: Example 11-10\. Positional patterns for `Vector2d` subjects—requires Python
+    3.10
+  id: totrans-216
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例11-10。`Vector2d`主题的位置模式——需要Python 3.10
+- en: '[PRE23]'
+  id: totrans-217
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE23]'
+- en: The `__match_args__` class attribute does not need to include all public instance
+    attributes. In particular, if the class `__init__` has required and optional arguments
+    that are assigned to instance attributes, it may be reasonable to name the required
+    arguments in `__match_args__`, but not the optional ones.
+  id: totrans-218
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`__match_args__`类属性不需要包括所有公共实例属性。特别是，如果类`__init__`具有分配给实例属性的必需和可选参数，可能合理地在`__match_args__`中命名必需参数，但不包括可选参数。'
+- en: Let’s step back and review what we’ve coded so far in `Vector2d`.
+  id: totrans-219
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 让我们退后一步，回顾一下我们到目前为止在`Vector2d`中编码的内容。
+- en: Complete Listing of Vector2d, Version 3
+  id: totrans-220
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: Vector2d的完整列表，版本3
+- en: We have been working on `Vector2d` for a while, showing just snippets, so [Example 11-11](#ex_vector2d_v3_full)
+    is a consolidated, full listing of *vector2d_v3.py*, including the doctests I
+    used when developing it.
+  id: totrans-221
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们已经在`Vector2d`上工作了���段时间，只展示了一些片段，因此[示例11-11](#ex_vector2d_v3_full)是*vector2d_v3.py*的综合完整列表，包括我在开发时使用的doctests。
+- en: 'Example 11-11\. vector2d_v3.py: the full monty'
+  id: totrans-222
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例11-11。vector2d_v3.py：完整的版本
+- en: '[PRE24]'
+  id: totrans-223
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE24]'
+- en: To recap, in this and the previous sections, we saw some essential special methods
+    that you may want to implement to have a full-fledged object.
+  id: totrans-224
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 总结一下，在本节和前几节中，我们看到了一些您可能希望实现以拥有完整对象的基本特殊方法。
+- en: Note
+  id: totrans-225
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 注意
+- en: You should only implement these special methods if your application needs them.
+    End users don’t care if the objects that make up the application are “Pythonic”
+    or not.
+  id: totrans-226
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 只有在您的应用程序需要时才实现这些特殊方法。最终用户不在乎构成应用程序的对象是否“Pythonic”。
+- en: On the other hand, if your classes are part of a library for other Python programmers
+    to use, you can’t really guess what they will do with your objects, and they may
+    expect more of the “Pythonic” behaviors we are describing.
+  id: totrans-227
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 另一方面，如果您的类是其他Python程序员使用的库的一部分，您实际上无法猜测他们将如何处理您的对象，他们可能期望我们正在描述的更多“Pythonic”行为。
+- en: As coded in [Example 11-11](#ex_vector2d_v3_full), `Vector2d` is a didactic
+    example with a laundry list of special methods related to object representation,
+    not a template for every user-defined class.
+  id: totrans-228
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如[示例 11-11](#ex_vector2d_v3_full)中所编码的，`Vector2d`是一个关于对象表示相关特殊方法的教学示例，而不是每个用户定义类的模板。
+- en: In the next section, we’ll take a break from `Vector2d` to discuss the design
+    and drawbacks of the private attribute mechanism in Python—the double-underscore
+    prefix in `self.__x`.
+  id: totrans-229
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在下一节中，我们将暂时离开`Vector2d`，讨论Python中私有属性机制的设计和缺点——`self.__x`中的双下划线前缀。
+- en: Private and “Protected” Attributes in Python
+  id: totrans-230
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: Python中的私有和“受保护”的属性
+- en: In Python, there is no way to create private variables like there is with the
+    `private` modifier in Java. What we have in Python is a simple mechanism to prevent
+    accidental overwriting of a “private” attribute in a subclass.
+  id: totrans-231
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在Python中，没有像Java中的`private`修饰符那样创建私有变量的方法。在Python中，我们有一个简单的机制来防止在子类中意外覆盖“私有”属性。
+- en: 'Consider this scenario: someone wrote a class named `Dog` that uses a `mood`
+    instance attribute internally, without exposing it. You need to subclass `Dog`
+    as `Beagle`. If you create your own `mood` instance attribute without being aware
+    of the name clash, you will clobber the `mood` attribute used by the methods inherited
+    from `Dog`. This would be a pain to debug.'
+  id: totrans-232
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 考虑这种情况：有人编写了一个名为`Dog`的类，其中内部使用了一个`mood`实例属性，但没有暴露它。你需要将`Dog`作为`Beagle`的子类。如果你在不知道名称冲突的情况下创建自己的`mood`实例属性，那么你将覆盖从`Dog`继承的方法中使用的`mood`属性。这将是一个令人头疼的调试问题。
+- en: To prevent this, if you name an instance attribute in the form `__mood` (two
+    leading underscores and zero or at most one trailing underscore), Python stores
+    the name in the instance `__dict__` prefixed with a leading underscore and the
+    class name, so in the `Dog` class, `__mood` becomes `_Dog__mood`, and in `Beagle`
+    it’s `_Beagle__mood`. This language feature goes by the lovely name of *name mangling*.
+  id: totrans-233
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了防止这种情况发生，如果你将一个实例属性命名为`__mood`（两个前导下划线和零个或最多一个尾随下划线），Python会将该名称存储在实例`__dict__`中，前缀是一个前导下划线和类名，因此在`Dog`类中，`__mood`变成了`_Dog__mood`，而在`Beagle`中变成了`_Beagle__mood`。这种语言特性被称为*名称修饰*。
+- en: '[Example 11-12](#name_mangling_ex) shows the result in the `Vector2d` class
+    from [Example 11-7](#ex_vector2d_v3).'
+  id: totrans-234
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 11-12](#name_mangling_ex)展示了来自[示例 11-7](#ex_vector2d_v3)中`Vector2d`类的结果。'
+- en: Example 11-12\. Private attribute names are “mangled” by prefixing the `_` and
+    the class name
+  id: totrans-235
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 11-12\. 私有属性名称通过前缀`_`和类名“修饰”
+- en: '[PRE25]'
+  id: totrans-236
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE25]'
+- en: 'Name mangling is about safety, not security: it’s designed to prevent accidental
+    access and not malicious prying. [Figure 11-1](#safety_fig) illustrates another
+    safety device.'
+  id: totrans-237
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 名称修饰是关于安全性，而不是安全性：它旨在防止意外访问，而不是恶意窥探。[图 11-1](#safety_fig)展示了另一个安全设备。
+- en: Anyone who knows how private names are mangled can read the private attribute
+    directly, as the last line of [Example 11-12](#name_mangling_ex) shows—that’s
+    actually useful for debugging and serialization. They can also directly assign
+    a value to a private component of a `Vector2d` by writing `v1._Vector2d__x = 7`.
+    But if you are doing that in production code, you can’t complain if something
+    blows up.
+  id: totrans-238
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 知道私有名称是如何被修饰的人可以直接读取私有属性，就像[示例 11-12](#name_mangling_ex)的最后一行所示的那样——这对调试和序列化实际上是有用的。他们还可以通过编写`v1._Vector2d__x
+    = 7`来直接为`Vector2d`的私有组件赋值。但如果你在生产代码中这样做，如果出现问题，就不能抱怨了。
+- en: 'The name mangling functionality is not loved by all Pythonistas, and neither
+    is the skewed look of names written as `self.__x`. Some prefer to avoid this syntax
+    and use just one underscore prefix to “protect” attributes by convention (e.g.,
+    `self._x`). Critics of the automatic double-underscore mangling suggest that concerns
+    about accidental attribute clobbering should be addressed by naming conventions.
+    Ian Bicking—creator of pip, virtualenv, and other projects—wrote:'
+  id: totrans-239
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 名称修饰功能并不受所有Python爱好者的喜爱，以及写作为`self.__x`的名称的倾斜外观也不受欢迎���一些人更喜欢避免这种语法，只使用一个下划线前缀通过约定“保护”属性（例如，`self._x`）。对于自动双下划线修饰的批评者，他们建议通过命名约定来解决意外属性覆盖的问题。Ian
+    Bicking——pip、virtualenv等项目的创建者写道：
+- en: Never, ever use two leading underscores. This is annoyingly private. If name
+    clashes are a concern, use explicit name mangling instead (e.g., `_MyThing_blahblah`).
+    This is essentially the same thing as double-underscore, only it’s transparent
+    where double underscore obscures.^([7](ch11.html#idm46582429732176))
+  id: totrans-240
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+  zh: 永远不要使用两个前导下划线。这是非常私有的。如果担心名称冲突，可以使用显式的名称修饰（例如，`_MyThing_blahblah`）。这与双下划线基本相同，只是双下划线会隐藏，而显式名称修饰则是透明的。^([7](ch11.html#idm46582429732176))
+- en: '![switches with safety covers](assets/flpy_1101.png)'
+  id: totrans-241
+  prefs: []
+  type: TYPE_IMG
+  zh: '![带有安全盖的开关](assets/flpy_1101.png)'
+- en: 'Figure 11-1\. A cover on a switch is a *safety* device, not a *security* one:
+    it prevents accidents, not sabotage.'
+  id: totrans-242
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 图 11-1\. 开关上的盖子是一个*安全*设备，而不是*安全*设备：它防止事故，而不是破坏。
+- en: The single underscore prefix has no special meaning to the Python interpreter
+    when used in attribute names, but it’s a very strong convention among Python programmers
+    that you should not access such attributes from outside the class.^([8](ch11.html#idm46582429727712))
+    It’s easy to respect the privacy of an object that marks its attributes with a
+    single `_`, just as it’s easy respect the convention that variables in `ALL_CAPS`
+    should be treated as constants.
+  id: totrans-243
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 单个下划线前缀在属性名称中对Python解释器没有特殊含义，但在Python程序员中是一个非常强烈的约定，你不应该从类外部访问这样的属性。^([8](ch11.html#idm46582429727712))。尊重一个将其属性标记为单个下划线的对象的隐私是很容易的，就像尊重将`ALL_CAPS`中的变量视为常量的约定一样容易。
+- en: Attributes with a single `_` prefix are called “protected” in some corners of
+    the Python documentation.^([9](ch11.html#idm46582429722144)) The practice of “protecting”
+    attributes by convention with the form `self._x` is widespread, but calling that
+    a “protected” attribute is not so common. Some even call that a “private” attribute.
+  id: totrans-244
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在Python文档的某些角落中，带有单个下划线前缀的属性被称为“受保护的”^([9](ch11.html#idm46582429722144))。通过约定以`self._x`的形式“保护”属性的做法很普遍，但将其称为“受保护的”属性并不那么常见。有些人甚至将其称为“私有”属性。
+- en: 'To conclude: the `Vector2d` components are “private” and our `Vector2d` instances
+    are “immutable”—with scare quotes—because there is no way to make them really
+    private and immutable.^([10](ch11.html#idm46582429718864))'
+  id: totrans-245
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 总之：`Vector2d`的组件是“私有的”，我们的`Vector2d`实例是“不可变的”——带有引号——因为没有办法使它们真正私有和不可变。^([10](ch11.html#idm46582429718864))
+- en: 'We’ll now come back to our `Vector2d` class. In the next section, we cover
+    a special attribute (not a method) that affects the internal storage of an object,
+    with potentially huge impact on the use of memory but little effect on its public
+    interface: `__slots__`.'
+  id: totrans-246
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在我们回到我们的`Vector2d`类。在下一节中，我们将介绍一个特殊的属性（不是方法），它会影响对象的内部存储，对内存使用可能有巨大影响，但对其公共接口影响很小：`__slots__`。
+- en: Saving Memory with __slots__
+  id: totrans-247
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 使用`__slots__`节省内存
+- en: 'By default, Python stores the attributes of each instance in a `dict` named
+    `__dict__`. As we saw in [“Practical Consequences of How dict Works”](ch03.html#consequences_dict_internals),
+    a `dict` has a significant memory overhead—even with the optimizations mentioned
+    in that section. But if you define a class attribute named `__slots__` holding
+    a sequence of attribute names, Python uses an alternative storage model for the
+    instance attributes: the attributes named in `__slots__` are stored in a hidden
+    array or references that use less memory than a `dict`. Let’s see how that works
+    through simple examples, starting with [Example 11-13](#slots_ex1).'
+  id: totrans-248
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 默认情况下，Python将每个实例的属性存储在名为`__dict__`的`dict`中。正如我们在[“dict工作原理的实际后果”](ch03.html#consequences_dict_internals)中看到的，`dict`具有显着的内存开销——即使使用了该部分提到的优化。但是，如果你定义一个名为`__slots__`的类属性，其中包含一系列属性名称，Python将使用替代的存储模型来存储实例属性：`__slots__`中命名的属性存储在一个隐藏的引用数组中，使用的内存比`dict`少。让我们通过简单的示例来看看它是如何工作的，从[示例 11-13](#slots_ex1)开始。
+- en: Example 11-13\. The `Pixel` class uses `__slots__`
+  id: totrans-249
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 11-13。`Pixel`类使用`__slots__`
+- en: '[PRE26]'
+  id: totrans-250
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE26]'
+- en: '[![1](assets/1.png)](#co_a_pythonic_object_CO9-1)'
+  id: totrans-251
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_a_pythonic_object_CO9-1)'
+- en: '`__slots__` must be present when the class is created; adding or changing it
+    later has no effect. The attribute names may be in a `tuple` or `list`, but I
+    prefer a `tuple` to make it clear there’s no point in changing it.'
+  id: totrans-252
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在创建类时必须存在`__slots__`；稍后添加或更改它没有效果。属性名称可以是`tuple`或`list`，但我更喜欢`tuple`，以明确表明没有改变的必要。
+- en: '[![2](assets/2.png)](#co_a_pythonic_object_CO9-2)'
+  id: totrans-253
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_a_pythonic_object_CO9-2)'
+- en: Create an instance of `Pixel`, because we see the effects of `__slots__` on
+    the instances.
+  id: totrans-254
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 创建一个`Pixel`的实例，因为我们看到`__slots__`对实例的影响。
+- en: '[![3](assets/3.png)](#co_a_pythonic_object_CO9-3)'
+  id: totrans-255
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_a_pythonic_object_CO9-3)'
+- en: 'First effect: instances of `Pixel` have no `__dict__`.'
+  id: totrans-256
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 第一个效果：`Pixel`的实例没有`__dict__`。
+- en: '[![4](assets/4.png)](#co_a_pythonic_object_CO9-4)'
+  id: totrans-257
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_a_pythonic_object_CO9-4)'
+- en: Set the `p.x` and `p.y` attributes normally.
+  id: totrans-258
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 正常设置`p.x`和`p.y`属性。
+- en: '[![5](assets/5.png)](#co_a_pythonic_object_CO9-5)'
+  id: totrans-259
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_a_pythonic_object_CO9-5)'
+- en: 'Second effect: trying to set an attribute not listed in `__slots__` raises
+    `AttributeError`.'
+  id: totrans-260
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 第二个效果：尝试设置一个未在`__slots__`中列出的属性会引发`AttributeError`。
+- en: So far, so good. Now let’s create a subclass of `Pixel` in [Example 11-14](#slots_ex2)
+    to see the counterintuitive side of `__slots__`.
+  id: totrans-261
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 到目前为止，一切顺利。现在让我们在[示例 11-14](#slots_ex2)中创建`Pixel`的一个子类，看看`__slots__`的反直觉之处。
+- en: Example 11-14\. The `OpenPixel` is a subclass of `Pixel`
+  id: totrans-262
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 11-14。`OpenPixel`是`Pixel`的子类
+- en: '[PRE27]'
+  id: totrans-263
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE27]'
+- en: '[![1](assets/1.png)](#co_a_pythonic_object_CO10-1)'
+  id: totrans-264
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_a_pythonic_object_CO10-1)'
+- en: '`OpenPixel` declares no attributes of its own.'
+  id: totrans-265
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`OpenPixel`没有声明自己的属性。'
+- en: '[![2](assets/2.png)](#co_a_pythonic_object_CO10-2)'
+  id: totrans-266
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_a_pythonic_object_CO10-2)'
+- en: 'Surprise: instances of `OpenPixel` have a `__dict__`.'
+  id: totrans-267
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 惊喜：`OpenPixel`的实例有一个`__dict__`。
+- en: '[![3](assets/3.png)](#co_a_pythonic_object_CO10-3)'
+  id: totrans-268
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_a_pythonic_object_CO10-3)'
+- en: If you set attribute `x` (named in the `__slots__` of the base class `Pixel`)…
+  id: totrans-269
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果你设置属性`x`（在基类`Pixel`的`__slots__`中命名）…
+- en: '[![4](assets/4.png)](#co_a_pythonic_object_CO10-4)'
+  id: totrans-270
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_a_pythonic_object_CO10-4)'
+- en: …it is not stored in the instance `__dict__`…
+  id: totrans-271
+  prefs: []
+  type: TYPE_NORMAL
+  zh: …它不存储在实例`__dict__`中…
+- en: '[![5](assets/5.png)](#co_a_pythonic_object_CO10-5)'
+  id: totrans-272
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_a_pythonic_object_CO10-5)'
+- en: …but it is stored in the hidden array of references in the instance.
+  id: totrans-273
+  prefs: []
+  type: TYPE_NORMAL
+  zh: …但它存储在实例的隐藏引用数组中。
+- en: '[![6](assets/6.png)](#co_a_pythonic_object_CO10-6)'
+  id: totrans-274
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![6](assets/6.png)](#co_a_pythonic_object_CO10-6)'
+- en: If you set an attribute not named in the `__slots__`…
+  id: totrans-275
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果你设置一个未在`__slots__`中命名的属性…
+- en: '[![7](assets/7.png)](#co_a_pythonic_object_CO10-7)'
+  id: totrans-276
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![7](assets/7.png)](#co_a_pythonic_object_CO10-7)'
+- en: …it is stored in the instance `__dict__`.
+  id: totrans-277
+  prefs: []
+  type: TYPE_NORMAL
+  zh: …它存储在实例`__dict__`中。
+- en: '[Example 11-14](#slots_ex2) shows that the effect of `__slots__` is only partially
+    inherited by a subclass. To make sure that instances of a subclass have no `__dict__`,
+    you must declare `__slots__` again in the subclass.'
+  id: totrans-278
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 11-14](#slots_ex2)显示了`__slots__`的效果只被子类部分继承。为了确保子类的实例没有`__dict__`，你必须在子类中再次声明`__slots__`。'
+- en: If you declare `__slots__ = ()` (an empty tuple), then the instances of the
+    subclass will have no `__dict__` and will only accept the attributes named in
+    the `__slots__` of the base class.
+  id: totrans-279
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果你声明`__slots__ = ()`（一个空元组），那么子类的实例将没有`__dict__`，并且只接受基类`__slots__`中命名的属性。
+- en: If you want a subclass to have additional attributes, name them in `__slots__`,
+    as shown in [Example 11-15](#slots_ex3).
+  id: totrans-280
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果你希望子类具有额外的属性，请在`__slots__`中命名它们，就像[示例 11-15](#slots_ex3)中所示的那样。
+- en: Example 11-15\. The `ColorPixel`, another subclass of `Pixel`
+  id: totrans-281
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 11-15。`ColorPixel`，`Pixel`的另一个子类
+- en: '[PRE28]'
+  id: totrans-282
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE28]'
+- en: '[![1](assets/1.png)](#co_a_pythonic_object_CO11-1)'
+  id: totrans-283
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_a_pythonic_object_CO11-1)'
+- en: Essentially, `__slots__` of the superclasses are added to the `__slots__` of
+    the current class. Don’t forget that single-item tuples must have a trailing comma.
+  id: totrans-284
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 本质上，超类的`__slots__`被添加到当前类的`__slots__`中。不要忘记单项元组必须有一个尾随逗号。
+- en: '[![2](assets/2.png)](#co_a_pythonic_object_CO11-2)'
+  id: totrans-285
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_a_pythonic_object_CO11-2)'
+- en: '`ColorPixel` instances have no `__dict__`.'
+  id: totrans-286
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`ColorPixel`实例没有`__dict__`。'
+- en: '[![3](assets/3.png)](#co_a_pythonic_object_CO11-3)'
+  id: totrans-287
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_a_pythonic_object_CO11-3)'
+- en: You can set the attributes declared in the `__slots__` of this class and superclasses,
+    but no other.
+  id: totrans-288
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 你可以设置此类和超类的`__slots__`中声明的属性，但不能设置其他属性。
+- en: 'It’s possible to “save memory and eat it too”: if you add the `''__dict__''`
+    name to the `__slots__` list, your instances will keep attributes named in `__slots__`
+    in the per-instance array of references, but will also support dynamically created
+    attributes, which will be stored in the usual `__dict__`. This is necessary if
+    you want to use the `@cached_property` decorator (covered in [“Step 5: Caching
+    Properties with functools”](ch22.html#caching_properties_sec)).'
+  id: totrans-289
+  prefs: []
+  type: TYPE_NORMAL
+  zh: “既能节省内存又能使用它”是可能的：如果将`'__dict__'`名称添加到`__slots__`列表中，那么你的实例将保留`__slots__`中命名的属性在每个实例的引用数组中，但也将支持动态创建的属性，这些属性将存储在通常的`__dict__`中。如果你想要使用`@cached_property`装饰器（在[“第5步：使用functools缓存属性”](ch22.html#caching_properties_sec)中介绍），这是必要的。
+- en: 'Of course, having `''__dict__''` in `__slots__` may entirely defeat its purpose,
+    depending on the number of static and dynamic attributes in each instance and
+    how they are used. Careless optimization is worse than premature optimization:
+    you add complexity but may not get any benefit.'
+  id: totrans-290
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当然，在`__slots__`中有`'__dict__'`可能完全打败它的目的，这取决于每个实例中静态和动态属性的数量以及它们的使用方式。粗心的优化比过早的优化更糟糕：你增加了复杂性，但可能得不到任何好处。
+- en: Another special per-instance attribute that you may want to keep is `__weakref__`,
+    necessary for an object to support weak references (mentioned briefly in [“del
+    and Garbage Collection”](ch06.html#del_sec)). That attribute exists by default
+    in instances of user-defined classes. However, if the class defines `__slots__`,
+    and you need the instances to be targets of weak references, then you need to
+    include `'__weakref__'` among the attributes named in `__slots__`.
+  id: totrans-291
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 另一个你可能想要保留的特殊每实例属性是`__weakref__`，这对于对象支持弱引用是必要的（在[“del和垃圾回收”](ch06.html#del_sec)中简要提到）。该属性默认存在于用户定义类的实例中。但是，如果类定义了`__slots__`，并且你需要实例成为弱引用的目标，则需要在`__slots__`中包含`'__weakref__'`。
+- en: Now let’s see the effect of adding `__slots__` to `Vector2d`.
+  id: totrans-292
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在让我们看看将`__slots__`添加到`Vector2d`的效果。
+- en: Simple Measure of __slot__ Savings
+  id: totrans-293
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 简单的**槽**节省度量
+- en: '[Example 11-16](#ex_vector2d_v3_slots) shows the implementation of `__slots__`
+    in `Vector2d`.'
+  id: totrans-294
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 11-16](#ex_vector2d_v3_slots)展示了在`Vector2d`中实现`__slots__`。'
+- en: 'Example 11-16\. vector2d_v3_slots.py: the `__slots__` attribute is the only
+    addition to `Vector2d`'
+  id: totrans-295
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 11-16\. vector2d_v3_slots.py：`__slots__`属性是`Vector2d`的唯一添加
+- en: '[PRE29]'
+  id: totrans-296
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE29]'
+- en: '[![1](assets/1.png)](#co_a_pythonic_object_CO12-1)'
+  id: totrans-297
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_a_pythonic_object_CO12-1)'
+- en: '`__match_args__` lists the public attribute names for positional pattern matching.'
+  id: totrans-298
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`__match_args__`列出了用于位置模式匹配的公共属性名称。'
+- en: '[![2](assets/2.png)](#co_a_pythonic_object_CO12-2)'
+  id: totrans-299
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_a_pythonic_object_CO12-2)'
+- en: In contrast, `__slots__` lists the names of the instance attributes, which in
+    this case are private attributes.
+  id: totrans-300
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 相比之下，`__slots__`列出了实例属性的名称，这些属性在这种情况下是私有属性。
+- en: To measure the memory savings, I wrote the *mem_test.py* script. It takes the
+    name of a module with a `Vector2d` class variant as command-line argument, and
+    uses a list comprehension to build a `list` with 10,000,000 instances of `Vector2d`.
+    In the first run shown in [Example 11-17](#mem_test_demo), I use `vector2d_v3.Vector2d`
+    (from [Example 11-7](#ex_vector2d_v3)); in the second run, I use the version with
+    `__slots__` from [Example 11-16](#ex_vector2d_v3_slots).
+  id: totrans-301
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了测量内存节省，我编写了*mem_test.py*脚本。它接受一个带有`Vector2d`类变��的模块名称作为命令行参数，并使用列表推导式构建一个包含10,000,000个`Vector2d`实例的`list`。在[示例 11-17](#mem_test_demo)中显示的第一次运行中，我使用`vector2d_v3.Vector2d`（来自[示例 11-7](#ex_vector2d_v3)）；在第二次运行中，我使用具有`__slots__`的版本，来自[示例 11-16](#ex_vector2d_v3_slots)。
+- en: Example 11-17\. mem_test.py creates 10 million `Vector2d` instances using the
+    class defined in the named module
+  id: totrans-302
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 11-17\. mem_test.py创建了10百万个`Vector2d`实例，使用了命名模块中定义的类
+- en: '[PRE30]'
+  id: totrans-303
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE30]'
+- en: As [Example 11-17](#mem_test_demo) reveals, the RAM footprint of the script
+    grows to 1.55 GiB when instance `__dict__` is used in each of the 10 million `Vector2d`
+    instances, but that is reduced to 551 MiB when `Vector2d` has a `__slots__` attribute.
+    The `__slots__` version is also faster. The *mem_test.py* script in this test
+    basically deals with loading a module, checking memory usage, and formatting results.
+    You can find its source code in the [*fluentpython/example-code-2e* repository](https://fpy.li/11-11).
+  id: totrans-304
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如[示例 11-17](#mem_test_demo)所示，当每个10百万个`Vector2d`实例中使用`__dict__`时，脚本的RAM占用量增长到了1.55
+    GiB，但当`Vector2d`具有`__slots__`属性时，降低到了551 MiB。`__slots__`版本也更快。这个测试中的*mem_test.py*脚本基本上处理加载模块、检查内存使用情况和格式化结果。你可以在[*fluentpython/example-code-2e*存储库](https://fpy.li/11-11)中找到它的源代码。
+- en: Tip
+  id: totrans-305
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 提示
+- en: If you are handling millions of objects with numeric data, you should really
+    be using NumPy arrays (see [“NumPy”](ch02.html#numpy_sec)), which are not only
+    memory efficient but have highly optimized functions for numeric processing, many
+    of which operate on the entire array at once. I designed the `Vector2d` class
+    just to provide context when discussing special methods, because I try to avoid
+    vague `foo` and `bar` examples when I can.
+  id: totrans-306
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果你处理数百万个具有数值数据的对象，你应该真的使用NumPy数组（参见[“NumPy”](ch02.html#numpy_sec)），它们不仅内存高效，而且具有高度优化的数值处理函数，其中许多函数一次操作整个数组。我设计`Vector2d`类只是为了在讨论特殊方法时提供背景，因为我尽量避免在可以的情况下使用模糊的`foo`和`bar`示例。
+- en: Summarizing the Issues with __slots__
+  id: totrans-307
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 总结`__slots__`的问题
+- en: 'The `__slots__` class attribute may provide significant memory savings if properly
+    used, but there are a few caveats:'
+  id: totrans-308
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果正确使用，`__slots__`类属性可能会提供显著的内存节省，但有一些注意事项：
+- en: You must remember to redeclare `__slots__` in each subclass to prevent their
+    instances from having `__dict__`.
+  id: totrans-309
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 你必须记得在每个子类中重新声明`__slots__`，以防止它们的实例具有`__dict__`。
+- en: Instances will only be able to have the attributes listed in `__slots__`, unless
+    you include `'__dict__'` in `__slots__` (but doing so may negate the memory savings).
+  id: totrans-310
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 实例只能拥有`__slots__`中列出的属性，除非在`__slots__`中包含`'__dict__'`（但这样做可能会抵消内存节省）。
+- en: Classes using `__slots__` cannot use the `@cached_property` decorator, unless
+    they explicitly name `'__dict__'` in `__slots__`.
+  id: totrans-311
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 使用`__slots__`的类不能使用`@cached_property`装饰器，除非在`__slots__`中明确命名`'__dict__'`。
+- en: Instances cannot be targets of weak references, unless you add `'__weakref__'`
+    in `__slots__`.
+  id: totrans-312
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 实例不能成为弱引用的目标，除非在`__slots__`中添加`'__weakref__'`。
+- en: The last topic in this chapter has to do with overriding a class attribute in
+    instances and subclasses.
+  id: totrans-313
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 本章的最后一个主题涉及在实例和子类中覆盖类属性。
+- en: Overriding Class Attributes
+  id: totrans-314
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 覆盖类属性
+- en: A distinctive feature of Python is how class attributes can be used as default
+    values for instance attributes. In `Vector2d` there is the `typecode` class attribute.
+    It’s used twice in the `__bytes__` method, but we read it as `self.typecode` by
+    design. Because `Vector2d` instances are created without a `typecode` attribute
+    of their own, `self.typecode` will get the `Vector2d.typecode` class attribute
+    by default.
+  id: totrans-315
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Python 的一个显著特点是类属性可以用作实例属性的默认值。在`Vector2d`中有`typecode`类属性。它在`__bytes__`方法中使用了两次，但我们设计上将其读取为`self.typecode`。因为`Vector2d`实例是在没有自己的`typecode`属性的情况下创建的，所以`self.typecode`将默认获取`Vector2d.typecode`类属性。
+- en: But if you write to an instance attribute that does not exist, you create a
+    new instance attribute—e.g., a `typecode` instance attribute—and the class attribute
+    by the same name is untouched. However, from then on, whenever the code handling
+    that instance reads `self.typecode`, the instance `typecode` will be retrieved,
+    effectively shadowing the class attribute by the same name. This opens the possibility
+    of customizing an individual instance with a different `typecode`.
+  id: totrans-316
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 但是，如果写入一个不存在的实例属性，就会创建一个新的实例属性，例如，一个`typecode`实例属性，而同名的类属性则保持不变。但是，从那时起，每当处理该实例的代码读取`self.typecode`时，实例`typecode`将被检索，有效地遮蔽了同名的类属性。这打开了使用不同`typecode`自定义单个实例的可能性。
+- en: The default `Vector2d.typecode` is `'d'`, meaning each vector component will
+    be represented as an 8-byte double precision float when exporting to `bytes`.
+    If we set the `typecode` of a `Vector2d` instance to `'f'` prior to exporting,
+    each component will be exported as a 4-byte single precision float. [Example 11-18](#typecode_instance_demo)
+    demonstrates.
+  id: totrans-317
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 默认的`Vector2d.typecode`是`'d'`，意味着每个向量分量在导出为`bytes`时将被表示为8字节的双精度浮点数。如果在导出之前将`Vector2d`实例的`typecode`设置为`'f'`，则每个分量将以4字节的单精度浮点数导出。[示例 11-18](#typecode_instance_demo)演示了这一点。
+- en: Note
+  id: totrans-318
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 注意
+- en: We are discussing adding a custom instance attribute, therefore [Example 11-18](#typecode_instance_demo)
+    uses the `Vector2d` implementation without `__slots__`, as listed in [Example 11-11](#ex_vector2d_v3_full).
+  id: totrans-319
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们正在讨论添加自定义实例属性，因此[示例 11-18](#typecode_instance_demo)使用了没有`__slots__`的`Vector2d`实现，如[示例 11-11](#ex_vector2d_v3_full)中所列。
+- en: Example 11-18\. Customizing an instance by setting the `typecode` attribute
+    that was formerly inherited from the class
+  id: totrans-320
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 11-18。通过设置以前从类继承的`typecode`属性来自定义实例
+- en: '[PRE31]'
+  id: totrans-321
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE31]'
+- en: '[![1](assets/1.png)](#co_a_pythonic_object_CO13-1)'
+  id: totrans-322
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '![1](assets/1.png)](#co_a_pythonic_object_CO13-1)'
+- en: Default `bytes` representation is 17 bytes long.
+  id: totrans-323
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 默认的`bytes`表示长度为17字节。
+- en: '[![2](assets/2.png)](#co_a_pythonic_object_CO13-2)'
+  id: totrans-324
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_a_pythonic_object_CO13-2)'
+- en: Set `typecode` to `'f'` in the `v1` instance.
+  id: totrans-325
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在`v1`实例中将`typecode`设置为`'f'`。
+- en: '[![3](assets/3.png)](#co_a_pythonic_object_CO13-3)'
+  id: totrans-326
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_a_pythonic_object_CO13-3)'
+- en: Now the `bytes` dump is 9 bytes long.
+  id: totrans-327
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在`bytes`转储的长度为9字节。
+- en: '[![4](assets/4.png)](#co_a_pythonic_object_CO13-4)'
+  id: totrans-328
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_a_pythonic_object_CO13-4)'
+- en: '`Vector2d.typecode` is unchanged; only the `v1` instance uses `typecode` `''f''`.'
+  id: totrans-329
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`Vector2d.typecode`保持不变；只有`v1`实例使用`typecode`为`''f''`。'
+- en: 'Now it should be clear why the `bytes` export of a `Vector2d` is prefixed by
+    the `typecode`: we wanted to support different export formats.'
+  id: totrans-330
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在应该清楚为什么`Vector2d`的`bytes`导出以`typecode`为前缀：我们想要支持不同的导出格式。
+- en: 'If you want to change a class attribute, you must set it on the class directly,
+    not through an instance. You could change the default `typecode` for all instances
+    (that don’t have their own `typecode`) by doing this:'
+  id: totrans-331
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果要更改类属性，必须直接在类上设置，而不是通过实例。你可以通过以下方式更改所有实例（没有自己的`typecode`）的默认`typecode`：
+- en: '[PRE32]'
+  id: totrans-332
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE32]'
+- en: However, there is an idiomatic Python way of achieving a more permanent effect,
+    and being more explicit about the change. Because class attributes are public,
+    they are inherited by subclasses, so it’s common practice to subclass just to
+    customize a class data attribute. The Django class-based views use this technique
+    extensively. [Example 11-19](#typecode_subclass_demo) shows how.
+  id: totrans-333
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 然而，在 Python 中有一种惯用的方法可以实现更持久的效果，并且更明确地说明更改。因为类属性是公共的，它们会被子类继承，所以习惯上是通过子类来定制类数据属性。Django
+    类基视图广泛使用这种技术。[示例 11-19](#typecode_subclass_demo)展示了如何实现。
+- en: Example 11-19\. The `ShortVector2d` is a subclass of `Vector2d`, which only
+    overwrites the default `typecode`
+  id: totrans-334
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 11-19。`ShortVector2d`是`Vector2d`的子类，只覆盖了默认的`typecode`
+- en: '[PRE33]'
+  id: totrans-335
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE33]'
+- en: '[![1](assets/1.png)](#co_a_pythonic_object_CO14-1)'
+  id: totrans-336
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_a_pythonic_object_CO14-1)'
+- en: Create `ShortVector2d` as a `Vector2d` subclass just to overwrite the `typecode`
+    class attribute.
+  id: totrans-337
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 创建`ShortVector2d`作为`Vector2d`的子类，只是为了覆盖`typecode`类属性。
+- en: '[![2](assets/2.png)](#co_a_pythonic_object_CO14-2)'
+  id: totrans-338
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_a_pythonic_object_CO14-2)'
+- en: Build `ShortVector2d` instance `sv` for demonstration.
+  id: totrans-339
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为演示构建`ShortVector2d`实例`sv`。
+- en: '[![3](assets/3.png)](#co_a_pythonic_object_CO14-3)'
+  id: totrans-340
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_a_pythonic_object_CO14-3)'
+- en: Inspect the `repr` of `sv`.
+  id: totrans-341
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 检查`sv`的`repr`。
+- en: '[![4](assets/4.png)](#co_a_pythonic_object_CO14-4)'
+  id: totrans-342
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_a_pythonic_object_CO14-4)'
+- en: Check that the length of the exported bytes is 9, not 17 as before.
+  id: totrans-343
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 检查导出字节的长度为9，而不是之前的17。
+- en: 'This example also explains why I did not hardcode the `class_name` in `Vector2d.​__repr__`,
+    but instead got it from `type(self).__name__`, like this:'
+  id: totrans-344
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这个例子还解释了为什么我没有在`Vector2d.​__repr__`中硬编码`class_name`，而是从`type(self).__name__`获取它，就像这样：
+- en: '[PRE34]'
+  id: totrans-345
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE34]'
+- en: If I had hardcoded the `class_name`, subclasses of `Vector2d` like `ShortVector2d`
+    would have to overwrite `__repr__` just to change the `class_name`. By reading
+    the name from the `type` of the instance, I made `__repr__` safer to inherit.
+  id: totrans-346
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果我在`class_name`中硬编码，`Vector2d`的子类如`ShortVector2d`将不得不覆盖`__repr__`以更改`class_name`。通过从实例的`type`中读取名称，我使`__repr__`更安全地继承。
+- en: 'This ends our coverage of building a simple class that leverages the data model
+    to play well with the rest of Python: offering different object representations,
+    providing a custom formatting code, exposing read-only attributes, and supporting
+    `hash()` to integrate with sets and mappings.'
+  id: totrans-347
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们结束了构建一个简单类的覆盖，利用数据模型与 Python 的其他部分协作：提供不同的对象表示，提供自定义格式代码，公开只读属性，并支持 `hash()`
+    以与集合和映射集成。
+- en: Chapter Summary
+  id: totrans-348
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 章节总结
+- en: The aim of this chapter was to demonstrate the use of special methods and conventions
+    in the construction of a well-behaved Pythonic class.
+  id: totrans-349
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 本章的目的是演示在构建一个良好的 Python 类时使用特殊方法和约定。
+- en: 'Is *vector2d_v3.py* (shown in [Example 11-11](#ex_vector2d_v3_full)) more Pythonic
+    than *vector2d_v0.py* (shown in [Example 11-2](#ex_vector2d_v0))? The `Vector2d`
+    class in *vector2d_v3.py* certainly exhibits more Python features. But whether
+    the first or the last `Vector2d` implementation is suitable depends on the context
+    where it would be used. Tim Peter’s “Zen of Python” says:'
+  id: totrans-350
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*vector2d_v3.py*（在 [示例 11-11](#ex_vector2d_v3_full) 中显示）比 *vector2d_v0.py*（在
+    [示例 11-2](#ex_vector2d_v0) 中显示）更符合 Python 风格吗？*vector2d_v3.py* 中的 `Vector2d` 类显然展示了更多的
+    Python 特性。但是第一个或最后一个 `Vector2d` 实现是否合适取决于它将被使用的上下文。Tim Peter 的“Python 之禅”说：'
+- en: Simple is better than complex.
+  id: totrans-351
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+  zh: 简单胜于复杂。
+- en: An object should be as simple as the requirements dictate—and not a parade of
+    language features. If the code is for an application, then it should focus on
+    what is needed to support the end users, not more. If the code is for a library
+    for other programmers to use, then it’s reasonable to implement special methods
+    supporting behaviors that Pythonistas expect. For example, `__eq__` may not be
+    necessary to support a business requirement, but it makes the class easier to
+    test.
+  id: totrans-352
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 对象应该尽可能简单，符合需求，而不是语言特性的大杂烩。如果代码是为了一个应用程序，那么它应该专注于支持最终用户所需的内容，而不是更多。如果代码是为其他程序员使用的库，那么实现支持
+    Python 程序员期望的特殊方法是合理的。例如，`__eq__` 可能不是支持业务需求所必需的，但它使类更容易测试。
+- en: 'My goal in expanding the `Vector2d` code was to provide context for discussing
+    Python special methods and coding conventions. The examples in this chapter have
+    demonstrated several of the special methods we first saw in [Table 1-1](ch01.html#special_names_tbl)
+    ([Chapter 1](ch01.html#data_model)):'
+  id: totrans-353
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我在扩展 `Vector2d` 代码的目标是为了讨论 Python 特殊方法和编码约定提供背景。本章的示例演示了我们在 [Table 1-1](ch01.html#special_names_tbl)（[第
+    1 章](ch01.html#data_model)）中首次看到的几个特殊方法：
+- en: 'String/bytes representation methods: `__repr__`, `__str__`, `__format__`, and
+    `__bytes__`'
+  id: totrans-354
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 字符串/字节表示方法：`__repr__`、`__str__`、`__format__` 和 `__bytes__`
+- en: 'Methods for reducing an object to a number: `__abs__`, `__bool__`, and `__hash__`'
+  id: totrans-355
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 将对象转换为数字的方法：`__abs__`、`__bool__` 和 `__hash__`
+- en: The `__eq__` operator, to support testing and hashing (along with `__hash__`)
+  id: totrans-356
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '`__eq__` 运算符，用于支持测试和哈希（以及 `__hash__`）'
+- en: While supporting conversion to `bytes`, we also implemented an alternative constructor,
+    `Vector2d.frombytes()`, which provided the context for discussing the decorators
+    `@classmethod` (very handy) and `@staticmethod` (not so useful, module-level functions
+    are simpler). The `frombytes` method was inspired by its namesake in the `array.array`
+    class.
+  id: totrans-357
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在支持转换为 `bytes` 的同时，我们还实现了一个替代构造函数 `Vector2d.frombytes()`，这为讨论装饰器 `@classmethod`（非常方便）和
+    `@staticmethod`（不太有用，模块级函数更简单）提供了背景。`frombytes` 方法受到了 `array.array` 类中同名方法的启发。
+- en: We saw that the [Format Specification Mini-Language](https://fpy.li/fmtspec)
+    is extensible by implementing a `__format__` method that parses a `format_spec`
+    provided to the `format(obj, format_spec)` built-in or within replacement fields
+    `'{:«format_spec»}'` in f-strings or strings used with the `str.format()` method.
+  id: totrans-358
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们看到 [格式规范迷你语言](https://fpy.li/fmtspec) 可通过实现 `__format__` 方法来扩展，该方法解析提供给 `format(obj,
+    format_spec)` 内置函数或在 f-strings 中使用的替换字段 `'{:«format_spec»}'` 中的 `format_spec`。
+- en: In preparation to make `Vector2d` instances hashable, we made an effort to make
+    them immutable, at least preventing accidental changes by coding the `x` and `y`
+    attributes as private, and exposing them as read-only properties. We then implemented
+    `__hash__` using the recommended technique of xor-ing the hashes of the instance
+    attributes.
+  id: totrans-359
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了使 `Vector2d` 实例可哈希，我们努力使它们是不可变的，至少通过将 `x` 和 `y` 属性编码为私有属性，然后将它们公开为只读属性来防止意外更改。然后，我们使用推荐的异或实例属性哈希的技术实现了
+    `__hash__`。
+- en: We then discussed the memory savings and the caveats of declaring a `__slots__`
+    attribute in `Vector2d`. Because using `__slots__` has side effects, it really
+    makes sense only when handling a very large number of instances—think millions
+    of instances, not just thousands. In many such cases, using [pandas](https://fpy.li/pandas)
+    may be the best option.
+  id: totrans-360
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们随后讨论了在 `Vector2d` 中声明 `__slots__` 属性的内存节省和注意事项。因为使用 `__slots__` 会产生副作用，所以只有在处理非常大量的实例时才是有意义的——考虑的是百万级的实例，而不仅仅是千个。在许多这种情况下，使用
+    [pandas](https://fpy.li/pandas) 可能是最佳选择。
+- en: The last topic we covered was the overriding of a class attribute accessed via
+    the instances (e.g., `self.typecode`). We did that first by creating an instance
+    attribute, and then by subclassing and overwriting at the class level.
+  id: totrans-361
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们讨论的最后一个主题是覆盖通过实例访问的类属性（例如，`self.typecode`）。我们首先通过创建实例属性，然后通过子类化和在类级别上重写来实现。
+- en: 'Throughout the chapter, I mentioned how design choices in the examples were
+    informed by studying the API of standard Python objects. If this chapter can be
+    summarized in one sentence, this is it:'
+  id: totrans-362
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在整个章节中，我提到示例中的设计选择是通过研究标准 Python 对象的 API 而得出的。如果这一章可以用一句话总结，那就是：
+- en: To build Pythonic objects, observe how real Python objects behave.
+  id: totrans-363
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+  zh: 要构建 Pythonic 对象，观察真实的 Python 对象的行为。
+- en: ''
+  id: totrans-364
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: Ancient Chinese proverb
+  id: totrans-365
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+  zh: 古老的中国谚语
+- en: Further Reading
+  id: totrans-366
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 进一步阅读
+- en: 'This chapter covered several special methods of the data model, so naturally
+    the primary references are the same as the ones provided in [Chapter 1](ch01.html#data_model),
+    which gave a high-level view of the same topic. For convenience, I’ll repeat those
+    four earlier recommendations here, and add a few other ones:'
+  id: totrans-367
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 本章涵盖了数据模型的几个特殊方法，因此主要参考资料与[第1章](ch01.html#data_model)中提供的相同，该章节提供了相同主题的高层次视图。为方便起见，我将在此重复之前的四个推荐，并添加一些其他的：
+- en: The [“Data Model” chapter](https://fpy.li/dtmodel) of *The Python Language Reference*
+  id: totrans-368
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*Python语言参考*的[“数据模型”章节](https://fpy.li/dtmodel)'
+- en: Most of the methods we used in this chapter are documented in [“3.3.1\. Basic
+    customization”](https://fpy.li/11-12).
+  id: totrans-369
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们在本章中使用的大多数方法在[“3.3.1\.基本自定义”](https://fpy.li/11-12)中有文档记录。
+- en: '[*Python in a Nutshell*, 3rd ed.,](https://fpy.li/pynut3) by Alex Martelli,
+    Anna Ravenscroft, and Steve Holden'
+  id: totrans-370
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[*Python速查手册*, 第3版](https://fpy.li/pynut3)，作者Alex Martelli, Anna Ravenscroft和Steve
+    Holden'
+- en: Covers the special methods in depth.
+  id: totrans-371
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 深入讨论了特殊方法。
+- en: '[*Python Cookbook*, 3rd ed.](https://fpy.li/pycook3), by David Beazley and
+    Brian K. Jones'
+  id: totrans-372
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[*Python食谱*, 第3版](https://fpy.li/pycook3)，作者David Beazley和Brian K. Jones'
+- en: Modern Python practices demonstrated through recipes. Chapter 8, “Classes and
+    Objects,” in particular has several solutions related to discussions in this chapter.
+  id: totrans-373
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 通过示例演示了现代Python实践。特别是第8章“类和对象”中有几个与本章讨论相关的解决方案。
+- en: '*Python Essential Reference*, 4th ed., by David Beazley'
+  id: totrans-374
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*Python基础参考*, 第4版，作者David Beazley'
+- en: Covers the data model in detail, even if only Python 2.6 and 3.0 are covered
+    (in the fourth edition). The fundamental concepts are all the same and most of
+    the Data Model APIs haven’t changed at all since Python 2.2, when built-in types
+    and user-defined classes were unified.
+  id: totrans-375
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 详细介绍了数据模型，即使只涵盖了Python 2.6和3.0（在第四版中）。基本概念都是相同的，大多数数据模型API自Python 2.2以来都没有改变，当时内置类型和用户定义类被统一起来。
+- en: 'In 2015—the year I finished the first edition of *Fluent Python*—Hynek Schlawack
+    started the `attrs` package. From the `attrs` documentation:'
+  id: totrans-376
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在2015年，我完成第一版*流畅的Python*时，Hynek Schlawack开始了`attrs`包。从`attrs`文档中：
+- en: '`attrs` is the Python package that will bring back the **joy** of **writing
+    classes** by relieving you from the drudgery of implementing object protocols
+    (aka dunder methods).'
+  id: totrans-377
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+  zh: '`attrs`是Python包，通过解除你实现对象协议（也称为dunder方法）的繁琐，为**编写类**带来**乐趣**。'
+- en: I mentioned `attrs` as a more powerful alternative to `@dataclass` in [“Further
+    Reading”](ch05.html#further_data_class). The data class builders from [Chapter 5](ch05.html#data_class_ch)
+    as well as `attrs` automatically equip your classes with several special methods.
+    But knowing how to code those special methods yourself is still essential to understand
+    what those packages do, to decide whether you really need them, and to override
+    the methods they generate—when necessary.
+  id: totrans-378
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我在[“进一步阅读”](ch05.html#further_data_class)中提到`attrs`作为`@dataclass`的更强大替代品。来自[第5章](ch05.html#data_class_ch)的数据类构建器以及`attrs`会自动为你的类配备几个特殊方法。但了解如何自己编写这些特殊方法仍然是必要的，以理解这些包的功能，决定是否真正需要它们，并在必要时覆盖它们生成的方��。
+- en: In this chapter, we saw every special method related to object representation,
+    except `__index__` and `__fspath__`. We’ll discuss `__index__` in [Chapter 12](ch12.html#user_defined_sequences),
+    [“A Slice-Aware __getitem__”](ch12.html#slice_aware_sec). I will not cover `__fspath__`.
+    To learn about it, see [PEP 519—Adding a file system path protocol](https://fpy.li/pep519).
+  id: totrans-379
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在本章中，我们看到了与对象表示相关的所有特殊方法，除了`__index__`和`__fspath__`。我们将在[第12章](ch12.html#user_defined_sequences)中讨论`__index__`，[“一个切片感知的__getitem__”](ch12.html#slice_aware_sec)。我不会涉及`__fspath__`。要了解更多信息，请参阅[PEP
+    519—添加文件系统路径协议](https://fpy.li/pep519)。
+- en: 'An early realization of the need for distinct string representations for objects
+    appeared in Smalltalk. The 1996 article [“How to Display an Object as a String:
+    printString and displayString”](https://fpy.li/11-13) by Bobby Woolf discusses
+    the implementation of the `printString` and `displayString` methods in that language.
+    From that article, I borrowed the pithy descriptions “the way the developer wants
+    to see it” and “the way the user wants to see it” when defining `repr()` and `str()`
+    in [“Object Representations”](#object_repr_sec).'
+  id: totrans-380
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 早期意识到对象需要不同的字符串表示的需求出现在Smalltalk中。1996年Bobby Woolf的文章[“如何将对象显示为字符串：printString和displayString”](https://fpy.li/11-13)讨论了该语言中`printString`和`displayString`方法的实现。从那篇文章中，我借用了“开发者想要看到的方式”和“用户想要看到的方式”这两个简洁的描述，用于定义`repr()`和`str()`在[“对象表示”](#object_repr_sec)中。
+- en: ^([1](ch11.html#idm46582432889888-marker)) From Faassen’s blog post, [“What
+    is Pythonic?”](https://fpy.li/11-1)
+  id: totrans-381
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([1](ch11.html#idm46582432889888-marker)) 来自Faassen的博客文章[“什么是Pythonic？”](https://fpy.li/11-1)
+- en: ^([2](ch11.html#idm46582432549616-marker)) I used `eval` to clone the object
+    here just to make a point about `repr`; to clone an instance, the `copy.copy`
+    function is safer and faster.
+  id: totrans-382
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([2](ch11.html#idm46582432549616-marker)) 我在这里使用`eval`来克隆对象只是为了说明`repr`；要克隆一个实例，`copy.copy`函数更安全更快。
+- en: ^([3](ch11.html#idm46582432214800-marker)) This line could also be written as
+    `yield self.x; yield.self.y`. I have a lot more to say about the `__iter__` special
+    method, generator expressions, and the `yield` keyword in [Chapter 17](ch17.html#iterables2generators).
+  id: totrans-383
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([3](ch11.html#idm46582432214800-marker)) 这一行也可以写成`yield self.x; yield.self.y`。关于`__iter__`特殊方法、生成器表达式和`yield`关键字，我在[第17章](ch17.html#iterables2generators)中还有很多要说。
+- en: ^([4](ch11.html#idm46582431979952-marker)) We had a brief introduction to `memoryview`,
+    explaining its `.cast` method, in [“Memory Views”](ch02.html#memoryview_sec).
+  id: totrans-384
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([4](ch11.html#idm46582431979952-marker)) 我们在[“内存视图”](ch02.html#memoryview_sec)中简要介绍了`memoryview`，解释了它的`.cast`方法。
+- en: ^([5](ch11.html#idm46582431827696-marker)) Leonardo Rochael, one of the technical
+    reviewers of this book, disagrees with my low opinion of `staticmethod`, and recommends
+    the blog post [“The Definitive Guide on How to Use Static, Class or Abstract Methods
+    in Python”](https://fpy.li/11-2) by Julien Danjou as a counterargument. Danjou’s
+    post is very good; I do recommend it. But it wasn’t enough to change my mind about
+    `staticmethod`. You’ll have to decide for yourself.
+  id: totrans-385
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([5](ch11.html#idm46582431827696-marker)) 本书的技术审阅员之一 Leonardo Rochael 不同意我对
+    `staticmethod` 的低评价，并推荐 Julien Danjou 的博文[“如何在 Python 中使用静态、类或抽象方法的权威指南”](https://fpy.li/11-2)作为反驳意见。Danjou
+    的文章非常好；我推荐它。但这并不足以改变我的对 `staticmethod` 的看法。你需要自己决定。
+- en: ^([6](ch11.html#idm46582430824752-marker)) The pros and cons of private attributes
+    are the subject of the upcoming [“Private and ‘Protected’ Attributes in Python”](#private_protected_sec).
+  id: totrans-386
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([6](ch11.html#idm46582430824752-marker)) 私有属性的利弊是即将到来的[“Python 中的私有和‘受保护’属性”](#private_protected_sec)的主题。
+- en: ^([7](ch11.html#idm46582429732176-marker)) From the [“Paste Style Guide”](https://fpy.li/11-8).
+  id: totrans-387
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([7](ch11.html#idm46582429732176-marker)) 来自[“粘贴风格指南”](https://fpy.li/11-8)。
+- en: '^([8](ch11.html#idm46582429727712-marker)) In modules, a single `_` in front
+    of a top-level name does have an effect: if you write `from mymod import *`, the
+    names with a `_` prefix are not imported from `mymod`. However, you can still
+    write `from mymod import _privatefunc`. This is explained in the [*Python Tutorial*,
+    section 6.1., “More on Modules”](https://fpy.li/11-9).'
+  id: totrans-388
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([8](ch11.html#idm46582429727712-marker)) 在模块中，顶层名称前的单个 `_` 确实有影响：如果你写 `from
+    mymod import *`，带有 `_` 前缀的名称不会从 `mymod` 中导入。然而，你仍然可以写 `from mymod import _privatefunc`。这在[*Python
+    教程*，第 6.1 节，“关于模块的更多内容”](https://fpy.li/11-9)中有解释。
+- en: ^([9](ch11.html#idm46582429722144-marker)) One example is in the [gettext module
+    docs](https://fpy.li/11-10).
+  id: totrans-389
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([9](ch11.html#idm46582429722144-marker)) 一个例子在[gettext 模块文档](https://fpy.li/11-10)中。
+- en: ^([10](ch11.html#idm46582429718864-marker)) If this state of affairs depresses
+    you, and makes you wish Python was more like Java in this regard, don’t read my
+    discussion of the relative strength of the Java `private` modifier in [“Soapbox”](#pythonic_soapbox).
+  id: totrans-390
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([10](ch11.html#idm46582429718864-marker)) 如果这种情况让你沮丧，并且让你希望 Python 在这方面更像
+    Java，那就不要阅读我对 Java `private` 修饰符相对强度的讨论，见[“Soapbox”](#pythonic_soapbox)。
+- en: '^([11](ch11.html#idm46582428675904-marker)) See the [“Simplest Thing that Could
+    Possibly Work: A Conversation with Ward Cunningham, Part V”](https://fpy.li/11-14).'
+  id: totrans-391
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([11](ch11.html#idm46582428675904-marker)) 参见[“可能的最简单的工作方式：与沃德·坎宁安的对话，第五部分”](https://fpy.li/11-14)。

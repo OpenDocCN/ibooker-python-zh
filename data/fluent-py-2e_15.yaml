@@ -1,0 +1,1938 @@
+- en: Chapter 12\. Special Methods for Sequences
+  id: totrans-0
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 第12章。序列的特殊方法
+- en: 'Don’t check whether it *is*-a duck: check whether it *quacks*-like-a duck,
+    *walks*-like-a duck, etc., etc., depending on exactly what subset of duck-like
+    behavior you need to play your language-games with. (`comp.lang.python`, Jul.
+    26, 2000)'
+  id: totrans-1
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+  zh: 不要检查它是否是一只鸭子：检查它是否像一只鸭子一样*嘎嘎叫*，*走路*，等等，具体取决于你需要与之进行语言游戏的鸭子行为子集。(`comp.lang.python`，2000年7月26日)
+- en: ''
+  id: totrans-2
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: Alex Martelli
+  id: totrans-3
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+  zh: Alex Martelli
+- en: 'In this chapter, we will create a class to represent a multidimensional `Vector`
+    class—a significant step up from the two-dimensional `Vector2d` of [Chapter 11](ch11.html#pythonic_objects).
+    `Vector` will behave like a standard Python immutable flat sequence. Its elements
+    will be floats, and it will support the following by the end of this chapter:'
+  id: totrans-4
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在本章中，我们将创建一个表示多维`Vector`类的类——这是从[第11章](ch11.html#pythonic_objects)的二维`Vector2d`中迈出的重要一步。`Vector`将表现得像一个标准的Python不可变的扁平序列。它的元素将是浮点数，并且在本章结束时将支持以下功能：
+- en: 'Basic sequence protocol: `__len__` and `__getitem__`'
+  id: totrans-5
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 基本序列协议：`__len__`和`__getitem__`
+- en: Safe representation of instances with many items
+  id: totrans-6
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 安全表示具有许多项目的实例
+- en: Proper slicing support, producing new `Vector` instances
+  id: totrans-7
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 适当的切片支持，生成新的`Vector`实例
+- en: Aggregate hashing, taking into account every contained element value
+  id: totrans-8
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 聚合哈希，考虑每个包含元素的值
+- en: Custom formatting language extension
+  id: totrans-9
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 自定义格式化语言扩展
+- en: We’ll also implement dynamic attribute access with `__getattr__` as a way of
+    replacing the read-only properties we used in `Vector2d`—although this is not
+    typical of sequence types.
+  id: totrans-10
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们还将使用`__getattr__`实现动态属性访问，以替换我们在`Vector2d`中使用的只读属性——尽管这不是序列类型的典型做法。
+- en: The code-intensive presentation will be interrupted by a conceptual discussion
+    about the idea of protocols as an informal interface. We’ll talk about how protocols
+    and *duck typing* are related, and its practical implications when you create
+    your own types.
+  id: totrans-11
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 代码密集的展示将被一个关于协议作为非正式接口的概念讨论所打断。我们将讨论协议和*鸭子类型*的关系，以及当你创建自己的类型时的实际影响。
+- en: What’s New in This Chapter
+  id: totrans-12
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 本章的新内容
+- en: There are no major changes in this chapter. There is a new, brief discussion
+    of the `typing.Protocol` in a tip box near the end of [“Protocols and Duck Typing”](#protocol_duck_section).
+  id: totrans-13
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 本章没有重大变化。在[“协议和鸭子类型”](#protocol_duck_section)末尾附近的提示框中有一个新的`typing.Protocol`的简短讨论。
+- en: In [“A Slice-Aware __getitem__”](#slice_aware_sec), the implementation of `__getitem__`
+    in [Example 12-6](#ex_vector_v2) is more concise and robust than the example in
+    the first edition, thanks to duck typing and `operator.index`. This change carried
+    over to later implementations of `Vector` in this chapter and in [Chapter 16](ch16.html#operator_overloading).
+  id: totrans-14
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在[“一个切片感知的__getitem__”](#slice_aware_sec)中，[示例12-6](#ex_vector_v2)中`__getitem__`的实现比第一版更简洁和健壮，这要归功于鸭子类型和`operator.index`。这种变化延续到了本章和[第16章](ch16.html#operator_overloading)中对`Vector`的后续实现。
+- en: Let’s get started.
+  id: totrans-15
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 让我们开始吧。
+- en: 'Vector: A User-Defined Sequence Type'
+  id: totrans-16
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: Vector：用户定义的序列类型
+- en: Our strategy to implement `Vector` will be to use composition, not inheritance.
+    We’ll store the components in an `array` of floats, and will implement the methods
+    needed for our `Vector` to behave like an immutable flat sequence.
+  id: totrans-17
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们实现`Vector`的策略将是使用组合，而不是继承。我们将把分量存储在一个浮点数的数组中，并将实现`Vector`所需的方法，使其表现得像一个不可变的扁平序列。
+- en: But before we implement the sequence methods, let’s make sure we have a baseline
+    implementation of `Vector` that is compatible with our earlier `Vector2d` class—except
+    where such compatibility would not make sense.
+  id: totrans-18
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 但在我们实现序列方法之前，让我们确保我们有一个基线实现的`Vector`，它与我们先前的`Vector2d`类兼容——除非这种兼容性没有意义。
+- en: 'Vector Take #1: Vector2d Compatible'
+  id: totrans-19
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: Vector第一版：与Vector2d兼容
+- en: The first version of `Vector` should be as compatible as possible with our earlier
+    `Vector2d` class.
+  id: totrans-20
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`Vector`的第一个版本应尽可能与我们先前的`Vector2d`类兼容。'
+- en: However, by design, the `Vector` constructor is not compatible with the `Vector2d`
+    constructor. We could make `Vector(3, 4)` and `Vector(3, 4, 5)` work, by taking
+    arbitrary arguments with `*args` in `__init__`, but the best practice for a sequence
+    constructor is to take the data as an iterable argument in the constructor, like
+    all built-in sequence types do. [Example 12-1](#ex_vector_demo) shows some ways
+    of instantiating our new `Vector` objects.
+  id: totrans-21
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 但是，按设计，`Vector`构造函数与`Vector2d`构造函数不兼容。我们可以通过在`__init__`中使用`*args`来接受任意数量的参数使`Vector(3,
+    4)`和`Vector(3, 4, 5)`起作用，但是序列构造函数的最佳实践是在构造函数中将数据作为可迭代参数接受，就像所有内置序列类型一样。[示例12-1](#ex_vector_demo)展示了实例化我们新的`Vector`对象的一些方法。
+- en: Example 12-1\. Tests of `Vector.__init__` and `Vector.__repr__`
+  id: totrans-22
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例12-1。`Vector.__init__`和`Vector.__repr__`的测试
+- en: '[PRE0]'
+  id: totrans-23
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE0]'
+- en: Apart from a new constructor signature, I made sure every test I did with `Vector2d`
+    (e.g., `Vector2d(3, 4)`) passed and produced the same result with a two-component
+    `Vector([3, 4])`.
+  id: totrans-24
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 除了一个新的构造函数签名外，我确保了我对`Vector2d`（例如，`Vector2d(3, 4)`）进行的每个测试都通过并产生了与两个分量`Vector([3,
+    4])`相同的结果。
+- en: Warning
+  id: totrans-25
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 警告
+- en: When a `Vector` has more than six components, the string produced by `repr()`
+    is abbreviated with `...` as seen in the last line of [Example 12-1](#ex_vector_demo).
+    This is crucial in any collection type that may contain a large number of items,
+    because `repr` is used for debugging—and you don’t want a single large object
+    to span thousands of lines in your console or log. Use the `reprlib` module to
+    produce limited-length representations, as in [Example 12-2](#ex_vector_v1). The
+    `reprlib` module was named `repr` in Python 2.7.
+  id: totrans-26
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当一个`Vector`有超过六个分量时，`repr()`产生的字符串会被缩写为`...`，就像在[示例12-1](#ex_vector_demo)的最后一行中看到的那样。这在可能包含大量项目的任何集合类型中至关重要，因为`repr`用于调试，你不希望一个大对象在控制台或日志中跨越数千行。使用`reprlib`模块生成有限长度的表示，就像[示例12-2](#ex_vector_v1)中那样。`reprlib`模块在Python
+    2.7中被命名为`repr`。
+- en: '[Example 12-2](#ex_vector_v1) lists the implementation of our first version
+    of `Vector` (this example builds on the code shown in Examples [11-2](ch11.html#ex_vector2d_v0)
+    and [11-3](ch11.html#ex_vector2d_v1)).'
+  id: totrans-27
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例12-2](#ex_vector_v1)列出了我们第一个版本的`Vector`的实现（此示例基于示例[11-2](ch11.html#ex_vector2d_v0)和[11-3](ch11.html#ex_vector2d_v1)中显示的代码）。'
+- en: 'Example 12-2\. vector_v1.py: derived from vector2d_v1.py'
+  id: totrans-28
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例12-2\. vector_v1.py：派生自vector2d_v1.py
+- en: '[PRE1]'
+  id: totrans-29
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE1]'
+- en: '[![1](assets/1.png)](#co_special_methods_for_sequences_CO1-1)'
+  id: totrans-30
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_special_methods_for_sequences_CO1-1)'
+- en: The `self._components` instance “protected” attribute will hold an `array` with
+    the `Vector` components.
+  id: totrans-31
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`self._components`实例“受保护”的属性将保存带有`Vector`组件的`array`。'
+- en: '[![2](assets/2.png)](#co_special_methods_for_sequences_CO1-2)'
+  id: totrans-32
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_special_methods_for_sequences_CO1-2)'
+- en: To allow iteration, we return an iterator over `self._components`.^([1](ch12.html#idm46582428059280))
+  id: totrans-33
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了允许迭代，我们返回一个`self._components`上的迭代器。^([1](ch12.html#idm46582428059280))
+- en: '[![3](assets/3.png)](#co_special_methods_for_sequences_CO1-3)'
+  id: totrans-34
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_special_methods_for_sequences_CO1-3)'
+- en: Use `reprlib.repr()` to get a limited-length representation of `self._components`
+    (e.g., `array('d', [0.0, 1.0, 2.0, 3.0, 4.0, ...])`).
+  id: totrans-35
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 使用`reprlib.repr()`获取`self._components`的有限长度表示（例如，`array('d', [0.0, 1.0, 2.0,
+    3.0, 4.0, ...])`）。
+- en: '[![4](assets/4.png)](#co_special_methods_for_sequences_CO1-4)'
+  id: totrans-36
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_special_methods_for_sequences_CO1-4)'
+- en: Remove the `array('d',` prefix, and the trailing `)` before plugging the string
+    into a `Vector` constructor call.
+  id: totrans-37
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在将字符串插入`Vector`构造函数调用之前，删除`array('d',`前缀和尾随的`)`。
+- en: '[![5](assets/5.png)](#co_special_methods_for_sequences_CO1-5)'
+  id: totrans-38
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_special_methods_for_sequences_CO1-5)'
+- en: Build a `bytes` object directly from `self._components`.
+  id: totrans-39
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 直接从`self._components`构建一个`bytes`对象。
+- en: '[![6](assets/6.png)](#co_special_methods_for_sequences_CO1-6)'
+  id: totrans-40
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![6](assets/6.png)](#co_special_methods_for_sequences_CO1-6)'
+- en: 'Since Python 3.8, `math.hypot` accepts N-dimensional points. I used this expression
+    before: `math.sqrt(sum(x * x for x in self))`.'
+  id: totrans-41
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 自Python 3.8起，`math.hypot`接受N维点。我之前使用过这个表达式：`math.sqrt(sum(x * x for x in self))`。
+- en: '[![7](assets/7.png)](#co_special_methods_for_sequences_CO1-7)'
+  id: totrans-42
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![7](assets/7.png)](#co_special_methods_for_sequences_CO1-7)'
+- en: 'The only change needed from the earlier `frombytes` is in the last line: we
+    pass the `memoryview` directly to the constructor, without unpacking with `*`
+    as we did before.'
+  id: totrans-43
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 与之前的`frombytes`唯一需要更改的地方在于最后一行：我们直接将`memoryview`传递给构造函数，而不像之前那样使用`*`进行解包。
+- en: The way I used `reprlib.repr` deserves some elaboration. That function produces
+    safe representations of large or recursive structures by limiting the length of
+    the output string and marking the cut with `'...'`. I wanted the `repr` of a `Vector`
+    to look like `Vector([3.0, 4.0, 5.0])` and not `Vector(array('d', [3.0, 4.0, 5.0]))`,
+    because the fact that there is an `array` inside a `Vector` is an implementation
+    detail. Because these constructor calls build identical `Vector` objects, I prefer
+    the simpler syntax using a `list` argument.
+  id: totrans-44
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我使用`reprlib.repr`的方式值得一提。该函数通过限制输出字符串的长度并用`'...'`标记截断来生成大型或递归结构的安全表示。我希望`Vector`��`repr`看起来像`Vector([3.0,
+    4.0, 5.0])`而不是`Vector(array('d', [3.0, 4.0, 5.0]))`，因为`Vector`内部有一个`array`是一个实现细节。因为这些构造函数调用构建了相同的`Vector`对象，我更喜欢使用带有`list`参数的更简单的语法。
+- en: 'When coding `__repr__`, I could have produced the simplified `components` display
+    with this expression: `reprlib.repr(list(self._components))`. However, this would
+    be wasteful, as I’d be copying every item from `self._components` to a `list`
+    just to use the `list` `repr`. Instead, I decided to apply `reprlib.repr` to the
+    `self._components` array directly, and then chop off the characters outside of
+    the `[]`. That’s what the second line of `__repr__` does in [Example 12-2](#ex_vector_v1).'
+  id: totrans-45
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在编写`__repr__`时，我本可以使用这个表达式生成简化的`components`显示：`reprlib.repr(list(self._components))`。然而，这样做是浪费的，因为我需要将每个项从`self._components`复制到一个`list`中，只是为了使用`list`的`repr`。相反，我决定直接将`reprlib.repr`应用于`self._components`数组，并在`[]`之外截断字符。这就是[示例12-2](#ex_vector_v1)中`__repr__`的第二行所做的事情。
+- en: Tip
+  id: totrans-46
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 提示
+- en: Because of its role in debugging, calling `repr()` on an object should never
+    raise an exception. If something goes wrong inside your implementation of `__repr__`,
+    you must deal with the issue and do your best to produce some serviceable output
+    that gives the user a chance of identifying the receiver (`self`).
+  id: totrans-47
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 由于在调试中的作用，对对象调用`repr()`不应引发异常。如果在`__repr__`的实现中出现问题，您必须处理该问题，并尽力产生一些可用的输出，以便用户有机会识别接收者（`self`）。
+- en: Note that the `__str__`, `__eq__`, and `__bool__` methods are unchanged from
+    `Vector2d`, and only one character was changed in `frombytes` (a `*` was removed
+    in the last line). This is one of the benefits of making the original `Vector2d`
+    iterable.
+  id: totrans-48
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 请注意，`__str__`、`__eq__`和`__bool__`方法与`Vector2d`中保持不变，`frombytes`中只有一个字符发生了变化（最后一行删除了一个`*`）。这是使原始`Vector2d`可迭代的好处之一。
+- en: 'By the way, we could have subclassed `Vector` from `Vector2d`, but I chose
+    not to do it for two reasons. First, the incompatible constructors really make
+    subclassing not advisable. I could work around that with some clever parameter
+    handling in `__init__`, but the second reason is more important: I want `Vector`
+    to be a standalone example of a class implementing the sequence protocol. That’s
+    what we’ll do next, after a discussion of the term *protocol*.'
+  id: totrans-49
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 顺便说一句，我们本可以从`Vector2d`中派生`Vector`，但出于两个原因我选择不这样做。首先，不兼容的构造函数确实使得子类化不可取。我可以通过在`__init__`中进行一些巧妙的参数处理来解决这个问题，但第二个原因更重要：我希望`Vector`是一个独立的实现序列协议的类的示例。这就是我们接下来要做的事情，在讨论术语*协议*之后。
+- en: Protocols and Duck Typing
+  id: totrans-50
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 协议和鸭子类型
+- en: As early as [Chapter 1](ch01.html#data_model), we saw that you don’t need to
+    inherit from any special class to create a fully functional sequence type in Python;
+    you just need to implement the methods that fulfill the sequence protocol. But
+    what kind of protocol are we talking about?
+  id: totrans-51
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 早在[第1章](ch01.html#data_model)中，我们就看到在Python中创建一个完全功能的序列类型并不需要继承任何特殊类；你只需要实现满足序列协议的方法。但我们在谈论什么样的协议呢？
+- en: In the context of object-oriented programming, a protocol is an informal interface,
+    defined only in documentation and not in code. For example, the sequence protocol
+    in Python entails just the `__len__` and `__getitem__` methods. Any class `Spam`
+    that implements those methods with the standard signature and semantics can be
+    used anywhere a sequence is expected. Whether `Spam` is a subclass of this or
+    that is irrelevant; all that matters is that it provides the necessary methods.
+    We saw that in [Example 1-1](ch01.html#ex_pythonic_deck), reproduced here in [Example 12-3](#ex_pythonic_deck_rep).
+  id: totrans-52
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在面向对象编程的上下文中，协议是一种非正式接口，仅在文档中定义，而不在代码中定义。例如，在Python中，序列协议仅包括`__len__`和`__getitem__`方法。任何实现这些方法的类`Spam`，具有标准签名和语义，都可以在期望序列的任何地方使用。`Spam`是这个或那个的子类无关紧要；重要的是它提供了必要的方法。我们在[示例1-1](ch01.html#ex_pythonic_deck)中看到了这一点，在[示例12-3](#ex_pythonic_deck_rep)中重现。
+- en: Example 12-3\. Code from [Example 1-1](ch01.html#ex_pythonic_deck), reproduced
+    here for convenience
+  id: totrans-53
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例12-3。[示例1-1](ch01.html#ex_pythonic_deck)中的代码，这里为方便起见重现
+- en: '[PRE2]'
+  id: totrans-54
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE2]'
+- en: The `FrenchDeck` class in [Example 12-3](#ex_pythonic_deck_rep) takes advantage
+    of many Python facilities because it implements the sequence protocol, even if
+    that is not declared anywhere in the code. An experienced Python coder will look
+    at it and understand that it *is* a sequence, even if it subclasses `object`.
+    We say it *is* a sequence because it *behaves* like one, and that is what matters.
+  id: totrans-55
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例12-3](#ex_pythonic_deck_rep)中的`FrenchDeck`类利用了许多Python的功能，因为它实现了序列协议，即使在代码中没有声明。有经验的Python编程人员会查看它并理解它*是*一个序列，即使它是`object`的子类。我们说它*是*一个序列，因为它*行为*像一个序列，这才是重要的。'
+- en: This became known as *duck typing*, after Alex Martelli’s post quoted at the
+    beginning of this chapter.
+  id: totrans-56
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这被称为*鸭子类型*，源自亚历克斯·马特利在本章开头引用的帖子。
+- en: Because protocols are informal and unenforced, you can often get away with implementing
+    just part of a protocol, if you know the specific context where a class will be
+    used. For example, to support iteration, only `__getitem__` is required; there
+    is no need to provide `__len__`.
+  id: totrans-57
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 因为协议是非正式且不受强制执行的，所以如果您知道类将被使用的特定上下文，通常可以只实现协议的一部分。例如，为了支持迭代，只需要`__getitem__`；不需要提供`__len__`。
+- en: Tip
+  id: totrans-58
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 提示
+- en: 'With [PEP 544—Protocols: Structural subtyping (static duck typing)](https://fpy.li/pep544),
+    Python 3.8 supports *protocol classes*: `typing` constructs, which we studied
+    in [“Static Protocols”](ch08.html#protocols_in_fn). This new use of the word protocol
+    in Python has a related but different meaning. When I need to differentiate them,
+    I write *static protocol* to refer to the protocols formalized in protocol classes,
+    and *dynamic protocol* for the traditional sense. One key difference is that static
+    protocol implementations must provide all methods defined in the protocol class.
+    [“Two Kinds of Protocols”](ch13.html#two_kinds_protocols_sec) in [Chapter 13](ch13.html#ifaces_prot_abc)
+    has more details.'
+  id: totrans-59
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '使用[PEP 544—Protocols: Structural subtyping (static duck typing)](https://fpy.li/pep544)，Python
+    3.8支持*协议类*：`typing`构造，我们在[“静态协议”](ch08.html#protocols_in_fn)中学习过。Python中这个新用法的“协议”一词具有相关但不同的含义。当我需要区分它们时，我会写*静态协议*来指代协议类中规范化的协议，而*动态协议*则指传统意义上的协议。一个关键区别是静态协议实现必须提供协议类中定义的所有方法。[第13章](ch13.html#ifaces_prot_abc)的[“两种协议”](ch13.html#two_kinds_protocols_sec)有更多细节。'
+- en: We’ll now implement the sequence protocol in `Vector`, initially without proper
+    support for slicing, but later adding that.
+  id: totrans-60
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们现在将在`Vector`中实现序列协议，最初没有适当的切片支持，但稍后会添加。
+- en: 'Vector Take #2: A Sliceable Sequence'
+  id: totrans-61
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: Vector第二版：可切片序列
+- en: 'As we saw with the `FrenchDeck` example, supporting the sequence protocol is
+    really easy if you can delegate to a sequence attribute in your object, like our
+    `self._components` array. These `__len__` and `__getitem__` one-liners are a good
+    start:'
+  id: totrans-62
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 正如我们在`FrenchDeck`示例中看到的，如果您可以将对象中的序列属性委托给一个序列属性，比如我们的`self._components`数组，那么支持序列协议就非常容易。这些`__len__`和`__getitem__`一行代码是一个很好的开始：
+- en: '[PRE3]'
+  id: totrans-63
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE3]'
+- en: 'With these additions, all of these operations now work:'
+  id: totrans-64
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 有了这些补充，现在所有这些操作都可以正常工作：
+- en: '[PRE4]'
+  id: totrans-65
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE4]'
+- en: 'As you can see, even slicing is supported—but not very well. It would be better
+    if a slice of a `Vector` was also a `Vector` instance and not an `array`. The
+    old `FrenchDeck` class has a similar problem: when you slice it, you get a `list`.
+    In the case of `Vector`, a lot of functionality is lost when slicing produces
+    plain arrays.'
+  id: totrans-66
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如您所见，即使支持切片，但并不是很好。如果`Vector`的切片也是`Vector`实例而不是`array`，那将更好。旧的`FrenchDeck`类也有类似的问题：当您对其进行切片时，会得到一个`list`。在`Vector`的情况下，当切片产生普通数组时，会丢失很多功能。
+- en: 'Consider the built-in sequence types: every one of them, when sliced, produces
+    a new instance of its own type, and not of some other type.'
+  id: totrans-67
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 考虑内置序列类型：每一个，在切片时，都会产生自己类型的新实例，而不是其他类型的实例。
+- en: To make `Vector` produce slices as `Vector` instances, we can’t just delegate
+    the slicing to `array`. We need to analyze the arguments we get in `__getitem__`
+    and do the right thing.
+  id: totrans-68
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 要使`Vector`生成`Vector`实例作为切片，我们不能简单地将切片委托给`array`。我们需要分析在`__getitem__`中获得的参数并做正确的事情。
+- en: Now, let’s see how Python turns the syntax `my_seq[1:3]` into arguments for
+    `my_seq.__getitem__(...)`.
+  id: totrans-69
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在，让我们看看 Python 如何将语法`my_seq[1:3]`转换为`my_seq.__getitem__(...)`的参数。
+- en: How Slicing Works
+  id: totrans-70
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 切片的工作原理
+- en: A demo is worth a thousand words, so take a look at [Example 12-4](#ex_slice0).
+  id: totrans-71
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 一个示例胜过千言万语，所以看看[示例12-4](#ex_slice0)。
+- en: Example 12-4\. Checking out the behavior of `__getitem__` and slices
+  id: totrans-72
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例12-4。检查`__getitem__`和切片的行为
+- en: '[PRE5]'
+  id: totrans-73
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE5]'
+- en: '[![1](assets/1.png)](#co_special_methods_for_sequences_CO2-1)'
+  id: totrans-74
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_special_methods_for_sequences_CO2-1)'
+- en: For this demonstration, `__getitem__` merely returns whatever is passed to it.
+  id: totrans-75
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 对于这个演示，`__getitem__`只是返回传递给它的任何内容。
+- en: '[![2](assets/2.png)](#co_special_methods_for_sequences_CO2-2)'
+  id: totrans-76
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_special_methods_for_sequences_CO2-2)'
+- en: A single index, nothing new.
+  id: totrans-77
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 单个索引，没什么新鲜事。
+- en: '[![3](assets/3.png)](#co_special_methods_for_sequences_CO2-3)'
+  id: totrans-78
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_special_methods_for_sequences_CO2-3)'
+- en: The notation `1:4` becomes `slice(1, 4, None)`.
+  id: totrans-79
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 表示`1:4`变为`slice(1, 4, None)`。
+- en: '[![4](assets/4.png)](#co_special_methods_for_sequences_CO2-4)'
+  id: totrans-80
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_special_methods_for_sequences_CO2-4)'
+- en: '`slice(1, 4, 2)` means start at 1, stop at 4, step by 2.'
+  id: totrans-81
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`slice(1, 4, 2)`意味着从1开始，到4结束，步长为2。'
+- en: '[![5](assets/5.png)](#co_special_methods_for_sequences_CO2-5)'
+  id: totrans-82
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_special_methods_for_sequences_CO2-5)'
+- en: 'Surprise: the presence of commas inside the `[]` means `__getitem__` receives
+    a tuple.'
+  id: totrans-83
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 惊喜：`[]`内部有逗号意味着`__getitem__`接收到一个元组。
+- en: '[![6](assets/6.png)](#co_special_methods_for_sequences_CO2-6)'
+  id: totrans-84
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![6](assets/6.png)](#co_special_methods_for_sequences_CO2-6)'
+- en: The tuple may even hold several `slice` objects.
+  id: totrans-85
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 元组甚至可以包含多个`slice`对象。
+- en: Now let’s take a closer look at `slice` itself in [Example 12-5](#ex_slice1).
+  id: totrans-86
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在让我们更仔细地看看`slice`本身在[示例12-5](#ex_slice1)中。
+- en: Example 12-5\. Inspecting the attributes of the `slice` class
+  id: totrans-87
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例12-5。检查`slice`类的属性
+- en: '[PRE6]'
+  id: totrans-88
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE6]'
+- en: '[![1](assets/1.png)](#co_special_methods_for_sequences_CO3-1)'
+  id: totrans-89
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_special_methods_for_sequences_CO3-1)'
+- en: '`slice` is a built-in type (we saw it first in [“Slice Objects”](ch02.html#slice_objects)).'
+  id: totrans-90
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`slice`是一个内置类型（我们在[“切片对象”](ch02.html#slice_objects)中首次看到它）。'
+- en: '[![2](assets/2.png)](#co_special_methods_for_sequences_CO3-2)'
+  id: totrans-91
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_special_methods_for_sequences_CO3-2)'
+- en: Inspecting a `slice`, we find the data attributes `start`, `stop`, and `step`,
+    and an `indices` method.
+  id: totrans-92
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 检查一个`slice`，我们发现数据属性`start`、`stop`和`step`，以及一个`indices`方法。
+- en: 'In [Example 12-5](#ex_slice1), calling `dir(slice)` reveals an `indices` attribute,
+    which turns out to be a very interesting but little-known method. Here is what
+    `help(slice.indices)` reveals:'
+  id: totrans-93
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在[示例12-5](#ex_slice1)中调用`dir(slice)`会显示一个`indices`属性，这个属性实际上是一个非常有趣但鲜为人知的方法。以下是`help(slice.indices)`的内容：
+- en: '`S.indices(len) -> (start, stop, stride)`'
+  id: totrans-94
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`S.indices(len) -> (start, stop, stride)`'
+- en: Assuming a sequence of length `len`, calculate the `start` and `stop` indices,
+    and the `stride` length of the extended slice described by `S`. Out-of-bounds
+    indices are clipped just like they are in a normal slice.
+  id: totrans-95
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 假设长度为`len`的序列，计算由`S`描述的扩展切片的`start`和`stop`索引以及`stride`长度。超出边界的索引会像在正常切片中一样被截断。
+- en: In other words, `indices` exposes the tricky logic that’s implemented in the
+    built-in sequences to gracefully handle missing or negative indices and slices
+    that are longer than the original sequence. This method produces “normalized”
+    tuples of nonnegative `start`, `stop`, and `stride` integers tailored to a sequence
+    of the given length.
+  id: totrans-96
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 换句话说，`indices`暴露了内置序列中实现的复杂逻辑，以优雅地处理缺失或负索引以及比原始序列长的切片。这个方法生成针对给定长度序列的非负`start`、`stop`和`stride`整数的“标准化”元组。
+- en: 'Here are a couple of examples, considering a sequence of `len == 5`, e.g.,
+    `''ABCDE''`:'
+  id: totrans-97
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这里有几个例子，考虑一个长度为`len == 5`的序列，例如，`'ABCDE'`：
+- en: '[PRE7]'
+  id: totrans-98
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE7]'
+- en: '[![1](assets/1.png)](#co_special_methods_for_sequences_CO4-1)'
+  id: totrans-99
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_special_methods_for_sequences_CO4-1)'
+- en: '`''ABCDE''[:10:2]` is the same as `''ABCDE''[0:5:2]`.'
+  id: totrans-100
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`''ABCDE''[:10:2]`等同于`''ABCDE''[0:5:2]`。'
+- en: '[![2](assets/2.png)](#co_special_methods_for_sequences_CO4-2)'
+  id: totrans-101
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_special_methods_for_sequences_CO4-2)'
+- en: '`''ABCDE''[-3:]` is the same as `''ABCDE''[2:5:1]`.'
+  id: totrans-102
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`''ABCDE''[-3:]`等同于`''ABCDE''[2:5:1]`。'
+- en: In our `Vector` code, we’ll not need the `slice.indices()` method because when
+    we get a slice argument we’ll delegate its handling to the `_components` `array`.
+    But if you can’t count on the services of an underlying sequence, this method
+    can be a huge time saver.
+  id: totrans-103
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在我们的`Vector`代码中，我们不需要使用`slice.indices()`方法，因为当我们得到一个切片参数时，我们将把它的处理委托给`_components`数组。但是如果你不能依赖底层序列的服务，这个方法可以节省大量时间。
+- en: Now that we know how to handle slices, let’s take a look at the improved `Vector.__getitem__`
+    implementation.
+  id: totrans-104
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在我们知道如何处理切片了，让我们看看改进的`Vector.__getitem__`实现。
+- en: A Slice-Aware __getitem__
+  id: totrans-105
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 一个了解切片的`__getitem__`
+- en: '[Example 12-6](#ex_vector_v2) lists the two methods needed to make `Vector`
+    behave as a sequence: `__len__` and `__getitem__` (the latter now implemented
+    to handle slicing correctly).'
+  id: totrans-106
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例12-6](#ex_vector_v2)列出了使`Vector`表现为序列所需的两个方法：`__len__`和`__getitem__`（后者现在已实现以正确处理切片）。'
+- en: 'Example 12-6\. Part of vector_v2.py: `__len__` and `__getitem__` methods added
+    to `Vector` class from vector_v1.py (see [Example 12-2](#ex_vector_v1))'
+  id: totrans-107
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例12-6。vector_v2.py的一部分：向`Vector`类添加了`__len__`和`__getitem__`方法，这些方法来自vector_v1.py（参见[示例12-2](#ex_vector_v1)）
+- en: '[PRE8]'
+  id: totrans-108
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE8]'
+- en: '[![1](assets/1.png)](#co_special_methods_for_sequences_CO5-1)'
+  id: totrans-109
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_special_methods_for_sequences_CO5-1)'
+- en: If the `key` argument is a `slice`…
+  id: totrans-110
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果`key`参数是一个`slice`…
+- en: '[![2](assets/2.png)](#co_special_methods_for_sequences_CO5-2)'
+  id: totrans-111
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_special_methods_for_sequences_CO5-2)'
+- en: …get the class of the instance (i.e., `Vector`) and…
+  id: totrans-112
+  prefs: []
+  type: TYPE_NORMAL
+  zh: …获取实例的类（即`Vector`）并…
+- en: '[![3](assets/3.png)](#co_special_methods_for_sequences_CO5-3)'
+  id: totrans-113
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_special_methods_for_sequences_CO5-3)'
+- en: …invoke the class to build another `Vector` instance from a slice of the `_components`
+    array.
+  id: totrans-114
+  prefs: []
+  type: TYPE_NORMAL
+  zh: …调用该类以从`_components`数组的切片构建另一个`Vector`实例。
+- en: '[![4](assets/4.png)](#co_special_methods_for_sequences_CO5-4)'
+  id: totrans-115
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_special_methods_for_sequences_CO5-4)'
+- en: If we can get an `index` from `key`…
+  id: totrans-116
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果我们可以从`key`中得到一个`index`…
+- en: '[![5](assets/5.png)](#co_special_methods_for_sequences_CO5-5)'
+  id: totrans-117
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_special_methods_for_sequences_CO5-5)'
+- en: …return the specific item from `_components`.
+  id: totrans-118
+  prefs: []
+  type: TYPE_NORMAL
+  zh: …返回`_components`中的特定项。
+- en: The `operator.index()` function calls the `__index__` special method. The function
+    and the special method were defined in [PEP 357—Allowing Any Object to be Used
+    for Slicing](https://fpy.li/pep357), proposed by Travis Oliphant to allow any
+    of the numerous types of integers in NumPy to be used as indexes and slice arguments.
+    The key difference between `operator.index()` and `int()` is that the former is
+    intended for this specific purpose. For example, `int(3.14)` returns `3`, but
+    `operator.index(3.14)` raises `TypeError` because a `float` should not be used
+    as an index.
+  id: totrans-119
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`operator.index()`函数调用`__index__`特殊方法。该函数和特殊方法在[PEP 357—允许任何对象用于切片](https://fpy.li/pep357)中定义，由Travis
+    Oliphant提出，允许NumPy中的众多整数类型用作索引和切片参数。`operator.index()`和`int()`之间的关键区别在于前者是为此特定目的而设计的。例如，`int(3.14)`返回`3`，但`operator.index(3.14)`会引发`TypeError`，因为`float`不应该用作索引。'
+- en: Note
+  id: totrans-120
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 注意
+- en: Excessive use of `isinstance` may be a sign of bad OO design, but handling slices
+    in `__getitem__` is a justified use case. In the first edition, I also used an
+    `isinstance` test on `key` to test if it was an integer. Using `operator.index`
+    avoids this test, and raises `Type​Error` with a very informative message if we
+    can’t get the `index` from `key`. See the last error message from [Example 12-7](#ex_vector_v2_demo).
+  id: totrans-121
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 过度使用`isinstance`可能是糟糕的面向对象设计的迹象，但在`__getitem__`中处理切片是一个合理的用例。在第一版中，我还对`key`进行了`isinstance`测试，以测试它是否为整数。使用`operator.index`避免了这个测试，并且如果无法从`key`获取`index`，则会引发带有非常详细信息的`Type​Error`。请参见[示例 12-7](#ex_vector_v2_demo)中的最后一个错误消息。
+- en: Once the code in [Example 12-6](#ex_vector_v2) is added to the `Vector` class,
+    we have proper slicing behavior, as [Example 12-7](#ex_vector_v2_demo) demonstrates.
+  id: totrans-122
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 一旦将[示例 12-6](#ex_vector_v2)中的代码添加到`Vector`类中，我们就具有了适当的切片行为，正如[示例 12-7](#ex_vector_v2_demo)所示。
+- en: Example 12-7\. Tests of enhanced `Vector.__getitem__` from [Example 12-6](#ex_vector_v2)
+  id: totrans-123
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 12-7。增强的`Vector.__getitem__`的测试，来自[示例 12-6](#ex_vector_v2)
+- en: '[PRE9]'
+  id: totrans-124
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE9]'
+- en: '[![1](assets/1.png)](#co_special_methods_for_sequences_CO6-1)'
+  id: totrans-125
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_special_methods_for_sequences_CO6-1)'
+- en: An integer index retrieves just one component value as a `float`.
+  id: totrans-126
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 整数索引仅检索一个分量值作为`float`。
+- en: '[![2](assets/2.png)](#co_special_methods_for_sequences_CO6-2)'
+  id: totrans-127
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_special_methods_for_sequences_CO6-2)'
+- en: A slice index creates a new `Vector`.
+  id: totrans-128
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 切片索引会创建一个新的`Vector`。
+- en: '[![3](assets/3.png)](#co_special_methods_for_sequences_CO6-3)'
+  id: totrans-129
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_special_methods_for_sequences_CO6-3)'
+- en: A slice of `len == 1` also creates a `Vector`.
+  id: totrans-130
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 长度为1的切片也会创建一个`Vector`。
+- en: '[![4](assets/4.png)](#co_special_methods_for_sequences_CO6-4)'
+  id: totrans-131
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_special_methods_for_sequences_CO6-4)'
+- en: '`Vector` does not support multidimensional indexing, so a tuple of indices
+    or slices raises an error.'
+  id: totrans-132
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`Vector`不支持多维索引，因此索引或切片的元组会引发错误。'
+- en: 'Vector Take #3: Dynamic Attribute Access'
+  id: totrans-133
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 向量第三版：动态属性访问
+- en: In the evolution from `Vector2d` to `Vector`, we lost the ability to access
+    vector components by name (e.g., `v.x`, `v.y`). We are now dealing with vectors
+    that may have a large number of components. Still, it may be convenient to access
+    the first few components with shortcut letters such as `x`, `y`, `z` instead of
+    `v[0]`, `v[1]`, and `v[2]`.
+  id: totrans-134
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 从`Vector2d`到`Vector`的演变中，我们失去了通过名称访问向量分量的能力（例如，`v.x`，`v.y`）。我们现在正在处理可能具有大量分量的向量。尽管如此，使用快捷字母（如`x`，`y`，`z`）而不是`v[0]`，`v[1]`和`v[2]`访问前几个分量可能更方便。
+- en: 'Here is the alternative syntax we want to provide for reading the first four
+    components of a vector:'
+  id: totrans-135
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这是我们想要提供的用于读取向量前四个分量的替代语法：
+- en: '[PRE10]'
+  id: totrans-136
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE10]'
+- en: In `Vector2d`, we provided read-only access to `x` and `y` using the `@property`
+    decorator ([Example 11-7](ch11.html#ex_vector2d_v3)). We could write four properties
+    in `Vector`, but it would be tedious. The `__getattr__` special method provides
+    a better way.
+  id: totrans-137
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在`Vector2d`中，我们使用`@property`装饰器提供了对`x`和`y`的只读访问（[示例 11-7](ch11.html#ex_vector2d_v3)）。我们可以在`Vector`中编写四个属性，但这样做会很繁琐。`__getattr__`特殊方法提供了更好的方法。
+- en: The `__getattr__` method is invoked by the interpreter when attribute lookup
+    fails. In simple terms, given the expression `my_obj.x`, Python checks if the
+    `my_obj` instance has an attribute named `x`; if not, the search goes to the class
+    (`my_obj.__class__`), and then up the inheritance graph.^([2](ch12.html#idm46582427058896))
+    If the `x` attribute is not found, then the `__getattr__` method defined in the
+    class of `my_obj` is called with `self` and the name of the attribute as a string
+    (e.g., `'x'`).
+  id: totrans-138
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当属性查找失败时，解释器会调用`__getattr__`方法。简单来说，给定表达式`my_obj.x`，Python会检查`my_obj`实例是否有名为`x`的属性；如果没有，搜索会到类（`my_obj.__class__`）然后沿着继承图向上走。^([2](ch12.html#idm46582427058896))
+    如果未找到`x`属性，则会调用`my_obj`类中定义的`__getattr__`方法，传入`self`和属性名称作为字符串（例如，`'x'`）。
+- en: '[Example 12-8](#ex_vector_v3_getattr) lists our `__getattr__` method. Essentially
+    it checks whether the attribute being sought is one of the letters `xyzt` and
+    if so, returns the corresponding vector component.'
+  id: totrans-139
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 12-8](#ex_vector_v3_getattr)列出了我们的`__getattr__`方法。基本上，它检查正在寻找的属性是否是字母`xyzt`中的一个，如果是，则返回相应的向量分量。'
+- en: 'Example 12-8\. Part of *vector_v3.py*: `__getattr__` method added to the `Vector`
+    class'
+  id: totrans-140
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 12-8。*vector_v3.py*的一部分：`Vector`类中添加的`__getattr__`方法
+- en: '[PRE11]'
+  id: totrans-141
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE11]'
+- en: '[![1](assets/1.png)](#co_special_methods_for_sequences_CO7-1)'
+  id: totrans-142
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_special_methods_for_sequences_CO7-1)'
+- en: Set `__match_args__` to allow positional pattern matching on the dynamic attributes
+    supported by `__getattr__`.^([3](ch12.html#idm46582426936464))
+  id: totrans-143
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 设置`__match_args__`以允许在`__getattr__`支持的动态属性上进行位置模式匹配。^([3](ch12.html#idm46582426936464))
+- en: '[![2](assets/2.png)](#co_special_methods_for_sequences_CO7-2)'
+  id: totrans-144
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_special_methods_for_sequences_CO7-2)'
+- en: Get the `Vector` class for later use.
+  id: totrans-145
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 获取`Vector`类以备后用。
+- en: '[![3](assets/3.png)](#co_special_methods_for_sequences_CO7-3)'
+  id: totrans-146
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_special_methods_for_sequences_CO7-3)'
+- en: Try to get the position of `name` in `__match_args__`.
+  id: totrans-147
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 尝试获取`__match_args__`中`name`的位置。
+- en: '[![4](assets/4.png)](#co_special_methods_for_sequences_CO7-4)'
+  id: totrans-148
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_special_methods_for_sequences_CO7-4)'
+- en: '`.index(name)` raises `ValueError` when `name` is not found; set `pos` to `-1`.
+    (I’d rather use a method like `str.find` here, but `tuple` doesn’t implement it.)'
+  id: totrans-149
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`.index(name)`在未找到`name`时引发`ValueError`；将`pos`设置为`-1`。（我更愿意在这里使用类似`str.find`的方法，但`tuple`没有实现它。）'
+- en: '[![5](assets/5.png)](#co_special_methods_for_sequences_CO7-5)'
+  id: totrans-150
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_special_methods_for_sequences_CO7-5)'
+- en: If the `pos` is within range of the available components, return the component.
+  id: totrans-151
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果`pos`在可用分量的范围内，则返回该分量。
+- en: '[![6](assets/6.png)](#co_special_methods_for_sequences_CO7-6)'
+  id: totrans-152
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![6](assets/6.png)](#co_special_methods_for_sequences_CO7-6)'
+- en: If we get this far, raise `AttributeError` with a standard message text.
+  id: totrans-153
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果执行到这一步，请引发带有标准消息文本的`AttributeError`。
+- en: It’s not hard to implement `__getattr__`, but in this case it’s not enough.
+    Consider the bizarre interaction in [Example 12-9](#ex_vector_v3_getattr_bug).
+  id: totrans-154
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 实现`__getattr__`并不难，但在这种情况下还不够。考虑[示例 12-9](#ex_vector_v3_getattr_bug)中的奇怪交互。
+- en: 'Example 12-9\. Inappropriate behavior: assigning to `v.x` raises no error,
+    but introduces an inconsistency'
+  id: totrans-155
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 12-9。不当行为：对`v.x`赋值不会引发错误，但会引入不一致性。
+- en: '[PRE12]'
+  id: totrans-156
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE12]'
+- en: '[![1](assets/1.png)](#co_special_methods_for_sequences_CO8-1)'
+  id: totrans-157
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_special_methods_for_sequences_CO8-1)'
+- en: Access element `v[0]` as `v.x`.
+  id: totrans-158
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 将元素 `v[0]` 作为 `v.x` 访问。
+- en: '[![2](assets/2.png)](#co_special_methods_for_sequences_CO8-2)'
+  id: totrans-159
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_special_methods_for_sequences_CO8-2)'
+- en: Assign new value to `v.x`. This should raise an exception.
+  id: totrans-160
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 将新值分配给 `v.x`。这应该引发异常。
+- en: '[![3](assets/3.png)](#co_special_methods_for_sequences_CO8-3)'
+  id: totrans-161
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_special_methods_for_sequences_CO8-3)'
+- en: Reading `v.x` shows the new value, `10`.
+  id: totrans-162
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 读取 `v.x` 显示新值 `10`。
+- en: '[![4](assets/4.png)](#co_special_methods_for_sequences_CO8-4)'
+  id: totrans-163
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_special_methods_for_sequences_CO8-4)'
+- en: However, the vector components did not change.
+  id: totrans-164
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 然而，矢量组件没有发生变化。
+- en: Can you explain what is happening? In particular, why does `v.x` return `10`
+    the second time if that value is not in the vector components array? If you don’t
+    know right off the bat, study the explanation of `__getattr__` given right before
+    [Example 12-8](#ex_vector_v3_getattr). It’s a bit subtle, but a very important
+    foundation to understand a lot of what comes later in the book.
+  id: totrans-165
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 你能解释发生了什么吗？特别是，如果向矢量组件数组中没有的值尝试 `v.x` 返回 `10`，那么为什么第二次会这样？如果你一时不知道，那就仔细研究一下在[示例
+    12-8](#ex_vector_v3_getattr)之前给出的 `__getattr__` 解释。这有点微妙，但是是理解本书后面内容的重要基础。
+- en: After you’ve given it some thought, proceed and we’ll explain exactly what happened.
+  id: totrans-166
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 经过一番思考后，继续进行，我们将详细解释发生了什么。
+- en: 'The inconsistency in [Example 12-9](#ex_vector_v3_getattr_bug) was introduced
+    because of the way `__getattr__` works: Python only calls that method as a fallback,
+    when the object does not have the named attribute. However, after we assign `v.x
+    = 10`, the `v` object now has an `x` attribute, so `__getattr__` will no longer
+    be called to retrieve `v.x`: the interpreter will just return the value `10` that
+    is bound to `v.x`. On the other hand, our implementation of `__getattr__` pays
+    no attention to instance attributes other than `self._components`, from where
+    it retrieves the values of the “virtual attributes” listed in `__match_args__`.'
+  id: totrans-167
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 12-9](#ex_vector_v3_getattr_bug)中的不一致性是由于 `__getattr__` 的工作方式引入的：Python
+    仅在对象没有命名属性时才调用该方法作为后备。然而，在我们分配 `v.x = 10` 后，`v` 对象现在有一个 `x` 属性，因此 `__getattr__`
+    将不再被调用来检索 `v.x`：解释器将直接返回绑定到 `v.x` 的值 `10`。另一方面，我们的 `__getattr__` 实现不关心除 `self._components`
+    外的实例属性，从中检索列在 `__match_args__` 中的“虚拟属性”的值。'
+- en: We need to customize the logic for setting attributes in our `Vector` class
+    in order to avoid this inconsistency.
+  id: totrans-168
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们需要自定义在我们的 `Vector` 类中设置属性的逻辑，以避免这种不一致性。
+- en: Recall that in the latest `Vector2d` examples from [Chapter 11](ch11.html#pythonic_objects),
+    trying to assign to the `.x` or `.y` instance attributes raised `AttributeError`.
+    In `Vector`, we want the same exception with any attempt at assigning to all single-letter
+    lowercase attribute names, just to avoid confusion. To do that, we’ll implement
+    `__setattr__`, as listed in [Example 12-10](#ex_vector_v3_setattr).
+  id: totrans-169
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 回想一下，在[第 11 章](ch11.html#pythonic_objects)中关于最新 `Vector2d` 示例的情况，尝试分配给 `.x`
+    或 `.y` 实例属性会引发 `AttributeError`。在 `Vector` 中，我们希望任何尝试分配给所有单个小写字母属性名称时都引发相同的异常，以避免混淆。为此，我们将实现
+    `__setattr__`，如[示例 12-10](#ex_vector_v3_setattr)中所列。
+- en: 'Example 12-10\. Part of vector_v3.py: `__setattr__` method in the `Vector`
+    class'
+  id: totrans-170
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 12-10\. `Vector` 类中的 `__setattr__` 方法的一部分，位于 `vector_v3.py` 中。
+- en: '[PRE13]'
+  id: totrans-171
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE13]'
+- en: '[![1](assets/1.png)](#co_special_methods_for_sequences_CO9-1)'
+  id: totrans-172
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_special_methods_for_sequences_CO9-1)'
+- en: Special handling for single-character attribute names.
+  id: totrans-173
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 对单个字符属性名称进行特殊处理。
+- en: '[![2](assets/2.png)](#co_special_methods_for_sequences_CO9-2)'
+  id: totrans-174
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_special_methods_for_sequences_CO9-2)'
+- en: If `name` is one of `__match_args__`, set specific error message.
+  id: totrans-175
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果 `name` 是 `__match_args__` 中的一个，设置特定的错误消息。
+- en: '[![3](assets/3.png)](#co_special_methods_for_sequences_CO9-3)'
+  id: totrans-176
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_special_methods_for_sequences_CO9-3)'
+- en: If `name` is lowercase, set error message about all single-letter names.
+  id: totrans-177
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果 `name` 是小写的，设置关于所有单个字母名称的错误消息。
+- en: '[![4](assets/4.png)](#co_special_methods_for_sequences_CO9-4)'
+  id: totrans-178
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_special_methods_for_sequences_CO9-4)'
+- en: Otherwise, set blank error message.
+  id: totrans-179
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 否则，设置空白错误消息。
+- en: '[![5](assets/5.png)](#co_special_methods_for_sequences_CO9-5)'
+  id: totrans-180
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_special_methods_for_sequences_CO9-5)'
+- en: If there is a nonblank error message, raise `AttributeError`.
+  id: totrans-181
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果存在非空错误消息，则引发 `AttributeError`。
+- en: '[![6](assets/6.png)](#co_special_methods_for_sequences_CO9-6)'
+  id: totrans-182
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![6](assets/6.png)](#co_special_methods_for_sequences_CO9-6)'
+- en: 'Default case: call `__setattr__` on superclass for standard behavior.'
+  id: totrans-183
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 默认情况：调用超类上的 `__setattr__` 以获得标准行为。
+- en: Tip
+  id: totrans-184
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 提示
+- en: The `super()` function provides a way to access methods of superclasses dynamically,
+    a necessity in a dynamic language supporting multiple inheritance like Python.
+    It’s used to delegate some task from a method in a subclass to a suitable method
+    in a superclass, as seen in [Example 12-10](#ex_vector_v3_setattr). There is more
+    about `super` in [“Multiple Inheritance and Method Resolution Order”](ch14.html#mro_section).
+  id: totrans-185
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`super()` 函数提供了一种动态访问超类方法的方式，在像 Python 这样支持多重继承的动态语言中是必不可少的。它用于将某些任务从子类中的一个方法委托给超类中的一个合适的方法，就像在[示例
+    12-10](#ex_vector_v3_setattr)中所看到的那样。关于 `super` 还有更多内容，请参阅[“多重继承和方法解析顺序”](ch14.html#mro_section)。'
+- en: While choosing the error message to display with `AttributeError`, my first
+    check was the behavior of the built-in `complex` type, because they are immutable
+    and have a pair of data attributes, `real` and `imag`. Trying to change either
+    of those in a `complex` instance raises `AttributeError` with the message `"can't
+    set attribute"`. On the other hand, trying to set a read-only attribute protected
+    by a property as we did in [“A Hashable Vector2d”](ch11.html#hashable_vector2d)
+    produces the message `"read-only attribute"`. I drew inspiration from both wordings
+    to set the `error` string in `__setitem__`, but was more explicit about the forbidden
+    attributes.
+  id: totrans-186
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在选择与 `AttributeError` 一起显示的错误消息时，我的第一个检查对象是内置的 `complex` 类型的行为，因为它们是不可变的，并且有一对数据属性，`real`
+    和 `imag`。尝试更改 `complex` 实例中的任一属性都会引发带有消息 `"can't set attribute"` 的 `AttributeError`。另一方面，尝试设置只读属性（如我们在[“可散列的
+    Vector2d”](ch11.html#hashable_vector2d)中所做的）会产生消息 `"read-only attribute"`。我从这两个措辞中汲取灵感，以设置
+    `__setitem__` 中的 `error` 字符串，但对于被禁止的属性更加明确。
+- en: Note that we are not disallowing setting all attributes, only single-letter,
+    lowercase ones, to avoid confusion with the supported read-only attributes `x`,
+    `y`, `z`, and `t`.
+  id: totrans-187
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意，我们并不禁止设置所有属性，只是单个字母、小写属性，以避免与支持的只读属性`x`、`y`、`z`和`t`混淆。
+- en: Warning
+  id: totrans-188
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 警告
+- en: Knowing that declaring `__slots__` at the class level prevents setting new instance
+    attributes, it’s tempting to use that feature instead of implementing `__setattr__`
+    as we did. However, because of all the caveats discussed in [“Summarizing the
+    Issues with __slots__”](ch11.html#problems_with_slots), using `__slots__` just
+    to prevent instance attribute creation is not recommended. `__slots__` should
+    be used only to save memory, and only if that is a real issue.
+  id: totrans-189
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 知道在类级别声明`__slots__`可以防止设置新的实例属性，很容易就会想要使用这个特性，而不是像我们之前那样实现`__setattr__`。然而，正如在[“总结与`__slots__`相关的问题”](ch11.html#problems_with_slots)中讨论的所有注意事项，仅仅为了防止实例属性创建而使用`__slots__`是不推荐的。`__slots__`应该仅用于节省内存，而且只有在这是一个真正的问题时才使用。
+- en: 'Even without supporting writing to the `Vector` components, here is an important
+    takeaway from this example: very often when you implement `__getattr__`, you need
+    to code `__setattr__` as well, to avoid inconsistent behavior in your objects.'
+  id: totrans-190
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 即使不支持写入`Vector`分量，这个示例中有一个重要的要点：当你实现`__getattr__`时，很多时候你需要编写`__setattr__`，以避免对象中的不一致行为。
+- en: If we wanted to allow changing components, we could implement `__setitem__`
+    to enable `v[0] = 1.1` and/or `__setattr__` to make `v.x = 1.1` work. But `Vector`
+    will remain immutable because we want to make it hashable in the coming section.
+  id: totrans-191
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果我们想允许更改分量，我们可以实现`__setitem__`以启用`v[0] = 1.1`和/或`__setattr__`以使`v.x = 1.1`起作用。但`Vector`将保持不可变，因为我们希望在接下来的部分使其可哈希。
+- en: 'Vector Take #4: Hashing and a Faster =='
+  id: totrans-192
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: Vector 第四版：哈希和更快的==
+- en: Once more we get to implement a `__hash__` method. Together with the existing
+    `__eq__`, this will make `Vector` instances hashable.
+  id: totrans-193
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 再次我们要实现一个`__hash__`方法。连同现有的`__eq__`，这将使`Vector`实例可哈希。
+- en: 'The `__hash__` in `Vector2d` ([Example 11-8](ch11.html#ex_vector2d_v3_hash))
+    computed the hash of a `tuple` built with the two components, `self.x` and `self.y`.
+    Now we may be dealing with thousands of components, so building a `tuple` may
+    be too costly. Instead, I will apply the `^` (xor) operator to the hashes of every
+    component in succession, like this: `v[0] ^ v[1] ^ v[2]`. That is what the `functools.reduce`
+    function is for. Previously I said that `reduce` is not as popular as before,^([4](ch12.html#idm46582426525584))
+    but computing the hash of all vector components is a good use case for it. [Figure 12-1](#reduce_fig)
+    depicts the general idea of the `reduce` function.'
+  id: totrans-194
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`Vector2d`中的`__hash__`（[示例 11-8](ch11.html#ex_vector2d_v3_hash)）计算了由两个分量`self.x`和`self.y`构建的`tuple`的哈希值。现在我们可能正在处理成千上万个分量，因此构建`tuple`可能成本太高。相反，我将对每个分量的哈希值依次应用`^`（异或）运算符，就像这样：`v[0]
+    ^ v[1] ^ v[2]`。这就是`functools.reduce`函数的用途。之前我说过`reduce`不像以前那样流行，^([4](ch12.html#idm46582426525584))但计算所有向量分量的哈希值是一个很好的使用案例。[图 12-1](#reduce_fig)描述了`reduce`函数的一般思想。'
+- en: '![Reduce diagram](assets/flpy_1201.png)'
+  id: totrans-195
+  prefs: []
+  type: TYPE_IMG
+  zh: '![Reduce示意图](assets/flpy_1201.png)'
+- en: Figure 12-1\. Reducing functions—`reduce`, `sum`, `any`, `all`—produce a single
+    aggregate result from a sequence or from any finite iterable object.
+  id: totrans-196
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 图 12-1。减少函数——`reduce`、`sum`、`any`、`all`——从序列或任何有限可迭代对象中产生单个聚合结果。
+- en: So far we’ve seen that `functools.reduce()` can be replaced by `sum()`, but
+    now let’s properly explain how it works. The key idea is to reduce a series of
+    values to a single value. The first argument to `reduce()` is a two-argument function,
+    and the second argument is an iterable. Let’s say we have a two-argument function
+    `fn` and a list `lst`. When you call `reduce(fn, lst)`, `fn` will be applied to
+    the first pair of elements—`fn(lst[0], lst[1])`—producing a first result, `r1`.
+    Then `fn` is applied to `r1` and the next element—`fn(r1, lst[2])`—producing a
+    second result, `r2`. Now `fn(r2, lst[3])` is called to produce `r3` … and so on
+    until the last element, when a single result, `rN`, is returned.
+  id: totrans-197
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 到目前为止，我们已经看到`functools.reduce()`可以被`sum()`替代，但现在让我们正确解释它的工作原理。关键思想是将一系列值减少为单个值。`reduce()`的第一个参数是一个二元函数，第二个参数是一个可迭代对象。假设我们有一个二元函数`fn`和一个列表`lst`。当你调用`reduce(fn,
+    lst)`时，`fn`将被应用于第一对元素——`fn(lst[0], lst[1])`——产生第一个结果`r1`。然后`fn`被应用于`r1`和下一个元素——`fn(r1,
+    lst[2])`——产生第二个结果`r2`。现在`fn(r2, lst[3])`被调用以产生`r3` … 依此类推，直到最后一个元素，当返回一个单一结果`rN`。
+- en: 'Here is how you could use `reduce` to compute `5!` (the factorial of 5):'
+  id: totrans-198
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这是如何使用`reduce`计算`5!`（5的阶乘）的方法：
+- en: '[PRE14]'
+  id: totrans-199
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE14]'
+- en: 'Back to our hashing problem, [Example 12-11](#ex_reduce_xor) shows the idea
+    of computing the aggregate xor by doing it in three ways: with a `for` loop and
+    two `reduce` calls.'
+  id: totrans-200
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 回到我们的哈希问题，[示例 12-11](#ex_reduce_xor)展示了通过三种方式计算累积异或的想法：使用一个`for`循环和两个`reduce`调用。
+- en: Example 12-11\. Three ways of calculating the accumulated xor of integers from
+    0 to 5
+  id: totrans-201
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 12-11。计算从0到5的整数的累积异或的三种方法
+- en: '[PRE15]'
+  id: totrans-202
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE15]'
+- en: '[![1](assets/1.png)](#co_special_methods_for_sequences_CO10-1)'
+  id: totrans-203
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_special_methods_for_sequences_CO10-1)'
+- en: Aggregate xor with a `for` loop and an accumulator variable.
+  id: totrans-204
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 使用`for`循环和一个累加变量进行聚合异或。
+- en: '[![2](assets/2.png)](#co_special_methods_for_sequences_CO10-2)'
+  id: totrans-205
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_special_methods_for_sequences_CO10-2)'
+- en: '`functools.reduce` using an anonymous function.'
+  id: totrans-206
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 使用匿名函数的`functools.reduce`。
+- en: '[![3](assets/3.png)](#co_special_methods_for_sequences_CO10-3)'
+  id: totrans-207
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_special_methods_for_sequences_CO10-3)'
+- en: '`functools.reduce` replacing custom `lambda` with `operator.xor`.'
+  id: totrans-208
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 使用`functools.reduce`用`operator.xor`替换自定义`lambda`。
+- en: From the alternatives in [Example 12-11](#ex_reduce_xor), the last one is my
+    favorite, and the `for` loop comes second. What is your preference?
+  id: totrans-209
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在[示例 12-11](#ex_reduce_xor)中的备选方案中，最后一个是我最喜欢的，`for`循��排在第二位。你更喜欢哪种？
+- en: As seen in [“The operator Module”](ch07.html#operator_module_section), `operator`
+    provides the functionality of all Python infix operators in function form, lessening
+    the need for `lambda`.
+  id: totrans-210
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 正如在[“operator模块”](ch07.html#operator_module_section)中所看到的，`operator`以函数形式提供了所有Python中缀运算符的功能，减少了对`lambda`的需求。
+- en: To code `Vector.__hash__` in my preferred style, we need to import the `functools`
+    and `operator` modules. [Example 12-12](#ex_vector_v4) shows the relevant changes.
+  id: totrans-211
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 要按照我喜欢的风格编写`Vector.__hash__`，我们需要导入`functools`和`operator`模块。[示例12-12](#ex_vector_v4)展示了相关的更改。
+- en: 'Example 12-12\. Part of vector_v4.py: two imports and `__hash__` method added
+    to the `Vector` class from vector_v3.py'
+  id: totrans-212
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例12-12。vector_v4.py的一部分：从vector_v3.py添加两个导入和`Vector`类的`__hash__`方法
+- en: '[PRE16]'
+  id: totrans-213
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE16]'
+- en: '[![1](assets/1.png)](#co_special_methods_for_sequences_CO11-1)'
+  id: totrans-214
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_special_methods_for_sequences_CO11-1)'
+- en: Import `functools` to use `reduce`.
+  id: totrans-215
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 导入`functools`以使用`reduce`。
+- en: '[![2](assets/2.png)](#co_special_methods_for_sequences_CO11-2)'
+  id: totrans-216
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_special_methods_for_sequences_CO11-2)'
+- en: Import `operator` to use `xor`.
+  id: totrans-217
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 导入`operator`以使用`xor`。
+- en: '[![3](assets/3.png)](#co_special_methods_for_sequences_CO11-3)'
+  id: totrans-218
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_special_methods_for_sequences_CO11-3)'
+- en: No change to `__eq__`; I listed it here because it’s good practice to keep `__eq__`
+    and `__hash__` close in source code, because they need to work together.
+  id: totrans-219
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 对`__eq__`没有更改；我在这里列出它是因为在源代码中保持`__eq__`和`__hash__`靠近是一个好习惯，因为它们需要一起工作。
+- en: '[![4](assets/4.png)](#co_special_methods_for_sequences_CO11-4)'
+  id: totrans-220
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_special_methods_for_sequences_CO11-4)'
+- en: Create a generator expression to lazily compute the hash of each component.
+  id: totrans-221
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 创建一个生成器表达式，以惰性计算每个组件的哈希值。
+- en: '[![5](assets/5.png)](#co_special_methods_for_sequences_CO11-5)'
+  id: totrans-222
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_special_methods_for_sequences_CO11-5)'
+- en: Feed `hashes` to `reduce` with the `xor` function to compute the aggregate hash
+    code; the third argument, `0`, is the initializer (see the next warning).
+  id: totrans-223
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 将`hashes`传递给`reduce`，使用`xor`函数计算聚合哈希码；第三个参数`0`是初始化器（参见下一个警告）。
+- en: Warning
+  id: totrans-224
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 警告
+- en: 'When using `reduce`, it’s good practice to provide the third argument, `reduce(function,
+    iterable, initializer)`, to prevent this exception: `TypeError: reduce() of empty
+    sequence with no initial value` (excellent message: explains the problem and how
+    to fix it). The `initializer` is the value returned if the sequence is empty and
+    is used as the first argument in the reducing loop, so it should be the identity
+    value of the operation. As examples, for `+`, `|`, `^` the `initializer` should
+    be `0`, but for `*`, `&` it should be `1`.'
+  id: totrans-225
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '使用`reduce`时，最好提供第三个参数，`reduce(function, iterable, initializer)`，以防止出现此异常：`TypeError:
+    reduce() of empty sequence with no initial value`（出色的消息：解释了问题以及如何解决）。`initializer`是如果序列为空时返回的值，并且作为减少循环中的第一个参数使用，因此它应该是操作的身份值。例如，对于`+`，`|`，`^`，`initializer`应该是`0`，但对于`*`，`&`，它应该是`1`。'
+- en: As implemented, the `__hash__` method in [Example 12-12](#ex_vector_v4) is a
+    perfect example of a map-reduce computation ([Figure 12-2](#map_reduce_fig)).
+  id: totrans-226
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如[示例12-12](#ex_vector_v4)中实现的`__hash__`方法是一个完美的map-reduce计算示例（[图12-2](#map_reduce_fig)）。
+- en: '![Map-reduce diagram](assets/flpy_1202.png)'
+  id: totrans-227
+  prefs: []
+  type: TYPE_IMG
+  zh: '![Map-reduce diagram](assets/flpy_1202.png)'
+- en: 'Figure 12-2\. Map-reduce: apply function to each item to generate a new series
+    (map), then compute the aggregate (reduce).'
+  id: totrans-228
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 图12-2。Map-reduce：将函数应用于每个项目以生成新系列（map），然后计算聚合（reduce）。
+- en: 'The mapping step produces one hash for each component, and the reduce step
+    aggregates all hashes with the `xor` operator. Using `map` instead of a *genexp*
+    makes the mapping step even more visible:'
+  id: totrans-229
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 映射步骤为每个组件生成一个哈希值，减少步骤使用`xor`运算符聚合所有哈希值。使用`map`而不是*genexp*使映射步骤更加可见：
+- en: '[PRE17]'
+  id: totrans-230
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE17]'
+- en: Tip
+  id: totrans-231
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 提示
+- en: 'The solution with `map` would be less efficient in Python 2, where the `map`
+    function builds a new `list` with the results. But in Python 3, `map` is lazy:
+    it creates a generator that yields the results on demand, thus saving memory—just
+    like the generator expression we used in the `__hash__` method of [Example 12-8](#ex_vector_v3_getattr).'
+  id: totrans-232
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在Python 2中，使用`map`的解决方案效率较低，因为`map`函数会构建一个包含结果的新`list`。但在Python 3中，`map`是惰性的：它创建一个生成器，按需产生结果，从而节省内存——就像我们在[示例12-8](#ex_vector_v3_getattr)的`__hash__`方法中使用的生成器表达式一样。
+- en: 'While we are on the topic of reducing functions, we can replace our quick implementation
+    of `__eq__` with another one that will be cheaper in terms of processing and memory,
+    at least for large vectors. As introduced in [Example 11-2](ch11.html#ex_vector2d_v0),
+    we have this very concise implementation of `__eq__`:'
+  id: totrans-233
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当我们谈论减少函数时，我们可以用另一种更便宜的方式来替换我们快速实现的`__eq__`，至少对于大向量来说，在处理和内存方面更便宜。正如[示例11-2](ch11.html#ex_vector2d_v0)中介绍的，我们有这个非常简洁的`__eq__`实现：
+- en: '[PRE18]'
+  id: totrans-234
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE18]'
+- en: This works for `Vector2d` and for `Vector`—it even considers `Vector([1, 2])`
+    equal to `(1, 2)`, which may be a problem, but we’ll overlook that for now.^([5](ch12.html#idm46582426057488))
+    But for `Vector` instances that may have thousands of components, it’s very inefficient.
+    It builds two tuples copying the entire contents of the operands just to use the
+    `__eq__` of the `tuple` type. For `Vector2d` (with only two components), it’s
+    a good shortcut, but not for the large multidimensional vectors. A better way
+    of comparing one `Vector` to another `Vector` or iterable would be [Example 12-13](#ex_eq_loop).
+  id: totrans-235
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这适用于`Vector2d`和`Vector`——甚至将`Vector([1, 2])`视为`(1, 2)`相等，这可能是一个问题，但我们暂时忽略这一点。^([5](ch12.html#idm46582426057488))
+    但对于可能有数千个组件的`Vector`实例来说，这是非常低效的。它构建了两个元组，复制了操作数的整个内容，只是为了使用`tuple`类型的`__eq__`。对于`Vector2d`（只有两个组件），这是一个很好的快捷方式，但对于大型多维向量来说不是。比较一个`Vector`和另一个`Vector`或可迭代对象的更好方法将是[示例12-13](#ex_eq_loop)。
+- en: Example 12-13\. The `Vector.__eq__` implementation using `zip` in a `for` loop
+    for more efficient comparison
+  id: totrans-236
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例12-13。使用`for`循环中的`zip`实现的`Vector.__eq__`方法，用于更高效的比较
+- en: '[PRE19]'
+  id: totrans-237
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE19]'
+- en: '[![1](assets/1.png)](#co_special_methods_for_sequences_CO12-1)'
+  id: totrans-238
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_special_methods_for_sequences_CO12-1)'
+- en: If the `len` of the objects are different, they are not equal.
+  id: totrans-239
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果对象的长度不同，则它们不相等。
+- en: '[![2](assets/2.png)](#co_special_methods_for_sequences_CO12-2)'
+  id: totrans-240
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_special_methods_for_sequences_CO12-2)'
+- en: '`zip` produces a generator of tuples made from the items in each iterable argument.
+    See [“The Awesome zip”](#zip_box) if `zip` is new to you. In ![1](assets/1.png),
+    the `len` comparison is needed because `zip` stops producing values without warning
+    as soon as one of the inputs is exhausted.'
+  id: totrans-241
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`zip`生成一个由每个可迭代参数中的项目组成的元组生成器。如果您对`zip`不熟悉，请参阅[“了不起的zip”](#zip_box)。在![1](assets/1.png)中，需要进行`len`比较，因为`zip`在其中一个输入耗尽时会停止生成值而没有警告。'
+- en: '[![3](assets/3.png)](#co_special_methods_for_sequences_CO12-3)'
+  id: totrans-242
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_special_methods_for_sequences_CO12-3)'
+- en: As soon as two components are different, exit returning `False`.
+  id: totrans-243
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 一旦两个分量不同，立即返回`False`。
+- en: '[![4](assets/4.png)](#co_special_methods_for_sequences_CO12-4)'
+  id: totrans-244
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_special_methods_for_sequences_CO12-4)'
+- en: Otherwise, the objects are equal.
+  id: totrans-245
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 否则，对象相等。
+- en: Tip
+  id: totrans-246
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 提示
+- en: The `zip` function is named after the zipper fastener because the physical device
+    works by interlocking pairs of teeth taken from both zipper sides, a good visual
+    analogy for what `zip(left, right)` does. No relation to compressed files.
+  id: totrans-247
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`zip`函数的命名是根据拉链拉链器而来，因为物理设备通过相互锁定来自拉链两侧的牙齿对来工作，这与`zip(left, right)`所做的事情是一个很好的视觉类比。与压缩文件无关。'
+- en: '[Example 12-13](#ex_eq_loop) is efficient, but the `all` function can produce
+    the same aggregate computation of the `for` loop in one line: if all comparisons
+    between corresponding components in the operands are `True`, the result is `True`.
+    As soon as one comparison is `False`, `all` returns `False`. [Example 12-14](#ex_eq_all)
+    shows how `__eq__` looks using `all`.'
+  id: totrans-248
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 12-13](#ex_eq_loop)是高效的，但`all`函数可以在一行中产生与`for`循环相同的聚合计算：如果操作数中对应分量之间的所有比较都为`True`，则结果为`True`。一旦有一个比较为`False`，`all`就返回`False`。[示例 12-14](#ex_eq_all)展示了使用`all`的`__eq__`的外观。'
+- en: 'Example 12-14\. The `Vector.__eq__` implementation using `zip` and `all`: same
+    logic as [Example 12-13](#ex_eq_loop)'
+  id: totrans-249
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 12-14\. 使用`zip`和`all`实现的`Vector.__eq__`：与[示例 12-13](#ex_eq_loop)相同的逻辑
+- en: '[PRE20]'
+  id: totrans-250
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE20]'
+- en: Note that we first check that the operands have equal length, because `zip`
+    will stop at the shortest operand.
+  id: totrans-251
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 请注意，我们首先检查操作数的长度是否相等，因为`zip`将停止在最短的操作数处。
+- en: '[Example 12-14](#ex_eq_all) is the implementation we choose for `__eq__` in
+    *vector_v4.py*.'
+  id: totrans-252
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 12-14](#ex_eq_all)是我们在*vector_v4.py*中选择的`__eq__`的实现。'
+- en: We wrap up this chapter by bringing back the `__format__` method from `Vector2d`
+    to `Vector`.
+  id: totrans-253
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们通过将`Vector2d`的`__format__`方法重新引入到`Vector`中来结束本章。
+- en: 'Vector Take #5: Formatting'
+  id: totrans-254
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 'Vector Take #5: Formatting'
+- en: The `__format__` method of `Vector` will resemble that of `Vector2d`, but instead
+    of providing a custom display in polar coordinates, `Vector` will use spherical
+    coordinates—also known as “hyperspherical” coordinates, because now we support
+    *n* dimensions, and spheres are “hyperspheres” in 4D and beyond.^([6](ch12.html#idm46582425554624))
+    Accordingly, we’ll change the custom format suffix from `'p'` to `'h'`.
+  id: totrans-255
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`Vector`的`__format__`方法将类似于`Vector2d`的方法，但不是提供极坐标的自定义显示，而是使用球坐标——也称为“超球面”坐标，因为现在我们支持*n*维，而在4D及以上的维度中，球体是“超球体”。^([6](ch12.html#idm46582425554624))
+    因此，我们将自定义格式后缀从`''p''`改为`''h''`。'
+- en: Tip
+  id: totrans-256
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 提示
+- en: As we saw in [“Formatted Displays”](ch11.html#format_display_sec), when extending
+    the [Format Specification Mini-Language](https://fpy.li/fmtspec), it’s best to
+    avoid reusing format codes supported by built-in types. In particular, our extended
+    mini-language also uses the float formatting codes `'eEfFgGn%'` in their original
+    meaning, so we definitely must avoid these. Integers use `'bcdoxXn'` and strings
+    use `'s'`. I picked `'p'` for `Vector2d` polar coordinates. Code `'h'` for hyperspherical
+    coordinates is a good choice.
+  id: totrans-257
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 正如我们在[“Formatted Displays”](ch11.html#format_display_sec)中看到的，当扩展[格式规范迷你语言](https://fpy.li/fmtspec)时，最好避免重用内置类型支持的格式代码。特别是，我们扩展的迷你语言还使用浮点数格式代码`'eEfFgGn%'`的原始含义，因此我们绝对必须避免这些。整数使用`'bcdoxXn'`，字符串使用`'s'`。我选择了`'p'`来表示`Vector2d`的极坐标。代码`'h'`表示超球面坐标是一个不错的选择。
+- en: For example, given a `Vector` object in 4D space (`len(v) == 4`), the `'h'`
+    code will produce a display like `<r, Φ₁, Φ₂, Φ₃>`, where `r` is the magnitude
+    (`abs(v)`), and the remaining numbers are the angular components Φ₁, Φ₂, Φ₃.
+  id: totrans-258
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 例如，给定4D空间中的`Vector`对象（`len(v) == 4`），`'h'`代码将产生类似于`<r, Φ₁, Φ₂, Φ₃>`的显示，其中`r`是大小（`abs(v)`），其余数字是角分量Φ₁，Φ₂，Φ₃。
+- en: 'Here are some samples of the spherical coordinate format in 4D, taken from
+    the doctests of *vector_v5.py* (see [Example 12-16](#ex_vector_v5)):'
+  id: totrans-259
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这里是来自*vector_v5.py*的doctests中4D空间中球坐标格式的一些示例（参见[示例 12-16](#ex_vector_v5)）：
+- en: '[PRE21]'
+  id: totrans-260
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE21]'
+- en: 'Before we can implement the minor changes required in `__format__`, we need
+    to code a pair of support methods: `angle(n)` to compute one of the angular coordinates
+    (e.g., Φ₁), and `angles()` to return an iterable of all angular coordinates. I
+    will not describe the math here; if you’re curious, Wikipedia’s [“*n*-sphere”
+    entry](https://fpy.li/nsphere) has the formulas I used to calculate the spherical
+    coordinates from the Cartesian coordinates in the `Vector` components array.'
+  id: totrans-261
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在我们可以实现`__format__`中所需的微小更改之前，我们需要编写一对支持方法：`angle(n)`用于计算一个角坐标（例如，Φ₁），以及`angles()`用于返回所有角坐标的可迭代对象。我不会在这里描述数学内容；如果你感兴趣，维基百科的[“*n*-sphere”条目](https://fpy.li/nsphere)有我用来从`Vector`的分量数组中计算球坐标的公式。
+- en: '[Example 12-16](#ex_vector_v5) is a full listing of *vector_v5.py* consolidating
+    all we’ve implemented since [“Vector Take #1: Vector2d Compatible”](#vector_take1_sec)
+    and introducing custom formatting.'
+  id: totrans-262
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 12-16](#ex_vector_v5)是*vector_v5.py*的完整清单，汇总了自从[“Vector Take #1: Vector2d
+    Compatible”](#vector_take1_sec)以来我们实现的所有内容，并引入了自定义格式。'
+- en: 'Example 12-16\. vector_v5.py: doctests and all code for the final `Vector`
+    class; callouts highlight additions needed to support `__format__`'
+  id: totrans-263
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 12-16\. vector_v5.py：包含最终`Vector`类的doctests和所有代码；标注突出显示了支持`__format__`所需的添加内容
+- en: '[PRE22]'
+  id: totrans-264
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE22]'
+- en: '[![1](assets/1.png)](#co_special_methods_for_sequences_CO14-1)'
+  id: totrans-265
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_special_methods_for_sequences_CO14-1)'
+- en: Import `itertools` to use `chain` function in `__format__`.
+  id: totrans-266
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 导入`itertools`以在`__format__`中使用`chain`函数。
+- en: '[![2](assets/2.png)](#co_special_methods_for_sequences_CO14-2)'
+  id: totrans-267
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_special_methods_for_sequences_CO14-2)'
+- en: Compute one of the angular coordinates, using formulas adapted from the [*n*-sphere
+    article](https://fpy.li/nsphere).
+  id: totrans-268
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 使用从[*n*-sphere article](https://fpy.li/nsphere)调整的公式计算一个角坐标。
+- en: '[![3](assets/3.png)](#co_special_methods_for_sequences_CO14-3)'
+  id: totrans-269
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_special_methods_for_sequences_CO14-3)'
+- en: Create a generator expression to compute all angular coordinates on demand.
+  id: totrans-270
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 创建一个生成器表达式，按需计算所有角坐标。
+- en: '[![4](assets/4.png)](#co_special_methods_for_sequences_CO14-4)'
+  id: totrans-271
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_special_methods_for_sequences_CO14-4)'
+- en: Use `itertools.chain` to produce *genexp* to iterate seamlessly over the magnitude
+    and the angular coordinates.
+  id: totrans-272
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 使用`itertools.chain`生成*genexp*，以便无缝迭代幅度和角坐标。
+- en: '[![5](assets/5.png)](#co_special_methods_for_sequences_CO14-5)'
+  id: totrans-273
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_special_methods_for_sequences_CO14-5)'
+- en: Configure a spherical coordinate display with angular brackets.
+  id: totrans-274
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 配置带尖括号的球坐标显示。
+- en: '[![6](assets/6.png)](#co_special_methods_for_sequences_CO14-6)'
+  id: totrans-275
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![6](assets/6.png)](#co_special_methods_for_sequences_CO14-6)'
+- en: Configure a Cartesian coordinate display with parentheses.
+  id: totrans-276
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 配置带括号的笛卡尔坐标显示。
+- en: '[![7](assets/7.png)](#co_special_methods_for_sequences_CO14-7)'
+  id: totrans-277
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![7](assets/7.png)](#co_special_methods_for_sequences_CO14-7)'
+- en: Create a generator expression to format each coordinate item on demand.
+  id: totrans-278
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 创建一个生成器表达式，以便按需格式化每个坐标项。
+- en: '[![8](assets/8.png)](#co_special_methods_for_sequences_CO14-8)'
+  id: totrans-279
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![8](assets/8.png)](#co_special_methods_for_sequences_CO14-8)'
+- en: Plug formatted components separated by commas inside brackets or parentheses.
+  id: totrans-280
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 将格式化的组件用逗号分隔放在方括号或括号内。
+- en: Note
+  id: totrans-281
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 注意
+- en: We are making heavy use of generator expressions in `__format__`, `angle`, and
+    `angles`, but our focus here is in providing `__format__` to bring `Vector` to
+    the same implementation level as `Vector2d`. When we cover generators in [Chapter 17](ch17.html#iterables2generators),
+    we’ll use some of the code in `Vector` as examples, and then the generator tricks
+    will be explained in detail.
+  id: totrans-282
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在`__format__`、`angle`和`angles`中大量使用生成器表达式，但我们的重点在于提供`__format__`以使`Vector`达到与`Vector2d`相同的实现水平。当我们在[第17章](ch17.html#iterables2generators)中讨论生成器时，我们将使用`Vector`中的一些代码作为示例，然后详细解释生成器技巧。
+- en: This concludes our mission for this chapter. The `Vector` class will be enhanced
+    with infix operators in [Chapter 16](ch16.html#operator_overloading), but our
+    goal here was to explore techniques for coding special methods that are useful
+    in a wide variety of collection classes.
+  id: totrans-283
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这就结束了本章的任务。`Vector`类将在[第16章](ch16.html#operator_overloading)中通过中缀运算符进行增强，但我们在这里的目标是探索编写特殊方法的技术，这些方法在各种集合类中都很有用。
+- en: Chapter Summary
+  id: totrans-284
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 章节总结
+- en: The `Vector` example in this chapter was designed to be compatible with `Vector2d`,
+    except for the use of a different constructor signature accepting a single iterable
+    argument, just like the built-in sequence types do. The fact that `Vector` behaves
+    as a sequence just by implementing `__getitem__` and `__len__` prompted a discussion
+    of protocols, the informal interfaces used in duck-typed languages.
+  id: totrans-285
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 本章中的`Vector`示例旨在与`Vector2d`兼容，除了使用接受单个可迭代参数的不同构造函数签名外，就像内置序列类型所做的那样。`Vector`通过仅实现`__getitem__`和`__len__`就表现得像一个序列，这促使我们讨论协议，即鸭子类型语言中使用的非正式接口。
+- en: We then looked at how the `my_seq[a:b:c]` syntax works behind the scenes, by
+    creating a `slice(a, b, c)` object and handing it to `__getitem__`. Armed with
+    this knowledge, we made `Vector` respond correctly to slicing, by returning new
+    `Vector` instances, just like a Pythonic sequence is expected to do.
+  id: totrans-286
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 然后我们看了一下`my_seq[a:b:c]`语法在幕后是如何工作的，通过创建一个`slice(a, b, c)`对象并将其传递给`__getitem__`。有了这个知识，我们使`Vector`正确响应切片操作，通过返回新的`Vector`实例，就像预期的Python序列一样。
+- en: The next step was to provide read-only access to the first few `Vector` components
+    using notation such as `my_vec.x`. We did it by implementing `__getattr__`. Doing
+    that opened the possibility of tempting the user to assign to those special components
+    by writing `my_vec.x = 7`, revealing a potential bug. We fixed it by implementing
+    `__setattr__` as well, to forbid assigning values to single-letter attributes.
+    Very often, when you code a `__getattr__` you need to add `__setattr__` too, in
+    order to avoid inconsistent behavior.
+  id: totrans-287
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 下一步是通过诸如`my_vec.x`这样的表示法为前几个`Vector`组件提供只读访问。我们通过实现`__getattr__`来实现这一点。这样做打开了通过编写`my_vec.x
+    = 7`来为这些特殊组件赋值的可能性，揭示了一个潜在的错误。我们通过实现`__setattr__`来修复这个问题，以禁止向单个字母属性赋值。通常，当你编写`__getattr__`时，你需要添加`__setattr__`，以避免不一致的行为。
+- en: Implementing the `__hash__` function provided the perfect context for using
+    `functools.reduce`, because we needed to apply the xor operator `^` in succession
+    to the hashes of all `Vector` components to produce an aggregate hash code for
+    the whole `Vector`. After applying `reduce` in `__hash__`, we used the `all` reducing
+    built-in to create a more efficient `__eq__` method.
+  id: totrans-288
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 实现`__hash__`函数为使用`functools.reduce`提供了完美的背景，因为我们需要对所有`Vector`组件的哈希值连续应用异或运算符`^`，以产生整个`Vector`的聚合哈希码。在`__hash__`中应用`reduce`后，我们使用`all`内置的reduce函数来创建一个更高效的`__eq__`方法。
+- en: The last enhancement to `Vector` was to reimplement the `__format__` method
+    from `Vector2d` by supporting spherical coordinates as an alternative to the default
+    Cartesian coordinates. We used quite a bit of math and several generators to code
+    `__format__` and its auxiliary functions, but these are implementation details—and
+    we’ll come back to the generators in [Chapter 17](ch17.html#iterables2generators).
+    The goal of that last section was to support a custom format, thus fulfilling
+    the promise of a `Vector` that could do everything a `Vector2d` did, and more.
+  id: totrans-289
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 对`Vector`的最后一个增强是通过支持球坐标作为默认笛卡尔坐标的替代来重新实现`Vector2d`中的`__format__`方法。我们使用了相当多的数学和几个生成器来编写`__format__`及其辅助函数，但这些都是实现细节——我们将在[第17章](ch17.html#iterables2generators)中回到生成器。最后一节的目标是支持自定义格式，从而实现`Vector`能够做到与`Vector2d`一样的一切，甚至更多。
+- en: As we did in [Chapter 11](ch11.html#pythonic_objects), here we often looked
+    at how standard Python objects behave, to emulate them and provide a “Pythonic”
+    look-and-feel to `Vector`.
+  id: totrans-290
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 正如我们在[第11章](ch11.html#pythonic_objects)中所做的那样，这里我们经常研究标准Python对象的行为，以模拟它们并为`Vector`提供“Pythonic”的外观和感觉。
+- en: In [Chapter 16](ch16.html#operator_overloading), we will implement several infix
+    operators on `Vector`. The math will be much simpler than in the `angle()` method
+    here, but exploring how infix operators work in Python is a great lesson in OO
+    design. But before we get to operator overloading, we’ll step back from working
+    on one class and look at organizing multiple classes with interfaces and inheritance,
+    the subjects of Chapters [13](ch13.html#ifaces_prot_abc) and [14](ch14.html#inheritance).
+  id: totrans-291
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在[第16章](ch16.html#operator_overloading)中，我们将在`Vector`上实现几个中缀运算符。数学将比这里的`angle()`方法简单得多，但探索Python中中缀运算符的工作方式是面向对象设计的一课。但在我们开始运算符重载之前，我们将暂时离开单个类的工作，转而关注组织多个类的接口和继承，这是第13章和第14章的主题。
+- en: Further Reading
+  id: totrans-292
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 进一步阅读
+- en: Most special methods covered in the `Vector` example also appear in the `Vector2d`
+    example from [Chapter 11](ch11.html#pythonic_objects), so the references in [“Further
+    Reading”](ch11.html#pythonic_further_reading) are all relevant here.
+  id: totrans-293
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在`Vector`示例中涵盖的大多数特殊方法也出现在[第11章](ch11.html#pythonic_objects)的`Vector2d`示例中，因此[“进一步阅读”](ch11.html#pythonic_further_reading)中的参考资料在这里都是相关的。
+- en: The powerful `reduce` higher-order function is also known as fold, accumulate,
+    aggregate, compress, and inject. For more information, see Wikipedia’s [“Fold
+    (higher-order function)” article](https://fpy.li/12-5), which presents applications
+    of that higher-order function with emphasis on functional programming with recursive
+    data structures. The article also includes a table listing fold-like functions
+    in dozens of programming languages.
+  id: totrans-294
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 强大的`reduce`高阶函数也被称为fold、accumulate、aggregate、compress和inject。更多信息，请参阅维基百科的[“Fold
+    (higher-order function)”文章](https://fpy.li/12-5)，该文章重点介绍了该高阶函数在递归数据结构的函数式编程中的应用。该文章还包括一张列出了几十种编程语言中类似fold函数的表格。
+- en: '[“What’s New in Python 2.5”](https://fpy.li/12-6) has a short explanation of
+    `__index__`, designed to support `__getitem__` methods, as we saw in [“A Slice-Aware
+    __getitem__”](#slice_aware_sec). [PEP 357—Allowing Any Object to be Used for Slicing](https://fpy.li/pep357)
+    details the need for it from the perspective of an implementor of a C-extension—Travis
+    Oliphant, the primary creator of NumPy. Oliphant’s many contributions to Python
+    made it a leading scientific computing language, which then positioned it to lead
+    the way in machine learning applications.'
+  id: totrans-295
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[“Python 2.5中的新功能”](https://fpy.li/12-6)简要解释了`__index__`，旨在支持`__getitem__`方法，正如我们在[“一个支持切片的__getitem__”](#slice_aware_sec)中看到的。[PEP
+    357—允许任何对象用于切片](https://fpy.li/pep357)详细介绍了从C扩展的实现者的角度看它的必要性——Travis Oliphant，NumPy的主要创��者。Oliphant对Python的许多贡献使其成为一种领先的科学计算语言，从而使其在机器学习应用方面处于领先地位。'
+- en: ^([1](ch12.html#idm46582428059280-marker)) The `iter()` function is covered
+    in [Chapter 17](ch17.html#iterables2generators), along with the `__iter__` method.
+  id: totrans-296
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([1](ch12.html#idm46582428059280-marker)) `iter()`函数在[第17章](ch17.html#iterables2generators)中有介绍，还有`__iter__`方法。
+- en: ^([2](ch12.html#idm46582427058896-marker)) Attribute lookup is more complicated
+    than this; we’ll see the gory details in [Part V](part05.html#metaprog_part).
+    For now, this simplified explanation will do.
+  id: totrans-297
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([2](ch12.html#idm46582427058896-marker)) 属性查找比这更复杂；我们将在[第五部分](part05.html#metaprog_part)中看到详细内容。现在，这个简化的解释就足够了。
+- en: '^([3](ch12.html#idm46582426936464-marker)) Although `__match_args__` exists
+    to support pattern matching in Python 3.10, setting this attribute is harmless
+    in previous versions of Python. In the first edition of this book, I named it
+    `shortcut_names`. With the new name it does double duty: it supports positional
+    patterns in `case` clauses, and it holds the names of the dynamic attributes supported
+    by special logic in `__getattr__` and `__setattr__`.'
+  id: totrans-298
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([3](ch12.html#idm46582426936464-marker)) 尽管`__match_args__`存在于支持Python 3.10中的模式匹配，但在之前的Python版本中设置这个属性是无害的。在本书的第一版中，我将其命名为`shortcut_names`。新名称具有双重作用：支持`case`子句中的位置模式，并保存`__getattr__`和`__setattr__`中特殊逻辑支持的动态属性的名称。
+- en: ^([4](ch12.html#idm46582426525584-marker)) The `sum`, `any`, and `all` cover
+    the most common uses of `reduce`. See the discussion in [“Modern Replacements
+    for map, filter, and reduce”](ch07.html#map_filter_reduce).
+  id: totrans-299
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([4](ch12.html#idm46582426525584-marker)) `sum`、`any`和`all`涵盖了`reduce`的最常见用法。请参阅[“map、filter和reduce的现代替代品”](ch07.html#map_filter_reduce)中的讨论。
+- en: ^([5](ch12.html#idm46582426057488-marker)) We will seriously consider the matter
+    of `Vector([1, 2]) == (1, 2)` in [“Operator Overloading 101”](ch16.html#op_overloading_101_sec).
+  id: totrans-300
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([5](ch12.html#idm46582426057488-marker)) 我们将认真考虑`Vector([1, 2]) == (1, 2)`这个问题，在[“运算符重载
+    101”](ch16.html#op_overloading_101_sec)中。
+- en: ^([6](ch12.html#idm46582425554624-marker)) The Wolfram Mathworld website has
+    an article on [hypersphere](https://fpy.li/12-4); on Wikipedia, “hypersphere”
+    redirects to [the “*n*-sphere” entry](https://fpy.li/nsphere).
+  id: totrans-301
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([6](ch12.html#idm46582425554624-marker)) Wolfram Mathworld网站有一篇关于[超球体](https://fpy.li/12-4)的文章；在维基百科上，“超球体”重定向到[“*n*-球体”条目](https://fpy.li/nsphere)。
+- en: '^([7](ch12.html#idm46582423307920-marker)) I adapted the code for this presentation:
+    in 2003, `reduce` was a built-in, but in Python 3 we need to import it; also,
+    I replaced the names `x` and `y` with `my_list` and `sub`, for sub-list.'
+  id: totrans-302
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([7](ch12.html#idm46582423307920-marker)) 我为这个演示调整了代码：在2003年，`reduce`是内置的，但在Python
+    3中我们需要导入它；此外，我用`my_list`和`sub`替换了`x`和`y`的名称，用于子列表。

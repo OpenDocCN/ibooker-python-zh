@@ -1,0 +1,2694 @@
+- en: Chapter 9\. Decorators and Closures
+  id: totrans-0
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 第 9 章\. 装饰器和闭包
+- en: There’s been a number of complaints about the choice of the name “decorator”
+    for this feature. The major one is that the name is not consistent with its use
+    in the GoF book.^([1](ch09.html#idm46582439955440)) The name *decorator* probably
+    owes more to its use in the compiler area—a syntax tree is walked and annotated.
+  id: totrans-1
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+  zh: 有人对将这个功能命名为“装饰器”的选择提出了一些抱怨。主要的抱怨是该名称与其在 GoF 书中的用法不一致。^([1](ch09.html#idm46582439955440))
+    名称 *decorator* 可能更多地归因于其在编译器领域的用法—语法树被遍历并注释。
+- en: ''
+  id: totrans-2
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: PEP 318—Decorators for Functions and Methods
+  id: totrans-3
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+  zh: PEP 318—函数和方法的装饰器
+- en: Function decorators let us “mark” functions in the source code to enhance their
+    behavior in some way. This is powerful stuff, but mastering it requires understanding
+    closures—which is what we get when functions capture variables defined outside
+    of their bodies.
+  id: totrans-4
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 函数装饰器让我们在源代码中“标记”函数以增强其行为。这是强大的东西，但要掌握它需要理解闭包—当函数捕获在其体外定义的变量时，我们就得到了闭包。
+- en: The most obscure reserved keyword in Python is `nonlocal`, introduced in Python
+    3.0. You can have a profitable life as a Python programmer without ever using
+    it if you adhere to a strict regimen of class-centered object orientation. However,
+    if you want to implement your own function decorators, you must understand closures,
+    and then the need for `nonlocal` becomes obvious.
+  id: totrans-5
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Python 中最晦涩的保留关键字是 `nonlocal`，引入于 Python 3.0。如果你遵循严格的以类为中心的面向对象编程规范，作为 Python
+    程序员可以过上富有成效的生活而永远不使用它。然而，如果你想要实现自己的函数装饰器，你必须理解闭包，然后 `nonlocal` 的必要性就显而易见了。
+- en: Aside from their application in decorators, closures are also essential for
+    any type of programming using callbacks, and for coding in a functional style
+    when it makes sense.
+  id: totrans-6
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 除了在装饰器中的应用外，闭包在使用回调函数的任何类型编程和在适当时以函数式风格编码时也是必不可少的。
+- en: 'The end goal of this chapter is to explain exactly how function decorators
+    work, from the simplest registration decorators to the rather more complicated
+    parameterized ones. However, before we reach that goal we need to cover:'
+  id: totrans-7
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 本章的最终目标是准确解释函数装饰器的工作原理，从最简单的注册装饰器到更复杂的带参数装饰器。然而，在达到这个目标之前，我们需要涵盖：
+- en: How Python evaluates decorator syntax
+  id: totrans-8
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: Python 如何评估装饰器语法
+- en: How Python decides whether a variable is local
+  id: totrans-9
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: Python 如何确定变量是局部的
+- en: Why closures exist and how they work
+  id: totrans-10
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 闭包的存在及工作原理
+- en: What problem is solved by `nonlocal`
+  id: totrans-11
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '`nonlocal` 解决了什么问题'
+- en: 'With this grounding, we can tackle further decorator topics:'
+  id: totrans-12
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 有了这个基础，我们可以进一步探讨装饰器的主题：
+- en: Implementing a well-behaved decorator
+  id: totrans-13
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 实现一个行为良好的装饰器
+- en: 'Powerful decorators in the standard library: `@cache`, `@lru_cache`, and `@singledispatch`'
+  id: totrans-14
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 标准库中强大的装饰器：`@cache`、`@lru_cache` 和 `@singledispatch`
+- en: Implementing a parameterized decorator
+  id: totrans-15
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 实现一个带参数的装饰器
+- en: What’s New in This Chapter
+  id: totrans-16
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 本章新内容
+- en: The caching decorator `functools.cache`—new in Python 3.9—is simpler than the
+    traditional `functools.lru_cache`, so I present it first. The latter is covered
+    in [“Using lru_cache”](#lru_cache_sec), including the simplified form added in
+    Python 3.8.
+  id: totrans-17
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Python 3.9 中新增的缓存装饰器 `functools.cache` 比传统的 `functools.lru_cache` 更简单，因此我首先介绍它。后者在[“使用
+    lru_cache”](#lru_cache_sec)中有介绍，包括 Python 3.8 中新增的简化形式。
+- en: '[“Single Dispatch Generic Functions”](#generic_functions) was expanded and
+    now uses type hints, the preferred way to use `functools.singledispatch` since
+    Python 3.7.'
+  id: totrans-18
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[“单分派泛型函数”](#generic_functions)进行了扩展，现在使用类型提示，这是自 Python 3.7 以来使用 `functools.singledispatch`
+    的首选方式。'
+- en: '[“Parameterized Decorators”](#parameterized_dec_sec) now includes a class-based
+    example, [Example 9-27](#clockdeco_param_cls_ex).'
+  id: totrans-19
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[“带参数的装饰���”](#parameterized_dec_sec)现在包括一个基于类的示例，[示例 9-27](#clockdeco_param_cls_ex)。'
+- en: I moved [Chapter 10, “Design Patterns with First-Class Functions”](ch10.html#rethinking_design_patterns)
+    to the end of [Part II](part02.html#function_objects_part) to improve the flow
+    of the book. [“Decorator-Enhanced Strategy Pattern”](ch10.html#decorated_strategy)
+    is now in that chapter, along with other variations of the Strategy design pattern
+    using callables.
+  id: totrans-20
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我将[第 10 章，“具有头等函数的设计模式”](ch10.html#rethinking_design_patterns)移到了[第 II 部分](part02.html#function_objects_part)的末尾，以改善书籍的流畅性。[“装饰器增强策略模式”](ch10.html#decorated_strategy)现在在该章节中，以及使用可调用对象的策略设计模式的其他变体。
+- en: We start with a very gentle introduction to decorators, and then proceed with
+    the rest of the items listed in the chapter opening.
+  id: totrans-21
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们从一个非常温和的装饰器介绍开始，然后继续进行章节开头列出的其余项目。
+- en: Decorators 101
+  id: totrans-22
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 装饰器 101
+- en: A decorator is a callable that takes another function as an argument (the decorated
+    function).
+  id: totrans-23
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 装饰器是一个可调用对象，接受另一个函数作为参数（被装饰的函数）。
+- en: A decorator may perform some processing with the decorated function, and returns
+    it or replaces it with another function or callable object.^([2](ch09.html#idm46582439921968))
+  id: totrans-24
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 装饰器可能对被装饰的函数进行一些处理，并返回它或用另一个函数或可调用对象替换它。^([2](ch09.html#idm46582439921968))
+- en: 'In other words, assuming an existing decorator named `decorate`, this code:'
+  id: totrans-25
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 换句话说，假设存在一个名为 `decorate` 的装饰器，这段代码：
+- en: '[PRE0]'
+  id: totrans-26
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE0]'
+- en: 'has the same effect as writing this:'
+  id: totrans-27
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 与编写以下内容具有相同的效果：
+- en: '[PRE1]'
+  id: totrans-28
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE1]'
+- en: 'The end result is the same: at the end of either of these snippets, the `target`
+    name is bound to whatever function is returned by `decorate(target)`—which may
+    be the function initially named `target`, or may be a different function.'
+  id: totrans-29
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 最终结果是一样的：在这两个片段的末尾，`target` 名称绑定到 `decorate(target)` 返回的任何函数上—这可能是最初命名为 `target`
+    的函数，也可能是另一个函数。
+- en: To confirm that the decorated function is replaced, see the console session
+    in [Example 9-1](#decorator_replaces).
+  id: totrans-30
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 要确认被装饰的函数是否被替换，请查看[示例 9-1](#decorator_replaces)中的控制台会话。
+- en: Example 9-1\. A decorator usually replaces a function with a different one
+  id: totrans-31
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 9-1\. 装饰器通常会用不同的函数替换一个函数
+- en: '[PRE2]'
+  id: totrans-32
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE2]'
+- en: '[![1](assets/1.png)](#co_decorators_and_closures_CO1-1)'
+  id: totrans-33
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_decorators_and_closures_CO1-1)'
+- en: '`deco` returns its `inner` function object.'
+  id: totrans-34
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`deco` 返回其 `inner` 函数对象。'
+- en: '[![2](assets/2.png)](#co_decorators_and_closures_CO1-2)'
+  id: totrans-35
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_decorators_and_closures_CO1-2)'
+- en: '`target` is decorated by `deco`.'
+  id: totrans-36
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`target` 被 `deco` 装饰。'
+- en: '[![3](assets/3.png)](#co_decorators_and_closures_CO1-3)'
+  id: totrans-37
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_decorators_and_closures_CO1-3)'
+- en: Invoking the decorated `target` actually runs `inner`.
+  id: totrans-38
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 调用被装饰的 `target` 实际上运行 `inner`。
+- en: '[![4](assets/4.png)](#co_decorators_and_closures_CO1-4)'
+  id: totrans-39
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_decorators_and_closures_CO1-4)'
+- en: Inspection reveals that `target` is a now a reference to `inner`.
+  id: totrans-40
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 检查发现 `target` 现在是对 `inner` 的引用。
+- en: Strictly speaking, decorators are just syntactic sugar. As we just saw, you
+    can always simply call a decorator like any regular callable, passing another
+    function. Sometimes that is actually convenient, especially when doing *metaprogramming*—changing
+    program behavior at runtime.
+  id: totrans-41
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 严格来说，装饰器只是一种语法糖。正如我们刚才看到的，你总是可以像调用任何常规可调用对象一样简单地调用装饰器，传递另一个函数。有时这实际上很方便，特别是在进行
+    *元编程* 时——在运行时更改程序行为。
+- en: 'Three essential facts make a good summary of decorators:'
+  id: totrans-42
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 三个关键事实概括了装饰器的要点：
+- en: A decorator is a function or another callable.
+  id: totrans-43
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 装饰器是一个函数或另一个可调用对象。
+- en: A decorator may replace the decorated function with a different one.
+  id: totrans-44
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 装饰器可能会用不同的函数替换被装饰的函数。
+- en: Decorators are executed immediately when a module is loaded.
+  id: totrans-45
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 装饰器在模块加载时立即执行。
+- en: Now let’s focus on the third point.
+  id: totrans-46
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在让我们专注于第三点。
+- en: When Python Executes Decorators
+  id: totrans-47
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: Python 执行装饰器时
+- en: A key feature of decorators is that they run right after the decorated function
+    is defined. That is usually at *import time* (i.e., when a module is loaded by
+    Python). Consider *registration.py* in [Example 9-2](#registration_ex).
+  id: totrans-48
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 装饰器的一个关键特点是它们在被装饰的函数定义后立即运行。通常是在 *导入时间*（即 Python 加载模块时）运行。考虑 [示例 9-2](#registration_ex)
+    中的 *registration.py*。
+- en: Example 9-2\. The registration.py module
+  id: totrans-49
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 9-2\. registration.py 模块
+- en: '[PRE3]'
+  id: totrans-50
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE3]'
+- en: '[![1](assets/1.png)](#co_decorators_and_closures_CO2-1)'
+  id: totrans-51
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_decorators_and_closures_CO2-1)'
+- en: '`registry` will hold references to functions decorated by `@register`.'
+  id: totrans-52
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`registry` 将保存被 `@register` 装饰的函数的引用。'
+- en: '[![2](assets/2.png)](#co_decorators_and_closures_CO2-2)'
+  id: totrans-53
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_decorators_and_closures_CO2-2)'
+- en: '`register` takes a function as an argument.'
+  id: totrans-54
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`register` 接受一个函数作为参数。'
+- en: '[![3](assets/3.png)](#co_decorators_and_closures_CO2-3)'
+  id: totrans-55
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_decorators_and_closures_CO2-3)'
+- en: Display what function is being decorated, for demonstration.
+  id: totrans-56
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 显示正在被装饰的函数，以供演示。
+- en: '[![4](assets/4.png)](#co_decorators_and_closures_CO2-4)'
+  id: totrans-57
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_decorators_and_closures_CO2-4)'
+- en: Include `func` in `registry`.
+  id: totrans-58
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在 `registry` 中包含 `func`。
+- en: '[![5](assets/5.png)](#co_decorators_and_closures_CO2-5)'
+  id: totrans-59
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_decorators_and_closures_CO2-5)'
+- en: 'Return `func`: we must return a function; here we return the same received
+    as argument.'
+  id: totrans-60
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 返回 `func`：我们必须返回一个函数；在这里我们返回接收到的相同函数。
+- en: '[![6](assets/6.png)](#co_decorators_and_closures_CO2-6)'
+  id: totrans-61
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![6](assets/6.png)](#co_decorators_and_closures_CO2-6)'
+- en: '`f1` and `f2` are decorated by `@register`.'
+  id: totrans-62
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`f1` 和 `f2` 被 `@register` 装饰。'
+- en: '[![7](assets/7.png)](#co_decorators_and_closures_CO2-7)'
+  id: totrans-63
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![7](assets/7.png)](#co_decorators_and_closures_CO2-7)'
+- en: '`f3` is not decorated.'
+  id: totrans-64
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`f3` 没有被装饰。'
+- en: '[![8](assets/8.png)](#co_decorators_and_closures_CO2-8)'
+  id: totrans-65
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![8](assets/8.png)](#co_decorators_and_closures_CO2-8)'
+- en: '`main` displays the `registry`, then calls `f1()`, `f2()`, and `f3()`.'
+  id: totrans-66
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`main` 显�� `registry`，然后调用 `f1()`、`f2()` 和 `f3()`。'
+- en: '[![9](assets/9.png)](#co_decorators_and_closures_CO2-9)'
+  id: totrans-67
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![9](assets/9.png)](#co_decorators_and_closures_CO2-9)'
+- en: '`main()` is only invoked if *registration.py* runs as a script.'
+  id: totrans-68
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 只有当 *registration.py* 作为脚本运行时才会调用 `main()`。
+- en: 'The output of running *registration.py* as a script looks like this:'
+  id: totrans-69
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 将 *registration.py* 作为脚本运行的输出如下：
+- en: '[PRE4]'
+  id: totrans-70
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE4]'
+- en: Note that `register` runs (twice) before any other function in the module. When
+    `register` is called, it receives the decorated function object as an argument—for
+    example, `<function f1 at 0x100631bf8>`.
+  id: totrans-71
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意，`register` 在任何模块中的其他函数之前运行（两次）。当调用 `register` 时，它接收被装饰的函数对象作为参数，例如 `<function
+    f1 at 0x100631bf8>`。
+- en: 'After the module is loaded, the `registry` list holds references to the two
+    decorated functions: `f1` and `f2`. These functions, as well as `f3`, are only
+    executed when explicitly called by `main`.'
+  id: totrans-72
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 模块加载后，`registry` 列表保存了两个被装饰函数 `f1` 和 `f2` 的引用。这些函数以及 `f3` 只有在被 `main` 显式调用时才会执行。
+- en: 'If *registration.py* is imported (and not run as a script), the output is this:'
+  id: totrans-73
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果 *registration.py* 被导入（而不是作为脚本运行），输出如下：
+- en: '[PRE5]'
+  id: totrans-74
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE5]'
+- en: 'At this time, if you inspect `registry`, this is what you see:'
+  id: totrans-75
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 此时，如果检查 `registry`，你会看到：
+- en: '[PRE6]'
+  id: totrans-76
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE6]'
+- en: The main point of [Example 9-2](#registration_ex) is to emphasize that function
+    decorators are executed as soon as the module is imported, but the decorated functions
+    only run when they are explicitly invoked. This highlights the difference between
+    what Pythonistas call *import time* and *runtime*.
+  id: totrans-77
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 9-2](#registration_ex) 的主要观点是强调函数装饰器在模块导入时立即执行，但被装饰的函数只有在显式调用时才运行。这突出了
+    Python 程序员所称的 *导入时间* 和 *运行时* 之间的区别。'
+- en: Registration Decorators
+  id: totrans-78
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 注册装饰器
+- en: 'Considering how decorators are commonly employed in real code, [Example 9-2](#registration_ex)
+    is unusual in two ways:'
+  id: totrans-79
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 考虑到装饰器在实际代码中通常的应用方式，[示例 9-2](#registration_ex) 在两个方面都有些不同寻常：
+- en: The decorator function is defined in the same module as the decorated functions.
+    A real decorator is usually defined in one module and applied to functions in
+    other modules.
+  id: totrans-80
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 装饰器函数在与被装饰函数相同的模块中定义。真正的装饰器通常在一个模块中定义，并应用于其他模块中的函数。
+- en: The `register` decorator returns the same function passed as an argument. In
+    practice, most decorators define an inner function and return it.
+  id: totrans-81
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '`register` 装饰器返回与传入的相同函数。实际上，大多数装饰器定义一个内部函数并返回它。'
+- en: Even though the `register` decorator in [Example 9-2](#registration_ex) returns
+    the decorated function unchanged, that technique is not useless. Similar decorators
+    are used in many Python frameworks to add functions to some central registry—for
+    example, a registry mapping URL patterns to functions that generate HTTP responses.
+    Such registration decorators may or may not change the decorated function.
+  id: totrans-82
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 即使 [示例 9-2](#registration_ex) 中的 `register` 装饰器返回未更改的装饰函数，这种技术也不是无用的。许多 Python
+    框架中使用类似的装饰器将函数添加到某个中央注册表中，例如将 URL 模式映射到生成 HTTP 响应的函数的注册表。这些注册装饰器可能会或可能不会更改被装饰的函数。
+- en: We will see a registration decorator applied in [“Decorator-Enhanced Strategy
+    Pattern”](ch10.html#decorated_strategy) ([Chapter 10](ch10.html#rethinking_design_patterns)).
+  id: totrans-83
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们将在 [“装饰器增强的策略模式”](ch10.html#decorated_strategy)（[第 10 章](ch10.html#rethinking_design_patterns)）中看到一个注册装饰器的应用。
+- en: Most decorators do change the decorated function. They usually do it by defining
+    an inner function and returning it to replace the decorated function. Code that
+    uses inner functions almost always depends on closures to operate correctly. To
+    understand closures, we need to take a step back and review how variable scopes
+    work in Python.
+  id: totrans-84
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 大多数装饰器确实会改变被装饰的函数。它们通常通过定义内部函数并返回它来替换被装饰的函数来实现。几乎总是依赖闭包才能正确运行使用内部函数的代码。要理解闭包，我们需要退一步，回顾一下
+    Python 中变量作用域的工作原理。
+- en: Variable Scope Rules
+  id: totrans-85
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 变量作用域规则
+- en: 'In [Example 9-3](#ex_global_undef), we define and test a function that reads
+    two variables: a local variable `a`—defined as function parameter—and variable
+    `b` that is not defined anywhere in the function.'
+  id: totrans-86
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在[示例 9-3](#ex_global_undef)中，我们定义并测试了一个函数，该函数读取两个变量：一个局部变量`a`—定义为函数参数—和一个在函数中任何地方都未定义的变量`b`。
+- en: Example 9-3\. Function reading a local and a global variable
+  id: totrans-87
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 9-3\. 读取局部变量和全局变量的函数
+- en: '[PRE7]'
+  id: totrans-88
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE7]'
+- en: 'The error we got is not surprising. Continuing from [Example 9-3](#ex_global_undef),
+    if we assign a value to a global `b` and then call `f1`, it works:'
+  id: totrans-89
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们得到的错误并不令人惊讶。继续从[示例 9-3](#ex_global_undef)中，如果我们为全局`b`赋值然后调用`f1`，它可以工作：
+- en: '[PRE8]'
+  id: totrans-90
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE8]'
+- en: Now, let’s see an example that may surprise you.
+  id: totrans-91
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在，让我们看一个可能会让你惊讶的例子。
+- en: Take a look at the `f2` function in [Example 9-4](#ex_local_unbound). Its first
+    two lines are the same as `f1` in [Example 9-3](#ex_global_undef), then it makes
+    an assignment to `b`. But it fails at the second `print`, before the assignment
+    is made.
+  id: totrans-92
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 查看[示例 9-4](#ex_local_unbound)中的`f2`函数。它的前两行与[示例 9-3](#ex_global_undef)中的`f1`相同，然后对`b`进行赋值。但在赋值之前的第二个`print`失败了。
+- en: Example 9-4\. Variable `b` is local, because it is assigned a value in the body
+    of the function
+  id: totrans-93
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 9-4\. 变量`b`是局部的，因为它在函数体中被赋值
+- en: '[PRE9]'
+  id: totrans-94
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE9]'
+- en: Note that the output starts with `3`, which proves that the `print(a)` statement
+    was executed. But the second one, `print(b)`, never runs. When I first saw this
+    I was surprised, thinking that `6` should be printed, because there is a global
+    variable `b` and the assignment to the local `b` is made after `print(b)`.
+  id: totrans-95
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 请注意，输出以`3`开头，这证明了`print(a)`语句已执行。但第二个`print(b)`从未运行。当我第一次看到这个时，我感到惊讶，认为应该打印`6`，因为有一个全局变量`b`，并且在`print(b)`之后对局部`b`进行了赋值。
+- en: But the fact is, when Python compiles the body of the function, it decides that
+    `b` is a local variable because it is assigned within the function. The generated
+    bytecode reflects this decision and will try to fetch `b` from the local scope.
+    Later, when the call `f2(3)` is made, the body of `f2` fetches and prints the
+    value of the local variable `a`, but when trying to fetch the value of local variable
+    `b`, it discovers that `b` is unbound.
+  id: totrans-96
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 但事实是，当 Python 编译函数体时，它决定将`b`视为局部变量，因为它是在函数内部赋值的。生成的字节码反映了这个决定，并将尝试从局部作用域获取`b`。稍后，当调用`f2(3)`时，`f2`的函数体获取并打印局部变量`a`的值，但在尝试获取局部变量`b`的值时，它发现`b`是未绑定的。
+- en: 'This is not a bug, but a design choice: Python does not require you to declare
+    variables, but assumes that a variable assigned in the body of a function is local.
+    This is much better than the behavior of JavaScript, which does not require variable
+    declarations either, but if you do forget to declare that a variable is local
+    (with `var`), you may clobber a global variable without knowing.'
+  id: totrans-97
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这不是一个错误，而是一个设计选择：Python 不要求您声明变量，但假设在函数体中分配的变量是局部的。这比 JavaScript 的行为要好得多，后者也不需要变量声明，但如果您忘记声明变量是局部的（使用`var`），您可能会在不知情的情况下覆盖全局变量。
+- en: 'If we want the interpreter to treat `b` as a global variable and still assign
+    a new value to it within the function, we use the `global` declaration:'
+  id: totrans-98
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果我们希望解释器将`b`视为全局变量，并且仍然在函数内部为其赋新值，我们使用`global`声明：
+- en: '[PRE10]'
+  id: totrans-99
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE10]'
+- en: 'In the preceding examples, we can see two scopes in action:'
+  id: totrans-100
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在前面的示例中，我们可以看到两个作用域的运作：
+- en: The module global scope
+  id: totrans-101
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 模块全局作用域
+- en: Made of names assigned to values outside of any class or function block.
+  id: totrans-102
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 由分配给任何类或函数块之外的值的名称组成。
+- en: The f3 function local scope
+  id: totrans-103
+  prefs: []
+  type: TYPE_NORMAL
+  zh: f3函数的局部作用域
+- en: Made of names assigned to values as parameters, or directly in the body of the
+    function.
+  id: totrans-104
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 由分配给参数的值或直接在函数体中分配的名称组成。
+- en: There is one other scope where variables can come from, which we call *nonlocal*
+    and is fundamental for closures; we’ll see it in a bit.
+  id: totrans-105
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 另一个变量可能来自的作用域是*非局部*，对于闭包是至关重要的；我们稍后会看到它。
+- en: After this closer look at how variable scopes work in Python, we can tackle
+    closures in the next section, [“Closures”](#closures_sec). If you are curious
+    about the bytecode differences between the functions in Examples [9-3](#ex_global_undef)
+    and [9-4](#ex_local_unbound), see the following sidebar.
+  id: totrans-106
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在更深入地了解 Python 中变量作用域工作原理之后，我们可以在下一节[“闭包”](#closures_sec)中讨论闭包。如果您对示例[9-3](#ex_global_undef)和[9-4](#ex_local_unbound)中的函数之间的字节码差异感兴趣，请参阅以下侧边栏。
+- en: Closures
+  id: totrans-107
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 闭包
+- en: 'In the blogosphere, closures are sometimes confused with anonymous functions.
+    Many confuse them because of the parallel history of those features: defining
+    functions inside functions is not so common or convenient, until you have anonymous
+    functions. And closures only matter when you have nested functions. So a lot of
+    people learn both concepts at the same time.'
+  id: totrans-108
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在博客圈中，有时会混淆闭包和匿名函数。许多人会因为这两个特性的平行历史而混淆它们：在函数内部定义函数并不那么常见或方便，直到有了匿名函数。而只有在有嵌套函数时闭包才重要。因此，很多���会同时学习这两个概念。
+- en: Actually, a closure is a function—let’s call it `f`—with an extended scope that
+    encompasses variables referenced in the body of `f` that are not global variables
+    or local variables of `f`. Such variables must come from the local scope of an
+    outer function that encompasses `f`.
+  id: totrans-109
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 实际上，闭包是一个函数—我们称之为`f`—具有扩展作用域，包含在`f`的函数体中引用的不是全局变量或`f`的局部变量的变量。这些变量必须来自包含`f`的外部函数的局部作用域。
+- en: It does not matter whether the function is anonymous or not; what matters is
+    that it can access nonglobal variables that are defined outside of its body.
+  id: totrans-110
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 函数是匿名的与否并不重要；重要的是它可以访问在其函数体之外定义的非全局变量。
+- en: This is a challenging concept to grasp, and is better approached through an
+    example.
+  id: totrans-111
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这是一个难以理解的概念，最好通过一个例子来解释。
+- en: Consider an `avg` function to compute the mean of an ever-growing series of
+    values; for example, the average closing price of a commodity over its entire
+    history. Every day a new price is added, and the average is computed taking into
+    account all prices so far.
+  id: totrans-112
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 考虑一个`avg`函数来计算不断增长的数值序列的平均值；例如，商品的整个历史上的平均收盘价。每天都会添加一个新的价格，并且平均值是根据到目前为止的所有价格计算的。
+- en: 'Starting with a clean slate, this is how `avg` could be used:'
+  id: totrans-113
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 从一张干净的画布开始，这就是如何使用`avg`：
+- en: '[PRE11]'
+  id: totrans-114
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE11]'
+- en: Where does `avg` come from, and where does it keep the history of previous values?
+  id: totrans-115
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`avg`是从哪里来的，它在哪里保留了先前值的历史记录？'
+- en: For starters, [Example 9-7](#ex_average_oo) is a class-based implementation.
+  id: totrans-116
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 起步时，[示例 9-7](#ex_average_oo) 是基于类的实现。
+- en: 'Example 9-7\. average_oo.py: a class to calculate a running average'
+  id: totrans-117
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 9-7\. average_oo.py：用于计算移动平均值的类
+- en: '[PRE12]'
+  id: totrans-118
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE12]'
+- en: 'The `Averager` class creates instances that are callable:'
+  id: totrans-119
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`Averager`类创建可调用的实例：'
+- en: '[PRE13]'
+  id: totrans-120
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE13]'
+- en: Now, [Example 9-8](#ex_average_fn) is a functional implementation, using the
+    higher-order function `make_averager`.
+  id: totrans-121
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在，[示例 9-8](#ex_average_fn)是一个功能实现，使用高阶函数`make_averager`。
+- en: 'Example 9-8\. average.py: a higher-order function to calculate a running average'
+  id: totrans-122
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 9-8\. average.py：用于计算移动平均值的高阶函数
+- en: '[PRE14]'
+  id: totrans-123
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE14]'
+- en: When invoked, `make_averager` returns an `averager` function object. Each time
+    an `averager` is called, it appends the passed argument to the series, and computes
+    the current average, as shown in [Example 9-9](#ex_average_demo1).
+  id: totrans-124
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当调用时，`make_averager`返回一个`averager`函数对象。每次调用`averager`时，它都会将传递的参数附加到序列中，并计算当前平均值，如[示例 9-9](#ex_average_demo1)所示。
+- en: Example 9-9\. Testing [Example 9-8](#ex_average_fn)
+  id: totrans-125
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 9-9\. 测试[示例 9-8](#ex_average_fn)
+- en: '[PRE15]'
+  id: totrans-126
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE15]'
+- en: 'Note the similarities of the examples: we call `Averager()` or `make_averager()`
+    to get a callable object `avg` that will update the historical series and calculate
+    the current mean. In [Example 9-7](#ex_average_oo), `avg` is an instance of `Averager`,
+    and in [Example 9-8](#ex_average_fn), it is the inner function, `averager`. Either
+    way, we just call `avg(n)` to include `n` in the series and get the updated mean.'
+  id: totrans-127
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意示例的相似之处：我们调用`Averager()`或`make_averager()`来获取一个可调用对象`avg`，它将更新历史序列并计算当前平均值。在[示例 9-7](#ex_average_oo)中，`avg`是`Averager`的一个实例，在[示例 9-8](#ex_average_fn)中，它是内部函数`averager`。无论哪种方式，我们只需调用`avg(n)`来将`n`包含在序列中并获得更新后的平均值。
+- en: 'It’s obvious where the `avg` of the `Averager` class keeps the history: the
+    `self.series` instance attribute. But where does the `avg` function in the second
+    example find the `series`?'
+  id: totrans-128
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 很明显，`Averager`类的`avg`保留历史记录的地方：`self.series`实例属性。但第二个示例中的`avg`函数从哪里找到`series`呢？
+- en: Note that `series` is a local variable of `make_averager` because the assignment
+    `series = []` happens in the body of that function. But when `avg(10)` is called,
+    `make_averager` has already returned, and its local scope is long gone.
+  id: totrans-129
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 请注意，`series`是`make_averager`的局部变量，因为赋值`series = []`发生在该函数的主体中。但当调用`avg(10)`时，`make_averager`已经返回，并且它的局部作用域早已消失。
+- en: Within `averager`, `series` is a *free variable*. This is a technical term meaning
+    a variable that is not bound in the local scope. See [Figure 9-1](#closure_fig).
+  id: totrans-130
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在`averager`中，`series`是一个*自由变量*。这是一个技术术语，意味着一个在局部作用域中未绑定的变量。参见[图 9-1](#closure_fig)。
+- en: '![Closure diagram](assets/flpy_0901.png)'
+  id: totrans-131
+  prefs: []
+  type: TYPE_IMG
+  zh: '![闭包图](assets/flpy_0901.png)'
+- en: Figure 9-1\. The closure for `averager` extends the scope of that function to
+    include the binding for the free variable series.
+  id: totrans-132
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 图 9-1\. `averager`的闭包将该函数的作用域扩展到包括自由变量`series`的绑定。
+- en: Inspecting the returned `averager` object shows how Python keeps the names of
+    local and free variables in the `__code__` attribute that represents the compiled
+    body of the function. [Example 9-10](#ex_average_demo2) demonstrates.
+  id: totrans-133
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 检查返回的`averager`对象显示了Python如何在`__code__`属性中保���局部和自由变量的名称，该属性表示函数的编译体。[示例 9-10](#ex_average_demo2)展示了这些属性。
+- en: Example 9-10\. Inspecting the function created by `make_averager` in [Example 9-8](#ex_average_fn)
+  id: totrans-134
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 9-10\. 检查由[示例 9-8](#ex_average_fn)创建的函数
+- en: '[PRE16]'
+  id: totrans-135
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE16]'
+- en: The value for `series` is kept in the `__closure__` attribute of the returned
+    function `avg`. Each item in `avg.__closure__` corresponds to a name in `avg.​__code__​.co_freevars`.
+    These items are `cells`, and they have an attribute called `cell_contents` where
+    the actual value can be found. [Example 9-11](#ex_average_demo3) shows these attributes.
+  id: totrans-136
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`series`的值保存在返回的函数`avg`的`__closure__`属性中。`avg.__closure__`中的每个项目对应于`avg.​__code__​.co_freevars`中的一个名称。这些项目是`cells`，它们有一个名为`cell_contents`的属性，其中可以找到实际值。[示例 9-11](#ex_average_demo3)展示了这些属性。'
+- en: Example 9-11\. Continuing from [Example 9-9](#ex_average_demo1)
+  id: totrans-137
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 9-11\. 从[示例 9-9](#ex_average_demo1) 继续
+- en: '[PRE17]'
+  id: totrans-138
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE17]'
+- en: 'To summarize: a closure is a function that retains the bindings of the free
+    variables that exist when the function is defined, so that they can be used later
+    when the function is invoked and the defining scope is no longer available.'
+  id: totrans-139
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 总结一下：闭包是一个函数，保留在函数定义时存在的自由变量的绑定，以便在函数被调用时使用，而定义作用域不再可用时可以使用它们。
+- en: Note that the only situation in which a function may need to deal with external
+    variables that are nonglobal is when it is nested in another function and those
+    variables are part of the local scope of the outer function.
+  id: totrans-140
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 请注意，函数可能需要处理非全局外部变量的唯一情况是当它嵌套在另一个函数中并且这些变量是外部函数的局部作用域的一部分时。
+- en: The nonlocal Declaration
+  id: totrans-141
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 非局部声明
+- en: Our previous implementation of `make_averager` was not efficient. In [Example 9-8](#ex_average_fn),
+    we stored all the values in the historical series and computed their `sum` every
+    time `averager` was called. A better implementation would only store the total
+    and the number of items so far, and compute the mean from these two numbers.
+  id: totrans-142
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们先前的`make_averager`实现效率不高。在[示例 9-8](#ex_average_fn)中，我们将所有值存储在历史序列中，并且每次调用`averager`时都计算它们的`sum`。更好的实现方式是只存储总和和到目前为止的项目数，并从这两个数字计算平均值。
+- en: '[Example 9-12](#ex_average_broken) is a broken implementation, just to make
+    a point. Can you see where it breaks?'
+  id: totrans-143
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 9-12](#ex_average_broken) 是一个有问题的实现，只是为了说明一个观点。你能看出它在哪里出错了吗？'
+- en: Example 9-12\. A broken higher-order function to calculate a running average
+    without keeping all history
+  id: totrans-144
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 9-12\. 一个破损的高阶函数，用于计算不保留所有历史记录的运行平均值
+- en: '[PRE18]'
+  id: totrans-145
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE18]'
+- en: 'If you try [Example 9-12](#ex_average_broken), here is what you get:'
+  id: totrans-146
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果尝试 [示例 9-12](#ex_average_broken)，你会得到以下结果：
+- en: '[PRE19]'
+  id: totrans-147
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE19]'
+- en: The problem is that the statement `count += 1` actually means the same as `count
+    = count + 1`, when `count` is a number or any immutable type. So we are actually
+    assigning to `count` in the body of `averager`, and that makes it a local variable.
+    The same problem affects the `total` variable.
+  id: totrans-148
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 问题在于语句 `count += 1` 实际上意味着与 `count = count + 1` 相同，当 `count` 是一个数字或任何不可变类型时。因此，我们实际上是在
+    `averager` 的主体中对 `count` 赋值，这使其成为一个局部变量。同样的问题也影响到 `total` 变量。
+- en: We did not have this problem in [Example 9-8](#ex_average_fn) because we never
+    assigned to the `series` name; we only called `series.append` and invoked `sum`
+    and `len` on it. So we took advantage of the fact that lists are mutable.
+  id: totrans-149
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们在 [示例 9-8](#ex_average_fn) 中没有这个问题，因为我们从未给 `series` 赋值；我们只调用了 `series.append`
+    并在其上调用了 `sum` 和 `len`。所以我们利用了列表是可变的这一事实。
+- en: But with immutable types like numbers, strings, tuples, etc., all you can do
+    is read, never update. If you try to rebind them, as in `count = count + 1`, then
+    you are implicitly creating a local variable `count`. It is no longer a free variable,
+    and therefore it is not saved in the closure.
+  id: totrans-150
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 但对于像数字、字符串、元组等不可变类型，你只能读取，而不能更新。如果尝试重新绑定它们，比如 `count = count + 1`，那么实际上是隐式创建了一个局部变量
+    `count`。它不再是一个自由变量，因此不会保存在闭包中。
+- en: To work around this, the `nonlocal` keyword was introduced in Python 3\. It
+    lets you declare a variable as a free variable even when it is assigned within
+    the function. If a new value is assigned to a `nonlocal` variable, the binding
+    stored in the closure is changed. A correct implementation of our newest `make_averager`
+    looks like [Example 9-13](#ex_average_fixed).
+  id: totrans-151
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了解决这个问题，Python 3 中引入了 `nonlocal` 关键字。它允许你将一个变量声明为自由变量，即使它在函数内部被赋值。如果向 `nonlocal`
+    变量赋予新值，闭包中存储的绑定将会改变。我们最新的 `make_averager` 的正确实现看起来像 [示例 9-13](#ex_average_fixed)。
+- en: Example 9-13\. Calculate a running average without keeping all history (fixed
+    with the use of `nonlocal`)
+  id: totrans-152
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 9-13\. 计算不保留所有历���记录的运行平均值（使用 `nonlocal` 修复）
+- en: '[PRE20]'
+  id: totrans-153
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE20]'
+- en: After studying the use of `nonlocal`, let’s summarize how Python’s variable
+    lookup works.
+  id: totrans-154
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在学习了 `nonlocal` 的使用之后，让我们总结一下 Python 的变量查找工作原理。
+- en: Variable Lookup Logic
+  id: totrans-155
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 变量查找逻辑
+- en: When a function is defined, the Python bytecode compiler determines how to fetch
+    a variable `x` that appears in it, based on these rules:^([3](ch09.html#idm46582438214256))
+  id: totrans-156
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当定义一个函数时，Python 字节码编译器根据以下规则确定如何获取其中出现的变量 `x`：^([3](ch09.html#idm46582438214256))
+- en: If there is a `global x` declaration, `x` comes from and is assigned to the
+    `x` global variable module.^([4](ch09.html#idm46582438211456))
+  id: totrans-157
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 如果有 `global x` 声明，`x` 来自并被赋值给模块的 `x` 全局变量。^([4](ch09.html#idm46582438211456))
+- en: If there is a `nonlocal x` declaration, `x` comes from and is assigned to the
+    `x` local variable of the nearest surrounding function where `x` is defined.
+  id: totrans-158
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 如果有 `nonlocal x` 声明，`x` 来自并被赋值给最近的周围函数的 `x` 局部变量，其中 `x` 被定义。
+- en: If `x` is a parameter or is assigned a value in the function body, then `x`
+    is the local variable.
+  id: totrans-159
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 如果 `x` 是参数或在函数体中被赋值，则 `x` 是局部变量。
+- en: 'If `x` is referenced but is not assigned and is not a parameter:'
+  id: totrans-160
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 如果引用了 `x` 但未被赋值且不是参数：
+- en: '`x` will be looked up in the local scopes of the surrounding function bodies
+    (nonlocal scopes).'
+  id: totrans-161
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '`x` 将在周围函数体的本地作用域（非本地作用域）中查找。'
+- en: If not found in surrounding scopes, it will be read from the module global scope.
+  id: totrans-162
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 如果在周围作用域中找不到，将从模块全局作用域中读取。
+- en: If not found in the global scope, it will be read from `__builtins__.__dict__`.
+  id: totrans-163
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 如果在全局作用域中找不到，将从 `__builtins__.__dict__` 中读取。
+- en: Now that we have Python closures covered, we can effectively implement decorators
+    with nested functions.
+  id: totrans-164
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在我们已经介绍了 Python 闭包，我们可以有效地使用嵌套函数实现装饰器。
+- en: Implementing a Simple Decorator
+  id: totrans-165
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 实现一个简单的装饰器
+- en: '[Example 9-14](#ex_clockdeco0) is a decorator that clocks every invocation
+    of the decorated function and displays the elapsed time, the arguments passed,
+    and the result of the call.'
+  id: totrans-166
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 9-14](#ex_clockdeco0) 是一个装饰器，用于记录装饰函数的每次调用并显示经过的时间、传递的参数以及调用的结果。'
+- en: 'Example 9-14\. *clockdeco0.py*: simple decorator to show the running time of
+    functions'
+  id: totrans-167
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: '示例 9-14\. *clockdeco0.py*: 显示函数运行时间的简单装饰器'
+- en: '[PRE21]'
+  id: totrans-168
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE21]'
+- en: '[![1](assets/1.png)](#co_decorators_and_closures_CO5-1)'
+  id: totrans-169
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_decorators_and_closures_CO5-1)'
+- en: Define inner function `clocked` to accept any number of positional arguments.
+  id: totrans-170
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 定义内部函数 `clocked` 来接受任意数量的位置参数。
+- en: '[![2](assets/2.png)](#co_decorators_and_closures_CO5-2)'
+  id: totrans-171
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_decorators_and_closures_CO5-2)'
+- en: This line only works because the closure for `clocked` encompasses the `func`
+    free variable.
+  id: totrans-172
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这行代码之所以有效，是因为 `clocked` 的闭包包含了 `func` 自由变量。
+- en: '[![3](assets/3.png)](#co_decorators_and_closures_CO5-3)'
+  id: totrans-173
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_decorators_and_closures_CO5-3)'
+- en: Return the inner function to replace the decorated function.
+  id: totrans-174
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 返回内部函数以替换装饰的函数。
+- en: '[Example 9-15](#ex_clockdeco_demo) demonstrates the use of the `clock` decorator.'
+  id: totrans-175
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 9-15](#ex_clockdeco_demo) 演示了 `clock` 装饰器的使用。'
+- en: Example 9-15\. Using the `clock` decorator
+  id: totrans-176
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 9-15\. 使用 `clock` 装饰器
+- en: '[PRE22]'
+  id: totrans-177
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE22]'
+- en: 'The output of running [Example 9-15](#ex_clockdeco_demo) looks like this:'
+  id: totrans-178
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 运行 [示例 9-15](#ex_clockdeco_demo) 的输出如下所示：
+- en: '[PRE23]'
+  id: totrans-179
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE23]'
+- en: How It Works
+  id: totrans-180
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 工作原理
+- en: 'Remember that this code:'
+  id: totrans-181
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 记住这段代码：
+- en: '[PRE24]'
+  id: totrans-182
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE24]'
+- en: 'actually does this:'
+  id: totrans-183
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 实际上是这样的：
+- en: '[PRE25]'
+  id: totrans-184
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE25]'
+- en: 'So, in both examples, `clock` gets the `factorial` function as its `func` argument
+    (see [Example 9-14](#ex_clockdeco0)). It then creates and returns the `clocked`
+    function, which the Python interpreter assigns to `factorial` (behind the scenes,
+    in the first example). In fact, if you import the `clockdeco_demo` module and
+    check the `__name__` of `factorial`, this is what you get:'
+  id: totrans-185
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 因此，在这两个示例中，`clock`将`factorial`函数作为其`func`参数（参见[示例9-14](#ex_clockdeco0)）。然后创建并返回`clocked`函数，Python解释器将其分配给`factorial`（在第一个示例中���在幕后）。实际上，如果导入`clockdeco_demo`模块并检查`factorial`的`__name__`，您会得到以下结果：
+- en: '[PRE26]'
+  id: totrans-186
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE26]'
+- en: 'So `factorial` now actually holds a reference to the `clocked` function. From
+    now on, each time `factorial(n)` is called, `clocked(n)` gets executed. In essence,
+    `clocked` does the following:'
+  id: totrans-187
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 所以`factorial`现在实际上持有对`clocked`函数的引用。从现在开始，每次调用`factorial(n)`，都会执行`clocked(n)`。实质上，`clocked`执行以下操作：
+- en: Records the initial time `t0`.
+  id: totrans-188
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 记录初始时间`t0`。
+- en: Calls the original `factorial` function, saving the result.
+  id: totrans-189
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 调用原始`factorial`函数，保存结果。
+- en: Computes the elapsed time.
+  id: totrans-190
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 计算经过的时间。
+- en: Formats and displays the collected data.
+  id: totrans-191
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 格式化并显示收集的数据。
+- en: Returns the result saved in step 2.
+  id: totrans-192
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 返回第2步保存的结果。
+- en: 'This is the typical behavior of a decorator: it replaces the decorated function
+    with a new function that accepts the same arguments and (usually) returns whatever
+    the decorated function was supposed to return, while also doing some extra processing.'
+  id: totrans-193
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这是装饰器的典型行为：它用新函数替换装饰函数，新函数接受相同的参数并（通常）返回装饰函数应该返回的内容，同时还进行一些额外处理。
+- en: Tip
+  id: totrans-194
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 提示
+- en: 'In *Design Patterns* by Gamma et al., the short description of the decorator
+    pattern starts with: “Attach additional responsibilities to an object dynamically.”
+    Function decorators fit that description. But at the implementation level, Python
+    decorators bear little resemblance to the classic decorator described in the original
+    *Design Patterns* work. [“Soapbox”](#closures_soapbox) has more on this subject.'
+  id: totrans-195
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在Gamma等人的*设计模式*中，装饰器模式的简短描述以“动态地为对象附加额外的责任”开始。函数装饰器符合这一描述。但在实现层面上，Python装饰器与原始*设计模式*作品中描述的经典装饰器几乎没有相似之处。[“讲台”](#closures_soapbox)有更多相关内容。
+- en: 'The `clock` decorator implemented in [Example 9-14](#ex_clockdeco0) has a few
+    shortcomings: it does not support keyword arguments, and it masks the `__name__`
+    and `__doc__` of the decorated function. [Example 9-16](#ex_clockdeco2) uses the
+    `functools.wraps` decorator to copy the relevant attributes from `func` to `clocked`.
+    Also, in this new version, keyword arguments are correctly handled.'
+  id: totrans-196
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例9-14](#ex_clockdeco0)中实现的`clock`装饰器存在一些缺陷：它不支持关键字参数，并且掩盖了装饰函数的`__name__`和`__doc__`。[示例9-16](#ex_clockdeco2)使用`functools.wraps`装饰器从`func`复制相关属性到`clocked`。此外，在这个新版本中，关键字参数被正确处理。'
+- en: 'Example 9-16\. *clockdeco.py*: an improved clock decorator'
+  id: totrans-197
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例9-16\. *clockdeco.py*：改进的时钟装饰器
+- en: '[PRE27]'
+  id: totrans-198
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE27]'
+- en: '`functools.wraps` is just one of the ready-to-use decorators in the standard
+    library. In the next section, we’ll meet the most impressive decorator that `functools`
+    provides: `cache`.'
+  id: totrans-199
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`functools.wraps`只是标准库中可用的装饰器之一。在下一节中，我们将介绍`functools`提供的最令人印象深刻的装饰器：`cache`。'
+- en: Decorators in the Standard Library
+  id: totrans-200
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 标准库中的装饰器
+- en: 'Python has three built-in functions that are designed to decorate methods:
+    `property`, `classmethod`, and `staticmethod`. We’ll discuss `property` in [“Using
+    a Property for Attribute Validation”](ch22.html#prop_validation_sec) and the others
+    in [“classmethod Versus staticmethod”](ch11.html#classmethod_x_staticmethod_sec).'
+  id: totrans-201
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Python有三个内置函数专门用于装饰方法：`property`、`classmethod`和`staticmethod`。我们将在[“使用属性进行属性验证”](ch22.html#prop_validation_sec)中讨论`property`，并在[“classmethod与staticmethod”](ch11.html#classmethod_x_staticmethod_sec)中讨论其他内容。
+- en: 'In [Example 9-16](#ex_clockdeco2) we saw another important decorator: `functools.wraps`,
+    a helper for building well-behaved decorators. Some of the most interesting decorators
+    in the standard library are `cache`, `lru_cache`, and `singledispatch`—all from
+    the `functools` module. We’ll cover them next.'
+  id: totrans-202
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在[示例9-16](#ex_clockdeco2)中，我们看到另一个重要的装饰器：`functools.wraps`，一个用于构建行为良好的装饰器的辅助工具。标准库中一些最有趣的装饰器是`cache`、`lru_cache`和`singledispatch`，它们都来自`functools`模块。我们将在下一节中介绍它们。
+- en: Memoization with functools.cache
+  id: totrans-203
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 使用`functools.cache`进行记忆化
+- en: The `functools.cache` decorator implements *memoization*:^([5](ch09.html#idm46582437497264))
+    an optimization technique that works by saving the results of previous invocations
+    of an expensive function, avoiding repeat computations on previously used arguments.
+  id: totrans-204
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`functools.cache`装饰器实现了*记忆化*：^([5](ch09.html#idm46582437497264))一种通过保存先前调用昂贵函数的结果来优化的技术，避免对先前使用的参数进行重复计算。'
+- en: Tip
+  id: totrans-205
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 提示
+- en: '`functools.cache` was added in Python 3.9. If you need to run these examples
+    in Python 3.8, replace `@cache` with `@lru_cache`. For prior versions of Python,
+    you must invoke the decorator, writing `@lru_cache()`, as explained in [“Using
+    lru_cache”](#lru_cache_sec).'
+  id: totrans-206
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`functools.cache`在Python 3.9中添加。如果需要在Python 3.8中运行这些示例，请将`@cache`替换为`@lru_cache`。对于Python的早期版本，您必须调用装饰器，写成`@lru_cache()`，如[“使用lru_cache”](#lru_cache_sec)中所述。'
+- en: A good demonstration is to apply `@cache` to the painfully slow recursive function
+    to generate the *n*th number in the Fibonacci sequence, as shown in [Example 9-17](#ex_fibo_demo).
+  id: totrans-207
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 一个很好的演示是将`@cache`应用于痛苦缓慢的递归函数，以生成斐波那契数列中的第*n*个数字，如[示例9-17](#ex_fibo_demo)所示。
+- en: Example 9-17\. The very costly recursive way to compute the nth number in the
+    Fibonacci series
+  id: totrans-208
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例9-17\. 计算斐波那契数列中第n个数字的非常昂贵的递归方式
+- en: '[PRE28]'
+  id: totrans-209
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE28]'
+- en: 'Here is the result of running *fibo_demo.py*. Except for the last line, all
+    output is generated by the `clock` decorator:'
+  id: totrans-210
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 运行*fibo_demo.py*的结果如下。除了最后一行外，所有输出都是由`clock`装饰器生成的：
+- en: '[PRE29]'
+  id: totrans-211
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE29]'
+- en: 'The waste is obvious: `fibonacci(1)` is called eight times, `fibonacci(2)`
+    five times, etc. But adding just two lines to use `cache`, performance is much
+    improved. See [Example 9-18](#fibo_demo_cache_ex).'
+  id: totrans-212
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 浪费是显而易见的：`fibonacci(1)`被调用了八次，`fibonacci(2)`被调用了五次，等等。但只需添加两行代码来使用`cache`，性能就得到了很大改善。参见[示例9-18](#fibo_demo_cache_ex)。
+- en: Example 9-18\. Faster implementation using caching
+  id: totrans-213
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 9-18\. 使用缓存实现更快的方法
+- en: '[PRE30]'
+  id: totrans-214
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE30]'
+- en: '[![1](assets/1.png)](#co_decorators_and_closures_CO6-1)'
+  id: totrans-215
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_decorators_and_closures_CO6-1)'
+- en: This line works with Python 3.9 or later. See [“Using lru_cache”](#lru_cache_sec)
+    for alternatives supporting earlier versions of Python.
+  id: totrans-216
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这行代码适用于Python 3.9或更高版本。有关支持较早Python版本的替代方法，请参阅[“使用lru_cache”](#lru_cache_sec)。
+- en: '[![2](assets/2.png)](#co_decorators_and_closures_CO6-2)'
+  id: totrans-217
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_decorators_and_closures_CO6-2)'
+- en: 'This is an example of stacked decorators: `@cache` is applied on the function
+    returned by `@clock`.'
+  id: totrans-218
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这是堆叠装饰器的一个示例：`@cache`应用于`@clock`返回的函数。
+- en: Stacked Decorators
+  id: totrans-219
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 堆叠装饰器
+- en: 'To make sense of stacked decorators, recall that the `@` is syntax sugar for
+    applying the decorator function to the function below it. If there’s more than
+    one decorator, they behave like nested function calls. This:'
+  id: totrans-220
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 要理解堆叠装饰器的意义，回想一下`@`是将装饰器函数应用于其下方的函数的语法糖。如果有多个装饰器，它们的行为类似于嵌套函数调用。这个：
+- en: '[PRE31]'
+  id: totrans-221
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE31]'
+- en: 'is the same as this:'
+  id: totrans-222
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 与此相同：
+- en: '[PRE32]'
+  id: totrans-223
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE32]'
+- en: In other words, the `beta` decorator is applied first, and the function it returns
+    is then passed to `alpha`.
+  id: totrans-224
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 换句话说，首先应用`beta`装饰器，然后将其返回的函数传递给`alpha`。
+- en: 'Using `cache` in [Example 9-18](#fibo_demo_cache_ex), the `fibonacci` function
+    is called only once for each value of `n`:'
+  id: totrans-225
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在[示例9-18](#fibo_demo_cache_ex)中使用`cache`，`fibonacci`函数仅对每个`n`值调用一次：
+- en: '[PRE33]'
+  id: totrans-226
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE33]'
+- en: In another test, to compute `fibonacci(30)`, [Example 9-18](#fibo_demo_cache_ex)
+    made the 31 calls needed in 0.00017s (total time), while the uncached [Example 9-17](#ex_fibo_demo)
+    took 12.09s on an Intel Core i7 notebook, because it called `fibonacci(1)` 832,040
+    times, in a total of 2,692,537 calls.
+  id: totrans-227
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在另一个测试中，计算`fibonacci(30)`时，[示例9-18](#fibo_demo_cache_ex)在0.00017秒内完成了所需的31次调用（总时间），而未缓存的[示例9-17](#ex_fibo_demo)在Intel
+    Core i7笔记本上花费了12.09秒，因为它调用了`fibonacci(1)`832,040次，总共2,692,537次调用。
+- en: All the arguments taken by the decorated function must be *hashable*, because
+    the underlying `lru_cache` uses a `dict` to store the results, and the keys are
+    made from the positional and keyword arguments used in the calls.
+  id: totrans-228
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 被装饰函数接受的所有参数必须是*可散列*的，因为底层的`lru_cache`使用`dict`来存储结果，键是由调用中使用的位置和关键字参数生成的。
+- en: Besides making silly recursive algorithms viable, `@cache` really shines in
+    applications that need to fetch information from remote APIs.
+  id: totrans-229
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 除了使愚蠢的递归算法可行外，`@cache`在需要从远程API获取信息的应用程序中表现出色。
+- en: Warning
+  id: totrans-230
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 警告
+- en: '`functools.cache` can consume all available memory if there is a very large
+    number of cache entries. I consider it more suitable for use in short-lived command-line
+    scripts. In long-running processes, I recommend using `functools.lru_cache` with
+    a suitable `maxsize` parameter, as explained in the next section.'
+  id: totrans-231
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果缓存条目数量非常大，`functools.cache`可能会消耗所有可用内存。我认为它更适合用于短暂的命令行脚���。在长时间运行的进程中，我建议使用适当的`maxsize`参数使用`functools.lru_cache`，如下一节所述。
+- en: Using lru_cache
+  id: totrans-232
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 使用lru_cache
+- en: The `functools.cache` decorator is actually a simple wrapper around the older
+    `functools.lru_cache` function, which is more flexible and compatible with Python
+    3.8 and earlier versions.
+  id: totrans-233
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`functools.cache`装饰器实际上是围绕旧的`functools.lru_cache`函数的简单包装器，后者更灵活，与Python 3.8及更早版本兼容。'
+- en: The main advantage of `@lru_cache` is that its memory usage is bounded by the
+    `maxsize` parameter, which has a rather conservative default value of 128—which
+    means the cache will hold at most 128 entries at any time.
+  id: totrans-234
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`@lru_cache`的主要优势在于其内存使用受`maxsize`参数限制，其默认值相当保守，为128，这意味着缓存最多同时保留128个条目。'
+- en: The acronym LRU stands for Least Recently Used, meaning that older entries that
+    have not been read for a while are discarded to make room for new ones.
+  id: totrans-235
+  prefs: []
+  type: TYPE_NORMAL
+  zh: LRU的首字母缩写代表最近最少使用，意味着长时间未被读取的旧条目将被丢弃，以腾出空间给新条目。
+- en: 'Since Python 3.8, `lru_cache` can be applied in two ways. This is how to use
+    it in the simplest way:'
+  id: totrans-236
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 自Python 3.8以来，`lru_cache`可以以两种方式应用。这是最简单的使用方法：
+- en: '[PRE34]'
+  id: totrans-237
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE34]'
+- en: 'The other way—available since Python 3.2—is to invoke it as a function, with
+    `()`:'
+  id: totrans-238
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 另一种方式——自Python 3.2起可用——是将其作为函数调用，使用`()`：
+- en: '[PRE35]'
+  id: totrans-239
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE35]'
+- en: 'In both cases, the default parameters would be used. These are:'
+  id: totrans-240
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在这两种情况下，将使用默认参数。这些是：
+- en: '`maxsize=128`'
+  id: totrans-241
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`maxsize=128`'
+- en: Sets the maximum number of entries to be stored. After the cache is full, the
+    least recently used entry is discarded to make room for each new entry. For optimal
+    performance, `maxsize` should be a power of 2. If you pass `maxsize=None`, the
+    LRU logic is disabled, so the cache works faster but entries are never discarded,
+    which may consume too much memory. That’s what `@functools.cache` does.
+  id: totrans-242
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 设置要存储的条目的最大数量。缓存满后，最近最少使用的条目将被丢弃以为新条目腾出空间。为了获得最佳性能，`maxsize`应为2的幂。如果传递`maxsize=None`，LRU逻辑将被禁用，因此缓存工作速度更快，但条目永远不会被丢弃，这可能会消耗过多内存。这就是`@functools.cache`的作用。
+- en: '`typed=False`'
+  id: totrans-243
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`typed=False`'
+- en: Determines whether the results of different argument types are stored separately.
+    For example, in the default setting, float and integer arguments that are considered
+    equal are stored only once, so there would be a single entry for the calls `f(1)`
+    and `f(1.0)`. If `typed=True`, those arguments would produce different entries,
+    possibly storing distinct results.
+  id: totrans-244
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 确定不同参数类型的结果是否分开存储。例如，在默认设置中，被视为相等的浮点数和整数参数仅存储一次，因此对`f(1)`和`f(1.0)`的调用将只有一个条目。如果`typed=True`，这些参数将产生不同的条目，可能存储不同的结果。
+- en: 'Here is an example invoking `@lru_cache` with nondefault parameters:'
+  id: totrans-245
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这是使用非默认参数调用`@lru_cache`的示例：
+- en: '[PRE36]'
+  id: totrans-246
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE36]'
+- en: 'Now let’s study another powerful decorator: `functools.singledispatch`.'
+  id: totrans-247
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在让我们研究另一个强大的装饰器：`functools.singledispatch`。
+- en: Single Dispatch Generic Functions
+  id: totrans-248
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 单分发通用函数
+- en: Imagine we are creating a tool to debug web applications. We want to generate
+    HTML displays for different types of Python objects.
+  id: totrans-249
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 想象我们正在创建一个用于调试Web应用程序的工具。我们希望为不同类型的Python对象生成HTML显示。
+- en: 'We could start with a function like this:'
+  id: totrans-250
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们可以从这样的函数开始：
+- en: '[PRE37]'
+  id: totrans-251
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE37]'
+- en: 'That will work for any Python type, but now we want to extend it to generate
+    custom displays for some types. Some examples:'
+  id: totrans-252
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这将适用于任何Python类型，但现在我们想扩展它以生成一些类型的自定义显示。一些示例：
+- en: '`str`'
+  id: totrans-253
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`str`'
+- en: Replace embedded newline characters with `'<br/>\n'` and use `<p>` tags instead
+    of `<pre>`.
+  id: totrans-254
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 用`'<br/>\n'`替换嵌入的换行符，并使用`<p>`标签代替`<pre>`。
+- en: '`int`'
+  id: totrans-255
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`int`'
+- en: Show the number in decimal and hexadecimal (with a special case for `bool`).
+  id: totrans-256
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 以十进制和十六进制形式显示数字（对 `bool` 有特殊情况）。
+- en: '`list`'
+  id: totrans-257
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`list`'
+- en: Output an HTML list, formatting each item according to its type.
+  id: totrans-258
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 输出一个 HTML 列表，根据其类型格式化每个项目。
+- en: '`float` and `Decimal`'
+  id: totrans-259
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`float` 和 `Decimal`'
+- en: Output the value as usual, but also in the form of a fraction (why not?).
+  id: totrans-260
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 通常输出值，但也以分数形式呈现（为什么不呢？）。
+- en: The behavior we want is shown in [Example 9-19](#singledispatch_demo).
+  id: totrans-261
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们想要的行为在 [Example 9-19](#singledispatch_demo) 中展示。
+- en: Example 9-19\. `htmlize()` generates HTML tailored to different object types
+  id: totrans-262
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: Example 9-19\. `htmlize()` 生成针对不同对象类型定制的 HTML
+- en: '[PRE38]'
+  id: totrans-263
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE38]'
+- en: '[![1](assets/1.png)](#co_decorators_and_closures_CO7-1)'
+  id: totrans-264
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_decorators_and_closures_CO7-1)'
+- en: The original function is registered for `object`, so it serves as a catch-all
+    to handle argument types that don’t match the other implementations.
+  id: totrans-265
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 原始函数为 `object` 注册，因此它作为一个通用函数来处理与其他实现不匹配的参数类型。
+- en: '[![2](assets/2.png)](#co_decorators_and_closures_CO7-2)'
+  id: totrans-266
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_decorators_and_closures_CO7-2)'
+- en: '`str` objects are also HTML-escaped but wrapped in `<p></p>`, with `<br/>`
+    line breaks inserted before each `''\n''`.'
+  id: totrans-267
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`str` 对象也会进行 HTML 转义，但会被包裹在 `<p></p>` 中，并在每个 `''\n''` 前插入 `<br/>` 换行符。'
+- en: '[![3](assets/3.png)](#co_decorators_and_closures_CO7-3)'
+  id: totrans-268
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_decorators_and_closures_CO7-3)'
+- en: An `int` is shown in decimal and hexadecimal, inside `<pre></pre>`.
+  id: totrans-269
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`int` 以十进制和十六进制的形式显示，在 `<pre></pre>` 中。'
+- en: '[![4](assets/4.png)](#co_decorators_and_closures_CO7-4)'
+  id: totrans-270
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_decorators_and_closures_CO7-4)'
+- en: Each list item is formatted according to its type, and the whole sequence is
+    rendered as an HTML list.
+  id: totrans-271
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 每个列表项根据其类型进行格式化，并将整个序列呈现为 HTML 列表。
+- en: '[![5](assets/5.png)](#co_decorators_and_closures_CO7-5)'
+  id: totrans-272
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_decorators_and_closures_CO7-5)'
+- en: Although `bool` is an `int` subtype, it gets special treatment.
+  id: totrans-273
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 尽管 `bool` 是 `int` 的子类型，但它得到了特殊处理。
+- en: '[![6](assets/6.png)](#co_decorators_and_closures_CO7-6)'
+  id: totrans-274
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![6](assets/6.png)](#co_decorators_and_closures_CO7-6)'
+- en: Show `Fraction` as a fraction.
+  id: totrans-275
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 以分数形式展示 `Fraction`。
+- en: '[![7](assets/7.png)](#co_decorators_and_closures_CO7-7)'
+  id: totrans-276
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![7](assets/7.png)](#co_decorators_and_closures_CO7-7)'
+- en: Show `float` and `Decimal` with an approximate fractional equivalent.
+  id: totrans-277
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 以近似分数等价形式展示 `float` 和 `Decimal`。
+- en: Function singledispatch
+  id: totrans-278
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 函数 singledispatch
+- en: 'Because we don’t have Java-style method overloading in Python, we can’t simply
+    create variations of `htmlize` with different signatures for each data type we
+    want to handle differently. A possible solution in Python would be to turn `htmlize`
+    into a dispatch function, with a chain of `if/elif/…` or `match/case/…` calling
+    specialized functions like `htmlize_str`, `htmlize_int`, etc. This is not extensible
+    by users of our module, and is unwieldy: over time, the `htmlize` dispatcher would
+    become too big, and the coupling between it and the specialized functions would
+    be very tight.'
+  id: totrans-279
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 因为在 Python 中我们没有 Java 风格的方法重载，所以我们不能简单地为我们想要以不同方式处理的每种数据类型创建 `htmlize` 的变体。在
+    Python 中的一个可能的解决方案是将 `htmlize` 转变为一个分发函数，使用一系列的 `if/elif/…` 或 `match/case/…` 调用专门函数，如
+    `htmlize_str`，`htmlize_int` 等。这种方法对我们模块的用户来说是不可扩展的，而且很笨重：随着时间的推移，`htmlize` 分发器会变得太大，它与专门函数之间的耦合会非常紧密。
+- en: 'The `functools.singledispatch` decorator allows different modules to contribute
+    to the overall solution, and lets you easily provide specialized functions even
+    for types that belong to third-party packages that you can’t edit. If you decorate
+    a plain function with `@singledispatch`, it becomes the entry point for a *generic
+    function*: a group of functions to perform the same operation in different ways,
+    depending on the type of the first argument. This is what is meant by the term
+    *single dispatch*. If more arguments were used to select the specific functions,
+    we’d have *multiple dispatch*. [Example 9-20](#singledispatch_ex) shows how.'
+  id: totrans-280
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`functools.singledispatch` 装饰器允许不同模块为整体解决方案做出贡献，并让您轻松为属于第三方包的类型提供专门函数，而这些包您无法编辑。如果您用
+    `@singledispatch` 装饰一个普通函数，它将成为一个*通用函数*的入口点：一组函数以不同方式执行相同操作，取决于第一个参数的类型。这就是所谓的*单分派*。如果使用更多参数来选择特定函数，我们将有*多分派*。[Example 9-20](#singledispatch_ex)
+    展示了如何实现。'
+- en: Warning
+  id: totrans-281
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 警告
+- en: '`functools.singledispatch` exists since Python 3.4, but it only supports type
+    hints since Python 3.7. The last two functions in [Example 9-20](#singledispatch_ex)
+    illustrate the syntax that works in all versions of Python since 3.4.'
+  id: totrans-282
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`functools.singledispatch` 自 Python 3.4 起存在，但自 Python 3.7 起才支持类型提示。[Example 9-20](#singledispatch_ex)
+    中的最后两个函数展示了在 Python 3.4 以来所有版本中都有效的语法。'
+- en: Example 9-20\. `@singledispatch` creates a custom `@htmlize.register` to bundle
+    several functions into a generic function
+  id: totrans-283
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: Example 9-20\. `@singledispatch` 创建一个自定义的 `@htmlize.register` 来将几个函数捆绑成一个通用函数
+- en: '[PRE39]'
+  id: totrans-284
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE39]'
+- en: '[![1](assets/1.png)](#man_co_decorators_and_closures_CO8-1)'
+  id: totrans-285
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#man_co_decorators_and_closures_CO8-1)'
+- en: '`@singledispatch` marks the base function that handles the `object` type.'
+  id: totrans-286
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`@singledispatch` 标记了处理 `object` 类型的基本函数。'
+- en: '[![2](assets/2.png)](#man_co_decorators_and_closures_CO8-2)'
+  id: totrans-287
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#man_co_decorators_and_closures_CO8-2)'
+- en: Each specialized function is decorated with `@«base».register`.
+  id: totrans-288
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 每个专门函数都使用 `@«base».register` 进行装饰。
+- en: '[![3](assets/3.png)](#man_co_decorators_and_closures_CO8-3)'
+  id: totrans-289
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#man_co_decorators_and_closures_CO8-3)'
+- en: The type of the first argument given at runtime determines when this particular
+    function definition will be used. The name of the specialized functions is irrelevant;
+    `_` is a good choice to make this clear.^([6](ch09.html#idm46582436613712))
+  id: totrans-290
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 运行时给定的第一个参数的类型决定了何时使用这个特定的函数定义。专门函数的名称并不重要；`_` 是一个很好的选择，可以让这一点清晰明了。^([6](ch09.html#idm46582436613712))
+- en: '[![4](assets/4.png)](#man_co_decorators_and_closures_CO8-4)'
+  id: totrans-291
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#man_co_decorators_and_closures_CO8-4)'
+- en: For each additional type to get special treatment, register a new function with
+    a matching type hint in the first parameter.
+  id: totrans-292
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了让每个额外的类型得到特殊处理，需要注册一个新的函数，并在第一个参数中使用匹配的类型提示。
+- en: '[![5](assets/5.png)](#man_co_decorators_and_closures_CO8-5)'
+  id: totrans-293
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#man_co_decorators_and_closures_CO8-5)'
+- en: The `numbers` ABCs are useful for use with `singledispatch`.^([7](ch09.html#idm46582436607184))
+  id: totrans-294
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`numbers` ABCs 对于与 `singledispatch` 一起使用很有用。^([7](ch09.html#idm46582436607184))'
+- en: '[![6](assets/6.png)](#man_co_decorators_and_closures_CO8-6)'
+  id: totrans-295
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![6](assets/6.png)](#man_co_decorators_and_closures_CO8-6)'
+- en: '`bool` is a *subtype-of* `numbers.Integral`, but the `singledispatch` logic
+    seeks the implementation with the most specific matching type, regardless of the
+    order they appear in the code.'
+  id: totrans-296
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`bool`是`numbers.Integral`的*子类型*，但`singledispatch`逻辑寻找具有最具体匹配类型的实现，而不考虑它们在代码中出现的顺序。'
+- en: '[![7](assets/7.png)](#man_co_decorators_and_closures_CO8-7)'
+  id: totrans-297
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![7](assets/7.png)](#man_co_decorators_and_closures_CO8-7)'
+- en: If you don’t want to, or cannot, add type hints to the decorated function, you
+    can pass a type to the `@«base».register` decorator. This syntax works in Python
+    3.4 or later.
+  id: totrans-298
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果您不想或无法向装饰的函数添加类型提示，可以将类型传递给`@«base».register`装饰器。这种语法适用于Python 3.4或更高版本。
+- en: '[![8](assets/8.png)](#man_co_decorators_and_closures_CO8-8)'
+  id: totrans-299
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![8](assets/8.png)](#man_co_decorators_and_closures_CO8-8)'
+- en: The `@«base».register` decorator returns the undecorated function, so it’s possible
+    to stack them to register two or more types on the same implementation.^([8](ch09.html#idm46582436594464))
+  id: totrans-300
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`@«base».register`装饰器返回未装饰的函数，因此可以堆叠它们以在同一实现上注册两个或更多类型。^([8](ch09.html#idm46582436594464))'
+- en: When possible, register the specialized functions to handle ABCs (abstract classes)
+    such as `numbers.Integral` and `abc.MutableSequence`, instead of concrete implementations
+    like `int` and `list`. This allows your code to support a greater variety of compatible
+    types. For example, a Python extension can provide alternatives to the `int` type
+    with fixed bit lengths as subclasses of `numbers.Integral`.^([9](ch09.html#idm46582436587264))
+  id: totrans-301
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在可能的情况下，注册专门的函数以处理抽象类（ABCs）如`numbers.Integral`和`abc.MutableSequence`，而不是具体实现如`int`和`list`。这样可以使您的代码支持更多兼容类型的变化。例如，Python扩展可以提供`numbers.Integral`的子类作为`int`类型的替代方案。
+- en: Tip
+  id: totrans-302
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 提示
+- en: Using ABCs or `typing.Protocol` with `@singledispatch` allows your code to support
+    existing or future classes that are actual or virtual subclasses of those ABCs,
+    or that implement those protocols. The use of ABCs and the concept of a virtual
+    subclass are subjects of [Chapter 13](ch13.html#ifaces_prot_abc).
+  id: totrans-303
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 使用ABCs或`typing.Protocol`与`@singledispatch`允许您的代码支持现有或未来的类，这些类是这些ABCs的实际或虚拟子类，或者实现了这些协议。ABCs的使用和虚拟子类的概念是[第13章](ch13.html#ifaces_prot_abc)的主题。
+- en: A notable quality of the `singledispatch` mechanism is that you can register
+    specialized functions anywhere in the system, in any module. If you later add
+    a module with a new user-defined type, you can easily provide a new custom function
+    to handle that type. And you can write custom functions for classes that you did
+    not write and can’t change.
+  id: totrans-304
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`singledispatch`机制的一个显著特点是，您可以在系统中的任何模块中注册专门的函数。如果以后添加了一个具有新用户定义类型的模块，您可以轻松提供一个新的自定义函数来处理该类型。您可以为您没有编写且无法更改的类编写自定义函数。'
+- en: '`singledispatch` is a well-thought-out addition to the standard library, and
+    it offers more features than I can describe here. [PEP 443—Single-dispatch generic
+    functions](https://fpy.li/pep443) is a good reference, but it doesn’t mention
+    the use of type hints, which were added later. The `functools` module documentation
+    has improved and has more up-to-date coverage with several examples in its [`singledispatch`](https://fpy.li/9-4)
+    entry.'
+  id: totrans-305
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`singledispatch`是标准库中经过深思熟虑的添加，它提供的功能比我在这里描述的要多。[PEP 443—单分派通用函数](https://fpy.li/pep443)是一个很好的参考，但它没有提到后来添加的类型提示的使用。`functools`模块文档已经改进，并在其[`singledispatch`](https://fpy.li/9-4)条目中提供了更多最新的覆盖范例。'
+- en: Note
+  id: totrans-306
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 注意
+- en: '`@singledispatch` is not designed to bring Java-style method overloading to
+    Python. A single class with many overloaded variations of a method is better than
+    a single function with a lengthy stretch of `if/elif/elif/elif` blocks. But both
+    solutions are flawed because they concentrate too much responsibility in a single
+    code unit—the class or the function. The advantage of `@singledispatch` is supporting
+    modular extension: each module can register a specialized function for each type
+    it supports. In a realistic use case, you would not have all the implementations
+    of generic functions in the same module as in [Example 9-20](#singledispatch_ex).'
+  id: totrans-307
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`@singledispatch`并非旨在将Java风格的方法重载引入Python。一个具有许多重载方法变体的单个类比具有一长串`if/elif/elif/elif`块的单个函数更好。但这两种解决方案都有缺陷，因为它们在单个代码单元（类或函数）中集中了太多责任。`@singledispatch`的优势在于支持模块化扩展：每个模块可以为其支持的每种类型注册一个专门的函数。在实际用例中，您不会像[示例 9-20](#singledispatch_ex)中那样将所有通用函数的实现放在同一个模块中。'
+- en: We’ve seen some decorators that take arguments, for example, `@lru_cache()`
+    and `htmlize.register(float)`, created by `@singledispatch` in [Example 9-20](#singledispatch_ex).
+    The next section shows how to build decorators that accept parameters.
+  id: totrans-308
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们已经看到一些接受参数的装饰器，例如`@lru_cache()`和`htmlize.register(float)`，由`@singledispatch`在[示例 9-20](#singledispatch_ex)中创建。下一节将展示如何构建接受参数的装饰器。
+- en: Parameterized Decorators
+  id: totrans-309
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 参数化装饰器
+- en: 'When parsing a decorator in source code, Python takes the decorated function
+    and passes it as the first argument to the decorator function. So how do you make
+    a decorator accept other arguments? The answer is: make a decorator factory that
+    takes those arguments and returns a decorator, which is then applied to the function
+    to be decorated. Confusing? Sure. Let’s start with an example based on the simplest
+    decorator we’ve seen: `register` in [Example 9-21](#registration_ex_repeat).'
+  id: totrans-310
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在源代码中解析装饰器时，Python将装饰的函数作为第一个参数传递给装饰器函数。那么如何使装饰器接受其他参数呢？答案是：创建一个接受这些参数并返回装饰器的装饰器工厂，然后将其应用于要装饰的函数。令人困惑？当然。让我们从基于我们看到的最简单的装饰器`register`的示例开始：[示例 9-21](#registration_ex_repeat)。
+- en: Example 9-21\. Abridged registration.py module from [Example 9-2](#registration_ex),
+    repeated here for convenience
+  id: totrans-311
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 9-21\. 来自[示例 9-2](#registration_ex)的简化registration.py模块，这里为方便起见重复显示
+- en: '[PRE40]'
+  id: totrans-312
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE40]'
+- en: A Parameterized Registration Decorator
+  id: totrans-313
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 一个参数化注册装饰器
+- en: To make it easy to enable or disable the function registration performed by
+    `register`, we’ll make it accept an optional `active` parameter which, if `False`,
+    skips registering the decorated function. [Example 9-22](#registration_param_ex)
+    shows how. Conceptually, the new `register` function is not a decorator but a
+    decorator factory. When called, it returns the actual decorator that will be applied
+    to the target function.
+  id: totrans-314
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了方便启用或禁用`register`执行的函数��册，我们将使其接受一个可选的`active`参数，如果为`False`，则跳过注册被装饰的函数。[示例 9-22](#registration_param_ex)展示了如何。从概念上讲，新的`register`函数不是一个装饰器，而是一个装饰器工厂。当调用时，它返回将应用于目标函数的实际装饰器。
+- en: Example 9-22\. To accept parameters, the new `register` decorator must be called
+    as a function
+  id: totrans-315
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 9-22\. 要接受参数，新的`register`装饰器必须被调用为一个函数
+- en: '[PRE41]'
+  id: totrans-316
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE41]'
+- en: '[![1](assets/1.png)](#co_decorators_and_closures_CO8-1)'
+  id: totrans-317
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_decorators_and_closures_CO8-1)'
+- en: '`registry` is now a `set`, so adding and removing functions is faster.'
+  id: totrans-318
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`registry`现在是一个`set`，因此添加和移除函数更快。'
+- en: '[![2](assets/2.png)](#co_decorators_and_closures_CO8-2)'
+  id: totrans-319
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_decorators_and_closures_CO8-2)'
+- en: '`register` takes an optional keyword argument.'
+  id: totrans-320
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`register`接受一个可选的关键字参数。'
+- en: '[![3](assets/3.png)](#co_decorators_and_closures_CO8-3)'
+  id: totrans-321
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_decorators_and_closures_CO8-3)'
+- en: The `decorate` inner function is the actual decorator; note how it takes a function
+    as an argument.
+  id: totrans-322
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`decorate`内部函数是实际的装饰器；注意它如何将一个函数作为参数。'
+- en: '[![4](assets/4.png)](#co_decorators_and_closures_CO8-4)'
+  id: totrans-323
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_decorators_and_closures_CO8-4)'
+- en: Register `func` only if the `active` argument (retrieved from the closure) is
+    `True`.
+  id: totrans-324
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 仅在`active`参数（从闭包中检索）为`True`时注册`func`。
+- en: '[![5](assets/5.png)](#co_decorators_and_closures_CO8-5)'
+  id: totrans-325
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_decorators_and_closures_CO8-5)'
+- en: If `not active` and `func in registry`, remove it.
+  id: totrans-326
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果`not active`并且`func in registry`，则移除它。
+- en: '[![6](assets/6.png)](#co_decorators_and_closures_CO8-6)'
+  id: totrans-327
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![6](assets/6.png)](#co_decorators_and_closures_CO8-6)'
+- en: Because `decorate` is a decorator, it must return a function.
+  id: totrans-328
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 因为`decorate`是一个装饰器，所以它必须返回一个函数。
+- en: '[![7](assets/7.png)](#co_decorators_and_closures_CO8-7)'
+  id: totrans-329
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![7](assets/7.png)](#co_decorators_and_closures_CO8-7)'
+- en: '`register` is our decorator factory, so it returns `decorate`.'
+  id: totrans-330
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`register`是我们的装饰器工厂，因此它返回`decorate`。'
+- en: '[![8](assets/8.png)](#co_decorators_and_closures_CO8-8)'
+  id: totrans-331
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![8](assets/8.png)](#co_decorators_and_closures_CO8-8)'
+- en: The `@register` factory must be invoked as a function, with the desired parameters.
+  id: totrans-332
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 必须将`@register`工厂作为一个函数调用，带上所需的参数。
+- en: '[![9](assets/9.png)](#co_decorators_and_closures_CO8-9)'
+  id: totrans-333
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![9](assets/9.png)](#co_decorators_and_closures_CO8-9)'
+- en: If no parameters are passed, `register` must still be called as a function—`@register()`—i.e.,
+    to return the actual decorator, `decorate`.
+  id: totrans-334
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果没有传递参数，则必须仍然调用`register`作为一个函数—`@register()`—即，返回实际装饰器`decorate`。
+- en: The main point is that `register()` returns `decorate`, which is then applied
+    to the decorated function.
+  id: totrans-335
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 主要点是`register()`返回`decorate`，然后应用于被装饰的函数。
+- en: 'The code in [Example 9-22](#registration_param_ex) is in a *registration_param.py*
+    module. If we import it, this is what we get:'
+  id: totrans-336
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 9-22](#registration_param_ex)中的代码位于*registration_param.py*模块中。如果我们导入它，我们会得到这个：'
+- en: '[PRE42]'
+  id: totrans-337
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE42]'
+- en: Note how only the `f2` function appears in the `registry`; `f1` does not appear
+    because `active=False` was passed to the `register` decorator factory, so the
+    `decorate` that was applied to `f1` did not add it to the `registry`.
+  id: totrans-338
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意只有`f2`函数出现在`registry`中；`f1`没有出现，因为`active=False`被传递给`register`装饰器工厂，所以应用于`f1`的`decorate`没有将其添加到`registry`中。
+- en: If, instead of using the `@` syntax, we used `register` as a regular function,
+    the syntax needed to decorate a function `f` would be `register()(f)` to add `f`
+    to the `registry`, or `register(active=False)(f)` to not add it (or remove it).
+    See [Example 9-23](#registration_param_demo) for a demo of adding and removing
+    functions to the `registry`.
+  id: totrans-339
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果我们不使用`@`语法，而是将`register`作为一个常规函数使用，装饰一个函数`f`所需的语法将是`register()(f)`来将`f`添加到`registry`中，或者`register(active=False)(f)`来不添加它（或移除它）。查看[示例 9-23](#registration_param_demo)了解如何向`registry`添加和移除函数的演示。
+- en: Example 9-23\. Using the registration_param module listed in [Example 9-22](#registration_param_ex)
+  id: totrans-340
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 9-23\. 使用[示例 9-22](#registration_param_ex)中列出的registration_param模块
+- en: '[PRE43]'
+  id: totrans-341
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE43]'
+- en: '[![1](assets/1.png)](#co_decorators_and_closures_CO9-1)'
+  id: totrans-342
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_decorators_and_closures_CO9-1)'
+- en: When the module is imported, `f2` is in the `registry`.
+  id: totrans-343
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当模块被导入时，`f2`在`registry`中。
+- en: '[![2](assets/2.png)](#co_decorators_and_closures_CO9-2)'
+  id: totrans-344
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_decorators_and_closures_CO9-2)'
+- en: The `register()` expression returns `decorate`, which is then applied to `f3`.
+  id: totrans-345
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`register()`表达式返回`decorate`，然后应用于`f3`。'
+- en: '[![3](assets/3.png)](#co_decorators_and_closures_CO9-3)'
+  id: totrans-346
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_decorators_and_closures_CO9-3)'
+- en: The previous line added `f3` to the `registry`.
+  id: totrans-347
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 前一行将`f3`添加到`registry`中。
+- en: '[![4](assets/4.png)](#co_decorators_and_closures_CO9-4)'
+  id: totrans-348
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_decorators_and_closures_CO9-4)'
+- en: This call removes `f2` from the `registry`.
+  id: totrans-349
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这个调用从`registry`中移除了`f2`。
+- en: '[![5](assets/5.png)](#co_decorators_and_closures_CO9-5)'
+  id: totrans-350
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_decorators_and_closures_CO9-5)'
+- en: Confirm that only `f3` remains in the `registry`.
+  id: totrans-351
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 确认只有`f3`保留在`registry`中。
+- en: The workings of parameterized decorators are fairly involved, and the one we’ve
+    just discussed is simpler than most. Parameterized decorators usually replace
+    the decorated function, and their construction requires yet another level of nesting.
+    Now we will explore the architecture of one such function pyramid.
+  id: totrans-352
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 参数化装饰器的工作方式相当复杂，我们刚刚讨论的比大多数都要简单。参数化装饰器通常会替换被装饰的函数，它们的构建需要另一层嵌套。现在我们将探讨这样一个函数金字塔的架构。
+- en: The Parameterized Clock Decorator
+  id: totrans-353
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 带参数的时钟装饰器
+- en: 'In this section, we’ll revisit the `clock` decorator, adding a feature: users
+    may pass a format string to control the output of the clocked function report.
+    See [Example 9-24](#clockdeco_param_ex).'
+  id: totrans-354
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在本节中，我们将重新访问`clock`装饰器，添加一个功能：用户可以传递一个格式字符串来控制时钟函数报告的输出。参见[示例 9-24](#clockdeco_param_ex)。
+- en: Note
+  id: totrans-355
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 注意
+- en: For simplicity, [Example 9-24](#clockdeco_param_ex) is based on the initial
+    `clock` implementation from [Example 9-14](#ex_clockdeco0), and not the improved
+    one from [Example 9-16](#ex_clockdeco2) that uses `@functools.wraps`, adding yet
+    another function layer.
+  id: totrans-356
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为简单起见，[示例 9-24](#clockdeco_param_ex)基于初始`clock`实现[示例 9-14](#ex_clockdeco0)，而不是使用`@functools.wraps`改进的实现[示例 9-16](#ex_clockdeco2)，后者添加了另一个函数层。
+- en: 'Example 9-24\. Module clockdeco_param.py: the parameterized clock decorator'
+  id: totrans-357
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 9-24\. 模块clockdeco_param.py：带参数时钟装饰器
+- en: '[PRE44]'
+  id: totrans-358
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE44]'
+- en: '[![1](assets/1.png)](#co_decorators_and_closures_CO10-1)'
+  id: totrans-359
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_decorators_and_closures_CO10-1)'
+- en: '`clock` is our parameterized decorator factory.'
+  id: totrans-360
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`clock`是我们的带参数装饰器工厂。'
+- en: '[![2](assets/2.png)](#co_decorators_and_closures_CO10-2)'
+  id: totrans-361
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_decorators_and_closures_CO10-2)'
+- en: '`decorate` is the actual decorator.'
+  id: totrans-362
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`decorate`是实际的装饰器。'
+- en: '[![3](assets/3.png)](#co_decorators_and_closures_CO10-3)'
+  id: totrans-363
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_decorators_and_closures_CO10-3)'
+- en: '`clocked` wraps the decorated function.'
+  id: totrans-364
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`clocked`包装了被装饰的函数。'
+- en: '[![4](assets/4.png)](#co_decorators_and_closures_CO10-4)'
+  id: totrans-365
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_decorators_and_closures_CO10-4)'
+- en: '`_result` is the actual result of the decorated function.'
+  id: totrans-366
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`_result`是被装饰函数的实际结果。'
+- en: '[![5](assets/5.png)](#co_decorators_and_closures_CO10-5)'
+  id: totrans-367
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_decorators_and_closures_CO10-5)'
+- en: '`_args` holds the actual arguments of `clocked`, while `args` is `str` used
+    for display.'
+  id: totrans-368
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`_args`保存了`clocked`的实际参数，而`args`是用于显示的`str`。'
+- en: '[![6](assets/6.png)](#co_decorators_and_closures_CO10-6)'
+  id: totrans-369
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![6](assets/6.png)](#co_decorators_and_closures_CO10-6)'
+- en: '`result` is the `str` representation of `_result`, for display.'
+  id: totrans-370
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`result`是`_result`的`str`表示，用于显示。'
+- en: '[![7](assets/7.png)](#co_decorators_and_closures_CO10-7)'
+  id: totrans-371
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![7](assets/7.png)](#co_decorators_and_closures_CO10-7)'
+- en: Using `**locals()` here allows any local variable of `clocked` to be referenced
+    in the `fmt`.^([10](ch09.html#idm46582435847312))
+  id: totrans-372
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在这里使用`**locals()`允许引用`clocked`的任何局部变量在`fmt`中。^([10](ch09.html#idm46582435847312))
+- en: '[![8](assets/8.png)](#co_decorators_and_closures_CO10-8)'
+  id: totrans-373
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![8](assets/8.png)](#co_decorators_and_closures_CO10-8)'
+- en: '`clocked` will replace the decorated function, so it should return whatever
+    that function returns.'
+  id: totrans-374
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`clocked`将替换被装饰的函数，因此它应该返回该函数返回的任何内容。'
+- en: '[![9](assets/9.png)](#co_decorators_and_closures_CO10-9)'
+  id: totrans-375
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![9](assets/9.png)](#co_decorators_and_closures_CO10-9)'
+- en: '`decorate` returns `clocked`.'
+  id: totrans-376
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`decorate`返回`clocked`。'
+- en: '[![10](assets/10.png)](#co_decorators_and_closures_CO10-10)'
+  id: totrans-377
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![10](assets/10.png)](#co_decorators_and_closures_CO10-10)'
+- en: '`clock` returns `decorate`.'
+  id: totrans-378
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`clock`返回`decorate`。'
+- en: '[![11](assets/11.png)](#co_decorators_and_closures_CO10-11)'
+  id: totrans-379
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![11](assets/11.png)](#co_decorators_and_closures_CO10-11)'
+- en: In this self test, `clock()` is called without arguments, so the decorator applied
+    will use the default format `str`.
+  id: totrans-380
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在这个自测中，`clock()`被无参数调用，因此应用的装饰器将使用默认格式`str`。
+- en: 'If you run [Example 9-24](#clockdeco_param_ex) from the shell, this is what
+    you get:'
+  id: totrans-381
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果你在shell中运行[示例 9-24](#clockdeco_param_ex)，你会得到这个结果：
+- en: '[PRE45]'
+  id: totrans-382
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE45]'
+- en: To exercise the new functionality, let’s have a look at Examples [9-25](#ex_clockdecoparam_demo1)
+    and [9-26](#ex_clockdecoparam_demo2), which are two other modules using `clockdeco_param`,
+    and the outputs they generate.
+  id: totrans-383
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了练习新功能，让我们看一下示例[9-25](#ex_clockdecoparam_demo1)和[9-26](#ex_clockdecoparam_demo2)，它们是使用`clockdeco_param`的另外两个模块以及它们生成的输出。
+- en: Example 9-25\. clockdeco_param_demo1.py
+  id: totrans-384
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 9-25\. clockdeco_param_demo1.py
+- en: '[PRE46]'
+  id: totrans-385
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE46]'
+- en: 'Output of [Example 9-25](#ex_clockdecoparam_demo1):'
+  id: totrans-386
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 9-25](#ex_clockdecoparam_demo1)的输出：'
+- en: '[PRE47]'
+  id: totrans-387
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE47]'
+- en: Example 9-26\. clockdeco_param_demo2.py
+  id: totrans-388
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 9-26\. clockdeco_param_demo2.py
+- en: '[PRE48]'
+  id: totrans-389
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE48]'
+- en: 'Output of [Example 9-26](#ex_clockdecoparam_demo2):'
+  id: totrans-390
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 9-26](#ex_clockdecoparam_demo2)的输出：'
+- en: '[PRE49]'
+  id: totrans-391
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE49]'
+- en: Note
+  id: totrans-392
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 注意
+- en: Lennart Regebro—a technical reviewer for the first edition—argues that decorators
+    are best coded as classes implementing `__call__`, and not as functions like the
+    examples in this chapter. I agree that approach is better for nontrivial decorators,
+    but to explain the basic idea of this language feature, functions are easier to
+    understand. See [“Further Reading”](#decorator_further), in particular, Graham
+    Dumpleton’s blog and `wrapt` module for industrial-strength techniques when building
+    decorators.
+  id: totrans-393
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 第一版的技术审阅员Lennart Regebro认为装饰器最好编写为实现`__call__`的类，而不是像本章示例中的函数那样。我同意这种方法对于复杂的装饰器更好，但为了解释这种语言特性的基本思想，函数更容易理解。参见[“进一步阅读”](#decorator_further)，特别是Graham
+    Dumpleton的博客和`wrapt`模块，用于构建装饰器的工业级技术。
+- en: The next section shows an example in the style recommended by Regebro and Dumpleton.
+  id: totrans-394
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 下一节展示了Regebro和Dumpleton推荐风格的示例。
+- en: A Class-Based Clock Decorator
+  id: totrans-395
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 基于类的时钟装饰器
+- en: As a final example, [Example 9-27](#clockdeco_param_cls_ex) lists the implementation
+    of a parameterized `clock` decorator implemented as a class with `__call__`. Contrast
+    [Example 9-24](#clockdeco_param_ex) with [Example 9-27](#clockdeco_param_cls_ex).
+    Which one do you prefer?
+  id: totrans-396
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 最后一个例子，[示例 9-27](#clockdeco_param_cls_ex)列出了一个作为类实现的带参数`clock`装饰器的实现，其中使用了`__call__`。对比[示例 9-24](#clockdeco_param_ex)和[示例 9-27](#clockdeco_param_cls_ex)。你更喜欢哪一个？
+- en: 'Example 9-27\. Module clockdeco_cls.py: parameterized clock decorator implemented
+    as class'
+  id: totrans-397
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 9-27\. 模块clockdeco_cls.py：作为类实现的带参数时钟装饰器
+- en: '[PRE50]'
+  id: totrans-398
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE50]'
+- en: '[![1](assets/1.png)](#co_decorators_and_closures_CO11-1)'
+  id: totrans-399
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_decorators_and_closures_CO11-1)'
+- en: Instead of a `clock` outer function, the `clock` class is our parameterized
+    decorator factory. I named it with a lowercase `c` to make clear that this implementation
+    is a drop-in replacement for the one in [Example 9-24](#clockdeco_param_ex).
+  id: totrans-400
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 与`clock`外部函数不同，`clock`类是我们的带参数装饰器工厂。我用小写字母`c`命名它，以明确表明这个实现是[示例 9-24](#clockdeco_param_ex)中的一个可替换项。
+- en: '[![2](assets/2.png)](#co_decorators_and_closures_CO11-2)'
+  id: totrans-401
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_decorators_and_closures_CO11-2)'
+- en: The argument passed in the `clock(my_format)` is assigned to the `fmt` parameter
+    here. The class constructor returns an instance of `clock`, with `my_format` stored
+    in `self.fmt`.
+  id: totrans-402
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在`clock(my_format)`中传入的参数被分配给了这里的`fmt`参数。类构造函数返回一个`clock`的实例，其中`my_format`存储在`self.fmt`中。
+- en: '[![3](assets/3.png)](#co_decorators_and_closures_CO11-3)'
+  id: totrans-403
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_decorators_and_closures_CO11-3)'
+- en: '`__call__` makes the `clock` instance callable. When invoked, the instance
+    replaces the decorated function with `clocked`.'
+  id: totrans-404
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`__call__`使`clock`实例可调用。当调用时，实例将用`clocked`替换被装饰的函数。'
+- en: '[![4](assets/4.png)](#co_decorators_and_closures_CO11-4)'
+  id: totrans-405
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_decorators_and_closures_CO11-4)'
+- en: '`clocked` wraps the decorated function.'
+  id: totrans-406
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`clocked`包装了被装饰的函数。'
+- en: This ends our exploration of function decorators. We’ll see class decorators
+    in [Chapter 24](ch24.html#class_metaprog).
+  id: totrans-407
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们的函数装饰器探索到此结束。我们将在[第24章](ch24.html#class_metaprog)中看到类装饰器。
+- en: Chapter Summary
+  id: totrans-408
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 章节总结
+- en: We covered some difficult terrain in this chapter. I tried to make the journey
+    as smooth as possible, but we definitely entered the realm of metaprogramming.
+  id: totrans-409
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们在本章涵盖了一些困难的领域。我尽力使旅程尽可能顺利，但我们确实进入了元编程的领域。
+- en: We started with a simple `@register` decorator without an inner function, and
+    finished with a parameterized `@clock()` involving two levels of nested functions.
+  id: totrans-410
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们从一个没有内部函数的简单`@register`装饰器开始，最后完成了一个涉及两个嵌套函数级别的参数化`@clock()`。
+- en: Registration decorators, though simple in essence, have real applications in
+    Python frameworks. We will apply the registration idea in one implementation of
+    the Strategy design pattern in [Chapter 10](ch10.html#rethinking_design_patterns).
+  id: totrans-411
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 虽然注册装饰器在本质上很简单，但在Python框架中有真正的应用。我们将在[第10章](ch10.html#rethinking_design_patterns)中将注册思想应用于策略设计模式的一个实现。
+- en: Understanding how decorators actually work required covering the difference
+    between *import time* and *runtime*, then diving into variable scoping, closures,
+    and the new `nonlocal` declaration. Mastering closures and `nonlocal` is valuable
+    not only to build decorators, but also to code event-oriented programs for GUIs
+    or asynchronous I/O with callbacks, and to adopt a functional style when it makes
+    sense.
+  id: totrans-412
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 理解装饰器实际工作原理需要涵盖*导入时间*和*运行时*之间的差异，然后深入研究变量作用域、闭包和新的`nonlocal`声明。掌握闭包和`nonlocal`不仅有助于构建装饰器，还有助于为GUI或异步I/O编写事件导向的程序，并在有意义时采用函数式风格。
+- en: Parameterized decorators almost always involve at least two nested functions,
+    maybe more if you want to use `@functools.wraps` to produce a decorator that provides
+    better support for more advanced techniques. One such technique is stacked decorators,
+    which we saw in [Example 9-18](#fibo_demo_cache_ex). For more sophisticated decorators,
+    a class-based implementation may be easier to read and maintain.
+  id: totrans-413
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 参数化装饰器几乎总是涉及至少两个嵌套函数，如果您想使用`@functools.wraps`来生成提供更好支持更高级技术的装饰器，则可能涉及更多嵌套函数。其中一种技术是堆叠装饰器，我们在[示例9-18](#fibo_demo_cache_ex)中看到了。对于更复杂的装饰器，基于类的实现可能更易于阅读和维护。
+- en: As examples of parameterized decorators in the standard library, we visited
+    the powerful `@cache` and `@singledispatch` from the `functools` module.
+  id: totrans-414
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 作为标准库中参数化装饰器的示例，我们访问了`functools`模块中强大的`@cache`和`@singledispatch`。
+- en: Further Reading
+  id: totrans-415
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 进一步阅读
+- en: 'Item #26 of Brett Slatkin’s [*Effective Python*, 2nd ed.](https://fpy.li/effectpy)
+    (Addison-Wesley), covers best practices for function decorators and recommends
+    always using `functools.wraps`—which we saw in [Example 9-16](#ex_clockdeco2).^([11](ch09.html#idm46582435347488))'
+  id: totrans-416
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Brett Slatkin的[*Effective Python*第2版](https://fpy.li/effectpy)（Addison-Wesley）的第26条建议了函数装饰器的最佳实践，并建议始终使用`functools.wraps`——我们在[示例9-16](#ex_clockdeco2)中看到的。^([11](ch09.html#idm46582435347488))
+- en: Graham Dumpleton has a [series of in-depth blog posts](https://fpy.li/9-5) about
+    techniques for implementing well-behaved decorators, starting with [“How you implemented
+    your Python decorator is wrong”](https://fpy.li/9-6). His deep expertise in this
+    matter is also nicely packaged in the [`wrapt`](https://fpy.li/9-7) module he
+    wrote to simplify the implementation of decorators and dynamic function wrappers,
+    which support introspection and behave correctly when further decorated, when
+    applied to methods, and when used as attribute descriptors. [Chapter 23](ch23.html#attribute_descriptors)
+    in [Part III](part03.html#classes_protocols_part) is about descriptors.
+  id: totrans-417
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Graham Dumpleton在他的[一系列深入的博客文章](https://fpy.li/9-5)中介绍了实现行为良好的装饰器的技术，从[“你实现的Python装饰器是错误的”](https://fpy.li/9-6)开始。他在这方面的深厚专业知识也很好地包含在他编写的[`wrapt`](https://fpy.li/9-7)模块中，该模块简化了装饰器和动态函数包装器的实现，支持内省，并在进一步装饰、应用于方法以及用作属性描述符时表现正确。[第III部分](part03.html#classes_protocols_part)的[第23章](ch23.html#attribute_descriptors)是关于描述符的。
+- en: Chapter 9, [“Metaprogramming”](https://fpy.li/9-8), of the *Python Cookbook*,
+    3rd ed. by David Beazley and Brian K. Jones (O’Reilly), has several recipes, from
+    elementary decorators to very sophisticated ones, including one that can be called
+    as a regular decorator or as a decorator factory, e.g., `@clock` or `@clock()`.
+    That’s “Recipe 9.6\. Defining a Decorator That Takes an Optional Argument” in
+    that cookbook.
+  id: totrans-418
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 《Python Cookbook》第3版（O’Reilly）的第9章[“元编程”](https://fpy.li/9-8)，作者是David Beazley和Brian
+    K. Jones，包含了从基本装饰器到非常复杂的装饰器的几个示例，其中包括一个可以作为常规装饰器或装饰器工厂调用的示例，例如，`@clock`或`@clock()`。这在该食谱书中是“食谱9.6\.
+    定义一个带有可选参数的装饰器”。
+- en: Michele Simionato authored a package aiming to “simplify the usage of decorators
+    for the average programmer, and to popularize decorators by showing various nontrivial
+    examples,” according to the docs. It’s available on PyPI as the [decorator package](https://fpy.li/9-9).
+  id: totrans-419
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Michele Simionato编写了一个旨在“简化普通程序员对装饰器的使用，并通过展示各种非平凡示例来普及装饰器”的软件包。它在PyPI上作为[decorator软件包](https://fpy.li/9-9)提供。
+- en: Created when decorators were still a new feature in Python, the [Python Decorator
+    Library wiki page](https://fpy.li/9-10) has dozens of examples. Because that page
+    started years ago, some of the techniques shown have been superseded, but the
+    page is still an excellent source of inspiration.
+  id: totrans-420
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当装饰器在Python中仍然是一个新功能时创建的，[Python装饰器库维基页面](https://fpy.li/9-10)有数十个示例。由于该页面多年前开始，一些显示的技术已经过时，但该页面仍然是一个极好的灵感来源。
+- en: '[“Closures in Python”](https://fpy.li/9-11) is a short blog post by Fredrik
+    Lundh that explains the terminology of closures.'
+  id: totrans-421
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[“Python中的闭包”](https://fpy.li/9-11)是Fredrik Lundh的一篇简短博客文章，解释了闭包的术语。'
+- en: '[PEP 3104—Access to Names in Outer Scopes](https://fpy.li/9-12) describes the
+    introduction of the `nonlocal` declaration to allow rebinding of names that are
+    neither local nor global. It also includes an excellent overview of how this issue
+    is resolved in other dynamic languages (Perl, Ruby, JavaScript, etc.) and the
+    pros and cons of the design options available to Python.'
+  id: totrans-422
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[PEP 3104—访问外部作用域中的名称](https://fpy.li/9-12) 描述了引入 `nonlocal` 声明以允许重新绑定既不是本地的也不是全局的名称。它还包括了如何在其他动态语言（Perl、Ruby、JavaScript
+    等）中解决这个问题的优秀概述，以及 Python 可用的设计选项的利弊。'
+- en: On a more theoretical level, [PEP 227—Statically Nested Scopes](https://fpy.li/9-13)
+    documents the introduction of lexical scoping as an option in Python 2.1 and as
+    a standard in Python 2.2, explaining the rationale and design choices for the
+    implementation of closures in Python.
+  id: totrans-423
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在更理论层面上，[PEP 227—静态嵌套作用域](https://fpy.li/9-13) 记录了在 Python 2.1 中引入词法作用域作为一个选项，并在
+    Python 2.2 中作为标准的过程，解释了在 Python 中实现闭包的原因和设计选择。
+- en: '[PEP 443](https://fpy.li/9-14) provides the rationale and a detailed description
+    of the single-dispatch generic functions’ facility. An old (March 2005) blog post
+    by Guido van Rossum, [“Five-Minute Multimethods in Python”](https://fpy.li/9-15),
+    walks through an implementation of generic functions (a.k.a. multimethods) using
+    decorators. His code supports multiple-dispatch (i.e., dispatch based on more
+    than one positional argument). Guido’s multimethods code is interesting, but it’s
+    a didactic example. For a modern, production-ready implementation of multiple
+    dispatch generic functions, check out [Reg](https://fpy.li/9-16) by Martijn Faassen—author
+    of the model-driven and REST-savvy [Morepath](https://fpy.li/9-17) web framework.'
+  id: totrans-424
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[PEP 443](https://fpy.li/9-14) 提供了单分派通用函数的理由和详细描述。Guido van Rossum 在 2005 年
+    3 月的一篇博客文章 [“Python 中的五分钟多方法”](https://fpy.li/9-15) 通过使用装饰器实现了通用函数（又称多方法）。他的代码支持多分派（即基于多个位置参数的分派）。Guido
+    的多方法代码很有趣，但这只是一个教学示例。要了解现代、适用于生产的多分派通用函数的实现，请查看 Martijn Faassen 的 [Reg](https://fpy.li/9-16)—作者是面向模型驱动和
+    REST 专业的 [Morepath](https://fpy.li/9-17) web 框架的作者。'
+- en: ^([1](ch09.html#idm46582439955440-marker)) That’s the 1995 *Design Patterns*
+    book by the so-called Gang of Four (Gamma et al., Addison-Wesley).
+  id: totrans-425
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([1](ch09.html#idm46582439955440-marker)) 这是 1995 年的*设计模式*一书，由所谓的四人帮（Gamma
+    等，Addison-Wesley）撰写。
+- en: ^([2](ch09.html#idm46582439921968-marker)) If you replace “function” with “class”
+    in the previous sentence, you have a brief description of what a class decorator
+    does. Class decorators are covered in [Chapter 24](ch24.html#class_metaprog).
+  id: totrans-426
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([2](ch09.html#idm46582439921968-marker)) 如果你在前一句中将“函数”替换为“类”，你就得到了类装饰器的简要描述。类装饰器在
+    [第 24 章](ch24.html#class_metaprog) 中有介绍。
+- en: ^([3](ch09.html#idm46582438214256-marker)) Thanks to tech reviewer Leonardo
+    Rochael for suggesting this summary.
+  id: totrans-427
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([3](ch09.html#idm46582438214256-marker)) 感谢技术审阅者 Leonardo Rochael 提出这个总结。
+- en: ^([4](ch09.html#idm46582438211456-marker)) Python does not have a program global
+    scope, only module global scopes.
+  id: totrans-428
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([4](ch09.html#idm46582438211456-marker)) Python 没有程序全局作用域，只有模块全局作用域。
+- en: '^([5](ch09.html#idm46582437497264-marker)) To clarify, this is not a typo:
+    [*memoization*](https://fpy.li/9-2) is a computer science term vaguely related
+    to “memorization,” but not the same.'
+  id: totrans-429
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([5](ch09.html#idm46582437497264-marker)) 为了澄清，这不是一个打字错误：[*memoization*](https://fpy.li/9-2)
+    是一个与“memorization”模糊相关的计算机科学术语，但并不相同。
+- en: ^([6](ch09.html#idm46582436613712-marker)) Unfortunately, Mypy 0.770 complains
+    when it sees multiple functions with the same name.
+  id: totrans-430
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([6](ch09.html#idm46582436613712-marker)) 不幸的是，当 Mypy 0.770 看到多个同名函数时会报错。
+- en: ^([7](ch09.html#idm46582436607184-marker)) Despite the warning in [“The fall
+    of the numeric tower”](ch08.html#numeric_tower_warning), the `number` ABCs are
+    not deprecated and you find them in Python 3 code.
+  id: totrans-431
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([7](ch09.html#idm46582436607184-marker)) 尽管在 [“数值塔的崩塌”](ch08.html#numeric_tower_warning)
+    中有警告，`number` ABCs 并没有被弃用，你可以在 Python 3 代码中找到它们。
+- en: ^([8](ch09.html#idm46582436594464-marker)) Maybe one day you’ll also be able
+    to express this with single unparameterized `@htmlize.register` and type hint
+    using `Union`, but when I tried, Python raised a `TypeError` with a message saying
+    that `Union` is not a class. So, although PEP 484 *syntax* is supported by `@singledispatch`,
+    the *semantics* are not there yet.
+  id: totrans-432
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([8](ch09.html#idm46582436594464-marker)) 也许有一天你也能用单个无参数的 `@htmlize.register`
+    和使用 `Union` 类型提示来表达这个，但当我尝试时，Python 报错，提示 `Union` 不是一个类。因此，尽管 `@singledispatch`
+    支持 PEP 484 的*语法*，但*语义*还没有实现。
+- en: ^([9](ch09.html#idm46582436587264-marker)) NumPy, for example, implements several
+    machine-oriented [integer and floating-point](https://fpy.li/9-3) types.
+  id: totrans-433
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([9](ch09.html#idm46582436587264-marker)) 例如，NumPy 实现了几种面向机器的[整数和浮点数](https://fpy.li/9-3)类型。
+- en: '^([10](ch09.html#idm46582435847312-marker)) Tech reviewer Miroslav Šedivý noted:
+    “It also means that code linters will complain about unused variables since they
+    tend to ignore uses of `locals()`.” Yes, that’s yet another example of how static
+    checking tools discourage the use of the dynamic features that attracted me and
+    countless programmers to Python in the first place. To make the linter happy,
+    I could spell out each local variable twice in the call: `fmt.format(elapsed=​elapsed,
+    name=name, args=args, result=result)`. I’d rather not. If you use static checking
+    tools, it’s very important to know when to ignore them.'
+  id: totrans-434
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([10](ch09.html#idm46582435847312-marker)) 技术审阅者 Miroslav Šedivý 指出：“这也意味着代码检查工具会抱怨未使用的变量，因为它们倾向于忽略对
+    `locals()` 的使用。” 是的，这是静态检查工具如何阻止我和无数程序员最初被 Python 吸引的动态特性的又一个例子。为了让代码检查工具满意，我可以在调用中两次拼写每个本地变量：`fmt.format(elapsed=​elapsed,
+    name=name, args=args, result=result)`。我宁愿不这样做。如果你使用静态检查工具，非常重要的是要知道何时忽略它们。
+- en: ^([11](ch09.html#idm46582435347488-marker)) I wanted to make the code as simple
+    as possible, so I did not follow Slatkin’s excellent advice in all examples.
+  id: totrans-435
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([11](ch09.html#idm46582435347488-marker)) 我想尽可能简化代码，所以我并没有在所有示例中遵循 Slatkin
+    的优秀建议。

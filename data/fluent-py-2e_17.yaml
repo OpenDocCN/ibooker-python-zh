@@ -1,0 +1,2269 @@
+- en: 'Chapter 14\. Inheritance: For Better or for Worse'
+  id: totrans-0
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 第14章。继承：是好是坏
+- en: '[...] we needed a better theory about inheritance entirely (and still do).
+    For example, inheritance and instancing (which is a kind of inheritance) muddles
+    both pragmatics (such as factoring code to save space) and semantics (used for
+    way too many tasks such as: specialization, generalization, speciation, etc.).'
+  id: totrans-1
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+  zh: '[...] 我们需要一个更好的关于继承的理论（现在仍然需要）。例如，继承和实例化（这是一种继承）混淆了实用性（例如为了节省空间而分解代码）和语义（用于太多任务，如：专门化、泛化、种类化等）。'
+- en: ''
+  id: totrans-2
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: Alan Kay, “The Early History of Smalltalk”^([1](ch14.html#idm46582418926608))
+  id: totrans-3
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+  zh: Alan Kay，“Smalltalk的早期历史”^([1](ch14.html#idm46582418926608))
+- en: 'This chapter is about inheritance and subclassing. I will assume a basic understanding
+    of these concepts, which you may know from reading [*The Python Tutorial*](https://fpy.li/14-2)
+    or from experience with another mainstream object-oriented language, such as Java,
+    C#, or C++. Here we’ll focus on four characteristics of Python:'
+  id: totrans-4
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 本章讨论继承和子类化。我假设你对这些概念有基本的了解，你可能从阅读[*Python教程*](https://fpy.li/14-2)或从其他主流面向对象语言（如Java、C#或C++）的经验中了解这些概念。在这里，我们将重点关注Python的四个特点：
+- en: The `super()` function
+  id: totrans-5
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: super()函数
+- en: The pitfalls of subclassing from built-in types
+  id: totrans-6
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 从内置类型继承的陷阱
+- en: Multiple inheritance and method resolution order
+  id: totrans-7
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 多重继承和方法解析顺序
+- en: Mixin classes
+  id: totrans-8
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: Mixin类
+- en: Multiple inheritance is the ability of a class to have more than one base class.
+    C++ supports it; Java and C# don’t. Many consider multiple inheritance more trouble
+    than it’s worth. It was deliberately left out of Java after its perceived abuse
+    in early C++ codebases.
+  id: totrans-9
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 多重继承是一个类具有多个基类的能力。C++支持它；Java和C#不支持。许多人认为多重继承带来的麻烦不值得。在早期C++代码库中被滥用后，Java故意将其排除在外。
+- en: This chapter introduces multiple inheritance for those who have never used it,
+    and provides some guidance on how to cope with single or multiple inheritance
+    if you must use it.
+  id: totrans-10
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 本章介绍了多重继承，供那些从未使用过的人，并提供了一些关于如何应对单一或多重继承的指导，如果你必须使用它。
+- en: As of 2021, there is a significant backlash against overuse of inheritance in
+    general—not only multiple inheritance—because superclasses and subclasses are
+    tightly coupled. Tight coupling means that changes to one part of the program
+    may have unexpected and far-reaching effects in other parts, making systems brittle
+    and hard to understand.
+  id: totrans-11
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 截至2021年，对继承的过度使用存在明显的反对意见，不仅仅是多重继承，因为超类和子类之间紧密耦合。紧密耦合意味着对程序的某一部分进行更改可能会在其他部分产生意想不到的深远影响，使系统变得脆弱且难以理解。
+- en: However, we have to maintain existing systems designed with complex class hierarchies,
+    or use frameworks that force us to use inheritance—even multiple inheritance sometimes.
+  id: totrans-12
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 然而，我们必须维护设计有复杂类层次结构的现有系统，或者使用强制我们使用继承的框架——有时甚至是多重继承。
+- en: I will illustrate practical uses of multiple inheritance with the standard library,
+    the Django web framework, and the Tkinter GUI toolkit.
+  id: totrans-13
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我将通过标准库、Django网络框架和Tkinter GUI工具包展示多重继承的实际用途。
+- en: What’s New in This Chapter
+  id: totrans-14
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 本章新内容
+- en: There are no new Python features related to the subject of this chapter, but
+    I heavily edited it based on feedback from technical reviewers of the second edition,
+    especially Leonardo Rochael and Caleb Hattingh.
+  id: totrans-15
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 本章主题没有与Python相关的新功能，但我根据第二版技术审阅人员的反馈进行了大量编辑，特别是Leonardo Rochael和Caleb Hattingh。
+- en: I wrote a new opening section focusing on the `super()` built-in function, and
+    changed the examples in [“Multiple Inheritance and Method Resolution Order”](#mro_section)
+    for a deeper exploration of how `super()` works to support *cooperative* *multiple
+    inheritance*.
+  id: totrans-16
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我写了一个新的开头部分，重点关注`super()`内置函数，并更改了[“多重继承和方法解析顺序”](#mro_section)中的示例，以更深入地探讨`super()`如何支持*协作式*
+    *多重继承*。
+- en: '[“Mixin Classes”](#mixin_classes_sec) is also new. [“Multiple Inheritance in
+    the Real World”](#multi_real_world_sec) was reorganized and covers simpler mixin
+    examples from the standard library, before the complex Django and the complicated
+    Tkinter hierarchies.'
+  id: totrans-17
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[“Mixin类”](#mixin_classes_sec)也是新内容。[“现实世界中的多重继承”](#multi_real_world_sec)已重新组织，并涵盖了标准库中更简单的mixin示例，然后是复杂的Django和复杂的Tkinter层次结构。'
+- en: As the chapter title suggests, the caveats of inheritance have always been one
+    of the main themes of this chapter. But more and more developers consider it so
+    problematic that I’ve added a couple of paragraphs about avoiding inheritance
+    to the end of [“Chapter Summary”](#inheritance_summary) and [“Further Reading”](#inheritance_further_reading).
+  id: totrans-18
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 正如章节标题所示，继承的注意事项一直是本章的主要主题之一。但越来越多的开发人员认为这是一个问题，我在[“章节总结”](#inheritance_summary)和[“进一步阅读”](#inheritance_further_reading)的末尾添加了几段关于避免继承的内容。
+- en: We’ll start with an overview of the mysterious `super()` function.
+  id: totrans-19
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们将从神秘的`super()`函数的概述开始。
+- en: The super() Function
+  id: totrans-20
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: super()函数
+- en: Consistent use the of the `super()` built-in function is essential for maintainable
+    object-oriented Python programs.
+  id: totrans-21
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 对于可维护的面向对象Python程序，一致使用`super()`内置函数至关重要。
+- en: When a subclass overrides a method of a superclass, the overriding method usually
+    needs to call the corresponding method of the superclass. Here’s the recommended
+    way to do it, from an example in the *collections* module documentation, section
+    [“OrderedDict Examples and Recipes”](https://fpy.li/14-3):^([2](ch14.html#idm46582418895120))
+  id: totrans-22
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当子类重写超类的方法时，通常需要调用超类的相应方法。以下是推荐的方法，来自*collections*模块文档中的一个示例，[“OrderedDict示例和配方”](https://fpy.li/14-3)部分：^([2](ch14.html#idm46582418895120))
+- en: '[PRE0]'
+  id: totrans-23
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE0]'
+- en: 'To do its job, `LastUpdatedOrderedDict` overrides `__setitem__` to:'
+  id: totrans-24
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了完成其工作，`LastUpdatedOrderedDict`重写了`__setitem__`以：
+- en: Use `super().__setitem__` to call that method on the superclass, to let it insert
+    or update the key/value pair.
+  id: totrans-25
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 使用`super().__setitem__`调用超类上的该方法，让其插入或更新键/值对。
+- en: Call `self.move_to_end` to ensure the updated `key` is in the last position.
+  id: totrans-26
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 调用`self.move_to_end`以确保更新的`key`位于最后位置。
+- en: Invoking an overridden `__init__` method is particularly important to allow
+    superclasses to do their part in initializing the instance.
+  id: totrans-27
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 调用重写的`__init__`方法特别重要，以允许超类在初始化实例时发挥作用。
+- en: Tip
+  id: totrans-28
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 提示
+- en: 'If you learned object-oriented programming in Java, you may recall that a Java
+    constructor method automatically calls the no-argument constructor of the superclass.
+    Python doesn’t do this. You must get used to writing this pattern:'
+  id: totrans-29
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果你在 Java 中学习面向对象编程，可能会记得 Java 构造方法会自动调用超类的无参构造方法。Python 不会这样做。你必须习惯编写这种模式：
+- en: '[PRE1]'
+  id: totrans-30
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE1]'
+- en: 'You may have seen code that doesn’t use `super()`, but instead calls the method
+    directly on the superclass, like this:'
+  id: totrans-31
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 你可能见过不使用`super()`而是直接在超类上调用方法的代码，就像这样：
+- en: '[PRE2]'
+  id: totrans-32
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE2]'
+- en: This alternative works in this particular case, but is not recommended for two
+    reasons. First, it hardcodes the base class. The name `OrderedDict` appears in
+    the `class` statement and also inside `__setitem__`. If in the future someone
+    changes the `class` statement to change the base class or add another one, they
+    may forget to update the body of `__setitem__`, introducing a bug.
+  id: totrans-33
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这种替代方法在这种特定情况下有效，但出于两个原因不建议使用。首先，它将基类硬编码了。`OrderedDict`的名称出现在`class`语句中，也出现在`__setitem__`中。如果将来有人更改`class`语句以更改基类或添加另一个基类，他们可能会忘记更新`__setitem__`的内容，从而引入错误。
+- en: 'The second reason is that `super` implements logic to handle class hierarchies
+    with multiple inheritance. We’ll come back to that in [“Multiple Inheritance and
+    Method Resolution Order”](#mro_section). To conclude this refresher about `super`,
+    it is useful to review how we had to call it in Python 2, because the old signature
+    with two arguments is revealing:'
+  id: totrans-34
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 第二个原因是，`super`实现了处理具有多重继承的类层次结构的逻辑。我们将在[“多重继承和方法解析顺序”](#mro_section)中回顾这一点。为了总结这个关于`super`的复习，回顾一下在
+    Python 2 中我们如何调用它，因为旧的带有两个参数的签名是具有启发性的：
+- en: '[PRE3]'
+  id: totrans-35
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE3]'
+- en: 'Both arguments of `super` are now optional. The Python 3 bytecode compiler
+    automatically provides them by inspecting the surrounding context when `super()`
+    is invoked in a method. The arguments are:'
+  id: totrans-36
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在`super`的两个参数都是可选的。Python 3 字节码编译器在调用方法中的`super()`时会自动检查周围的上下文并提供这些参数。这些参数是：
+- en: '`type`'
+  id: totrans-37
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`type`'
+- en: The start of the search path for the superclass implementing the desired method.
+    By default, it is the class that owns the method where the `super()` call appears.
+  id: totrans-38
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 实现所需方法的超类的搜索路径的起始位置。默认情况下，它是包含`super()`调用的方法所属的类。
+- en: '`object_or_type`'
+  id: totrans-39
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`object_or_type`'
+- en: The object (for instance method calls) or class (for class method calls) to
+    be the receiver of the method call. By default, it is `self` if the `super()`
+    call happens in an instance method.
+  id: totrans-40
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 对象（例如方法调用）或类（例如类方法调用）作为方法调用的接收者。默认情况下，如果`super()`调用发生在实例方法中，接收者就是`self`。
+- en: Whether you or the compiler provides those arguments, the `super()` call returns
+    a dynamic proxy object that finds a method (such as `__setitem__` in the example)
+    in a superclass of the `type` parameter, and binds it to the `object_or_type`,
+    so that we don’t need to pass the receiver (`self`) explicitly when invoking the
+    method.
+  id: totrans-41
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 无论是你还是编译器提供这些参数，`super()`调用都会返回一个动态代理对象，该对象会在`type`参数的超类中找到一个方法（例如示例中的`__setitem__`），并将其绑定到`object_or_type`，这样在调用方法时就不需要显式传递接收者（`self`）了。
+- en: In Python 3, you can still explicitly provide the first and second arguments
+    to `super()`.^([3](ch14.html#idm46582418655568)) But they are needed only in special
+    cases, such as skipping over part of the MRO for testing or debugging, or for
+    working around undesired behavior in a superclass.
+  id: totrans-42
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在 Python 3 中，你仍然可以显式提供`super()`的第一个和第二个参数。^([3](ch14.html#idm46582418655568))
+    但只有在特殊情况下才需要，例如跳过部分 MRO 进行测试或调试，或者解决超类中不希望的行为。
+- en: Now let’s discuss the caveats when subclassing built-in types.
+  id: totrans-43
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在让我们讨论对内置类型进行子类化时的注意事项。
+- en: Subclassing Built-In Types Is Tricky
+  id: totrans-44
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 对内置类型进行子类化是棘手的
+- en: 'It was not possible to subclass built-in types such as `list` or `dict` in
+    the earliest versions of Python. Since Python 2.2, it’s possible, but there is
+    a major caveat: the code of the built-ins (written in C) usually does not call
+    methods overridden by user-defined classes. A good short description of the problem
+    is in the documentation for PyPy, in the “Differences between PyPy and CPython”
+    section, [“Subclasses of built-in types”](https://fpy.li/pypydif):'
+  id: totrans-45
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在 Python 的最早版本中，无法对`list`或`dict`等内置类型进行子类化。自 Python 2.2 起，虽然可以实现，但有一个重要的警告：内置类型的代码（用
+    C 编写）通常不会调用用户定义类中重写的方法。关于这个问题的一个简短描述可以在 PyPy 文档的“PyPy 和 CPython 之间的区别”部分中找到，[“内置类型的子类”](https://fpy.li/pypydif)。
+- en: Officially, CPython has no rule at all for when exactly overridden method of
+    subclasses of built-in types get implicitly called or not. As an approximation,
+    these methods are never called by other built-in methods of the same object. For
+    example, an overridden `__getitem__()` in a subclass of `dict` will not be called
+    by e.g. the built-in `get()` method.
+  id: totrans-46
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+  zh: 官方上，CPython 没有明确规定子类中重写的方法何时会被隐式调用或不会被调用。作为近似值，这些方法永远不会被同一对象的其他内置方法调用。例如，在`dict`的子类中重写的`__getitem__()`不会被内置的`get()`方法调用。
+- en: '[Example 14-1](#ex_doppeldict) illustrates the problem.'
+  id: totrans-47
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 14-1](#ex_doppeldict)说明了这个问题。'
+- en: Example 14-1\. Our `__setitem__` override is ignored by the `__init__` and `__update__`
+    methods of the built-in `dict`
+  id: totrans-48
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 14-1\. 我们对`__setitem__`的重写被内置`dict`的`__init__`和`__update__`方法所忽略。
+- en: '[PRE4]'
+  id: totrans-49
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE4]'
+- en: '[![1](assets/1.png)](#co_inheritance__for_better_or_for_worse_CO1-1)'
+  id: totrans-50
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_inheritance__for_better_or_for_worse_CO1-1)'
+- en: '`DoppelDict.__setitem__` duplicates values when storing (for no good reason,
+    just to have a visible effect). It works by delegating to the superclass.'
+  id: totrans-51
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`DoppelDict.__setitem__`在存储时会复制值（没有好理由，只是为了有一个可见的效果）。它通过委托给超类来实现。'
+- en: '[![2](assets/2.png)](#co_inheritance__for_better_or_for_worse_CO1-2)'
+  id: totrans-52
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_inheritance__for_better_or_for_worse_CO1-2)'
+- en: 'The `__init__` method inherited from `dict` clearly ignored that `__setitem__`
+    was overridden: the value of `''one''` is not duplicated.'
+  id: totrans-53
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 从`dict`继承的`__init__`方法明显忽略了`__setitem__`的重写：`'one'`的值没有复制。
+- en: '[![3](assets/3.png)](#co_inheritance__for_better_or_for_worse_CO1-3)'
+  id: totrans-54
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_inheritance__for_better_or_for_worse_CO1-3)'
+- en: 'The `[]` operator calls our `__setitem__` and works as expected: `''two''`
+    maps to the duplicated value `[2, 2]`.'
+  id: totrans-55
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`[]`操作符调用我们的`__setitem__`，并按预期工作：`''two''`映射到重复的值`[2, 2]`。'
+- en: '[![4](assets/4.png)](#co_inheritance__for_better_or_for_worse_CO1-4)'
+  id: totrans-56
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_inheritance__for_better_or_for_worse_CO1-4)'
+- en: 'The `update` method from `dict` does not use our version of `__setitem__` either:
+    the value of `''three''` was not duplicated.'
+  id: totrans-57
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`dict`的`update`方法也没有使用我们的`__setitem__`版本：`''three''`的值没有被复制。'
+- en: 'This built-in behavior is a violation of a basic rule of object-oriented programming:
+    the search for methods should always start from the class of the receiver (`self`),
+    even when the call happens inside a method implemented in a superclass. This is
+    what is called “late binding,” which Alan Kay—of Smalltalk fame—considers a key
+    feature of object-oriented programming: in any call of the form `x.method()`,
+    the exact method to be called must be determined at runtime, based on the class
+    of the receiver `x`.^([4](ch14.html#idm46582418488592)) This sad state of affairs
+    contributes to the issues we saw in [“Inconsistent Usage of __missing__ in the
+    Standard Library”](ch03.html#inconsistent_missing).'
+  id: totrans-58
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这种内置行为违反了面向对象编程的一个基本规则：方法的搜索应始终从接收者的类（`self`）开始，即使调用发生在一个由超类实现的方法内部。这就是所谓的“后期绑定”，Smalltalk之父Alan
+    Kay认为这是面向对象编程的一个关键特性：在任何形式为`x.method()`的调用中，要调用的确切方法必须在运行时确定，基于接收者`x`的类。^([4](ch14.html#idm46582418488592))
+    这种令人沮丧的情况导致了我们在[“标准库中__missing__的不一致使用”](ch03.html#inconsistent_missing)中看到的问题。
+- en: The problem is not limited to calls within an instance—whether `self.get()`
+    calls `self.__getitem__()`—but also happens with overridden methods of other classes
+    that should be called by the built-in methods. [Example 14-2](#ex_other_subclass)
+    is adapted from the [PyPy documentation](https://fpy.li/14-5).
+  id: totrans-59
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 问题不仅限于实例内的调用——无论`self.get()`是否调用`self.__getitem__()`——还会发生在其他类的覆盖方法被内置方法调用时。[示例 14-2](#ex_other_subclass)改编自[PyPy文档](https://fpy.li/14-5)。
+- en: Example 14-2\. The `__getitem__` of `AnswerDict` is bypassed by `dict.update`
+  id: totrans-60
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 14-2\. `AnswerDict`的`__getitem__`被`dict.update`绕过。
+- en: '[PRE5]'
+  id: totrans-61
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE5]'
+- en: '[![1](assets/1.png)](#co_inheritance__for_better_or_for_worse_CO2-1)'
+  id: totrans-62
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_inheritance__for_better_or_for_worse_CO2-1)'
+- en: '`AnswerDict.__getitem__` always returns `42`, no matter what the key.'
+  id: totrans-63
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`AnswerDict.__getitem__`总是返回`42`，无论键是什么。'
+- en: '[![2](assets/2.png)](#co_inheritance__for_better_or_for_worse_CO2-2)'
+  id: totrans-64
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_inheritance__for_better_or_for_worse_CO2-2)'
+- en: '`ad` is an `AnswerDict` loaded with the key-value pair `(''a'', ''foo'')`.'
+  id: totrans-65
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`ad`是一个加载了键-值对`(''a'', ''foo'')`的`AnswerDict`。'
+- en: '[![3](assets/3.png)](#co_inheritance__for_better_or_for_worse_CO2-3)'
+  id: totrans-66
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_inheritance__for_better_or_for_worse_CO2-3)'
+- en: '`ad[''a'']` returns `42`, as expected.'
+  id: totrans-67
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`ad[''a'']`返回`42`，如预期。'
+- en: '[![4](assets/4.png)](#co_inheritance__for_better_or_for_worse_CO2-4)'
+  id: totrans-68
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_inheritance__for_better_or_for_worse_CO2-4)'
+- en: '`d` is an instance of plain `dict`, which we update with `ad`.'
+  id: totrans-69
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`d`是一个普通`dict`的实例，我们用`ad`来更新它。'
+- en: '[![5](assets/5.png)](#co_inheritance__for_better_or_for_worse_CO2-5)'
+  id: totrans-70
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_inheritance__for_better_or_for_worse_CO2-5)'
+- en: The `dict.update` method ignored our `AnswerDict.__getitem__`.
+  id: totrans-71
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`dict.update`方法忽略了我们的`AnswerDict.__getitem__`。'
+- en: Warning
+  id: totrans-72
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 警告
+- en: Subclassing built-in types like `dict` or `list` or `str` directly is error-prone
+    because the built-in methods mostly ignore user-defined overrides. Instead of
+    subclassing the built-ins, derive your classes from the [`collections`](https://fpy.li/14-6)
+    module using `UserDict`, `UserList`, and `UserString`, which are designed to be
+    easily extended.
+  id: totrans-73
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 直接对`dict`、`list`或`str`等内置类型进行子类化是容易出错的，因为内置方法大多忽略用户定义的覆盖。不要对内置类型进行子类化，而是从[`collections`](https://fpy.li/14-6)模块派生你的类，使用`UserDict`、`UserList`和`UserString`，这些类设计得易于扩展。
+- en: If you subclass `collections.UserDict` instead of `dict`, the issues exposed
+    in Examples [14-1](#ex_doppeldict) and [14-2](#ex_other_subclass) are both fixed.
+    See [Example 14-3](#ex_userdict_ok).
+  id: totrans-74
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果你继承`collections.UserDict`而不是`dict`，那么示例[14-1](#ex_doppeldict)和[14-2](#ex_other_subclass)中暴露的问题都会得到解决。请参见[示例 14-3](#ex_userdict_ok)。
+- en: Example 14-3\. `DoppelDict2` and `AnswerDict2` work as expected because they
+    extend `UserDict` and not `dict`
+  id: totrans-75
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 14-3\. `DoppelDict2`和`AnswerDict2`按预期工作，因为它们扩展了`UserDict`而不是`dict`。
+- en: '[PRE6]'
+  id: totrans-76
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE6]'
+- en: As an experiment to measure the extra work required to subclass a built-in,
+    I rewrote the `StrKeyDict` class from [Example 3-9](ch03.html#ex_strkeydict) to
+    subclass `dict` instead of `UserDict`. In order to make it pass the same suite
+    of tests, I had to implement `__init__`, `get`, and `update` because the versions
+    inherited from `dict` refused to cooperate with the overridden `__missing__`,
+    `__contains__`, and `__setitem__`. The `UserDict` subclass from [Example 3-9](ch03.html#ex_strkeydict)
+    has 16 lines, while the experimental `dict` subclass ended up with 33 lines.^([5](ch14.html#idm46582418252352))
+  id: totrans-77
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了衡量子类化内置类型所需的额外工作，我将[示例 3-9](ch03.html#ex_strkeydict)中的`StrKeyDict`类重写为子类化`dict`而不是`UserDict`。为了使其通过相同的测试套件，我不得不实现`__init__`、`get`和`update`，因为从`dict`继承的版本拒绝与覆盖的`__missing__`、`__contains__`和`__setitem__`合作。`UserDict`子类从[示例 3-9](ch03.html#ex_strkeydict)开始有16行，而实验性的`dict`子类最终有33行。^([5](ch14.html#idm46582418252352))
+- en: 'To be clear: this section covered an issue that applies only to method delegation
+    within the C language code of the built-in types, and only affects classes derived
+    directly from those types. If you subclass a base class coded in Python, such
+    as `UserDict` or `MutableMapping`, you will not be troubled by this.^([6](ch14.html#idm46582418139168))'
+  id: totrans-78
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 明确一点：本节只涉及内置类型的C语言代码中方法委托的问题，只影响直接从这些类型派生的类。如果你子类化了一个用Python编写的基类，比如`UserDict`或`MutableMapping`，你就不会受到这个问题的困扰。^([6](ch14.html#idm46582418139168))
+- en: 'Now let’s focus on an issue that arises with multiple inheritance: if a class
+    has two superclasses, how does Python decide which attribute to use when we call
+    `super().attr`, but both superclasses have an attribute with that name?'
+  id: totrans-79
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在让我们关注一个在多重继承中出现的问题：如果一个类有两个超类，当我们调用`super().attr`时，Python如何决定使用哪个属性，但两个超类都有同名属性？
+- en: Multiple Inheritance and Method Resolution Order
+  id: totrans-80
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 多重继承和方法解析顺序
+- en: Any language implementing multiple inheritance needs to deal with potential
+    naming conflicts when superclasses implement a method by the same name. This is
+    called the “diamond problem,” illustrated in [Figure 14-1](#diamond_uml) and [Example 14-4](#ex_diamond).
+  id: totrans-81
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 任何实现多重继承的语言都需要处理当超类实现同名方法时可能出现的命名冲突。这称为“菱形问题”，在[图 14-1](#diamond_uml)和[示例 14-4](#ex_diamond)中有所说明。
+- en: '![UML for diamond problem](assets/flpy_1401.png)'
+  id: totrans-82
+  prefs: []
+  type: TYPE_IMG
+  zh: '![菱形问题的 UML](assets/flpy_1401.png)'
+- en: 'Figure 14-1\. Left: Activation sequence for the `leaf1.ping()` call. Right:
+    Activation sequence for the `leaf1.pong()` call.'
+  id: totrans-83
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 图 14-1\. 左：`leaf1.ping()`调用的激活顺序。右：`leaf1.pong()`调用的激活顺序。
+- en: 'Example 14-4\. diamond.py: classes `Leaf`, `A`, `B`, `Root` form the graph
+    in [Figure 14-1](#diamond_uml)'
+  id: totrans-84
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 14-4\. diamond.py：类`Leaf`、`A`、`B`、`Root`形成了[图 14-1](#diamond_uml)中的图形
+- en: '[PRE7]'
+  id: totrans-85
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE7]'
+- en: '[![1](assets/1.png)](#co_inheritance__for_better_or_for_worse_CO3-1)'
+  id: totrans-86
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_inheritance__for_better_or_for_worse_CO3-1)'
+- en: '`Root` provides `ping`, `pong`, and `__repr__` to make the output easier to
+    read.'
+  id: totrans-87
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`Root`提供`ping`、`pong`和`__repr__`以使输出更易于阅读。'
+- en: '[![2](assets/2.png)](#co_inheritance__for_better_or_for_worse_CO3-2)'
+  id: totrans-88
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_inheritance__for_better_or_for_worse_CO3-2)'
+- en: The `ping` and `pong` methods in class `A` both call `super()`.
+  id: totrans-89
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 类`A`中的`ping`和`pong`方法都调用了`super()`。
+- en: '[![3](assets/3.png)](#co_inheritance__for_better_or_for_worse_CO3-3)'
+  id: totrans-90
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_inheritance__for_better_or_for_worse_CO3-3)'
+- en: Only the `ping` method in class `B` calls `super()`.
+  id: totrans-91
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 类`B`中只有`ping`方法调用了`super()`。
+- en: '[![4](assets/4.png)](#co_inheritance__for_better_or_for_worse_CO3-4)'
+  id: totrans-92
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_inheritance__for_better_or_for_worse_CO3-4)'
+- en: Class `Leaf` implements only `ping`, and it calls `super()`.
+  id: totrans-93
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 类`Leaf`只实现了`ping`，并调用了`super()`。
+- en: Now let’s see the effect of calling the `ping` and `pong` methods on an instance
+    of `Leaf` ([Example 14-5](#ex_diamond_demo)).
+  id: totrans-94
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在让我们看看在`Leaf`的实例上调用`ping`和`pong`方法的效果（[示例 14-5](#ex_diamond_demo)）。
+- en: Example 14-5\. Doctests for calling `ping` and `pong` on a `Leaf` object
+  id: totrans-95
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 14-5\. 在`Leaf`对象上调用`ping`和`pong`的文档测试
+- en: '[PRE8]'
+  id: totrans-96
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE8]'
+- en: '[![1](assets/1.png)](#co_inheritance__for_better_or_for_worse_CO4-1)'
+  id: totrans-97
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_inheritance__for_better_or_for_worse_CO4-1)'
+- en: '`leaf1` is an instance of `Leaf`.'
+  id: totrans-98
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`leaf1`是`Leaf`的一个实例。'
+- en: '[![2](assets/2.png)](#co_inheritance__for_better_or_for_worse_CO4-2)'
+  id: totrans-99
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_inheritance__for_better_or_for_worse_CO4-2)'
+- en: Calling `leaf1.ping()` activates the `ping` methods in `Leaf`, `A`, `B`, and
+    `Root`, because the `ping` methods in the first three classes call `super().ping()`.
+  id: totrans-100
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 调用`leaf1.ping()`会激活`Leaf`、`A`、`B`和`Root`中的`ping`方法，因为前三个类中的`ping`方法都调用了`super().ping()`。
+- en: '[![3](assets/3.png)](#co_inheritance__for_better_or_for_worse_CO4-3)'
+  id: totrans-101
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_inheritance__for_better_or_for_worse_CO4-3)'
+- en: Calling `leaf1.pong()` activates `pong` in `A` via inheritance, which then calls
+    `super.pong()`, activating `B.pong`.
+  id: totrans-102
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 调用`leaf1.pong()`通过继承激活了`A`中的`pong`，然后调用`super.pong()`，激活了`B.pong`。
+- en: 'The activation sequences shown in [Example 14-5](#ex_diamond_demo) and [Figure 14-1](#diamond_uml)
+    are determined by two factors:'
+  id: totrans-103
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 14-5](#ex_diamond_demo)和[图 14-1](#diamond_uml)中显示的激活顺序由两个因素决定： '
+- en: The method resolution order of the `Leaf` class.
+  id: totrans-104
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '`Leaf`类的方法解析顺序。'
+- en: The use of `super()` in each method.
+  id: totrans-105
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 每个方法中使用`super()`
+- en: 'Every class has an attribute called `__mro__` holding a tuple of references
+    to the superclasses in method resolution order, from the current class all the
+    way to the `object` class.^([7](ch14.html#idm46582417674528)) For the `Leaf` class,
+    this is the `__mro__`:'
+  id: totrans-106
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 每个类都有一个名为`__mro__`的属性，其中包含一个指向超类的元组，按照方法解析顺序排列，从当前类一直到`object`类。^([7](ch14.html#idm46582417674528))
+    对于`Leaf`类，`__mro__`如下：
+- en: '[PRE9]'
+  id: totrans-107
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE9]'
+- en: Note
+  id: totrans-108
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 注意
+- en: 'Looking at [Figure 14-1](#diamond_uml), you may think the MRO describes a [breadth-first
+    search](https://fpy.li/14-9), but that’s just a coincidence for that particular
+    class hierarchy. The MRO is computed by a published algorithm called C3. Its use
+    in Python is detailed in Michele Simionato’s [“The Python 2.3 Method Resolution
+    Order”](https://fpy.li/14-10). It’s a challenging read, but Simionato writes:
+    “unless you make strong use of multiple inheritance and you have non-trivial hierarchies,
+    you don’t need to understand the C3 algorithm, and you can easily skip this paper.”'
+  id: totrans-109
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 查看[图 14-1](#diamond_uml)，您可能会认为MRO描述了一种[广度优先搜索](https://fpy.li/14-9)，但这只是对于特定类层次结构的一个巧合。
+    MRO由一个名为C3的已发布算法计算。其在Python中的使用详细介绍在Michele Simionato的[“Python 2.3方法解析顺序”](https://fpy.li/14-10)中。这是一篇具有挑战性的阅读，但Simionato写道：“除非您大量使用多重继承并且具有非平凡的层次结构，否则您不需要理解C3算法，您可以轻松跳过本文。”
+- en: The MRO only determines the activation order, but whether a particular method
+    will be activated in each of the classes depends on whether each implementation
+    calls `super()` or not.
+  id: totrans-110
+  prefs: []
+  type: TYPE_NORMAL
+  zh: MRO仅确定激活顺序，但每个类中的特定方法是否激活取决于每个实现是否调用了`super()`。
+- en: 'Consider the experiment with the `pong` method. The `Leaf` class does not override
+    it, therefore calling `leaf1.pong()` activates the implementation in the next
+    class of `Leaf.__mro__`: the `A` class. Method `A.pong` calls `super().pong()`.
+    The `B` class is next in the MRO, therefore `B.pong` is activated. But that method
+    doesn’t call `super().pong()`, so the activation sequence ends here.'
+  id: totrans-111
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 考虑使用`pong`方法的实验。`Leaf`类没有对其进行覆盖，因此调用`leaf1.pong()`会通过继承激活`Leaf.__mro__`的下一个类中的实现：`A`类。方法`A.pong`调用`super().pong()`。接下来是MRO中的`B`类，因此激活`B.pong`。但是该方法不调用`super().pong()`，因此激活顺序到此结束。
+- en: The MRO takes into account not only the inheritance graph but also the order
+    in which superclasses are listed in a subclass declaration. In other words, if
+    in *diamond.py* ([Example 14-4](#ex_diamond)) the `Leaf` class was declared as
+    `Leaf(B, A)`, then class `B` would appear before `A` in `Leaf.__mro__`. This would
+    affect the activation order of the `ping` methods, and would also cause `leaf1.pong()`
+    to activate `B.pong` via inheritance, but `A.pong` and `Root.pong` would never
+    run, because `B.pong` doesn’t call `super()`.
+  id: totrans-112
+  prefs: []
+  type: TYPE_NORMAL
+  zh: MRO不仅考虑继承图，还考虑超类在子类声明中列出的顺序。换句话说，如果在*diamond.py*（[示例14-4](#ex_diamond)）中`Leaf`类声明为`Leaf(B,
+    A)`，那么类`B`会在`Leaf.__mro__`中出现在`A`之前。这会影响`ping`方法的激活顺序，���且会导致`leaf1.pong()`通过继承激活`B.pong`，但`A.pong`和`Root.pong`永远不会运行，因为`B.pong`不调用`super()`。
+- en: 'When a method calls `super()`, it is a *cooperative method*. Cooperative methods
+    enable *cooperative multiple inheritance*. These terms are intentional: in order
+    to work, multiple inheritance in Python requires the active cooperation of the
+    methods involved. In the `B` class, `ping` cooperates, but `pong` does not.'
+  id: totrans-113
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当一个方法调用`super()`时，它是一个*合作方法*。合作方法实现*合作多重继承*。这些术语是有意的：为了工作，Python中的多重继承需要涉及方法的积极合作。在`B`类中，`ping`进行合作，但`pong`不进行合作。
+- en: Warning
+  id: totrans-114
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 警告
+- en: A noncooperative method can be the cause of subtle bugs. Many coders reading
+    [Example 14-4](#ex_diamond) may expect that when method `A.pong` calls `super.pong()`,
+    that will ultimately activate `Root.pong`. But if `B.pong` is activated before,
+    it drops the ball. That’s why it is recommended that every method `m` of a nonroot
+    class should call `super().m()`.
+  id: totrans-115
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 一个非合作方法可能导致微妙的错误。许多编码者阅读[示例14-4](#ex_diamond)时可能期望当方法`A.pong`调用`super.pong()`时，最终会激活`Root.pong`。但如果`B.pong`在之前激活，那就会出错。这就是为什么建议每个非根类的方法`m`都应该调用`super().m()`。
+- en: Cooperative methods must have compatible signatures, because you never know
+    whether `A.ping` will be called before or after `B.ping`. The activation sequence
+    depends on the order of `A` and `B` in the declaration of each subclass that inherits
+    from both.
+  id: totrans-116
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 合作方法必须具有兼容的签名，因为你永远不知道`A.ping`是在`B.ping`之前还是之后调用的。激活顺序取决于每个同时继承两者的子类声明中`A`和`B`的顺序。
+- en: Python is a dynamic language, so the interaction of `super()` with the MRO is
+    also dynamic. [Example 14-6](#ex_diamond2) shows a surprising result of this dynamic
+    behavior.
+  id: totrans-117
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Python是一种动态语言，因此`super()`与MRO的交互也是动态的。[示例14-6](#ex_diamond2)展示了这种动态行为的一个令人惊讶的结果。
+- en: 'Example 14-6\. diamond2.py: classes to demonstrate the dynamic nature of `super()`'
+  id: totrans-118
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例14-6。diamond2.py：演示`super()`动态性质的类
+- en: '[PRE10]'
+  id: totrans-119
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE10]'
+- en: '[![1](assets/1.png)](#co_inheritance__for_better_or_for_worse_CO5-1)'
+  id: totrans-120
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_inheritance__for_better_or_for_worse_CO5-1)'
+- en: Class `A` comes from *diamond.py* ([Example 14-4](#ex_diamond)).
+  id: totrans-121
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 类`A`来自*diamond.py*（[示例14-4](#ex_diamond)）。
+- en: '[![2](assets/2.png)](#co_inheritance__for_better_or_for_worse_CO5-2)'
+  id: totrans-122
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_inheritance__for_better_or_for_worse_CO5-2)'
+- en: Class `U` is unrelated to `A` or `Root` from the `diamond` module.
+  id: totrans-123
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 类`U`与`diamond`模块中的`A`或`Root`无关。
+- en: '[![3](assets/3.png)](#co_inheritance__for_better_or_for_worse_CO5-3)'
+  id: totrans-124
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_inheritance__for_better_or_for_worse_CO5-3)'
+- en: 'What does `super().ping()` do? Answer: it depends. Read on.'
+  id: totrans-125
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`super().ping()`做什么？答案：这取决于情况。继续阅读。'
+- en: '[![4](assets/4.png)](#co_inheritance__for_better_or_for_worse_CO5-4)'
+  id: totrans-126
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_inheritance__for_better_or_for_worse_CO5-4)'
+- en: '`LeafUA` subclasses `U` and `A` in this order.'
+  id: totrans-127
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`LeafUA`按照这个顺序子类化`U`和`A`。'
+- en: 'If you create an instance of `U` and try to call `ping`, you get an error:'
+  id: totrans-128
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果你创建一个`U`的实例并尝试调用`ping`，你会得到一个错误：
+- en: '[PRE11]'
+  id: totrans-129
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE11]'
+- en: 'The `''super'' object` returned by `super()` has no attribute `''ping''` because
+    the MRO of `U` has two classes: `U` and `object`, and the latter has no attribute
+    named `''ping''`.'
+  id: totrans-130
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`super()`返回的`''super''对象`没有属性`''ping''`，因为`U`的MRO有两个类：`U`和`object`，而后者没有名为`''ping''`的属性。'
+- en: 'However, the `U.ping` method is not completely hopeless. Check this out:'
+  id: totrans-131
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 然而，`U.ping`方法并非完全没有希望。看看这个：
+- en: '[PRE12]'
+  id: totrans-132
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE12]'
+- en: The `super().ping()` call in `LeafUA` activates `U.ping`, which cooperates by
+    calling `super().ping()` too, activating `A.ping`, and eventually `Root.ping`.
+  id: totrans-133
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`LeafUA`中的`super().ping()`调用激活`U.ping`，后者通过调用`super().ping()`也进行合作，激活`A.ping`，最终激活`Root.ping`。'
+- en: Note the base classes of `LeafUA` are `(U, A)` in that order. If instead the
+    bases were `(A, U)`, then `leaf2.ping()` would never reach `U.ping`, because the
+    `super().ping()` in `A.ping` would activate `Root.ping`, and that method does
+    not call `super()`.
+  id: totrans-134
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意`LeafUA`的基类是`(U, A)`，按照这个顺序。如果基类是`(A, U)`，那么`leaf2.ping()`永远不会到达`U.ping`，因为`A.ping`中的`super().ping()`会激活`Root.ping`，而该方法不调用`super()`。
+- en: 'In a real program, a class like `U` could be a *mixin class*: a class intended
+    to be used together with other classes in multiple inheritance, to provide additional
+    functionality. We’ll study that shortly, in [“Mixin Classes”](#mixin_classes_sec).'
+  id: totrans-135
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在一个真实的程序中，类似`U`的类可能是一个*mixin类*：一个旨在与多重继承中的其他类一起使用，以提供额外功能的类。我们将很快学习这个，在[“Mixin
+    Classes”](#mixin_classes_sec)中。
+- en: To wrap up this discussion of the MRO, [Figure 14-2](#tkwidgets_mro_uml) illustrates
+    part of the complex multiple inheritance graph of the Tkinter GUI toolkit from
+    the Python standard library.
+  id: totrans-136
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 总结一下关于MRO的讨论，[图14-2](#tkwidgets_mro_uml)展示了Python标准库中Tkinter GUI工具包复杂多重继承图的一部分。
+- en: '![UML for Tkinter Text Widget](assets/flpy_1402.png)'
+  id: totrans-137
+  prefs: []
+  type: TYPE_IMG
+  zh: '![Tkinter Text Widget的UML](assets/flpy_1402.png)'
+- en: 'Figure 14-2\. Left: UML diagram of the Tkinter `Text` widget class and superclasses.
+    Right: The long and winding path of `Text.__mro__` is drawn with dashed arrows.'
+  id: totrans-138
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 图14-2。左：Tkinter `Text`小部件类及其超类的UML图。右：`Text.__mro__`的漫长曲折路径用虚线箭头绘制。
+- en: To study the picture, start at the `Text` class at the bottom. The `Text` class
+    implements a full-featured, multiline editable text widget. It provides rich functionality
+    in itself, but also inherits many methods from other classes. The lefthand side
+    shows a plain UML class diagram. On the right, it’s decorated with arrows showing
+    the MRO, as listed in [Example 14-7](#ex_tkinter_text_mro) with the help of a
+    `print_mro` convenience function.
+  id: totrans-139
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 要研究图片，请从底部的`Text`类开始。`Text`类实现了一个功能齐全的、多行可编辑的文本小部件。它本身提供了丰富的功能，但也继承了许多其他类的方法。左侧显示了一个简单的UML类图。右侧用箭头装饰，显示了MRO，如[示例
+    14-7](#ex_tkinter_text_mro)中列出的，借助`print_mro`便利函数。
+- en: Example 14-7\. MRO of `tkinter.Text`
+  id: totrans-140
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 14-7\. `tkinter.Text`的MRO
+- en: '[PRE13]'
+  id: totrans-141
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE13]'
+- en: Now let’s talk about mixins.
+  id: totrans-142
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在让我们谈谈混入。
+- en: Mixin Classes
+  id: totrans-143
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 混入类
+- en: A mixin class is designed to be subclassed together with at least one other
+    class in a multiple inheritance arrangement. A mixin is not supposed to be the
+    only base class of a concrete class, because it does not provide all the functionality
+    for a concrete object, but only adds or customizes the behavior of child or sibling
+    classes.
+  id: totrans-144
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 混入类设计为与至少一个其他类一起在多重继承安排中被子类化。混入不应该是具体类的唯一基类，因为它不为具体对象提供所有功能，而只是添加或自定义子类或兄弟类的行为。
+- en: Note
+  id: totrans-145
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 注意
+- en: Mixin classes are a convention with no explicit language support in Python and
+    C++. Ruby allows the explicit definition and use of modules that work as mixins—collections
+    of methods that may be included to add functionality to a class. C#, PHP, and
+    Rust implement traits, which are also an explicit form of mixin.
+  id: totrans-146
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 混入类是Python和C++中没有明确语言支持的约定。Ruby允许明确定义和使用作为混入的模块——一组方法，可以包含以添加功能到类。C＃、PHP和Rust实现了特征，这也是混入的一种明确形式。
+- en: Let’s see a simple but handy example of a mixin class.
+  id: totrans-147
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 让我们看一个简单但方便的混入类的示例。
+- en: Case-Insensitive Mappings
+  id: totrans-148
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 不区分大小写的映射
+- en: '[Example 14-8](#ex_uppermixin) shows `UpperCaseMixin`, a class designed to
+    provide case-insensitive access to mappings with string keys, by uppercasing those
+    keys when they are added or looked up.'
+  id: totrans-149
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 14-8](#ex_uppermixin)展示了`UpperCaseMixin`，一个设计用于提供对具有字符串键的映射进行不区分大小写访问的类，通过在添加或查找这些键时将它们大写。'
+- en: 'Example 14-8\. uppermixin.py: `UpperCaseMixin` supports case-insensitive mappings'
+  id: totrans-150
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 14-8\. uppermixin.py：`UpperCaseMixin`支持不区分大小写的映射
+- en: '[PRE14]'
+  id: totrans-151
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE14]'
+- en: '[![1](assets/1.png)](#co_inheritance__for_better_or_for_worse_CO6-1)'
+  id: totrans-152
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_inheritance__for_better_or_for_worse_CO6-1)'
+- en: This helper function takes a `key` of any type, and tries to return `key.upper()`;
+    if that fails, it returns the `key` unchanged.
+  id: totrans-153
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这个辅助函数接受任何类型的`key`，并尝试返回`key.upper()`；如果失败，则返回未更改的`key`。
+- en: '[![2](assets/2.png)](#co_inheritance__for_better_or_for_worse_CO6-2)'
+  id: totrans-154
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_inheritance__for_better_or_for_worse_CO6-2)'
+- en: The mixin implements four essential methods of mappings, always calling `super()`,
+    with the `key` uppercased, if possible.
+  id: totrans-155
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这个混入实现了映射的四个基本方法，总是调用`super()`，如果可能的话，将`key`大写。
+- en: Since every method ot `UpperCaseMixin` calls `super()`, this mixin depends on
+    a sibling class that implements or inherits methods with the same signature. To
+    make its contribution, a mixin usually needs to appear before other classes in
+    the MRO of a subclass that uses it. In practice, that means mixins must appear
+    first in the tuple of base classes in a class declaration. [Example 14-9](#ex_upperdict)
+    shows two examples.
+  id: totrans-156
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 由于`UpperCaseMixin`的每个方法都调用`super()`，这个混入取决于一个实现或继承具有相同签名方法的兄弟类。为了发挥其作用，混入通常需要出现在使用它的子类的MRO中的其他类之前。实际上，这意味着混入必须首先出现在类声明中基类元组中。[示例
+    14-9](#ex_upperdict)展示了两个示例。
+- en: 'Example 14-9\. uppermixin.py: two classes that use `UpperCaseMixin`'
+  id: totrans-157
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 14-9\. uppermixin.py：使用`UpperCaseMixin`的两个类
+- en: '[PRE15]'
+  id: totrans-158
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE15]'
+- en: '[![1](assets/1.png)](#co_inheritance__for_better_or_for_worse_CO7-1)'
+  id: totrans-159
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_inheritance__for_better_or_for_worse_CO7-1)'
+- en: '`UpperDict` needs no implementation of its own, but `UpperCaseMixin` must be
+    the first base class, otherwise the methods from `UserDict` would be called instead.'
+  id: totrans-160
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`UpperDict`不需要自己的实现，但`UpperCaseMixin`必须是第一个基类，否则将调用`UserDict`的方法。'
+- en: '[![2](assets/2.png)](#co_inheritance__for_better_or_for_worse_CO7-2)'
+  id: totrans-161
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_inheritance__for_better_or_for_worse_CO7-2)'
+- en: '`UpperCaseMixin` also works with `Counter`.'
+  id: totrans-162
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`UpperCaseMixin`也适用于`Counter`。'
+- en: '[![3](assets/3.png)](#co_inheritance__for_better_or_for_worse_CO7-3)'
+  id: totrans-163
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_inheritance__for_better_or_for_worse_CO7-3)'
+- en: Instead of `pass`, it’s better to provide a docstring to satisfy the need for
+    a body in the `class` statement syntax.
+  id: totrans-164
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 不要使用`pass`，最好提供一个文档字符串来满足`class`语句语法中需要主体的需求。
+- en: 'Here are some doctests from [*uppermixin.py*](https://fpy.li/14-11), for `UpperDict`:'
+  id: totrans-165
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这里是[*uppermixin.py*](https://fpy.li/14-11)中的一些doctests，用于`UpperDict`：
+- en: '[PRE16]'
+  id: totrans-166
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE16]'
+- en: 'And a quick demonstration of `UpperCounter`:'
+  id: totrans-167
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 还有一个关于`UpperCounter`的快速演示：
+- en: '[PRE17]'
+  id: totrans-168
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE17]'
+- en: '`UpperDict` and `UpperCounter` seem almost magical, but I had to carefully
+    study the code of `UserDict` and `Counter` to make `UpperCaseMixin` work with
+    them.'
+  id: totrans-169
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`UpperDict`和`UpperCounter`看起来几乎像是魔法，但我不得不仔细研究`UserDict`和`Counter`的代码，以使`UpperCaseMixin`与它们一起工作。'
+- en: For example, my first version of `UpperCaseMixin` did not provide the `get`
+    method. That version worked with `UserDict` but not with `Counter`. The `UserDict`
+    class inherits `get` from `collections.abc.Mapping`, and that `get` calls `__getitem__`,
+    which I implemented. But keys were not uppercased when an `UpperCounter` was loaded
+    upon `__init__`. That happened because `Counter.__init__` uses `Counter.update`,
+    which in turn relies on the `get` method inherited from `dict`. However, the `get`
+    method in the `dict` class does not call `__getitem__`. This is the heart of the
+    issue discussed in [“Inconsistent Usage of __missing__ in the Standard Library”](ch03.html#inconsistent_missing).
+    It is also a stark reminder of the brittle and puzzling nature of programs leveraging
+    inheritance, even at a small scale.
+  id: totrans-170
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 例如，我的第一个版本的`UpperCaseMixin`没有提供`get`方法。那个版本可以与`UserDict`一起工作，但不能与`Counter`一起工作。`UserDict`类继承了`collections.abc.Mapping`的`get`方法，而该`get`方法调用了我实现的`__getitem__`。但是，当`UpperCounter`加载到`__init__`时，键并没有大写。这是因为`Counter.__init__`使用了`Counter.update`，而`Counter.update`又依赖于从`dict`继承的`get`方法。然而，`dict`类中的`get`方法并不调用`__getitem__`。这是在[“标准库中__missing__的不一致使用”](ch03.html#inconsistent_missing)中讨论的问题的核心。这也是对利用继承的程序的脆弱和令人困惑的本质的鲜明提醒，即使在小规模上也是如此。
+- en: The next section covers several examples of multiple inheritance, often featuring
+    mixin classes.
+  id: totrans-171
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 下一节将涵盖多个多重继承的示例，通常包括 Mixin 类。
+- en: Multiple Inheritance in the Real World
+  id: totrans-172
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 现实世界中的多重继���
+- en: In the *Design Patterns* book,^([8](ch14.html#idm46582416985840)) almost all
+    the code is in C++, but the only example of multiple inheritance is the Adapter
+    pattern. In Python, multiple inheritance is not the norm either, but there are
+    important examples that I will comment on in this section.
+  id: totrans-173
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在《设计模式》一书中，^([8](ch14.html#idm46582416985840))几乎所有的代码都是用 C++ 编写的，但多重继承的唯一示例是适配器模式。在
+    Python 中，多重继承也不是常态，但有一些重要的例子我将在本节中评论。
+- en: ABCs Are Mixins Too
+  id: totrans-174
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: ABCs 也是 Mixins
+- en: 'In the Python standard library, the most visible use of multiple inheritance
+    is the `collections.abc` package. That is not controversial: after all, even Java
+    supports multiple inheritance of interfaces, and ABCs are interface declarations
+    that may optionally provide concrete method implementations.^([9](ch14.html#idm46582416981536))'
+  id: totrans-175
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在 Python 标准库中，最明显的多重继承用法是`collections.abc`包。这并不具有争议性：毕竟，即使是 Java 也支持接口的多重继承，而
+    ABCs 是接口声明，可以选择性地提供具体方法实现。^([9](ch14.html#idm46582416981536))
+- en: 'Python’s official documentation of [`collections.abc`](https://fpy.li/14-13)
+    uses the term *mixin method* for the concrete methods implemented in many of the
+    collection ABCs. The ABCs that provide mixin methods play two roles: they are
+    interface definitions and also mixin classes. For example, the [implementation
+    of `collections.UserDict`](https://fpy.li/14-14) relies on several of the mixin
+    methods provided by `collections.abc.MutableMapping`.'
+  id: totrans-176
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Python 官方文档中对[`collections.abc`](https://fpy.li/14-13)使用术语*mixin 方法*来表示许多集合
+    ABCs 中实现的具体方法。提供 mixin 方法的 ABCs 扮演两个角色：它们是接口定义，也是 mixin 类。例如，`collections.UserDict`的[实现](https://fpy.li/14-14)依赖于`collections.abc.MutableMapping`提供的几个
+    mixin 方法。
+- en: ThreadingMixIn and ForkingMixIn
+  id: totrans-177
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: ThreadingMixIn 和 ForkingMixIn
+- en: 'The [*http.server*](https://fpy.li/14-15) package provides `HTTPServer` and
+    `ThreadingHTTPServer` classes. The latter was added in Python 3.7\. Its documentation
+    says:'
+  id: totrans-178
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[*http.server*](https://fpy.li/14-15)包提供了`HTTPServer`和`ThreadingHTTPServer`类。后者是在
+    Python 3.7 中添加的。其文档中说：'
+- en: class `http.server.ThreadingHTTPServer`(server_address, RequestHandlerClass)
+  id: totrans-179
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 类`http.server.ThreadingHTTPServer`(server_address, RequestHandlerClass)
+- en: This class is identical to `HTTPServer` but uses threads to handle requests
+    by using the `ThreadingMixIn`. This is useful to handle web browsers pre-opening
+    sockets, on which `HTTPServer` would wait indefinitely.
+  id: totrans-180
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这个类与`HTTPServer`相同，但使用线程来处理请求，使用了`ThreadingMixIn`。这对于处理预先打开套接字的网络浏览器非常有用，对于这些套接字，`HTTPServer`将无限期等待。
+- en: 'This is the [complete source code](https://fpy.li/14-16) for the `ThreadingHTTPServer`
+    class in Python 3.10:'
+  id: totrans-181
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这是 Python 3.10 中`ThreadingHTTPServer`类的[完整源代码](https://fpy.li/14-16)：
+- en: '[PRE18]'
+  id: totrans-182
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE18]'
+- en: The [source code](https://fpy.li/14-17) of `socketserver.ThreadingMixIn` has
+    38 lines, including comments and docstrings. [Example 14-10](#ex_threadmixin)
+    shows a summary of its implementation.
+  id: totrans-183
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`socketserver.ThreadingMixIn`的[源代码](https://fpy.li/14-17)有 38 行，包括注释和文档字符串。[示例 14-10](#ex_threadmixin)展示了其实现的摘要。'
+- en: Example 14-10\. Part of *Lib/socketserver.py* in Python 3.10
+  id: totrans-184
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 14-10\. Python 3.10 中 *Lib/socketserver.py* 的一部分
+- en: '[PRE19]'
+  id: totrans-185
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE19]'
+- en: '[![1](assets/1.png)](#co_inheritance__for_better_or_for_worse_CO8-1)'
+  id: totrans-186
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_inheritance__for_better_or_for_worse_CO8-1)'
+- en: '`process_request_thread` does not call `super()` because it is a new method,
+    not an override. Its implementation calls three instance methods that `HTTPServer`
+    provides or inherits.'
+  id: totrans-187
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`process_request_thread` 不调用`super()`，因为它是一个新方法，而不是一个覆盖。它的实现调用了`HTTPServer`提供或继承的三个实例方法。'
+- en: '[![2](assets/2.png)](#co_inheritance__for_better_or_for_worse_CO8-2)'
+  id: totrans-188
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_inheritance__for_better_or_for_worse_CO8-2)'
+- en: This overrides the `process_request` method that `HTTPServer` inherits from
+    `socketserver.BaseServer`, starting a thread and delegating the actual work to
+    `process_request_thread` running in that thread. It does not call `super()`.
+  id: totrans-189
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这覆盖了`HTTPServer`从`socketserver.BaseServer`继承的`process_request`方法，启动一个线程，并将实际工作委托给在该线程中运行的`process_request_thread`。它不调用`super()`。
+- en: '[![3](assets/3.png)](#co_inheritance__for_better_or_for_worse_CO8-3)'
+  id: totrans-190
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_inheritance__for_better_or_for_worse_CO8-3)'
+- en: '`server_close` calls `super().server_close()` to stop taking requests, then
+    waits for the threads started by `process_request` to finish their jobs.'
+  id: totrans-191
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`server_close` 调用`super().server_close()`停止接受请求，然后等待`process_request`启动的线程完成其工作。'
+- en: The `ThreadingMixIn` appears in the [`socketserver`](https://fpy.li/14-18) module
+    documentation next to `ForkingMixin`. The latter is designed to support concurrent
+    servers based on [`os.fork()`](https://fpy.li/14-19), an API for launching a child
+    process, available in [POSIX](https://fpy.li/14-20)-compliant Unix-like systems.
+  id: totrans-192
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`ThreadingMixIn`出现在[`socketserver`](https://fpy.li/14-18)模块文档中，旁边是`ForkingMixin`。后者旨在支持基于[`os.fork()`](https://fpy.li/14-19)的并发服务器，这是一种在符合[POSIX](https://fpy.li/14-20)的类
+    Unix 系统中启动子进程的 API。'
+- en: Django Generic Views Mixins
+  id: totrans-193
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: Django通用视图混合类
+- en: Note
+  id: totrans-194
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 注意
+- en: You don’t need to know Django to follow this section. I am using a small part
+    of the framework as a practical example of multiple inheritance, and I will try
+    to give all the necessary background, assuming you have some experience with server-side
+    web development in any language or framework.
+  id: totrans-195
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 您不需要了解Django才能阅读本节。我使用框架的一小部分作为多重继承的实际示例，并将尽力提供所有必要的背景知识，假设您在任何语言或框架中具有一些服务器端Web开发经验。
+- en: In Django, a view is a callable object that takes a `request` argument—an object
+    representing an HTTP request—and returns an object representing an HTTP response.
+    The different responses are what interests us in this discussion. They can be
+    as simple as a redirect response, with no content body, or as complex as a catalog
+    page in an online store, rendered from an HTML template and listing multiple merchandise
+    with buttons for buying, and links to detail pages.
+  id: totrans-196
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在Django中，视图是一个可调用对象，接受一个`request`参数——代表一个HTTP请求的对象，并返回一个代表HTTP响应的对象。我们在这里讨论的是不同的响应。它们可以是简单的重定向响应，没有内容主体，也可以是一个在线商店中的目录页面，从HTML模板渲染并列出多个商品，带有购买按钮和到详细页面的链接。
+- en: 'Originally, Django provided a set of functions, called generic views, that
+    implemented some common use cases. For example, many sites need to show search
+    results that include information from numerous items, with the listing spanning
+    multiple pages, and for each item a link to a page with detailed information about
+    it. In Django, a list view and a detail view are designed to work together to
+    solve this problem: a list view renders search results, and a detail view produces
+    a page for each individual item.'
+  id: totrans-197
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 最初，Django提供了一组称为通用视图的函数，实现了一些常见用例。例如，许多站点需要显示包含来自多个项目的信息的搜索结果，列表跨越多个页面，对于每个项目，都有一个链接到包含有关其详细信息的页面。在Django中，列表视图和详细视图被设计为一���解决这个问题：列表视图呈现搜索结果，详细视图为每个单独项目生成一个页面。
+- en: However, the original generic views were functions, so they were not extensible.
+    If you needed to do something similar but not exactly like a generic list view,
+    you’d have to start from scratch.
+  id: totrans-198
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 然而，最初的通用视图是函数，因此它们是不可扩展的。如果您需要做类似但不完全像通用列表视图的事情，您将不得不从头开始。
+- en: 'The concept of class-based views was introduced in Django 1.3, along with a
+    set of generic view classes organized as base classes, mixins, and ready-to-use
+    concrete classes. In Django 3.2, the base classes and mixins are in the `base`
+    module of the `django.views.generic` package, pictured in [Figure 14-3](#django_view_base_uml).
+    At the top of the diagram we see two classes that take care of very distinct responsibilities:
+    `View` and `TemplateResponseMixin`.'
+  id: totrans-199
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 类视图的概念是在Django 1.3中引入的，连同一组通用视图类，组织为基类、混合类和可直接使用的具体类。在Django 3.2中，基类和混合类位于`django.views.generic`包的`base`模块中，如[图14-3](#django_view_base_uml)所示。在图表的顶部，我们看到两个负责非常不同职责的类：`View`和`TemplateResponseMixin`。
+- en: '![UML class diagram for `django.views.generic.base`](assets/flpy_1403.png)'
+  id: totrans-200
+  prefs: []
+  type: TYPE_IMG
+  zh: '![`django.views.generic.base`的UML类图](assets/flpy_1403.png)'
+- en: Figure 14-3\. UML class diagram for the `django.views.generic.base` module.
+  id: totrans-201
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 图14-3\. `django.views.generic.base`模块的UML类图。
+- en: Tip
+  id: totrans-202
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 提示
+- en: A great resource to study these classes is the [*Classy Class-Based Views*](https://fpy.li/14-21)
+    website, where you can easily navigate through them, see all methods in each class
+    (inherited, overridden, and added methods), view diagrams, browse their documentation,
+    and jump to their [source code on GitHub](https://fpy.li/14-22).
+  id: totrans-203
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 学习这些类的一个很好的资源是[*Classy Class-Based Views*](https://fpy.li/14-21)网站，您可以轻松浏览它们，查看每个类中的所有方法（继承的、重写的和添加的方法），查看图表，浏览它们的文档，并跳转到它们在GitHub上的[源代码](https://fpy.li/14-22)。
+- en: '`View` is the base class of all views (it could be an ABC), and it provides
+    core functionality like the `dispatch` method, which delegates to “handler” methods
+    like `get`, `head`, `post`, etc., implemented by concrete subclasses to handle
+    the different HTTP verbs.^([10](ch14.html#idm46582416780704)) The `RedirectView`
+    class inherits only from `View`, and you can see that it implements `get`, `head`,
+    `post`, etc.'
+  id: totrans-204
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`View`是所有视图的基类（它可以是ABC），它提供核心功能，如`dispatch`方法，该方法委托给具体子类实现的“处理程序”方法，如`get`、`head`、`post`等，以处理不同的HTTP动词。^([10](ch14.html#idm46582416780704))
+    `RedirectView`类仅继承自`View`，您可以看到它实现了`get`、`head`、`post`等。'
+- en: 'Concrete subclasses of `View` are supposed to implement the handler methods,
+    so why aren’t those methods part of the `View` interface? The reason: subclasses
+    are free to implement just the handlers they want to support. A `TemplateView`
+    is used only to display content, so it only implements `get`. If an HTTP `POST`
+    request is sent to a `TemplateView`, the inherited `View.dispatch` method checks
+    that there is no `post` handler, and produces an HTTP `405 Method Not Allowed`
+    response.^([11](ch14.html#idm46582416772320))'
+  id: totrans-205
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`View`的具体子类应该实现处理程序方法，那么为什么这些方法不是`View`接口的一部分呢？原因是：子类可以自由地实现它们想要支持的处理程序。`TemplateView`仅用于显示内容，因此它只实现`get`。如果向`TemplateView`发送HTTP
+    `POST`请求，继承的`View.dispatch`方法会检查是否存在`post`处理程序，并生成HTTP `405 Method Not Allowed`响应。^([11](ch14.html#idm46582416772320))'
+- en: The `TemplateResponseMixin` provides functionality that is of interest only
+    to views that need to use a template. A `RedirectView`, for example, has no content
+    body, so it has no need of a template and it does not inherit from this mixin.
+    `TemplateResponseMixin` provides behaviors to `TemplateView` and other template-rendering
+    views, such as `ListView`, `DetailView`, etc., defined in the `django.views.generic`
+    subpackages. [Figure 14-4](#django_view_list_uml) depicts the `django.views.generic.list`
+    module and part of the `base` module.
+  id: totrans-206
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`TemplateResponseMixin`提供的功能只对需要使用模板的视图感兴趣。例如，`RedirectView`没有内容主体，因此不需要模板，也不继承自此混合类。`TemplateResponseMixin`为`TemplateView`和其他模板渲染视图提供行为，如`ListView`、`DetailView`等，定义在`django.views.generic`子包中。[图14-4](#django_view_list_uml)描述了`django.views.generic.list`模块和`base`模块的部分。'
+- en: For Django users, the most important class in [Figure 14-4](#django_view_list_uml)
+    is `ListView`, which is an aggregate class, with no code at all (its body is just
+    a docstring). When instantiated, a `ListView` has an `object_list` instance attribute
+    through which the template can iterate to show the page contents, usually the
+    result of a database query returning multiple objects. All the functionality related
+    to generating this iterable of objects comes from the `MultipleObjectMixin`. That
+    mixin also provides the complex pagination logic—to display part of the results
+    in one page and links to more pages.
+  id: totrans-207
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 对于 Django 用户来说，[图 14-4](#django_view_list_uml) 中最重要的类是`ListView`，它是一个聚合类，没有任何代码（其主体只是一个文档字符串）。
+    当实例化时，`ListView` 通过`object_list`实例属性具有一个可迭代的对象，模板可以通过它来显示页面内容，通常是数据库查询返回多个对象的结果。
+    生成这些对象的可迭代对象的所有功能来自`MultipleObjectMixin`。 该混合类还提供了复杂的分页逻辑——在一个页面中显示部分结果和链接到更多页面。
+- en: Suppose you want to create a view that will not render a template, but will
+    produce a list of objects in JSON format. That’s why the `BaseListView` exists.
+    It provides an easy-to-use extension point that brings together `View` and `MultipleObjectMixin`
+    functionality, without the overhead of the template machinery.
+  id: totrans-208
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 假设您想创建一个不会呈现模板，但会以 JSON 格式生成对象列表的视图。 这就是`BaseListView`的存在。 它提供了一个易于使用的扩展���，将`View`和`MultipleObjectMixin`功能结合在一起，而不需要模板机制的开销。
+- en: 'The Django class-based views API is a better example of multiple inheritance
+    than Tkinter. In particular, it is easy to make sense of its mixin classes: each
+    has a well-defined purpose, and they are all named with the `…Mixin` suffix.'
+  id: totrans-209
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Django 基于类的视图 API 是多重继承的一个更好的例子，比 Tkinter 更好。 特别是，很容易理解其混合类：每个混合类都有一个明确定义的目的，并且它们都以`…Mixin`后缀命名。
+- en: '![UML class diagram for `django.views.generic.list`](assets/flpy_1404.png)'
+  id: totrans-210
+  prefs: []
+  type: TYPE_IMG
+  zh: '![UML 类图 for `django.views.generic.list`](assets/flpy_1404.png)'
+- en: 'Figure 14-4\. UML class diagram for the `django.views.generic.list` module.
+    Here the three classes of the base module are collapsed (see [Figure 14-3](#django_view_base_uml)).
+    The `ListView` class has no methods or attributes: it’s an aggregate class.'
+  id: totrans-211
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 图 14-4\. `django.views.generic.list` 模块的 UML 类图。 这里基本模块的三个类已经折叠（参见[图 14-3](#django_view_base_uml)）。
+    `ListView` 类没有方法或属性：它是一个聚合类。
+- en: Class-based views were not universally embraced by Django users. Many do use
+    them in a limited way, as opaque boxes, but when it’s necessary to create something
+    new, a lot of Django coders continue writing monolithic view functions that take
+    care of all those responsibilities, instead of trying to reuse the base views
+    and mixins.
+  id: totrans-212
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 基于类的视图并不被 Django 用户普遍接受。许多人以一种有限的方式使用它们，作为不透明的盒子，但当需要创建新东西时，许多 Django 程序员继续编写处理所有这些责任的单片视图函数，而不是尝试重用基本视图和混合类。
+- en: It does take some time to learn how to leverage class-based views and how to
+    extend them to fulfill specific application needs, but I found that it was worthwhile
+    to study them. They eliminate a lot of boilerplate code, make it easier to reuse
+    solutions, and even improve team communication—for example, by defining standard
+    names to templates, and to the variables passed to template contexts. Class-based
+    views are Django views “on rails.”
+  id: totrans-213
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 学习如何利用基于类的视图以及如何扩展它们以满足特定应用程序需求确实需要一些时间，但我发现研究它们是值得的。 它们消除了大量样板代码，使得重用解决方案更容易，甚至改善了团队沟通——例如，通过定义模板的标准名称，以及传递给模板上下文的变量。
+    基于类的视图是 Django 视图的“轨道”。
+- en: Multiple Inheritance in Tkinter
+  id: totrans-214
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: Tkinter 中的多重继承
+- en: An extreme example of multiple inheritance in Python’s standard library is the
+    [Tkinter GUI toolkit](https://fpy.li/14-24). I used part of the Tkinter widget
+    hierarchy to illustrate the MRO in [Figure 14-2](#tkwidgets_mro_uml). [Figure 14-5](#tkinter_uml)
+    shows all the widget classes in the `tkinter` base package (there are more widgets
+    in the [`tkinter.ttk` subpackage](https://fpy.li/14-25)).
+  id: totrans-215
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Python 标准库中多重继承的一个极端例子是[Tkinter GUI 工具包](https://fpy.li/14-24)。 我使用了 Tkinter
+    小部件层次结构的一部分来说明[图 14-2](#tkwidgets_mro_uml) 中的 MRO。 [图 14-5](#tkinter_uml) 显示了`tkinter`基础包中的所有小部件类（[`tkinter.ttk`子包中有更多小部件](https://fpy.li/14-25)）。
+- en: '![UML class diagram for Tkinter widgets](assets/flpy_1405.png)'
+  id: totrans-216
+  prefs: []
+  type: TYPE_IMG
+  zh: '![Tkinter 小部件的 UML 类图](assets/flpy_1405.png)'
+- en: Figure 14-5\. Summary UML diagram for the Tkinter GUI class hierarchy; classes
+    tagged «mixin» are designed to provide concrete methods to other classes via multiple
+    inheritance.
+  id: totrans-217
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 图 14-5\. Tkinter GUI 类层次结构的摘要 UML 图；标记为«mixin»的类旨在通过多重继承为其他类提供具体方法。
+- en: Tkinter is 25 years old as I write this. It is not an example of current best
+    practices. But it shows how multiple inheritance was used when coders did not
+    appreciate its drawbacks. And it will serve as a counterexample when we cover
+    some good practices in the next section.
+  id: totrans-218
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当我写这篇文章时，Tkinter 已经有 25 年的历史了。 它并不是当前最佳实践的例子。 但它展示了当编码人员不欣赏其缺点时如何使用多重继承。 当我们在下一节讨论一些良好实践时，它将作为一个反例。
+- en: 'Consider these classes from [Figure 14-5](#tkinter_uml):'
+  id: totrans-219
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 请考虑来自[图 14-5](#tkinter_uml) 的这些类：
+- en: '➊ `Toplevel`: The class of a top-level window in a Tkinter application.'
+  id: totrans-220
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ➊ `Toplevel`：Tkinter 应用程序中顶级窗口的类。
+- en: '➋ `Widget`: The superclass of every visible object that can be placed on a
+    window.'
+  id: totrans-221
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ➋ `Widget`：可以放置在窗口上的每个可见对象的超类。
+- en: '➌ `Button`: A plain button widget.'
+  id: totrans-222
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ➌ `Button`：一个普通的按钮小部件。
+- en: '➍ `Entry`: A single-line editable text field.'
+  id: totrans-223
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ➍ `Entry`：一个单行可编辑文本字段。
+- en: '➎ `Text`: A multiline editable text field.'
+  id: totrans-224
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ➎ `Text`：一个多行可编辑文本字段。
+- en: 'Here are the MROs of those classes, displayed by the `print_mro` function from
+    [Example 14-7](#ex_tkinter_text_mro):'
+  id: totrans-225
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这些类的 MRO 是由`print_mro`函数显示的，该函数来自[示例 14-7](#ex_tkinter_text_mro)：
+- en: '[PRE20]'
+  id: totrans-226
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE20]'
+- en: Note
+  id: totrans-227
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 注意
+- en: 'By current standards, the class hierarchy of Tkinter is very deep. Few parts
+    of the Python standard library have more than three or four levels of concrete
+    classes, and the same can be said of the Java class library. However, it is interesting
+    to note that the some of the deepest hierarchies in the Java class library are
+    precisely in the packages related to GUI programming: [`java.awt`](https://fpy.li/14-26)
+    and [`javax.swing`](https://fpy.li/14-27). [Squeak](https://fpy.li/14-28), the
+    modern, free version of Smalltalk, includes the powerful and innovative Morphic
+    GUI toolkit, also with a deep class hierarchy. In my experience, GUI toolkits
+    are where inheritance is most useful.'
+  id: totrans-228
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 按照当前标准，Tkinter 的类层次结构非常深。Python 标准库的很少部分具有超过三到四级的具体类，Java 类库也是如此。然而，有趣的是，Java
+    类库中一些最深层次的层次结构恰好是与 GUI 编程相关的包：[`java.awt`](https://fpy.li/14-26) 和 [`javax.swing`](https://fpy.li/14-27)。现代、免费的
+    Smalltalk 版本 Squeak 包括功能强大且创新的 Morphic GUI 工具包，同样具有深层次的类层次结构。根据我的经验，GUI 工具包是继承最有用的地方。
+- en: 'Note how these classes relate to others:'
+  id: totrans-229
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意这些类与其他类的关系：
+- en: '`Toplevel` is the only graphical class that does not inherit from `Widget`,
+    because it is the top-level window and does not behave like a widget; for example,
+    it cannot be attached to a window or frame. `Toplevel` inherits from `Wm`, which
+    provides direct access functions of the host window manager, like setting the
+    window title and configuring its borders.'
+  id: totrans-230
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '`Toplevel` 是唯一一个不从 `Widget` 继承的图形类，因为它是顶层窗口，不像一个 widget 那样行为；例如，它不能附加到窗口或框架。`Toplevel`
+    从 `Wm` 继承，提供了主机窗口管理器的直接访问函数，如设置窗口标题和配置其边框。'
+- en: '`Widget` inherits directly from `BaseWidget` and from `Pack`, `Place`, and
+    `Grid`. These last three classes are geometry managers: they are responsible for
+    arranging widgets inside a window or frame. Each encapsulates a different layout
+    strategy and widget placement API.'
+  id: totrans-231
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '`Widget` 直接从 `BaseWidget` 和 `Pack`、`Place`、`Grid` 继承。这三个类是几何管理器：它们负责在窗口或框架内排列小部件。每个类封装了不同的布局策略和小部件放置
+    API。'
+- en: '`Button`, like most widgets, descends only from `Widget`, but indirectly from
+    `Misc`, which provides dozens of methods to every widget.'
+  id: totrans-232
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '`Button`，像大多数小部件一样，只从 `Widget` 继承，但间接从 `Misc` 继承，为每个小部件提供了数十种方法。'
+- en: '`Entry` subclasses `Widget` and `XView`, which support horizontal scrolling.'
+  id: totrans-233
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '`Entry` 从支持水平滚动的 `Widget` 和 `XView` 继承。'
+- en: '`Text` subclasses from `Widget`, `XView`, and `YView` for vertical scrolling.'
+  id: totrans-234
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '`Text` 从 `Widget`、`XView` 和 `YView` 继承以支持垂直滚动。'
+- en: We’ll now discuss some good practices of multiple inheritance and see whether
+    Tkinter goes along with them.
+  id: totrans-235
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在我们将讨论一些多重继承的良好实践，并看看 Tkinter 是否符合这些实践。
+- en: Coping with Inheritance
+  id: totrans-236
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 处理继承
+- en: 'What Alan Kay wrote in the epigraph remains true: there’s still no general
+    theory about inheritance that can guide practicing programmers. What we have are
+    rules of thumb, design patterns, “best practices,” clever acronyms, taboos, etc.
+    Some of these provide useful guidelines, but none of them are universally accepted
+    or always applicable.'
+  id: totrans-237
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 阿兰·凯在前言中写道：关于继承还没有能够指导实践程序员的一般理论。我们拥有的是经验法则、设计模式、“最佳实践”、巧妙的首字母缩写、禁忌等。其中一些提供了有用的指导方针，但没有一个是普遍接受的或总是适用的。
+- en: It’s easy to create incomprehensible and brittle designs using inheritance,
+    even without multiple inheritance. Because we don’t have a comprehensive theory,
+    here are a few tips to avoid spaghetti class graphs.
+  id: totrans-238
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 使用继承很容易创建难以理解和脆弱的设计，即使没有多重继承。由于我们没有一个全面的理论，这里有一些避免意大利面式类图的提示。
+- en: Favor Object Composition over Class Inheritance
+  id: totrans-239
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 偏向对象组合而不是类继承
+- en: The title of this subsection is the second principle of object-oriented design
+    from the *Design Patterns* book,^([12](ch14.html#idm46582416633248)) and is the
+    best advice I can offer here. Once you get comfortable with inheritance, it’s
+    too easy to overuse it. Placing objects in a neat hierarchy appeals to our sense
+    of order; programmers do it just for fun.
+  id: totrans-240
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这个小节的标题是《设计模式》书中的面向对象设计的第二原则^([12](ch14.html#idm46582416633248))，也是我在这里能提供的最好建议。一旦你熟悉了继承，就很容易过度使用它。将对象放在一个整洁的层次结构中符合我们的秩序感；程序员只是为了好玩而这样做。
+- en: Favoring composition leads to more flexible designs. For example, in the case
+    of the `tkinter.Widget` class, instead of inheriting the methods from all geometry
+    managers, widget instances could hold a reference to a geometry manager, and invoke
+    its methods. After all, a `Widget` should not “be” a geometry manager, but could
+    use the services of one via delegation. Then you could add a new geometry manager
+    without touching the widget class hierarchy and without worrying about name clashes.
+    Even with single inheritance, this principle enhances flexibility, because subclassing
+    is a form of tight coupling, and tall inheritance trees tend to be brittle.
+  id: totrans-241
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 偏向组合会导致更灵活的设计。例如，在`tkinter.Widget`类的情况下，widget实例可以持有对几何管理器的引用，并调用其方法，而不是从所有几何管理器继承方法。毕竟，一个`Widget`不应该“是”一个几何管理器，但可以通过委托使用其服务。然后，您可以添加一个新的几何管理器，而不必触及
+    widget 类层次结构，也不必担心名称冲突。即使在单一继承的情况下，这个原则也增强了灵活性，因为子类化是一种紧密耦合的形式，而高继承树往往是脆弱的。
+- en: Composition and delegation can replace the use of mixins to make behaviors available
+    to different classes, but cannot replace the use of interface inheritance to define
+    a hierarchy of types.
+  id: totrans-242
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 组合和委托可以替代使用 Mixin 使行为可用于不同类，但不能替代使用接口继承来定义类型层次结构。
+- en: Understand Why Inheritance Is Used in Each Case
+  id: totrans-243
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 理解每种情况下为何使用继承
+- en: 'When dealing with multiple inheritance, it’s useful to keep straight the reasons
+    why subclassing is done in each particular case. The main reasons are:'
+  id: totrans-244
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 处理多重继承时，有必要清楚地了解在每种特定情况下为何进行子类化。主要原因包括：
+- en: Inheritance of interface creates a subtype, implying an “is-a” relationship.
+    This is best done with ABCs.
+  id: totrans-245
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 接口继承创建一个子类型，暗示一个“是一个”关系。这最好通过 ABCs 完成。
+- en: Inheritance of implementation avoids code duplication by reuse. Mixins can help
+    with this.
+  id: totrans-246
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 实现的继承避免了代码重复使用。Mixin 可以帮助实现这一点。
+- en: In practice, both uses are often simultaneous, but whenever you can make the
+    intent clear, do it. Inheritance for code reuse is an implementation detail, and
+    it can often be replaced by composition and delegation. On the other hand, interface
+    inheritance is the backbone of a framework. Interface inheritance should use only
+    ABCs as base classes, if possible.
+  id: totrans-247
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在实践中，这���种用法通常同时存在，但只要您能清楚地表达意图，就应该这样做。继承用于代码重用是一个实现细节，它经常可以被组合和委托替代。另一方面，接口继承是框架的支柱。接口继承应尽可能只使用ABC作为基类。
+- en: Make Interfaces Explicit with ABCs
+  id: totrans-248
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 使用ABC明确接口
+- en: In modern Python, if a class is intended to define an interface, it should be
+    an explicit ABC or a `typing.Protocol` subclass. An ABC should subclass only `abc.ABC`
+    or other ABCs. Multiple inheritance of ABCs is not problematic.
+  id: totrans-249
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在现代Python中，如果一个类旨在定义一个接口，它应该是一个明确的ABC或`typing.Protocol`子类。ABC应该仅从`abc.ABC`或其他ABC继承。多重继承ABC并不成问题。
+- en: Use Explicit Mixins for Code Reuse
+  id: totrans-250
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 使用明确的混合类进行代码重用
+- en: If a class is designed to provide method implementations for reuse by multiple
+    unrelated subclasses, without implying an “is-a” relationship, it should be an
+    explicit *mixin class*. Conceptually, a mixin does not define a new type; it merely
+    bundles methods for reuse. A mixin should never be instantiated, and concrete
+    classes should not inherit only from a mixin. Each mixin should provide a single
+    specific behavior, implementing few and very closely related methods. Mixins should
+    avoid keeping any internal state; i.e., a mixin class should not have instance
+    attributes.
+  id: totrans-251
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果一个类旨在为多个不相关的子类提供方法实现以供重用，而不意味着“是一个”关系，则应该是一个明确的*混合类*。从概念上讲，混合类不定义新类型；它只是捆绑方法以供重用。混合类不应该被实例化，具体类不应该仅从混合类继承。每个混合类应提供一个特定的行为，实现少量且非常相关的方法。混合类应避免保留任何内部状态；即混合类不应具有实例属性。
+- en: There is no formal way in Python to state that a class is a mixin, so it is
+    highly recommended that they are named with a `Mixin` suffix.
+  id: totrans-252
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在Python中没有正式的方法来声明一个类是混合类，因此强烈建议它们以`Mixin`后缀命名。
+- en: Provide Aggregate Classes to Users
+  id: totrans-253
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 为用户提供聚合类
+- en: A class that is constructed primarily by inheriting from mixins and does not
+    add its own structure or behavior is called an *aggregate class*.
+  id: totrans-254
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+  zh: 主要通过从混合项继承而构建的类，不添加自己的结构或行为，被称为*聚合类*。
+- en: ''
+  id: totrans-255
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: Booch et al.^([13](ch14.html#idm46582416617616))
+  id: totrans-256
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+  zh: Booch等人^([13](ch14.html#idm46582416617616))
+- en: If some combination of ABCs or mixins is particularly useful to client code,
+    provide a class that brings them together in a sensible way.
+  id: totrans-257
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果某些ABC或混合类的组合对客户端代码特别有用，请提供一个以合理方式将它们组合在一起的类。
+- en: 'For example, here is the complete [source code](https://fpy.li/14-29) for the
+    Django `ListView` class on the bottom right of [Figure 14-4](#django_view_list_uml):'
+  id: totrans-258
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 例如，这里是Django `ListView`类的完整[源代码](https://fpy.li/14-29)，位于[图14-4](#django_view_list_uml)右下角：
+- en: '[PRE21]'
+  id: totrans-259
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE21]'
+- en: 'The body of `ListView` is empty, but the class provides a useful service: it
+    brings together a mixin and a base class that should be used together.'
+  id: totrans-260
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`ListView`的主体是空的，但该类提供了一个有用的服务：它将一个混合类和一个应该一起使用的基类组合在一起。'
+- en: Another example is [`tkinter.Widget`](https://fpy.li/14-30), which has four
+    base classes and no methods or attributes of its own—just a docstring. Thanks
+    to the `Widget` aggregate class, we can create new a widget with the required
+    mixins, without having to figure out in which order they should be declared to
+    work as intended.
+  id: totrans-261
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 另一个例子是[`tkinter.Widget`](https://fpy.li/14-30)，它有四个基类，没有自己的方法或属性，只有一个文档字符串。由于`Widget`聚合类，我们可以创建一个新的小部件，其中包含所需的混合项，而无需弄清楚它们应该以何种顺序声明才能按预期工作。
+- en: Note that aggregate classes don’t have to be completely empty, but they often
+    are.
+  id: totrans-262
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 请注意，聚合类不一定要完全为空，但它们通常是。
+- en: Subclass Only Classes Designed for Subclassing
+  id: totrans-263
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 只对设计为可子类化的类进行子类化
+- en: In one comment about this chapter, technical reviewer Leonardo Rochael suggested
+    the following warning.
+  id: totrans-264
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在关于本章的一条评论中，技术审阅员Leonardo Rochael提出了以下警告。
+- en: Warning
+  id: totrans-265
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 警告
+- en: Subclassing any complex class and overriding its methods is error-prone because
+    the superclass methods may ignore the subclass overrides in unexpected ways. As
+    much as possible, avoid overriding methods, or at least restrain yourself to subclassing
+    classes which are designed to be easily extended, and only in the ways in which
+    they were designed to be extended.
+  id: totrans-266
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 由于超类方法可能以意想不到的方式忽略子类覆盖，因此从任何复杂类继承并覆盖其方法是容易出错的。尽可能避免覆盖方法，或者至少限制自己只继承易于扩展的类，并且只以设计为可扩展的方式进行扩展。
+- en: That’s great advice, but how do we know whether or how a class was designed
+    to be extended?
+  id: totrans-267
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这是一个很好的建议，但我们如何知道一个类是否被设计为可扩展？
+- en: The first answer is documentation (sometimes in the form of docstrings or even
+    comments in code). For example, Python’s [`socketserver`](https://fpy.li/14-31)
+    package is described as “a framework for network servers.” Its [`BaseServer`](https://fpy.li/14-32)
+    class is designed for subclassing, as the name suggests. More importantly, the
+    documentation and the [docstring](https://fpy.li/14-33) in the source code of
+    the class explicitly note which of its methods are intended to be overridden by
+    subclasses.
+  id: totrans-268
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 第一个答案是文档（有时以文档字符串或甚至代码注释的形式）。例如，Python的[`socketserver`](https://fpy.li/14-31)包被描述为“一个网络服务器框架”。它的[`BaseServer`](https://fpy.li/14-32)类被设计为可子类化，正如其名称所示。更重要的是，类的文档和源代码中的[文档字符串](https://fpy.li/14-33)明确指出了哪些方法是打算由子类重写的。
+- en: In Python ≥ 3.8, a new way of making those design constraints explicit is provided
+    by [PEP 591—Adding a final qualifier to typing](https://fpy.li/pep591). The PEP
+    introduces a [`@final`](https://fpy.li/14-34) decorator that can be applied to
+    classes or individual methods, so that IDEs or type checkers can report misguided
+    attempts to subclass those classes or override those methods.^([14](ch14.html#idm46582416566272))
+  id: totrans-269
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在Python ≥ 3.8中，通过[PEP 591—为类型添加final修饰符](https://fpy.li/pep591)提供了一种明确制定这些设计约束的新方法。该PEP引入了一个[`@final`](https://fpy.li/14-34)装饰器，可应用于类或单独的方法，以便IDE或类型检查器可以报告误用尝试对这些类进行子类化或覆盖这些方法的情况。^([14](ch14.html#idm46582416566272))
+- en: Avoid Subclassing from Concrete Classes
+  id: totrans-270
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 避免从具体类继承
+- en: Subclassing concrete classes is more dangerous than subclassing ABCs and mixins,
+    because instances of concrete classes usually have internal state that can easily
+    be corrupted when you override methods that depend on that state. Even if your
+    methods cooperate by calling `super()`, and the internal state is held in private
+    attributes using the `__x` syntax, there are still countless ways a method override
+    can introduce bugs.
+  id: totrans-271
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 从具体类进行子类化比从ABC和mixin进行子类化更危险，因为具体类的实例通常具有内部状态，当您覆盖依赖于该状态的方法时，很容易破坏该状态。即使您的方法通过调用`super()`来合作，并且内部状态是使用`__x`语法保存在私有属性中，仍然有无数种方法可以通过方法覆盖引入错误。
+- en: 'In [“Waterfowl and ABCs”](ch13.html#waterfowl_essay), Alex Martelli quotes
+    Scott Meyer’s *More Effective C++*, which says: “all non-leaf classes should be
+    abstract.” In other words, Meyer recommends that only abstract classes should
+    be subclassed.'
+  id: totrans-272
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在[“水禽和ABC”](ch13.html#waterfowl_essay)中，Alex Martelli引用了Scott Meyer的*More Effective
+    C++*，其中说：“所有非叶类都应该是抽象的。”换句话说，Meyer建议只有抽象类应该被子类化。
+- en: If you must use subclassing for code reuse, then the code intended for reuse
+    should be in mixin methods of ABCs or in explicitly named mixin classes.
+  id: totrans-273
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果必须使用子类化进行代码重用，则应将用于重用的代码放在ABC的mixin方法中或明确命名的mixin类中。
+- en: We will now analyze Tkinter from the point of view of these recommendations.
+  id: totrans-274
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们现在将从这些建议的角度分析Tkinter。
+- en: 'Tkinter: The Good, the Bad, and the Ugly'
+  id: totrans-275
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: Tkinter：优点、缺点和丑闻
+- en: Most advice in the previous section is not followed by Tkinter, with the notable
+    exception of [“Provide Aggregate Classes to Users”](#aggregate_class_sec). Even
+    then, it’s not a great example, because composition would probably work better
+    for integrating the geometry managers into `Widget`, as discussed in [“Favor Object
+    Composition over Class Inheritance”](#favor_composition_sec).
+  id: totrans-276
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 先前部分中的大多数建议在Tkinter中并未遵循，特别例外是[“向用户提供聚合类”](#aggregate_class_sec)。即使如此，这也不是一个很好的例子，因为像在[“更青睐对象组合而非类继承”](#favor_composition_sec)中讨论的那样，将几何管理器集成到`Widget`中可能效果更好。
+- en: Keep in mind that Tkinter has been part of the standard library since Python
+    1.1 was released in 1994\. Tkinter is a layer on top of the excellent Tk GUI toolkit
+    of the Tcl language. The Tcl/Tk combo is not originally object-oriented, so the
+    Tk API is basically a vast catalog of functions. However, the toolkit is object-oriented
+    in its design, if not in its original Tcl implementation.
+  id: totrans-277
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 请记住，Tkinter自1994年发布的Python 1.1起就是标准库的一部分。Tkinter是建立在Tcl语言的出色Tk GUI工具包之上的一层。Tcl/Tk组合最初并非面向对象，因此Tk
+    API基本上是一个庞大的函数目录。但是，该工具包在设计上是面向对象的，尽管在其原始的Tcl实现中不是。
+- en: 'The docstring of `tkinter.Widget` starts with the words “Internal class.” This
+    suggests that `Widget` should probably be an ABC. Although `Widget` has no methods
+    of its own, it does define an interface. Its message is: “You can count on every
+    Tkinter widget providing basic widget methods (`__init__`, `destroy`, and dozens
+    of Tk API functions), in addition to the methods of all three geometry managers.”
+    We can agree that this is not a great interface definition (it’s just too broad),
+    but it is an interface, and `Widget` “defines” it as the union of the interfaces
+    of its superclasses.'
+  id: totrans-278
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`tkinter.Widget`的文档字符串以“内部类”开头。这表明`Widget`可能应该是一个ABC。尽管`Widget`没有自己的方法，但它确实定义了一个接口。它的含义是：“您可以依赖于每个Tkinter小部件提供基本小部件方法（`__init__`、`destroy`和数十个Tk
+    API函数），以及所有三个几何管理器的方法。”我们可以同意这不是一个很好的接口定义（它太宽泛了），但它是一个接口，而`Widget`将其“定义”为其超类接口的并集。'
+- en: The `Tk` class, which encapsulates the GUI application logic, inherits from
+    `Wm` and `Misc`, neither of which are abstract or mixin (`Wm` is not a proper
+    mixin because `TopLevel` subclasses only from it). The name of the `Misc` class
+    is—by itself—a very strong *code smell*. `Misc` has more than 100 methods, and
+    all widgets inherit from it. Why is it necessary that every single widget has
+    methods for clipboard handling, text selection, timer management, and the like?
+    You can’t really paste into a button or select text from a scrollbar. `Misc` should
+    be split into several specialized mixin classes, and not all widgets should inherit
+    from every one of those mixins.
+  id: totrans-279
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`Tk`类封装了GUI应用程序逻辑，继承自`Wm`和`Misc`���两者都不是抽象或mixin（`Wm`不是一个适当的mixin，因为`TopLevel`仅从它继承）。`Misc`类的名称本身就是一个非常明显的*代码异味*。`Misc`有100多个方法，所有小部件都继承自它。为什么每个小部件都需要处理剪贴板、文本选择、定时器管理等方法？您实际上无法将内容粘贴到按钮中或从滚动条中选择文本。`Misc`应该拆分为几个专门的mixin类，并且不是所有小部件都应该从每个mixin类继承。'
+- en: To be fair, as a Tkinter user, you don’t need to know or use multiple inheritance
+    at all. It’s an implementation detail hidden behind the widget classes that you
+    will instantiate or subclass in your own code. But you will suffer the consequences
+    of excessive multiple inheritance when you type `dir(tkinter.Button)` and try
+    to find the method you need among the 214 attributes listed. And you’ll need to
+    face the complexity if you decide to implement a new Tk widget.
+  id: totrans-280
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 公平地说，作为Tkinter用户，您根本不需要了解或使用多重继承。这是隐藏在您将在自己的代码中实例化或子类化的小部件类背后的实现细节。但是，当您键入`dir(tkinter.Button)`并尝试在列出的214个属性中找到所需的方法时，您将遭受过多多重继承的后果。如果您决定实现一个新的Tk小部件，您将需要面对这种复杂性。
+- en: Tip
+  id: totrans-281
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 提示
+- en: Despite the problems, Tkinter is stable, flexible, and provides a modern look-and-feel
+    if you use the `tkinter.ttk` package and its themed widgets. Also, some of the
+    original widgets, like `Canvas` and `Text`, are incredibly powerful. You can turn
+    a `Canvas` object into a simple drag-and-drop drawing application in a matter
+    of hours. Tkinter and Tcl/Tk are definitely worth a look if you are interested
+    in GUI programming.
+  id: totrans-282
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 尽管存在问题，Tkinter 是稳定的、灵活的，并且如果使用`tkinter.ttk`包及其主题小部件，提供现代外观和感觉。此外，一些原始小部件，如`Canvas`和`Text`，功能强大。你可以在几小时内将`Canvas`对象转换为简单的拖放绘图应用程序。如果你对
+    GUI 编程感兴趣，Tkinter 和 Tcl/Tk 绝对值得一看。
+- en: This concludes our tour through the labyrinth of inheritance.
+  id: totrans-283
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这标志着我们对继承迷宫的探索结束了。
+- en: Chapter Summary
+  id: totrans-284
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 章节总结
+- en: 'This chapter started with a review of the `super()` function in the context
+    of single inheritance. We then discussed the problem with subclassing built-in
+    types: their native methods implemented in C do not call overridden methods in
+    subclasses, except in very few special cases. That’s why, when we need a custom
+    `list`, `dict`, or `str` type, it’s easier to subclass `UserList`, `UserDict`,
+    or `UserString`—all defined in the [`collections` module](https://fpy.li/collec),
+    which actually wrap the corresponding built-in types and delegate operations to
+    them—three examples of favoring composition over inheritance in the standard library.
+    If the desired behavior is very different from what the built-ins offer, it may
+    be easier to subclass the appropriate ABC from [`collections.abc`](https://fpy.li/14-13)
+    and write your own implementation.'
+  id: totrans-285
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 本章从单一继承的情况下对`super()`函数进行了回顾。然后我们讨论了子类化内置类型的问题：它们在 C 中实现的原生方法不会调用子类中的重写方法，除了极���数特殊情况。这就是为什么当我们需要自定义`list`、`dict`或`str`类型时，更容易子类化`UserList`、`UserDict`或`UserString`——它们都定义在[`collections`模块](https://fpy.li/collec)中，实际上包装了相应的内置类型并将操作委托给它们——这是标准库中偏向组合而非继承的三个例子。如果期望的行为与内置提供的行为非常不同，可能更容易子类化[`collections.abc`](https://fpy.li/14-13)中的适当
+    ABC，并编写自己的实现。
+- en: The rest of the chapter was devoted to the double-edged sword of multiple inheritance.
+    First we saw how the method resolution order, encoded in the `__mro__` class attribute,
+    addresses the problem of potential naming conflicts in inherited methods. We also
+    saw how the `super()` built-in behaves, sometimes unexpectedly, in hierarchies
+    with multiple inheritance. The behavior of `super()` is designed to support mixin
+    classes, which we then studied through the simple example of the `UpperCaseMixin`
+    for case-insensitive mappings.
+  id: totrans-286
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 本章的其余部分致力于多重继承的双刃剑。首先，我们看到了方法解析顺序，编码在`__mro__`类属性中，解决了继承方法中潜在命名冲突的问题。我们还看到了`super()`内置函数在具有多重继承的层次结构中的行为，有时会出乎意料。`super()`的行为旨在支持混入类，然后我们通过`UpperCaseMixin`对不区分大小写映射的简单示例进行了研究。
+- en: We saw how multiple inhertance and mixin methods are used in Python’s ABCs,
+    as well as in the `socketserver` threading and forking mixins. More complex uses
+    of multiple inheritance were exemplified by Django’s class-based views and the
+    Tkinter GUI toolkit. Although Tkinter is not an example of modern best practices,
+    it is an example of overly complex class hierarchies we may find in legacy systems.
+  id: totrans-287
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们看到了多重继承和混入方法在 Python 的 ABCs 中的使用，以及在`socketserver`线程和分叉混入中的使用。更复杂的多重继承用法由
+    Django 的基于类的视图和 Tkinter GUI 工具包示例。尽管 Tkinter 不是现代最佳实践的例子，但它是我们可能在遗留系统中找到的过于复杂的类层次结构的例子。
+- en: To close the chapter, I presented seven recommendations to cope with inheritance,
+    and applied some of that advice in a commentary of the Tkinter class hierarchy.
+  id: totrans-288
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了结束本章，我提出了七条应对继承的建议，并在对 Tkinter 类层次结构的评论中应用了其中一些建议。
+- en: Rejecting inheritance—even single inheritance—is a modern trend. One of the
+    most successful languages created in the 21st century is Go. It doesn’t have a
+    construct called “class,” but you can build types that are structs of encapsulated
+    fields and you can attach methods to those structs. Go allows the definition of
+    interfaces that are checked by the compiler using structural typing, a.k.a. *static
+    duck typing*—very similar to what we now have with protocol types since Python
+    3.8. Go has special syntax for building types and interfaces by composition, but
+    it does not support inheritance—not even among interfaces.
+  id: totrans-289
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 拒绝继承——甚至是单一继承——是一个现代趋势。21 世纪创建的最成功的语言之一是 Go。它没有名为“类”的构造，但你可以构建作为封装字段结构的类型，并且可以将方法附加到这些结构上。Go
+    允许定义接口，编译器使用结构化类型检查这些接口，即*静态鸭子类型*，与 Python 3.8 之后的协议类型非常相似。Go 有特殊的语法用于通过组合构建类型和接口，但它不支持继承——甚至不支持接口之间的继承。
+- en: 'So perhaps the best advice about inheritance is: avoid it if you can. But often,
+    we don’t have a choice: the frameworks we use impose their own design choices.'
+  id: totrans-290
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 所以也许关于继承的最佳建议是：如果可以的话，尽量避免。但通常情况下，我们没有选择：我们使用的框架会强加它们自己的设计选择。
+- en: Further Reading
+  id: totrans-291
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 进一步阅读
+- en: When it comes to reading clarity, properly-done composition is superior to inheritance.
+    Since code is much more often read than written, avoid subclassing in general,
+    but especially don’t mix the various types of inheritance, and don’t use subclassing
+    for code sharing.
+  id: totrans-292
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+  zh: 在阅读清晰度方面，适当的组合优于继承。由于代码更多地被阅读而不是被编写，一般情况下应避免子类化，尤其不要混合各种类型的继承，并且不要使用子类化进行代码共享。
+- en: ''
+  id: totrans-293
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: Hynek Schlawack, Subclassing in Python Redux
+  id: totrans-294
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+  zh: Hynek Schlawack，《Python 中的子类化再探》
+- en: During the final review of this book, technical reviewer Jürgen Gmach recommended
+    Hynek Schlawack’s post [“Subclassing in Python Redux”](https://fpy.li/14-37)—the
+    source of the preceding quote. Schlawack is the author of the popular *attrs*
+    package, and was a core contributor to the Twisted asynchronous programming framework,
+    a project started by Glyph Lefkowitz in 2002. Over time, the core team realized
+    they had overused subclassing in their design, according to Schlawack. His post
+    is long, and cites other important posts and talks. Highly recommended.
+  id: totrans-295
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在这本书的最终审阅期间，技术审阅员Jürgen Gmach推荐了Hynek Schlawack的帖子[“Subclassing in Python Redux”](https://fpy.li/14-37)—前述引用的来源。Schlawack是流行的*attrs*包的作者，并且是Twisted异步编程框架的核心贡献者，这是Glyph
+    Lefkowitz于2002年发起的项目。随着时间的推移，核心团队意识到他们在设计中过度使用了子类化，根据Schlawack的说法。他的帖子很长，引用了其他重要的帖子和演讲。强烈推荐。
+- en: 'In that same conclusion, Hynek Schlawack wrote: “Don’t forget that more often
+    than not, a function is all you need.” I agree, and that is precisely why *Fluent
+    Python* covers functions in depth before classes and inheritance. My goal was
+    to show how much you can accomplish with functions leveraging existing classes
+    from the standard library, before creating your own classes.'
+  id: totrans-296
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在同样的结论中，Hynek Schlawack写道：“不要忘记，更多时候，一个函数就是你所需要的。”我同意，这正是为什么在类和继承之前，《Fluent
+    Python》深入讲解函数的原因。我的目标是展示在创建自己的类之前，利用标准库中现有类可以实现多少功能。
+- en: Subclassing built-ins, the `super` function, and advanced features like descriptors
+    and metaclasses are all introduced in Guido van Rossum’s paper [“Unifying types
+    and classes in Python 2.2”](https://fpy.li/descr101). Nothing really important
+    has changed in these features since then. Python 2.2 was an amazing feat of language
+    evolution, adding several powerful new features in a coherent whole, without breaking
+    backward compatibility. The new features were 100% opt-in. To use them, we just
+    had to explicitly subclass `object`—directly or indirectly—to create a so-called
+    “new style class.” In Python 3, every class subclasses `object`.
+  id: totrans-297
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Guido van Rossum的论文[“Unifying types and classes in Python 2.2”](https://fpy.li/descr101)介绍了内置函数的子类��、`super`函数以及描述符和元类等高级特性。这些特性自那时以来并没有发生重大变化。Python
+    2.2是语言演进的一个了不起的成就，添加了几个强大的新特性，形成了一个连贯的整体，而不会破坏向后兼容性。这些新特性是100%选择性的。要使用它们，我们只需显式地子类化`object`——直接或间接地创建所谓的“新样式类”。在Python
+    3中，每个类都是`object`的子类。
+- en: The [*Python Cookbook*, 3rd ed.](https://fpy.li/pycook3) by David Beazley and
+    Brian K. Jones (O’Reilly) has several recipes showing the use of `super()` and
+    mixin classes. You can start from the illuminating section [“8.7\. Calling a Method
+    on a Parent Class”](https://fpy.li/14-38), and follow the internal references
+    from there.
+  id: totrans-298
+  prefs: []
+  type: TYPE_NORMAL
+  zh: David Beazley和Brian K. Jones（O’Reilly）的《Python Cookbook》，第三版（https://fpy.li/pycook3）中有几个示例展示了`super()`和mixin类的使用。你可以从启发性的部分[“8.7\.
+    Calling a Method on a Parent Class”](https://fpy.li/14-38)开始，然后从那里跟随内部引用。
+- en: 'Raymond Hettinger’s post [“Python’s super() considered super!”](https://fpy.li/14-39)
+    explains the workings of `super` and multiple inheritance in Python from a positive
+    perspective. It was written in response to [“Python’s Super is nifty, but you
+    can’t use it (Previously: Python’s Super Considered Harmful)”](https://fpy.li/14-40)
+    by James Knight. Martijn Pieters’ response to [“How to use super() with one argument?”](https://fpy.li/14-41)
+    includes a concise and deep explanation of `super`, including its relationship
+    with descriptors, a concept we’ll only study in [Chapter 23](ch23.html#attribute_descriptors).
+    That’s the nature of `super`. It is simple to use in basic use cases, but is a
+    powerful and complex tool that touches some of Python’s most advanced dynamic
+    features, rarely found in other languages.'
+  id: totrans-299
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 'Raymond Hettinger的帖子[“Python’s super() considered super!”](https://fpy.li/14-39)从积极的角度解释了Python中`super`和多重继承的工作原理。这篇文章是作为对James
+    Knight的[“Python’s Super is nifty, but you can’t use it (Previously: Python’s Super
+    Considered Harmful)”](https://fpy.li/14-40)的回应而撰写的。Martijn Pieters对[“How to use
+    super() with one argument?”](https://fpy.li/14-41)的回应包括对`super`的简明而深入的解释，包括它与描述符的关系，这是我们只会在[第23章](ch23.html#attribute_descriptors)中学习的概念。这就是`super`的本质。在基本用例中使用起来很简单，但它是一个强大且复杂的工具，涉及一些Python中最先进的动态特性，很少在其他语言中找到。'
+- en: 'Despite the titles of those posts, the problem is not really the `super` built-in—which
+    in Python 3 is not as ugly as it was in Python 2. The real issue is multiple inheritance,
+    which is inherently complicated and tricky. Michele Simionato goes beyond criticizing
+    and actually offers a solution in his [“Setting Multiple Inheritance Straight”](https://fpy.li/14-42):
+    he implements traits, an explict form of mixins that originated in the Self language.
+    Simionato has a long series of blog posts about multiple inheritance in Python,
+    including [“The wonders of cooperative inheritance, or using super in Python 3”](https://fpy.li/14-43);
+    [“Mixins considered harmful,” part 1](https://fpy.li/14-44) and [part 2](https://fpy.li/14-45);
+    and [“Things to Know About Python Super,” part 1](https://fpy.li/14-46), [part
+    2](https://fpy.li/14-47), and [part 3](https://fpy.li/14-48). The oldest posts
+    use the Python 2 `super` syntax, but are still relevant.'
+  id: totrans-300
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 尽管这些帖子的标题是关于`super`内置函数的，但问题实际上并不是Python 3中不像Python 2那样丑陋的`super`内置函数。真正的问题在于多重继承，这本质上是复杂且棘手的。Michele
+    Simionato在他的[“Setting Multiple Inheritance Straight”](https://fpy.li/14-42)中不仅仅是批评，实际上还提出了一个解决方案：他实现了traits，这是一种源自Self语言的明确形式的mixin。Simionato在Python中有一系列关于多重继承的博客文章，包括[“The
+    wonders of cooperative inheritance, or using super in Python 3”](https://fpy.li/14-43)；[“Mixins
+    considered harmful,” part 1](https://fpy.li/14-44)和[part 2](https://fpy.li/14-45)；以及[“Things
+    to Know About Python Super,” part 1](https://fpy.li/14-46)、[part 2](https://fpy.li/14-47)和[part
+    3](https://fpy.li/14-48)。最早的帖子使用了Python 2的`super`语法，但仍然具有相关性。
+- en: I read the first edition of Grady Booch et al., *Object-Oriented Analysis and
+    Design*, 3rd ed., and highly recommend it as a general primer on object-oriented
+    thinking, independent of programming language. It is a rare book that covers multiple
+    inheritance without prejudice.
+  id: totrans-301
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我阅读了Grady Booch等人的第三版《面向对象的分析与设计》，强烈推荐它作为独立于编程语言的面向对象思维的通用入门书籍。这是一本罕见的涵盖多重继承而没有偏见的书籍。
+- en: Now more than ever it’s fashionable to avoid inheritance, so here are two references
+    about how to do that. Brandon Rhodes wrote [“The Composition Over Inheritance
+    Principle”](https://fpy.li/14-49), part of his excellent [*Python Design Patterns*](https://fpy.li/14-50)
+    guide. Augie Fackler and Nathaniel Manista presented [“The End Of Object Inheritance
+    & The Beginning Of A New Modularity”](https://fpy.li/14-51) at PyCon 2013. Fackler
+    and Manista talk about organizing systems around interfaces and functions that
+    handle objects implementing those interfaces, avoiding the tight coupling and
+    failure modes of classes and inheritance. That reminds me a lot of the Go way,
+    but they advocate it for Python.
+  id: totrans-302
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在比以往任何时候都更时尚地避免继承，所以这里有两个关于如何做到这一点的参考资料。Brandon Rhodes 写了 [“组合优于继承原则”](https://fpy.li/14-49)，这是他出色的
+    [*Python 设计模式*](https://fpy.li/14-50) 指南的一部分。Augie Fackler 和 Nathaniel Manista
+    在 PyCon 2013 上提出了 [“对象继承的终结与新模块化的开始”](https://fpy.li/14-51)。Fackler 和 Manista
+    谈到围绕接口和处理实现这些接口的对象的函数来组织系统，避免类和继承的紧密耦合和失败模式。这让我很想起 Go 的方式，但他们为 Python 提倡这种方式。
+- en: ^([1](ch14.html#idm46582418926608-marker)) Alan Kay, “The Early History of Smalltalk,”
+    in SIGPLAN Not. 28, 3 (March 1993), 69–95\. Also available [online](https://fpy.li/14-1).
+    Thanks to my friend Christiano Anderson, who shared this reference as I was writing
+    this chapter.
+  id: totrans-303
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([1](ch14.html#idm46582418926608-marker)) Alan Kay, “Smalltalk 的早期历史”，发表于 SIGPLAN
+    Not. 28, 3 (1993 年 3 月), 69–95\. 也可在线获取 [链接](https://fpy.li/14-1)。感谢我的朋友 Christano
+    Anderson，在我撰写本章时分享了这个参考资料。
+- en: '^([2](ch14.html#idm46582418895120-marker)) I only changed the docstring in
+    the example, because the original is misleading. It says: “Store items in the
+    order the keys were last added,” but that is not what the clearly named `LastUpdatedOrderedDict`
+    does.'
+  id: totrans-304
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([2](ch14.html#idm46582418895120-marker)) 我只修改了示例中的文档字符串，因为原文有误导性。它说：“按照键最后添加的顺序存储项目”，但这并不是明确命名的
+    `LastUpdatedOrderedDict` 所做的。
+- en: ^([3](ch14.html#idm46582418655568-marker)) It is also possible to provide only
+    the first argument, but this not useful and may soon be deprecated, with the blessing
+    of Guido van Rossum who created `super()` in the first place. See the discussion
+    at [“Is it time to deprecate unbound super methods?”](https://fpy.li/14-4).
+  id: totrans-305
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([3](ch14.html#idm46582418655568-marker)) 也可以只提供第一个参数，但这并不实用，可能很快就会被弃用，Guido
+    van Rossum 创建 `super()` 时也表示支持。请参见 [“是时候废弃未绑定的 super 方法了吗？”](https://fpy.li/14-4)
+    中的讨论。
+- en: ^([4](ch14.html#idm46582418488592-marker)) It is interesting to note that C++
+    has the notion of virtual and nonvirtual methods. Virtual methods are late bound,
+    but nonvirtual methods are bound at compile time. Although every method that we
+    can write in Python is late bound like a virtual method, built-in objects written
+    in C seem to have nonvirtual methods by default, at least in CPython.
+  id: totrans-306
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([4](ch14.html#idm46582418488592-marker)) 有趣的是，C++ 中有虚方法和非虚方法的概念。虚方法是晚期绑定的，但非虚方法在编译时绑定。尽管我们在
+    Python 中编写的每个方法都像虚方法一样晚期绑定，但用 C 编写的内置对象似乎默认具有非虚方法，至少在 CPython 中是这样。
+- en: ^([5](ch14.html#idm46582418252352-marker)) If you are curious, the experiment
+    is in the [*14-inheritance/strkeydict_dictsub.py*](https://fpy.li/14-7) file in
+    the [*fluentpython/example-code-2e*](https://fpy.li/code) repository.
+  id: totrans-307
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([5](ch14.html#idm46582418252352-marker)) 如果你感兴趣，实验在 [*14-inheritance/strkeydict_dictsub.py*](https://fpy.li/14-7)
+    文件中的 [*fluentpython/example-code-2e*](https://fpy.li/code) 仓库中。
+- en: ^([6](ch14.html#idm46582418139168-marker)) By the way, in this regard, PyPy
+    behaves more “correctly” than CPython, at the expense of introducing a minor incompatibility.
+    See [“Differences between PyPy and CPython”](https://fpy.li/14-5) for details.
+  id: totrans-308
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([6](ch14.html#idm46582418139168-marker)) 顺便说一句，在这方面，PyPy 的行为比 CPython 更“正确”，但代价是引入了一点不兼容性。详细信息请参见
+    [“PyPy 和 CPython 之间的差异”](https://fpy.li/14-5)。
+- en: ^([7](ch14.html#idm46582417674528-marker)) Classes also have a `.mro()` method,
+    but that’s an advanced feature of metaclass programming, mentioned in [“Classes
+    as Objects”](ch24.html#anatomy_of_classes). The content of the `__mro__` attribute
+    is what matters during normal usage of a class.
+  id: totrans-309
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([7](ch14.html#idm46582417674528-marker)) 类还有一个 `.mro()` 方法，但那是元类编程的高级特性，提到了
+    [“类作为对象”](ch24.html#anatomy_of_classes)。在类的正常使用过程中，`__mro__` 属性的内容才是重要的。
+- en: '^([8](ch14.html#idm46582416985840-marker)) Erich Gamma, Richard Helm, Ralph
+    Johnson, and John Vlissides, *Design Patterns: Elements of Reusable Object-Oriented
+    Software* (Addison-Wesley).'
+  id: totrans-310
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([8](ch14.html#idm46582416985840-marker)) Erich Gamma, Richard Helm, Ralph
+    Johnson, 和 John Vlissides，*设计模式：可复用面向对象软件的元素* (Addison-Wesley)。
+- en: ^([9](ch14.html#idm46582416981536-marker)) As previously mentioned, Java 8 allows
+    interfaces to provide method implementations as well. The new feature is called
+    [“Default Methods”](https://fpy.li/14-12) in the official Java Tutorial.
+  id: totrans-311
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([9](ch14.html#idm46582416981536-marker)) 正如之前提到的，Java 8 允许接口提供方法实现。这一新特性在官方
+    Java 教程中称为 [“默认方法”](https://fpy.li/14-12)。
+- en: ^([10](ch14.html#idm46582416780704-marker)) Django programmers know that the
+    `as_view` class method is the most visible part of the `View` interface, but it’s
+    not relevant to us here.
+  id: totrans-312
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([10](ch14.html#idm46582416780704-marker)) Django 程序员知道 `as_view` 类方法是 `View`
+    接口中最显著的部分，但在这里对我们并不重要。
+- en: ^([11](ch14.html#idm46582416772320-marker)) If you are into design patterns,
+    you’ll notice that the Django dispatch mechanism is a dynamic variation of the
+    [Template Method pattern](https://fpy.li/14-23). It’s dynamic because the `View`
+    class does not force subclasses to implement all handlers, but `dispatch` checks
+    at runtime if a concrete handler is available for the specific request.
+  id: totrans-313
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([11](ch14.html#idm46582416772320-marker)) 如果你对设计模式感兴趣，你会注意到 Django 的调度机制是
+    [模板方法模式](https://fpy.li/14-23) 的动态变体。它是动态的，因为 `View` 类不强制子类实现所有处理程序，而是 `dispatch`
+    在运行时检查是否为特定请求提供了具体处理程序。
+- en: ^([12](ch14.html#idm46582416633248-marker)) The principle appears on p. 20 of
+    the introduction to the book.
+  id: totrans-314
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([12](ch14.html#idm46582416633248-marker)) 这个原则出现在该书的引言第 20 页。
+- en: ^([13](ch14.html#idm46582416617616-marker)) Grady Booch et al., *Object-Oriented
+    Analysis and Design with Applications*, 3rd ed. (Addison-Wesley), p. 109.
+  id: totrans-315
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([13](ch14.html#idm46582416617616-marker)) Grady Booch 等人，*面向对象的分析与设计及应用*，第
+    3 版 (Addison-Wesley)，第 109 页。
+- en: ^([14](ch14.html#idm46582416566272-marker)) PEP 591 also introduces a [`Final`](https://fpy.li/14-35)
+    annotation for variables or attributes that should not be reassigned or overridden.
+  id: totrans-316
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([14](ch14.html#idm46582416566272-marker)) PEP 591还引入了一个[`Final`](https://fpy.li/14-35)注释，用于标记不应重新赋值或覆盖的变量或属性。
+- en: ^([15](ch14.html#idm46582416493344-marker)) Alan Kay, “The Early History of
+    Smalltalk,” in SIGPLAN Not. 28, 3 (March 1993), 69–95\. Also available [online](https://fpy.li/14-1).
+    Thanks to my friend Christiano Anderson, who shared this reference as I was writing
+    this chapter.
+  id: totrans-317
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([15](ch14.html#idm46582416493344-marker)) Alan Kay在SIGPLAN Not. 28, 3（1993年3月）中写道：“Smalltalk的早期历史”，69-95页。也可在线查看[链接](https://fpy.li/14-1)。感谢我的朋友Christiano
+    Anderson，在我撰写本章时分享了这个参考资料。
+- en: '^([16](ch14.html#idm46582416471856-marker)) My friend and technical reviewer
+    Leonardo Rochael explains better than I could: “The continued existence, but persistent
+    lack of arrival, of Perl 6 was draining willpower out of the evolution of Perl
+    itself. Now Perl continues to be developed as a separate language (it’s up to
+    version 5.34 as of now) with no shadow of deprecation because of the language
+    formerly known as Perl 6.”'
+  id: totrans-318
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([16](ch14.html#idm46582416471856-marker)) 我的朋友和技术审阅员Leonardo Rochael解释得比我更好：“Perl
+    6的持续存在，但始终未到来，使Perl本身的发展失去了意志力。现在Perl继续作为一个独立的语言进行开发（截至目前为止已经到了版本5.34），没有因为曾经被称为Perl
+    6的语言而被废弃的阴影。”

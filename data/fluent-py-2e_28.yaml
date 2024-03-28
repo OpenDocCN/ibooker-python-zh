@@ -1,0 +1,2084 @@
+- en: Chapter 23\. Attribute Descriptors
+  id: totrans-0
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 第 23 章。属性描述符
+- en: Learning about descriptors not only provides access to a larger toolset, it
+    creates a deeper understanding of how Python works and an appreciation for the
+    elegance of its design.
+  id: totrans-1
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+  zh: 了解描述符不仅提供了更大的工具集，还深入了解了 Python 的工作原理，并欣赏了其设计的优雅之处。
+- en: ''
+  id: totrans-2
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: Raymond Hettinger, Python core developer and guru^([1](ch23.html#idm46582373585456))
+  id: totrans-3
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+  zh: Raymond Hettinger，Python 核心开发者和专家^([1](ch23.html#idm46582373585456))
+- en: Descriptors are a way of reusing the same access logic in multiple attributes.
+    For example, field types in ORMs, such as the Django ORM and SQLAlchemy, are descriptors,
+    managing the flow of data from the fields in a database record to Python object
+    attributes and vice versa.
+  id: totrans-4
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 描述符是在多个属性中重用相同访问逻辑的一种方式。例如，在 ORM 中，如 Django ORM 和 SQLAlchemy 中的字段类型是描述符，管理数据从数据库记录中的字段流向
+    Python 对象属性，反之亦然。
+- en: A descriptor is a class that implements a dynamic protocol consisting of the
+    `__get__`, `__set__`, and `__delete__` methods. The `property` class implements
+    the full descriptor protocol. As usual with dynamic protocols, partial implementations
+    are OK. In fact, most descriptors we see in real code implement only `__get__`
+    and `__set__`, and many implement only one of these methods.
+  id: totrans-5
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 描述符是实现由`__get__`、`__set__`和`__delete__`方法组成的动态协议的类。`property`类实现了完整的描述符协议。与动态协议一样，部分实现是可以的。事实上，我们在实际代码中看到的大多数描述符只实现了`__get__`和`__set__`，许多只实现了这些方法中的一个。
+- en: Descriptors are a distinguishing feature of Python, deployed not only at the
+    application level but also in the language infrastructure. User-defined functions
+    are descriptors. We’ll see how the descriptor protocol allows methods to operate
+    as bound or unbound methods, depending on how they are called.
+  id: totrans-6
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 描述���是 Python 的一个显著特征，不仅在应用程序级别部署，还在语言基础设施中部署。用户定义的函数是描述符。我们将看到描述符协议如何允许方法作为绑定或非绑定方法运行，具体取决于它们的调用方式。
+- en: Understanding descriptors is key to Python mastery. This is what this chapter
+    is about.
+  id: totrans-7
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 理解描述符是掌握 Python 的关键。这就是本章的主题。
+- en: In this chapter we’ll refactor the bulk food example we first saw in [“Using
+    a Property for Attribute Validation”](ch22.html#prop_validation_sec), replacing
+    properties with descriptors. This will make it easier to reuse the attribute validation
+    logic across different classes. We’ll tackle the concepts of overriding and nonoverriding
+    descriptors, and realize that Python functions are descriptors. Finally we’ll
+    see some tips about implementing descriptors.
+  id: totrans-8
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在本章中，我们将重构我们在[“使用属性进行属性验证”](ch22.html#prop_validation_sec)中首次看到的大量食品示例，将属性替换为描述符。这将使在不同类之间重用属性验证逻辑变得更容易。我们将解决覆盖和非覆盖描述符的概念，并意识到
+    Python 函数也是描述符。最后，我们将看到一些关于实现描述符的提示。
+- en: What’s New in This Chapter
+  id: totrans-9
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 本章的新内容
+- en: 'The `Quantity` descriptor example in [“LineItem Take #4: Automatic Naming of
+    Storage Attributes”](#auto_storage_sec) was dramatically simplified thanks to
+    the `__set_name__` special method added to the descriptor protocol in Python 3.6.'
+  id: totrans-10
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '由于 Python 3.6 中添加了描述符协议的`__set_name__`特殊方法，[“LineItem Take #4: 自动命名存储属性”](#auto_storage_sec)中的`Quantity`描述符示例得到了极大简化。'
+- en: 'I removed the property factory example formerly in [“LineItem Take #4: Automatic
+    Naming of Storage Attributes”](#auto_storage_sec) because it became irrelevant:
+    the point was to show an alternative way of solving the `Quantity` problem, but
+    with the addition of `__set_name__`, the descriptor solution becomes much simpler.'
+  id: totrans-11
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '我删除了以前在[“LineItem Take #4: 自动命名存储属性”](#auto_storage_sec)中的属性工厂示例，因为它变得无关紧要：重点是展示解决`Quantity`问题的另一种方法，但随着`__set_name__`的添加，描述符解决方案变得简单得多。'
+- en: 'The `AutoStorage` class that used to appear in [“LineItem Take #5: A New Descriptor
+    Type”](#new_descr_type_sec) is also gone because `__set_name__` made it obsolete.'
+  id: totrans-12
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '以前出现在[“LineItem Take #5: 新的描述符类型”](#new_descr_type_sec)中的`AutoStorage`类也消失了，因为`__set_name__`使其变得过时。'
+- en: 'Descriptor Example: Attribute Validation'
+  id: totrans-13
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 描述符示例：属性验证
+- en: As we saw in [“Coding a Property Factory”](ch22.html#coding_prop_factory_sec),
+    a property factory is a way to avoid repetitive coding of getters and setters
+    by applying functional programming patterns. A property factory is a higher-order
+    function that creates a parameterized set of accessor functions and builds a custom
+    property instance from them, with closures to hold settings like the `storage_name`.
+    The object-oriented way of solving the same problem is a descriptor class.
+  id: totrans-14
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 正如我们在[“编写属性工厂”](ch22.html#coding_prop_factory_sec)中看到的，属性工厂是一种避免重复编写获取器和设置器的方法，通过应用函数式编程模式来实现。属性工厂是一个高阶函数，它创建一个参数化的访问器函数集，并从中构建一个自定义属性实例，使用闭包来保存像`storage_name`这样的设置。解决相同问题的面向对象方式是使用描述符类。
+- en: We’ll continue the series of `LineItem` examples where we left off, in [“Coding
+    a Property Factory”](ch22.html#coding_prop_factory_sec), by refactoring the `quantity`
+    property factory into a `Quantity` descriptor class. This will make it easier
+    to use.
+  id: totrans-15
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们将继续之前留下的`LineItem`示例系列，在[“编写属性工厂”](ch22.html#coding_prop_factory_sec)中，通过将`quantity`属性工厂重构为`Quantity`描述符类来使其更易于使用。
+- en: 'LineItem Take #3: A Simple Descriptor'
+  id: totrans-16
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 'LineItem Take #3: 一个简单的描述符'
+- en: As we said in the introduction, a class implementing a `__get__`, a `__set__`,
+    or a `__delete__` method is a descriptor. You use a descriptor by declaring instances
+    of it as class attributes of another class.
+  id: totrans-17
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 正如我们在介绍中所说，实现`__get__`、`__set__`或`__delete__`方法的类是描述符。您通过将其实例声明为另一个类的类属性来使用描述符。
+- en: 'We’ll create a `Quantity` descriptor, and the `LineItem` class will use two
+    instances of `Quantity`: one for managing the `weight` attribute, the other for
+    `price`. A diagram helps, so take a look at [Figure 23-1](#lineitem3_uml).'
+  id: totrans-18
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们将创建一个`Quantity`描述符，`LineItem`类将使用两个`Quantity`实例：一个用于管理`weight`属性，另一个用于`price`。图表有助于理解，所以看一下[图 23-1](#lineitem3_uml)。
+- en: '![UML class diagram for `Quantity` and `LineItem`](assets/flpy_2301.png)'
+  id: totrans-19
+  prefs: []
+  type: TYPE_IMG
+  zh: '![`Quantity`和`LineItem`的 UML 类图](assets/flpy_2301.png)'
+- en: Figure 23-1\. UML class diagram for `LineItem` using a descriptor class named
+    `Quantity`. Underlined attributes in UML are class attributes. Note that weight
+    and price are instances of `Quantity` attached to the `LineItem` class, but `LineItem`
+    instances also have their own weight and price attributes where those values are
+    stored.
+  id: totrans-20
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 图23-1。`LineItem`使用名为`Quantity`的描述符类的UML类图。在UML中带有下划线的属性是类属性。请注意，weight和price是附加到`LineItem`类的`Quantity`实例，但`LineItem`实例也有自己的weight和price属性，其中存储这些值。
+- en: 'Note that the word `weight` appears twice in [Figure 23-1](#lineitem3_uml),
+    because there are really two distinct attributes named `weight`: one is a class
+    attribute of `LineItem`, the other is an instance attribute that will exist in
+    each `LineItem` object. This also applies to `price`.'
+  id: totrans-21
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 请注意，单词`weight`在[图23-1](#lineitem3_uml)中出现两次，因为实际上有两个名为`weight`的不同属性：一个是`LineItem`的类属性，另一个是将存在于每个`LineItem`对象中的实例属性。`price`也适用于此。
+- en: Terms to understand descriptors
+  id: totrans-22
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 理解描述符的术语
+- en: Implementing and using descriptors involves several components, and it is useful
+    to be precise when naming those components. I will use the following terms and
+    definitions as I describe the examples in this chapter. They will be easier to
+    understand once you see the code, but I wanted to put the definitions up front
+    so you can refer back to them when needed.
+  id: totrans-23
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 实现和使用描述符涉及几个组件，精确命名这些组件是很有用的。在本章的示例中，我将使用以下术语和定义来描述。一旦看到代码，它们将更容易理解，但我想提前列出这些定义，以便您在需要时可以参考它们。
+- en: Descriptor class
+  id: totrans-24
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 描述符类
+- en: A class implementing the descriptor protocol. That’s `Quantity` in [Figure 23-1](#lineitem3_uml).
+  id: totrans-25
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 实现描述符协议的类。在[图23-1](#lineitem3_uml)中就是`Quantity`。
+- en: Managed class
+  id: totrans-26
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 托管类
+- en: The class where the descriptor instances are declared as class attributes. In
+    [Figure 23-1](#lineitem3_uml), `LineItem` is the managed class.
+  id: totrans-27
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 声明描述符实例为类属性的类。在[图23-1](#lineitem3_uml)中，`LineItem`是托管类。
+- en: Descriptor instance
+  id: totrans-28
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 描述符实例
+- en: Each instance of a descriptor class, declared as a class attribute of the managed
+    class. In [Figure 23-1](#lineitem3_uml), each descriptor instance is represented
+    by a composition arrow with an underlined name (the underline means class attribute
+    in UML). The black diamonds touch the `LineItem` class, which contains the descriptor
+    instances.
+  id: totrans-29
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 每个描述符类的实例，声明为托管类的类属性。在[图23-1](#lineitem3_uml)中，每个描述符实例由一个带有下划线名称的组合箭头表示（下划线表示UML中的类属性）。黑色菱形接触`LineItem`类，其中包含描述符实例。
+- en: Managed instance
+  id: totrans-30
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 托管实例
+- en: One instance of the managed class. In this example, `LineItem` instances are
+    the managed instances (they are not shown in the class diagram).
+  id: totrans-31
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 托管类的一个实例。在这个例子中，`LineItem`实例是托管实例（它们没有显示在类图中）。
+- en: Storage attribute
+  id: totrans-32
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 存储属性
+- en: An attribute of the managed instance that holds the value of a managed attribute
+    for that particular instance. In [Figure 23-1](#lineitem3_uml), the `LineItem`
+    instance attributes `weight` and `price` are the storage attributes. They are
+    distinct from the descriptor instances, which are always class attributes.
+  id: totrans-33
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 托管实例的属性，保存该特定实例的托管属性的值。在[图23-1](#lineitem3_uml)中，`LineItem`实例的属性`weight`和`price`是存储属性。它们与描述符实例不同，后者始终是类属性。
+- en: Managed attribute
+  id: totrans-34
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 托管属性
+- en: A public attribute in the managed class that is handled by a descriptor instance,
+    with values stored in storage attributes. In other words, a descriptor instance
+    and a storage attribute provide the infrastructure for a managed attribute.
+  id: totrans-35
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 托管类中的公共属性，由描述符实例处理，值存储在存储属性中。换句话说，描述符实例和存储属性为托管属性提供基础设施。
+- en: It’s important to realize that `Quantity` instances are class attributes of
+    `LineItem`. This crucial point is highlighted by the mills and gizmos in [Figure 23-2](#lineitem3_uml_mgn).
+  id: totrans-36
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 重要的是要意识到`Quantity`实例是`LineItem`的类属性。这一关键点在[图23-2](#lineitem3_uml_mgn)中由磨坊和小玩意突出显示。
+- en: '![UML+MGN class diagram for `Quantity` and `LineItem`](assets/flpy_2302.png)'
+  id: totrans-37
+  prefs: []
+  type: TYPE_IMG
+  zh: '![用于`Quantity`和`LineItem`的UML+MGN类图](assets/flpy_2302.png)'
+- en: 'Figure 23-2\. UML class diagram annotated with MGN (Mills & Gizmos Notation):
+    classes are mills that produce gizmos—the instances. The `Quantity` mill produces
+    two gizmos with round heads, which are attached to the `LineItem` mill: weight
+    and price. The `LineItem` mill produces rectangular gizmos that have their own
+    weight and price attributes where those values are stored.'
+  id: totrans-38
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 图23-2。使用MGN（磨坊和小玩意符号）注释的UML类图：类是生产小玩意的磨坊。`Quantity`磨坊生成两个带有圆形头部的小玩意，它们附加到`LineItem`磨坊：weight和price。`LineItem`磨坊生成具有自己的weight和price属性的矩形小玩意，其中存储这些值。
+- en: 'Enough doodling for now. Here is the code: [Example 23-1](#quantity_v3) shows
+    the `Quantity` descriptor class, and [Example 23-2](#lineitem_class_v3) lists
+    a new `LineItem` class using two instances of `Quantity`.'
+  id: totrans-39
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在足够涂鸦了。这里是代码：[示例23-1](#quantity_v3)展示了`Quantity`描述符类，[���例23-2](#lineitem_class_v3)列出了使用两个`Quantity`实例的新`LineItem`类。
+- en: 'Example 23-1\. bulkfood_v3.py: `Quantity` descriptor does not accept negative
+    values'
+  id: totrans-40
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例23-1。bulkfood_v3.py：`Quantity`描述符不接受负值
+- en: '[PRE0]'
+  id: totrans-41
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE0]'
+- en: '[![1](assets/1.png)](#co_attribute_descriptors_CO1-1)'
+  id: totrans-42
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_attribute_descriptors_CO1-1)'
+- en: Descriptor is a protocol-based feature; no subclassing is needed to implement
+    one.
+  id: totrans-43
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 描述符是基于协议的特性；不需要子类化来实现。
+- en: '[![2](assets/2.png)](#co_attribute_descriptors_CO1-2)'
+  id: totrans-44
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_attribute_descriptors_CO1-2)'
+- en: 'Each `Quantity` instance will have a `storage_name` attribute: that’s the name
+    of the storage attribute to hold the value in the managed instances.'
+  id: totrans-45
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 每个`Quantity`实例都将有一个`storage_name`属性：这是用于在托管实例中保存值的存储属性的名称。
+- en: '[![3](assets/3.png)](#co_attribute_descriptors_CO1-3)'
+  id: totrans-46
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_attribute_descriptors_CO1-3)'
+- en: '`__set__` is called when there is an attempt to assign to the managed attribute.
+    Here, `self` is the descriptor instance (i.e., `LineItem.weight` or `LineItem.price`),
+    `instance` is the managed instance (a `LineItem` instance), and `value` is the
+    value being assigned.'
+  id: totrans-47
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当尝试对托管属性进行赋值时，将调用`__set__`。在这里，`self`是描述符实例（即`LineItem.weight`或`LineItem.price`），`instance`是托管实例（一个`LineItem`实例），`value`是正在分配的值。
+- en: '[![4](assets/4.png)](#co_attribute_descriptors_CO1-4)'
+  id: totrans-48
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_attribute_descriptors_CO1-4)'
+- en: We must store the attribute value directly into `__dict__`; calling `set​attr​(instance,
+    self.storage_name)` would trigger the `__set__` method again, leading to infinite
+    recursion.
+  id: totrans-49
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们必须直接将属性值存储到`__dict__`中；调用`set​attr​(instance, self.storage_name)`将再次触发`__set__`方法，导致无限递归。
+- en: '[![5](assets/5.png)](#co_attribute_descriptors_CO1-5)'
+  id: totrans-50
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_attribute_descriptors_CO1-5)'
+- en: We need to implement `__get__` because the name of the managed attribute may
+    not be the same as the `storage_name`. The `owner` argument will be explained
+    shortly.
+  id: totrans-51
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们需要实现`__get__`，因为被管理属性的名称可能与`storage_name`不同。`owner`参数将很快解释。
+- en: 'Implementing `__get__` is necessary because a user could write something like
+    this:'
+  id: totrans-52
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 实现`__get__`是必要的，因为用户可能会编写类似于这样的内容：
+- en: '[PRE1]'
+  id: totrans-53
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE1]'
+- en: In the `House` class, the managed attribute is `rooms`, but the storage attribute
+    is `number_of_rooms`. Given a `House` instance named `chaos_manor`, reading and
+    writing `chaos_manor.rooms` goes through the `Quantity` descriptor instance attached
+    to `rooms`, but reading and writing `chaos_manor.number_of_rooms` bypasses the
+    descriptor.
+  id: totrans-54
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在`House`类中，被管理的属性是`rooms`，但存储属性是`number_of_rooms`。给定一个名为`chaos_manor`的`House`实例，读取和写入`chaos_manor.rooms`会通过附加到`rooms`的`Quantity`描述符实例，但读取和写入`chaos_manor.number_of_rooms`会绕过描述符。
+- en: 'Note that `__get__` receives three arguments: `self`, `instance`, and `owner`.
+    The `owner` argument is a reference to the managed class (e.g., `LineItem`), and
+    it’s useful if you want the descriptor to support retrieving a class attribute—perhaps
+    to emulate Python’s default behavior of retrieving a class attribute when the
+    name is not found in the instance.'
+  id: totrans-55
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 请注意，`__get__`接收三个参数：`self`、`instance`和`owner`。`owner`参数是被管理类的引用（例如`LineItem`），如果您希望描述符支持检索类属性以模拟Python在实例中找不到名称时检索类属性的默认行为，则很有用。
+- en: If a managed attribute, such as `weight`, is retrieved via the class like `Line​Item.weight`,
+    the descriptor `__get__` method receives `None` as the value for the `instance`
+    argument.
+  id: totrans-56
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果通过类（如`Line​Item.weight`）检索被管理属性（例如`weight`），则描述符`__get__`方法的`instance`参数的值为`None`。
+- en: 'To support introspection and other metaprogramming tricks by the user, it’s
+    a good practice to make `__get__` return the descriptor instance when the managed
+    attribute is accessed through the class. To do that, we’d code `__get__` like
+    this:'
+  id: totrans-57
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了支持用户的内省和其他元编程技巧，最好让`__get__`在通过类访问被管理属性时返回描述符实例。为此，我们将像这样编写`__get__`：
+- en: '[PRE2]'
+  id: totrans-58
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE2]'
+- en: '[Example 23-2](#lineitem_class_v3) demonstrates the use of `Quantity` in `LineItem`.'
+  id: totrans-59
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 23-2](#lineitem_class_v3)演示了在`LineItem`中使用`Quantity`。'
+- en: 'Example 23-2\. bulkfood_v3.py: `Quantity` descriptors manage attributes in
+    `LineItem`'
+  id: totrans-60
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 23-2\. bulkfood_v3.py：`Quantity`描述符管理`LineItem`中的属性
+- en: '[PRE3]'
+  id: totrans-61
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE3]'
+- en: '[![1](assets/1.png)](#co_attribute_descriptors_CO2-1)'
+  id: totrans-62
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_attribute_descriptors_CO2-1)'
+- en: The first descriptor instance will manage the `weight` attribute.
+  id: totrans-63
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 第一个描述符实例将管理`weight`属性。
+- en: '[![2](assets/2.png)](#co_attribute_descriptors_CO2-2)'
+  id: totrans-64
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_attribute_descriptors_CO2-2)'
+- en: The second descriptor instance will manage the `price` attribute.
+  id: totrans-65
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 第二个描述符实例将管理`price`属性。
+- en: '[![3](assets/3.png)](#co_attribute_descriptors_CO2-3)'
+  id: totrans-66
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_attribute_descriptors_CO2-3)'
+- en: The rest of the class body is as simple and clean as the original code in *bulkfood_v1.py*
+    ([Example 22-19](ch22.html#lineitem_class_v1)).
+  id: totrans-67
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 类主体的其余部分与*bulkfood_v1.py*中的原始代码一样简单干净（[示例 22-19](ch22.html#lineitem_class_v1)）。
+- en: The code in [Example 23-2](#lineitem_class_v3) works as intended, preventing
+    the sale of truffles for $0:^([3](ch23.html#idm46582373099344))
+  id: totrans-68
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 23-2](#lineitem_class_v3)中的代码按预期运行，防止以$0的价格出售松露:^([3](ch23.html#idm46582373099344))'
+- en: '[PRE4]'
+  id: totrans-69
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE4]'
+- en: Warning
+  id: totrans-70
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 警告
+- en: 'When coding descriptor `__get__` and `__set__` methods, keep in mind what the
+    `self` and `instance` arguments mean: `self` is the descriptor instance, and `instance`
+    is the managed instance. Descriptors managing instance attributes should store
+    values in the managed instances. That’s why Python provides the `instance` argument
+    to the descriptor methods.'
+  id: totrans-71
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在编写描述符`__get__`和`__set__`方法时，请记住`self`和`instance`参数的含义：`self`是描述符实例，`instance`是被管理实例。管理实例属性的描述符应将值存储在被管理实例中。这就是为什么Python提供`instance`参数给描述符方法的原因。
+- en: 'It may be tempting, but wrong, to store the value of each managed attribute
+    in the descriptor instance itself. In other words, in the `__set__` method, instead
+    of coding:'
+  id: totrans-72
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 存储每个被管理属性的值在描述符实例本身中可能很诱人，但是错误的。换句话说，在`__set__`方法中，而不是编写：
+- en: '[PRE5]'
+  id: totrans-73
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE5]'
+- en: 'the tempting, but bad, alternative would be:'
+  id: totrans-74
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 诱人但错误的替代方案是：
+- en: '[PRE6]'
+  id: totrans-75
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE6]'
+- en: 'To understand why this would be wrong, think about the meaning of the first
+    two arguments to `__set__`: `self` and `instance`. Here, `self` is the descriptor
+    instance, which is actually a class attribute of the managed class. You may have
+    thousands of `LineItem` instances in memory at one time, but you’ll only have
+    two instances of the descriptors: the class attributes `LineItem.weight` and `LineItem.price`.
+    So anything you store in the descriptor instances themselves is actually part
+    of a `LineItem` class attribute, and therefore is shared among all `LineItem`
+    instances.'
+  id: totrans-76
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 要理解为什么这样做是错误的，请考虑`__set__`的前两个参数的含义：`self`和`instance`。这里，`self`是描述符实例，实际上是被管理类的类属性。您可能在内存中同时拥有成千上万个`LineItem`实例，但只有两个描述符实例：类属性`LineItem.weight`和`LineItem.price`。因此，您存储在描述符实例本身中的任何内容实际上是`LineItem`类属性的一部分，因此在所有`LineItem`实例之间共享。
+- en: 'A drawback of [Example 23-2](#lineitem_class_v3) is the need to repeat the
+    names of the attributes when the descriptors are instantiated in the managed class
+    body. It would be nice if the `LineItem` class could be declared like this:'
+  id: totrans-77
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 23-2](#lineitem_class_v3)的一个缺点是在被管理类主体中实例化描述符时需要重复属性名称。如果`LineItem`类可以这样声明就好了：'
+- en: '[PRE7]'
+  id: totrans-78
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE7]'
+- en: As it stands, [Example 23-2](#lineitem_class_v3) requires naming each `Quantity`
+    explicitly, which is not only inconvenient but dangerous. If a programmer copying
+    and pasting code forgets to edit both names and writes something like `price =
+    Quantity('weight')`, the program will misbehave badly, clobbering the value of
+    `weight` whenever the `price` is set.
+  id: totrans-79
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 目前，[示例23-2](#lineitem_class_v3)需要显式命名每个`Quantity`，这不仅不方便，而且很危险。如果一个程序员复制粘贴代码时忘记编辑两个名称，并写出类似`price
+    = Quantity('weight')`的内容，程序将表现糟糕，每当设置`price`时都会破坏`weight`的值。
+- en: The problem is that—as we saw in [Chapter 6](ch06.html#mutability_and_references)—the
+    righthand side of an assignment is executed before the variable exists. The expression
+    `Quantity()` is evaluated to create a descriptor instance, and there is no way
+    the code in the `Quantity` class can guess the name of the variable to which the
+    descriptor will be bound (e.g., `weight` or `price`).
+  id: totrans-80
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 问题在于——正如我们在[第6章](ch06.html#mutability_and_references)中看到的——赋值的右侧在变量存在之前执行。表达式`Quantity()`被评估为创建一个描述符实例，而`Quantity`类中的代码无法猜测描述符将绑定到的变量的名称（例如`weight`或`price`）。
+- en: Thankfully, the descriptor protocol now supports the aptly named `__set_name__`
+    special method. We’ll see how to use it next.
+  id: totrans-81
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 幸运的是，描述符协议现在支持名为`__set_name__`的特殊方法。我们将看到如何使用它。
+- en: Note
+  id: totrans-82
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 注意
+- en: Automatic naming of a descriptor storage attribute used to be a thorny issue.
+    In the first edition of *Fluent Python*, I devoted several pages and lines of
+    code in this chapter and the next to presenting different solutions, including
+    the use of a class decorator, and then metaclasses in [Chapter 24](ch24.html#class_metaprog).
+    This was greatly simplified in Python 3.6.
+  id: totrans-83
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 描述符存储属性的自动命名曾经是一个棘手的问题。在*流畅的Python*第一版中，我在本章和下一章中花了几页和几行代码来介绍不同的解决方案，包括使用类装饰器，然后在[第24章](ch24.html#class_metaprog)中使用元类。这在Python
+    3.6中得到了极大简化。
+- en: 'LineItem Take #4: Automatic Naming of Storage Attributes'
+  id: totrans-84
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: LineItem 第4版：自动命名存储属性
+- en: To avoid retyping the attribute name in the descriptor instances, we’ll implement
+    `__set_name__` to set the `storage_name` of each `Quantity` instance. The `__set_name__`
+    special method was added to the descriptor protocol in Python 3.6. The interpreter
+    calls `__set_name__` on each descriptor it finds in a `class` body—if the descriptor
+    implements it.^([4](ch23.html#idm46582372934224))
+  id: totrans-85
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了避免在描述符实例中重新输入属性名称，我们将实现`__set_name__`来设置每个`Quantity`实例的`storage_name`。`__set_name__`特殊方法在Python
+    3.6中添加到描述符协议中。解释器在`class`体中找到的每个描述符上调用`__set_name__`——如果描述符实现了它。^([4](ch23.html#idm46582372934224))
+- en: In [Example 23-3](#lineitem_class_v4), the `LineItem` descriptor class doesn’t
+    need an `__init__`. Instead, `__set_item__` saves the name of the storage attribute.
+  id: totrans-86
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在[示例23-3](#lineitem_class_v4)中，`LineItem`描述符类不需要`__init__`。相反，`__set_item__`保存了存储属性的名称。
+- en: 'Example 23-3\. bulkfood_v4.py: `__set_name__` sets the name for each `Quantity`
+    descriptor instance'
+  id: totrans-87
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例23-3\. bulkfood_v4.py：`__set_name__`为每个`Quantity`描述符实例设置名称
+- en: '[PRE8]'
+  id: totrans-88
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE8]'
+- en: '[![1](assets/1.png)](#co_attribute_descriptors_CO3-1)'
+  id: totrans-89
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_attribute_descriptors_CO3-1)'
+- en: '`self` is the descriptor instance (not the managed instance), `owner` is the
+    managed class, and `name` is the name of the attribute of `owner` to which this
+    descriptor instance was assigned in the class body of `owner`.'
+  id: totrans-90
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`self`是描述符实例（而不是托管实例），`owner`是托管类，`name`是`owner`的属性的名称，在`owner`的类体中将此描述符实例分配给的名称。'
+- en: '[![2](assets/2.png)](#co_attribute_descriptors_CO3-2)'
+  id: totrans-91
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_attribute_descriptors_CO3-2)'
+- en: This is what the `__init__` did in [Example 23-1](#quantity_v3).
+  id: totrans-92
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这就是[示例23-1](#quantity_v3)中的`__init__`所做的事情。
+- en: '[![3](assets/3.png)](#co_attribute_descriptors_CO3-3)'
+  id: totrans-93
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_attribute_descriptors_CO3-3)'
+- en: The `__set__` method here is exactly the same as in [Example 23-1](#quantity_v3).
+  id: totrans-94
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这里的`__set__`方法与[示例23-1](#quantity_v3)中完全相同。
+- en: '[![4](assets/4.png)](#co_attribute_descriptors_CO3-4)'
+  id: totrans-95
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_attribute_descriptors_CO3-4)'
+- en: Implementing `__get__` is not necessary because the name of the storage attribute
+    matches the name of the managed attribute. The expression `product.price` gets
+    the `price` attribute directly from the `LineItem` instance.
+  id: totrans-96
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 实现`__get__`是不必要的，因为存储属性的名称与托管属性的名称匹配。表达式`product.price`直接从`LineItem`实例获取`price`属性。
+- en: '[![5](assets/5.png)](#co_attribute_descriptors_CO3-5)'
+  id: totrans-97
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_attribute_descriptors_CO3-5)'
+- en: Now we don’t need to pass the managed attribute name to the `Quantity` constructor.
+    That was the goal for this version.
+  id: totrans-98
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在我们不需要将托管属性名称传递给`Quantity`构造函数。这是这个版本的目标。
+- en: 'Looking at [Example 23-3](#lineitem_class_v4), you may think that’s a lot of
+    code just for managing a couple of attributes, but it’s important to realize that
+    the descriptor logic is now abstracted into a separate code unit: the `Quantity`
+    class. Usually we do not define a descriptor in the same module where it’s used,
+    but in a separate utility module designed to be used across the application—even
+    in many applications, if you are developing a library or framework.'
+  id: totrans-99
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 查看[示例23-3](#lineitem_class_v4)，您可能会认为这是为���管理几个属性而编写的大量代码，但重要的是要意识到描述符逻辑现在抽象为一个单独的代码单元：`Quantity`类。通常我们不会在使用它的同一模块中定义描述符，而是在一个专门设计用于跨应用程序使用的实用程序模块中定义描述符——即使在许多应用程序中，如果您正在开发一个库或框架。
+- en: With this in mind, [Example 23-4](#lineitem_class_v4c) better represents the
+    typical usage of a descriptor.
+  id: totrans-100
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 有了这个想法，[示例23-4](#lineitem_class_v4c)更好地代表了描述符的典型用法。
+- en: 'Example 23-4\. bulkfood_v4c.py: `LineItem` definition uncluttered; the `Quantity`
+    descriptor class now resides in the imported `model_v4c` module'
+  id: totrans-101
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 23-4\. bulkfood_v4c.py：`LineItem`定义简洁；`Quantity`描述符类现在位于导入的`model_v4c`模块中
+- en: '[PRE9]'
+  id: totrans-102
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE9]'
+- en: '[![1](assets/1.png)](#co_attribute_descriptors_CO4-1)'
+  id: totrans-103
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_attribute_descriptors_CO4-1)'
+- en: Import the `model_v4c` module where `Quantity` is implemented.
+  id: totrans-104
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 导入实现`Quantity`的`model_v4c`模块。
+- en: '[![2](assets/2.png)](#co_attribute_descriptors_CO4-2)'
+  id: totrans-105
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_attribute_descriptors_CO4-2)'
+- en: Put `model.Quantity` to use.
+  id: totrans-106
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 使用`model.Quantity`。
+- en: 'Django users will notice that [Example 23-4](#lineitem_class_v4c) looks a lot
+    like a model definition. It’s no coincidence: Django model fields are descriptors.'
+  id: totrans-107
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Django 用户会注意到 [示例 23-4](#lineitem_class_v4c) 看起来很像一个模型定义。这不是巧合：Django 模型字段就是描述符。
+- en: Because descriptors are implemented as classes, we can leverage inheritance
+    to reuse some of the code we have for new descriptors. That’s what we’ll do in
+    the following section.
+  id: totrans-108
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 因为描述符是以类的形式实现的，我们可以利用继承来重用一些用于新描述符的代码。这就是我们将在下一节中做的事情。
+- en: 'LineItem Take #5: A New Descriptor Type'
+  id: totrans-109
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: LineItem 第五版：一种新的描述符类型
+- en: 'The imaginary organic food store hits a snag: somehow a line item instance
+    was created with a blank description, and the order could not be fulfilled. To
+    prevent that, we’ll create a new descriptor, `NonBlank`. As we design `NonBlank`,
+    we realize it will be very much like the `Quantity` descriptor, except for the
+    validation logic.'
+  id: totrans-110
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 想象中的有机食品店遇到了麻烦：某种方式创建了一个带有空白描述的行项目实例，订单无法完成。为了防止这种情况发生，我们将创建一个新的描述符 `NonBlank`。在设计
+    `NonBlank` 时，我们意识到它将非常类似于 `Quantity` 描述符，除了验证逻辑。
+- en: This prompts a refactoring, producing `Validated`, an abstract class that overrides
+    the `__set__` method, calling a `validate` method that must be implemented by
+    subclasses.
+  id: totrans-111
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这促使进行重构，生成 `Validated`，一个覆盖 `__set__` 方法的抽象类，调用必须由子类实现的 `validate` 方法。
+- en: We’ll then rewrite `Quantity`, and implement `NonBlank` by inheriting from `Validated`
+    and just coding the `validate` methods.
+  id: totrans-112
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 然后我们将重写 `Quantity`，并通过继承 `Validated` 并编写 `validate` 方法来实现 `NonBlank`。
+- en: 'The relationship among `Validated`, `Quantity`, and `NonBlank` is an application
+    of the *template method* as described in the *Design Patterns* classic:'
+  id: totrans-113
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`Validated`、`Quantity` 和 `NonBlank` 之间的关系是《设计模式》经典中描述的 *模板方法* 的应用：'
+- en: A template method defines an algorithm in terms of abstract operations that
+    subclasses override to provide concrete behavior.^([5](ch23.html#idm46582372566736))
+  id: totrans-114
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+  zh: 模板方法以抽象操作的形式定义算法，子类重写这些操作以提供具体行为。^([5](ch23.html#idm46582372566736))
+- en: In [Example 23-5](#model_v5_abc), `Validated.__set__` is the template method
+    and `self.validate` is the abstract operation.
+  id: totrans-115
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在 [示例 23-5](#model_v5_abc) 中，`Validated.__set__` 是模板方法，`self.validate` 是抽象操作。
+- en: 'Example 23-5\. model_v5.py: the `Validated` ABC'
+  id: totrans-116
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 23-5\. model_v5.py：`Validated` 抽象基类
+- en: '[PRE10]'
+  id: totrans-117
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE10]'
+- en: '[![1](assets/1.png)](#co_attribute_descriptors_CO5-1)'
+  id: totrans-118
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_attribute_descriptors_CO5-1)'
+- en: '`__set__` delegates validation to the `validate` method…'
+  id: totrans-119
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`__set__` 将验证委托给 `validate` 方法…'
+- en: '[![2](assets/2.png)](#co_attribute_descriptors_CO5-2)'
+  id: totrans-120
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_attribute_descriptors_CO5-2)'
+- en: …then uses the returned `value` to update the stored value.
+  id: totrans-121
+  prefs: []
+  type: TYPE_NORMAL
+  zh: …然后使用返回的 `value` 更新存储的值。
+- en: '[![3](assets/3.png)](#co_attribute_descriptors_CO5-3)'
+  id: totrans-122
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_attribute_descriptors_CO5-3)'
+- en: '`validate` is an abstract method; this is the template method.'
+  id: totrans-123
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`validate` 是一个抽象方法；这就是模板方法。'
+- en: 'Alex Martelli prefers to call this design pattern *Self-Delegation*, and I
+    agree it’s a more descriptive name: the first line of `__set__` self-delegates
+    to `validate`.^([6](ch23.html#idm46582372425376))'
+  id: totrans-124
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Alex Martelli 更喜欢将这种设计模式称为 *自委托*，我同意这是一个更具描述性的名称：`__set__` 的第一行自委托给 `validate`。^([6](ch23.html#idm46582372425376))
+- en: The concrete `Validated` subclasses in this example are `Quantity` and `NonBlank`,
+    shown in [Example 23-6](#model_v5_sub).
+  id: totrans-125
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 本示例中的具体 `Validated` 子类是 `Quantity` 和 `NonBlank`，如 [示例 23-6](#model_v5_sub) 所示。
+- en: 'Example 23-6\. model_v5.py: `Quantity` and `NonBlank`, concrete `Validated`
+    subclasses'
+  id: totrans-126
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 23-6\. model_v5.py：`Quantity` 和 `NonBlank`，具体的 `Validated` 子类
+- en: '[PRE11]'
+  id: totrans-127
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE11]'
+- en: '[![1](assets/1.png)](#co_attribute_descriptors_CO6-1)'
+  id: totrans-128
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_attribute_descriptors_CO6-1)'
+- en: Implementation of the template method required by the `Validated.validate` abstract
+    method.
+  id: totrans-129
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 实现 `Validated.validate` 抽象方法所需的模板方法。
+- en: '[![2](assets/2.png)](#co_attribute_descriptors_CO6-2)'
+  id: totrans-130
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_attribute_descriptors_CO6-2)'
+- en: If nothing is left after leading and trailing blanks are stripped, reject the
+    value.
+  id: totrans-131
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果前导和尾随空格被剥离后没有剩余内容，则拒绝该值。
+- en: '[![3](assets/3.png)](#co_attribute_descriptors_CO6-3)'
+  id: totrans-132
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_attribute_descriptors_CO6-3)'
+- en: Requiring the concrete `validate` methods to return the validated value gives
+    them an opportunity to clean up, convert, or normalize the data received. In this
+    case, `value` is returned without leading or trailing blanks.
+  id: totrans-133
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 要求具体的 `validate` 方法返回经过验证的值，这为它们提供了清理、转换或规范化接收到的数据的机会。在这种情况下，`value` 被返回时没有前导或尾随空格。
+- en: Users of *model_v5.py* don’t need to know all these details. What matters is
+    that they get to use `Quantity` and `NonBlank` to automate the validation of instance
+    attributes. See the latest `LineItem` class in [Example 23-7](#lineitem_class_v5).
+  id: totrans-134
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*model_v5.py* 的用户不需要知道所有这些细节。重要的是他们可以使用 `Quantity` 和 `NonBlank` 来自动验证实例属性。请查看
+    [示例 23-7](#lineitem_class_v5) 中的最新 `LineItem` 类。'
+- en: 'Example 23-7\. bulkfood_v5.py: `LineItem` using `Quantity` and `NonBlank` descriptors'
+  id: totrans-135
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 23-7\. bulkfood_v5.py：`LineItem` 使用 `Quantity` 和 `NonBlank` 描述符
+- en: '[PRE12]'
+  id: totrans-136
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE12]'
+- en: '[![1](assets/1.png)](#co_attribute_descriptors_CO7-1)'
+  id: totrans-137
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_attribute_descriptors_CO7-1)'
+- en: Import the `model_v5` module, giving it a friendlier name.
+  id: totrans-138
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 导入 `model_v5` 模块，并给它一个更友好的名称。
+- en: '[![2](assets/2.png)](#co_attribute_descriptors_CO7-2)'
+  id: totrans-139
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_attribute_descriptors_CO7-2)'
+- en: Put `model.NonBlank` to use. The rest of the code is unchanged.
+  id: totrans-140
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 将 `model.NonBlank` 投入使用。其余代码保持不变。
+- en: The `LineItem` examples we’ve seen in this chapter demonstrate a typical use
+    of descriptors to manage data attributes. Descriptors like `Quantity` are called
+    overriding descriptors because its `__set__` method overrides (i.e., intercepts
+    and overrules) the setting of an instance attribute by the same name in the managed
+    instance. However, there are also nonoverriding descriptors. We’ll explore this
+    distinction in detail in the next section.
+  id: totrans-141
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们在本章中看到的 `LineItem` 示例展示了描述符管理数据属性的典型用法。像 `Quantity` 这样的描述符被称为覆盖描述符，因为其 `__set__`
+    方法覆盖（即拦截和覆盖）了受管实例中同名实例属性的设置。然而，也有非覆盖描述符。我们将在下一节详细探讨这种区别。
+- en: Overriding Versus Nonoverriding Descriptors
+  id: totrans-142
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 覆盖与非覆盖描述符
+- en: Recall that there is an important asymmetry in the way Python handles attributes.
+    Reading an attribute through an instance normally returns the attribute defined
+    in the instance, but if there is no such attribute in the instance, a class attribute
+    will be retrieved. On the other hand, assigning to an attribute in an instance
+    normally creates the attribute in the instance, without affecting the class at
+    all.
+  id: totrans-143
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 请记住，Python 处理属性的方式存在重要的不对称性。通过实例读取属性通常会返回实例中定义的属性，但如果实例中没有这样的属性，则会检索类属性。另一方面，向实例分配属性通常会在实例中创建属性，而不会对类产生任何影响。
+- en: This asymmetry also affects descriptors, in effect creating two broad categories
+    of descriptors, depending on whether the `__set__` method is implemented. If `__set__`
+    is present, the class is an overriding descriptor; otherwise, it is a nonoverriding
+    descriptor. These terms will make sense as we study descriptor behaviors in the
+    next examples.
+  id: totrans-144
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这种不对称性也影响到 descriptors，实际上创建了两种广泛的 descriptors 类别，取决于是否实现了`__set__`方法。如果存在`__set__`，则该类是
+    overriding descriptor；否则，它是 nonoverriding descriptor。在我们研究下面示例中的 descriptor 行为时，这些术语将会有意义。
+- en: Observing the different descriptor categories requires a few classes, so we’ll
+    use the code in [Example 23-8](#descriptorkinds_ex) as our test bed for the following
+    sections.
+  id: totrans-145
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 观察不同 descriptor 类别需要一些类，因此我们将使用[Example 23-8](#descriptorkinds_ex)中的代码作为接下来章节的测试基础。
+- en: Tip
+  id: totrans-146
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 提示
+- en: Every `__get__` and `__set__` method in [Example 23-8](#descriptorkinds_ex)
+    calls `print_args` so their invocations are displayed in a readable way. Understanding
+    `print_args` and the auxiliary functions `cls_name` and `display` is not important,
+    so don’t get distracted by them.
+  id: totrans-147
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[Example 23-8](#descriptorkinds_ex)中的每个`__get__`和`__set__`方法都调用`print_args`，以便以可读的方���显示它们的调用。理解`print_args`和辅助函数`cls_name`和`display`并不重要，所以不要被它们分散注意力。'
+- en: 'Example 23-8\. descriptorkinds.py: simple classes for studying descriptor overriding
+    behaviors'
+  id: totrans-148
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 23-8\. descriptorkinds.py：用于研究 descriptor overriding 行为的简单类。
+- en: '[PRE13]'
+  id: totrans-149
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE13]'
+- en: '[![1](assets/1.png)](#co_attribute_descriptors_CO8-1)'
+  id: totrans-150
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_attribute_descriptors_CO8-1)'
+- en: An overriding descriptor class with `__get__` and `__set__`.
+  id: totrans-151
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 一个带有`__get__`和`__set__`的 overriding descriptor 类。
+- en: '[![2](assets/2.png)](#co_attribute_descriptors_CO8-2)'
+  id: totrans-152
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_attribute_descriptors_CO8-2)'
+- en: The `print_args` function is called by every descriptor method in this example.
+  id: totrans-153
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`print_args`函数被这个示例中的每个 descriptor 方法调用。'
+- en: '[![3](assets/3.png)](#co_attribute_descriptors_CO8-3)'
+  id: totrans-154
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_attribute_descriptors_CO8-3)'
+- en: An overriding descriptor without a `__get__` method.
+  id: totrans-155
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 没有`__get__`方法的 overriding descriptor。
+- en: '[![4](assets/4.png)](#co_attribute_descriptors_CO8-4)'
+  id: totrans-156
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_attribute_descriptors_CO8-4)'
+- en: No `__set__` method here, so this is a nonoverriding descriptor.
+  id: totrans-157
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这里没有`__set__`方法，因此这是一个 nonoverriding descriptor。
+- en: '[![5](assets/5.png)](#co_attribute_descriptors_CO8-5)'
+  id: totrans-158
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_attribute_descriptors_CO8-5)'
+- en: The managed class, using one instance of each of the descriptor classes.
+  id: totrans-159
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 托管类，使用每个 descriptor 类的一个实例。
+- en: '[![6](assets/6.png)](#co_attribute_descriptors_CO8-6)'
+  id: totrans-160
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![6](assets/6.png)](#co_attribute_descriptors_CO8-6)'
+- en: The `spam` method is here for comparison, because methods are also descriptors.
+  id: totrans-161
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`spam`方法在这里用于比较，因为方法也是 descriptors。'
+- en: In the following sections, we will examine the behavior of attribute reads and
+    writes on the `Managed` class, and one instance of it, going through each of the
+    different descriptors defined.
+  id: totrans-162
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在接下来的章节中，我们将研究对`Managed`类及其一个实例上的属性读取和写入的行为，逐个检查定义的不同 descriptors。
+- en: Overriding Descriptors
+  id: totrans-163
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: Overriding Descriptors
+- en: 'A descriptor that implements the `__set__` method is an *overriding descriptor*,
+    because although it is a class attribute, a descriptor implementing `__set__`
+    will override attempts to assign to instance attributes. This is how [Example 23-3](#lineitem_class_v4)
+    was implemented. Properties are also overriding descriptors: if you don’t provide
+    a setter function, the default `__set__` from the `property` class will raise
+    `AttributeError` to signal that the attribute is read-only. Given the code in
+    [Example 23-8](#descriptorkinds_ex), experiments with an overriding descriptor
+    can be seen in [Example 23-9](#descriptorkinds_demo1).'
+  id: totrans-164
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 实现`__set__`方法的 descriptor 是*overriding descriptor*，因为虽然它是一个类属性，但实现`__set__`的
+    descriptor 将覆盖对实例属性的赋值尝试。这就是[Example 23-3](#lineitem_class_v4)的实现方式。属性也是 overriding
+    descriptors：如果您不提供 setter 函数，`property`类的默认`__set__`将引发`AttributeError`，以表示该属性是只读的。通过[Example 23-8](#descriptorkinds_ex)中的代码，可以在[Example 23-9](#descriptorkinds_demo1)中看到对
+    overriding descriptor 的实验。
+- en: Warning
+  id: totrans-165
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 警告
+- en: Python contributors and authors use different terms when discussing these concepts.
+    I adopted “overriding descriptor” from the book *Python in a Nutshell*. The official
+    Python documentation uses “data descriptor,” but “overriding descriptor” highlights
+    the special behavior. Overriding descriptors are also called “enforced descriptors.”
+    Synonyms for nonoverriding descriptors include “nondata descriptors” or “shadowable
+    descriptors.”
+  id: totrans-166
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Python 的贡献者和作者在讨论这些概念时使用不同的术语。我从书籍*Python in a Nutshell*中采用了“overriding descriptor”。官方
+    Python 文档使用“data descriptor”，但“overriding descriptor”突出了特殊行为。Overriding descriptors
+    也被称为“enforced descriptors”。非overriding descriptors 的同义词包括“nondata descriptors”或“shadowable
+    descriptors”。
+- en: Example 23-9\. Behavior of an overriding descriptor
+  id: totrans-167
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 23-9\. overriding descriptor 的行为
+- en: '[PRE14]'
+  id: totrans-168
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE14]'
+- en: '[![1](assets/1.png)](#co_attribute_descriptors_CO9-1)'
+  id: totrans-169
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_attribute_descriptors_CO9-1)'
+- en: Create `Managed` object for testing.
+  id: totrans-170
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为测试创建`Managed`对象。
+- en: '[![2](assets/2.png)](#co_attribute_descriptors_CO9-2)'
+  id: totrans-171
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_attribute_descriptors_CO9-2)'
+- en: '`obj.over` triggers the descriptor `__get__` method, passing the managed instance
+    `obj` as the second argument.'
+  id: totrans-172
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`obj.over`触发 descriptor `__get__` 方法，将托管实例`obj`作为第二个参数传递。'
+- en: '[![3](assets/3.png)](#co_attribute_descriptors_CO9-3)'
+  id: totrans-173
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_attribute_descriptors_CO9-3)'
+- en: '`Managed.over` triggers the descriptor `__get__` method, passing `None` as
+    the second argument (`instance`).'
+  id: totrans-174
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`Managed.over`触发 descriptor `__get__` 方法，将`None`作为第二个参数（`instance`）传递。'
+- en: '[![4](assets/4.png)](#co_attribute_descriptors_CO9-4)'
+  id: totrans-175
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_attribute_descriptors_CO9-4)'
+- en: Assigning to `obj.over` triggers the descriptor `__set__` method, passing the
+    value `7` as the last argument.
+  id: totrans-176
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 对`obj.over`进行赋值会触发 descriptor `__set__` 方法，将值`7`作为最后一个参数传递。
+- en: '[![5](assets/5.png)](#co_attribute_descriptors_CO9-5)'
+  id: totrans-177
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_attribute_descriptors_CO9-5)'
+- en: Reading `obj.over` still invokes the descriptor `__get__` method.
+  id: totrans-178
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 读取`obj.over`仍然会调用描述符`__get__`方法。
+- en: '[![6](assets/6.png)](#co_attribute_descriptors_CO9-6)'
+  id: totrans-179
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![6](assets/6.png)](#co_attribute_descriptors_CO9-6)'
+- en: Bypassing the descriptor, setting a value directly to the `obj.__dict__`.
+  id: totrans-180
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 绕过描述符，直接将值设置到`obj.__dict__`。
+- en: '[![7](assets/7.png)](#co_attribute_descriptors_CO9-7)'
+  id: totrans-181
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![7](assets/7.png)](#co_attribute_descriptors_CO9-7)'
+- en: Verify that the value is in the `obj.__dict__`, under the `over` key.
+  id: totrans-182
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 验证该值是否在`obj.__dict__`中，位于`over`键下。
+- en: '[![8](assets/8.png)](#co_attribute_descriptors_CO9-8)'
+  id: totrans-183
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![8](assets/8.png)](#co_attribute_descriptors_CO9-8)'
+- en: However, even with an instance attribute named `over`, the `Managed.over` descriptor
+    still overrides attempts to read `obj.over`.
+  id: totrans-184
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 然而���即使有一个名为`over`的实例属性，`Managed.over`描述符仍然会覆盖尝试读取`obj.over`。
+- en: Overriding Descriptor Without __get__
+  id: totrans-185
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 覆盖没有__get__的描述符
+- en: Properties and other overriding descriptors, such as Django model fields, implement
+    both `__set__` and `__get__`, but it’s also possible to implement only `__set__`,
+    as we saw in [Example 23-2](#lineitem_class_v3). In this case, only writing is
+    handled by the descriptor. Reading the descriptor through an instance will return
+    the descriptor object itself because there is no `__get__` to handle that access.
+    If a namesake instance attribute is created with a new value via direct access
+    to the instance `__dict__`, the `__set__` method will still override further attempts
+    to set that attribute, but reading that attribute will simply return the new value
+    from the instance, instead of returning the descriptor object. In other words,
+    the instance attribute will shadow the descriptor, but only when reading. See
+    [Example 23-10](#descriptorkinds_demo2).
+  id: totrans-186
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 属性和其他覆盖描述符，如Django模型字段，实现了`__set__`和`__get__`，但也可以只实现`__set__`，就像我们在[示例23-2](#lineitem_class_v3)中看到的那样。在这种情况下，只有描述符处理写入。通过实例读取描述符将返回描述符对象本身，因为没有`__get__`来处理该访问。如果通过直接访问实例`__dict__`创建了一个同名实例属性，并通过该实例访问设置了一个新值，则`__set__`方法仍将覆盖进一步尝试设置该属性，但读取该属性将简单地从实例中返回新值，而不是返回描述符对象。换句话说，实例属性将遮蔽描述符，但仅在读取时。参见[示例23-10](#descriptorkinds_demo2)。
+- en: Example 23-10\. Overriding descriptor without `__get__`
+  id: totrans-187
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 23-10\. 没有`__get__`的覆盖描述符
+- en: '[PRE15]'
+  id: totrans-188
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE15]'
+- en: '[![1](assets/1.png)](#co_attribute_descriptors_CO10-1)'
+  id: totrans-189
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_attribute_descriptors_CO10-1)'
+- en: This overriding descriptor doesn’t have a `__get__` method, so reading `obj.over_no_get`
+    retrieves the descriptor instance from the class.
+  id: totrans-190
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这个覆盖描述符没有`__get__`方法，因此读取`obj.over_no_get`会从类中检索描述符实例。
+- en: '[![2](assets/2.png)](#co_attribute_descriptors_CO10-2)'
+  id: totrans-191
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_attribute_descriptors_CO10-2)'
+- en: The same thing happens if we retrieve the descriptor instance directly from
+    the managed class.
+  id: totrans-192
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果我们直接从托管类中检索描述符实例，也会发生同样的事情。
+- en: '[![3](assets/3.png)](#co_attribute_descriptors_CO10-3)'
+  id: totrans-193
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_attribute_descriptors_CO10-3)'
+- en: Trying to set a value to `obj.over_no_get` invokes the `__set__` descriptor
+    method.
+  id: totrans-194
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 尝试将值设置为`obj.over_no_get`会调用`__set__`描述符方法。
+- en: '[![4](assets/4.png)](#co_attribute_descriptors_CO10-4)'
+  id: totrans-195
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_attribute_descriptors_CO10-4)'
+- en: Because our `__set__` doesn’t make changes, reading `obj.over_no_get` again
+    retrieves the descriptor instance from the managed class.
+  id: totrans-196
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 因为我们的`__set__`不进行更改，再次读取`obj.over_no_get`将从托管类中检索描述符实例。
+- en: '[![5](assets/5.png)](#co_attribute_descriptors_CO10-5)'
+  id: totrans-197
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_attribute_descriptors_CO10-5)'
+- en: Going through the instance `__dict__` to set an instance attribute named `over_no_get`.
+  id: totrans-198
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 通过实例`__dict__`设置一个名为`over_no_get`的实例属性。
+- en: '[![6](assets/6.png)](#co_attribute_descriptors_CO10-6)'
+  id: totrans-199
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![6](assets/6.png)](#co_attribute_descriptors_CO10-6)'
+- en: Now that `over_no_get` instance attribute shadows the descriptor, but only for
+    reading.
+  id: totrans-200
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在`over_no_get`实例属性遮蔽了描述符，但仅用于读取。
+- en: '[![7](assets/7.png)](#co_attribute_descriptors_CO10-7)'
+  id: totrans-201
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![7](assets/7.png)](#co_attribute_descriptors_CO10-7)'
+- en: Trying to assign a value to `obj.over_no_get` still goes through the descriptor
+    set.
+  id: totrans-202
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 尝试为`obj.over_no_get`分配一个值仍然会通过描述符集。
+- en: '[![8](assets/8.png)](#co_attribute_descriptors_CO10-8)'
+  id: totrans-203
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![8](assets/8.png)](#co_attribute_descriptors_CO10-8)'
+- en: But for reading, that descriptor is shadowed as long as there is a namesake
+    instance attribute.
+  id: totrans-204
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 但是对于读取，只要有同名实例属性，该描述符就会被遮蔽。
+- en: Nonoverriding Descriptor
+  id: totrans-205
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 非覆盖描述符
+- en: A descriptor that does not implement `__set__` is a nonoverriding descriptor.
+    Setting an instance attribute with the same name will shadow the descriptor, rendering
+    it ineffective for handling that attribute in that specific instance. Methods
+    and `@functools.cached_property` are implemented as nonoverriding descriptors.
+    [Example 23-11](#descriptorkinds_demo3) shows the operation of a nonoverriding
+    descriptor.
+  id: totrans-206
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 一个不实现`__set__`的描述符是一个非覆盖描述符。设置一个同名的实例属性将遮蔽描述符，在该特定实例中无法处理该属性。方法和`@functools.cached_property`被实现为非覆盖描述符。[示例23-11](#descriptorkinds_demo3)展示了非覆盖描述符的操作。
+- en: Example 23-11\. Behavior of a nonoverriding descriptor
+  id: totrans-207
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 23-11\. 非覆盖描述符的行为
+- en: '[PRE16]'
+  id: totrans-208
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE16]'
+- en: '[![1](assets/1.png)](#co_attribute_descriptors_CO11-1)'
+  id: totrans-209
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_attribute_descriptors_CO11-1)'
+- en: '`obj.non_over` triggers the descriptor `__get__` method, passing `obj` as the
+    second argument.'
+  id: totrans-210
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`obj.non_over`触发描述符`__get__`方法，将`obj`作为第二个参数传递。'
+- en: '[![2](assets/2.png)](#co_attribute_descriptors_CO11-2)'
+  id: totrans-211
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_attribute_descriptors_CO11-2)'
+- en: '`Managed.non_over` is a nonoverriding descriptor, so there is no `__set__`
+    to interfere with this assignment.'
+  id: totrans-212
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`Managed.non_over`是一个非覆盖描述符，因此没有`__set__`干扰此赋值。'
+- en: '[![3](assets/3.png)](#co_attribute_descriptors_CO11-3)'
+  id: totrans-213
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_attribute_descriptors_CO11-3)'
+- en: The `obj` now has an instance attribute named `non_over`, which shadows the
+    namesake descriptor attribute in the `Managed` class.
+  id: totrans-214
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在`obj`有一个名为`non_over`的实例属性，它遮蔽了`Managed`类中同名的描述符属性。
+- en: '[![4](assets/4.png)](#co_attribute_descriptors_CO11-4)'
+  id: totrans-215
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_attribute_descriptors_CO11-4)'
+- en: The `Managed.non_over` descriptor is still there, and catches this access via
+    the class.
+  id: totrans-216
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`Managed.non_over`描述符仍然存在，并通过类捕获此访问。'
+- en: '[![5](assets/5.png)](#co_attribute_descriptors_CO11-5)'
+  id: totrans-217
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_attribute_descriptors_CO11-5)'
+- en: If the `non_over` instance attribute is deleted…
+  id: totrans-218
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果删除`non_over`实例属性...
+- en: '[![6](assets/6.png)](#co_attribute_descriptors_CO11-6)'
+  id: totrans-219
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![6](assets/6.png)](#co_attribute_descriptors_CO11-6)'
+- en: …then reading `obj.non_over` hits the `__get__` method of the descriptor in
+    the class, but note that the second argument is the managed instance.
+  id: totrans-220
+  prefs: []
+  type: TYPE_NORMAL
+  zh: …然后读取`obj.non_over`会触发类中描述符的`__get__`方法，但请注意第二个参数是受控实例。
+- en: In the previous examples, we saw several assignments to an instance attribute
+    with the same name as a descriptor, and different results according to the presence
+    of a `__set__` method in the descriptor.
+  id: totrans-221
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在之前的示例中，我们看到了对实例属性进行多次赋值，属性名与描述符相同，并根据描述符中是否存在`__set__`方法而产生不同的结果。
+- en: The setting of attributes in the class cannot be controlled by descriptors attached
+    to the same class. In particular, this means that the descriptor attributes themselves
+    can be clobbered by assigning to the class, as the next section explains.
+  id: totrans-222
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 类中属性的设置不能由附加到同一类的描述符控制。特别是，这意味着描述符属性本身可以被赋值给类，就像下一节所解释的那样。
+- en: Overwriting a Descriptor in the Class
+  id: totrans-223
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 在类中覆盖描述符
+- en: Regardless of whether a descriptor is overriding or not, it can be overwritten
+    by assignment to the class. This is a monkey-patching technique, but in [Example 23-12](#descriptorkinds_demo4)
+    the descriptors are replaced by integers, which would effectively break any class
+    that depended on the descriptors for proper operation.
+  id: totrans-224
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 无论描述符是覆盖还是非覆盖的，都可以通过对类的赋值来覆盖。这是一种猴子补丁技术，但在[示例 23-12](#descriptorkinds_demo4)中，描述符被整数替换，这将有效地破坏任何依赖描述符进行正确操作的类。
+- en: Example 23-12\. Any descriptor can be overwritten on the class itself
+  id: totrans-225
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 23-12\. 任何描述符都可以在类本身上被覆盖
+- en: '[PRE17]'
+  id: totrans-226
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE17]'
+- en: '[![1](assets/1.png)](#co_attribute_descriptors_CO12-1)'
+  id: totrans-227
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_attribute_descriptors_CO12-1)'
+- en: Create a new instance for later testing.
+  id: totrans-228
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 创建一个新实例以供后续测试。
+- en: '[![2](assets/2.png)](#co_attribute_descriptors_CO12-2)'
+  id: totrans-229
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_attribute_descriptors_CO12-2)'
+- en: Overwrite the descriptor attributes in the class.
+  id: totrans-230
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 覆盖类中的描述符属性。
+- en: '[![3](assets/3.png)](#co_attribute_descriptors_CO12-3)'
+  id: totrans-231
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_attribute_descriptors_CO12-3)'
+- en: The descriptors are really gone.
+  id: totrans-232
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 描述符真的消失了。
+- en: '[Example 23-12](#descriptorkinds_demo4) reveals another asymmetry regarding
+    reading and writing attributes: although the reading of a class attribute can
+    be controlled by a descriptor with `__get__` attached to the managed class, the
+    writing of a class attribute cannot be handled by a descriptor with `__set__`
+    attached to the same class.'
+  id: totrans-233
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 23-12](#descriptorkinds_demo4)揭示了关于读取和写入属性的另一个不对称性：尽管可以通过附加到受控类的`__get__`的描述符来控制类属性的读取，但是通过附加到同一类的`__set__`的描述符无法处理类属性的写入。'
+- en: Tip
+  id: totrans-234
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 提示
+- en: In order to control the setting of attributes in a class, you have to attach
+    descriptors to the class of the class—in other words, the metaclass. By default,
+    the metaclass of user-defined classes is `type`, and you cannot add attributes
+    to `type`. But in [Chapter 24](ch24.html#class_metaprog), we’ll create our own
+    metaclasses.
+  id: totrans-235
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了控制类中属性的设置，您必须将描述符附加到类的类中，换句话说，元类。默认情况下，用户定义类的元类是`type`，您无法向`type`添加属性。但是在[第24章](ch24.html#class_metaprog)中，我们将创建自己的元类。
+- en: Let’s now focus on how descriptors are used to implement methods in Python.
+  id: totrans-236
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在让我们专注于描述符在Python中如何用于实现方法。
+- en: Methods Are Descriptors
+  id: totrans-237
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 方法是描述符
+- en: A function within a class becomes a bound method when invoked on an instance
+    because all user-defined functions have a `__get__` method, therefore they operate
+    as descriptors when attached to a class. [Example 23-13](#descriptorkinds_demo5)
+    demonstrates reading the `spam` method from the `Managed` class introduced in
+    [Example 23-8](#descriptorkinds_ex).
+  id: totrans-238
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当在实例上调用时，类中的函数会变成绑定方法，因为所有用户定义的函数都有一个`__get__`方法，因此当附加到类时，它们作为描述符运行。[示例 23-13](#descriptorkinds_demo5)演示了从[示例 23-8](#descriptorkinds_ex)中引入的`Managed`类中读取`spam`方法。
+- en: Example 23-13\. A method is a nonoverriding descriptor
+  id: totrans-239
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 23-13\. 方法是一个非覆盖描述符
+- en: '[PRE18]'
+  id: totrans-240
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE18]'
+- en: '[![1](assets/1.png)](#co_attribute_descriptors_CO13-1)'
+  id: totrans-241
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_attribute_descriptors_CO13-1)'
+- en: Reading from `obj.spam` retrieves a bound method object.
+  id: totrans-242
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 从`obj.spam`读取会得到一个绑定的方法对象。
+- en: '[![2](assets/2.png)](#co_attribute_descriptors_CO13-2)'
+  id: totrans-243
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_attribute_descriptors_CO13-2)'
+- en: But reading from `Managed.spam` retrieves a function.
+  id: totrans-244
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 但是从`Managed.spam`读取会得到一个函数。
+- en: '[![3](assets/3.png)](#co_attribute_descriptors_CO13-3)'
+  id: totrans-245
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_attribute_descriptors_CO13-3)'
+- en: Assigning a value to `obj.spam` shadows the class attribute, rendering the `spam`
+    method inaccessible from the `obj` instance.
+  id: totrans-246
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 给`obj.spam`赋值会隐藏类属性，使得`obj`实例无法从`spam`方法中访问。
+- en: Functions do not implement `__set__`, therefore they are nonoverriding descriptors,
+    as the last line of [Example 23-13](#descriptorkinds_demo5) shows.
+  id: totrans-247
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 函数不实现`__set__`，因���它们是非覆盖描述符，正如[示例 23-13](#descriptorkinds_demo5)的最后一行所示。
+- en: 'The other key takeaway from [Example 23-13](#descriptorkinds_demo5) is that
+    `obj.spam` and `Managed.spam` retrieve different objects. As usual with descriptors,
+    the `__get__` of a function returns a reference to itself when the access happens
+    through the managed class. But when the access goes through an instance, the `__get__`
+    of the function returns a bound method object: a callable that wraps the function
+    and binds the managed instance (e.g., `obj`) to the first argument of the function
+    (i.e., `self`), like the `functools.partial` function does (as seen in [“Freezing
+    Arguments with functools.partial”](ch07.html#functools_partial_sec)). For a deeper
+    understanding of this mechanism, take a look at [Example 23-14](#func_descriptor_ex).'
+  id: totrans-248
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 从[示例 23-13](#descriptorkinds_demo5)中另一个关键点是`obj.spam`和`Managed.spam`检索到不同的对象。与描述符一样，当通过受控类进行访问时，函数的`__get__`返回对自身的引用。但是当访问通过实例进行时，函数的`__get__`返回一个绑定的方法对象：一个可调用对象，包装函数并将受控实例（例如`obj`）绑定到函数的第一个参数（即`self`），就像`functools.partial`函数所做的那样（如[“使用functools.partial冻结参数”](ch07.html#functools_partial_sec)中所示）。要更深入地了解这种机制，请查看[示例 23-14](#func_descriptor_ex)。
+- en: 'Example 23-14\. method_is_descriptor.py: a `Text` class, derived from `UserString`'
+  id: totrans-249
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 23-14\. method_is_descriptor.py：一个从`UserString`派生的`Text`类
+- en: '[PRE19]'
+  id: totrans-250
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE19]'
+- en: Now let’s investigate the `Text.reverse` method. See [Example 23-15](#func_descriptor_demo).
+  id: totrans-251
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在让我们来研究`Text.reverse`方法。参见[示例 23-15](#func_descriptor_demo)。
+- en: Example 23-15\. Experiments with a method
+  id: totrans-252
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 23-15\. 使用方法进行实验
+- en: '[PRE20]'
+  id: totrans-253
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE20]'
+- en: '[![1](assets/1.png)](#co_attribute_descriptors_CO14-1)'
+  id: totrans-254
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_attribute_descriptors_CO14-1)'
+- en: The `repr` of a `Text` instance looks like a `Text` constructor call that would
+    make an equal instance.
+  id: totrans-255
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`Text`实例的`repr`看起来像一个`Text`构造函数调用，可以创建一个相同的实例。'
+- en: '[![2](assets/2.png)](#co_attribute_descriptors_CO14-2)'
+  id: totrans-256
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_attribute_descriptors_CO14-2)'
+- en: The `reverse` method returns the text spelled backward.
+  id: totrans-257
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`reverse`方法返回拼写颠倒的文本。'
+- en: '[![3](assets/3.png)](#co_attribute_descriptors_CO14-3)'
+  id: totrans-258
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_attribute_descriptors_CO14-3)'
+- en: A method called on the class works as a function.
+  id: totrans-259
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在类上调用的方法作为一个函数。
+- en: '[![4](assets/4.png)](#co_attribute_descriptors_CO14-4)'
+  id: totrans-260
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_attribute_descriptors_CO14-4)'
+- en: 'Note the different types: a `function` and a `method`.'
+  id: totrans-261
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意不同类型：一个`function`和一个`method`。
+- en: '[![5](assets/5.png)](#co_attribute_descriptors_CO14-5)'
+  id: totrans-262
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_attribute_descriptors_CO14-5)'
+- en: '`Text.reverse` operates as a function, even working with objects that are not
+    instances of `Text`.'
+  id: totrans-263
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`Text.reverse`作为一个函数运行，甚至可以处理不是`Text`实例的对象。'
+- en: '[![6](assets/6.png)](#co_attribute_descriptors_CO14-6)'
+  id: totrans-264
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![6](assets/6.png)](#co_attribute_descriptors_CO14-6)'
+- en: Any function is a nonoverriding descriptor. Calling its `__get__` with an instance
+    retrieves a method bound to that instance.
+  id: totrans-265
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 任何函数都是非覆盖描述符。使用实例调用其`__get__`将检索绑定到该实例的方法。
+- en: '[![7](assets/7.png)](#co_attribute_descriptors_CO14-7)'
+  id: totrans-266
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![7](assets/7.png)](#co_attribute_descriptors_CO14-7)'
+- en: Calling the function’s `__get__` with `None` as the `instance` argument retrieves
+    the function itself.
+  id: totrans-267
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 使用`None`作为`instance`参数调用函数的`__get__`将检索函数本身。
+- en: '[![8](assets/8.png)](#co_attribute_descriptors_CO14-8)'
+  id: totrans-268
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![8](assets/8.png)](#co_attribute_descriptors_CO14-8)'
+- en: The expression `word.reverse` actually invokes `Text.reverse.__get__(word)`,
+    returning the bound method.
+  id: totrans-269
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 表达式`word.reverse`实际上调用了`Text.reverse.__get__(word)`，返回绑定方法。
+- en: '[![9](assets/9.png)](#co_attribute_descriptors_CO14-9)'
+  id: totrans-270
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![9](assets/9.png)](#co_attribute_descriptors_CO14-9)'
+- en: The bound method object has a `__self__` attribute holding a reference to the
+    instance on which the method was called.
+  id: totrans-271
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 绑定方法对象有一个`__self__`属性，保存着调用该方法的实例的引用。
+- en: '[![10](assets/10.png)](#co_attribute_descriptors_CO14-10)'
+  id: totrans-272
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![10](assets/10.png)](#co_attribute_descriptors_CO14-10)'
+- en: The `__func__` attribute of the bound method is a reference to the original
+    function attached to the managed class.
+  id: totrans-273
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 绑定方法的`__func__`属性是指向所管理类中原始函数的引用。
+- en: The bound method object also has a `__call__` method, which handles the actual
+    invocation. This method calls the original function referenced in `__func__`,
+    passing the `__self__` attribute of the method as the first argument. That’s how
+    the implicit binding of the conventional `self` argument works.
+  id: totrans-274
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 绑定方法对象还有一个`__call__`方法，用于处理实际的调用。这个方法调用`__func__`中引用的原始函数，将方法的`__self__`属性作为第一个参数传递。这就是传统`self`参数的隐式绑定方式的工作原理。
+- en: The way functions are turned into bound methods is a prime example of how descriptors
+    are used as infrastructure in the language.
+  id: totrans-275
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 将函数转换为绑定方法的方式是描述符在语言中作为基础设施使用的一个典型例子。
+- en: After this deep dive into how descriptors and methods work, let’s go through
+    some practical advice about their use.
+  id: totrans-276
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在深入了解描述符和方法的工作原理之后，让我们来看看关于它们使���的一些建议。
+- en: Descriptor Usage Tips
+  id: totrans-277
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 描述符使用提示
+- en: 'The following list addresses some practical consequences of the descriptor
+    characteristics just described:'
+  id: totrans-278
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 以下列表解决了刚才描述的描述符特性的一些实际后果：
+- en: Use `property` to keep it simple
+  id: totrans-279
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 使用`property`保持简单
+- en: 'The `property` built-in creates overriding descriptors implementing `__set__`
+    and `__get__` even if you do not define a setter method.^([7](ch23.html#idm46582370317776))
+    The default `__set__` of a property raises `AttributeError: can''t set attribute`,
+    so a property is the easiest way to create a read-only attribute, avoiding the
+    issue described next.'
+  id: totrans-280
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '内置的`property`创建覆盖描述符，实现`__set__`和`__get__`，即使你没有定义一个setter方法。^([7](ch23.html#idm46582370317776))
+    属性的默认`__set__`会引发`AttributeError: can''t set attribute`，因此属性是创建只读属性的最简单方式，避免了下面描述的问题。'
+- en: Read-only descriptors require `__set__`
+  id: totrans-281
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 只读描述符需要`__set__`
+- en: If you use a descriptor class to implement a read-only attribute, you must remember
+    to code both `__get__` and `__set__`, otherwise setting a namesake attribute on
+    an instance will shadow the descriptor. The `__set__` method of a read-only attribute
+    should just raise `AttributeError` with a suitable message.^([8](ch23.html#idm46582370312464))
+  id: totrans-282
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果你使用描述符类来实现一个只读属性，你必须记得编写`__get__`和`__set__`，否则在实例上设置一个同名属性将会遮蔽描述符。只读属性的`__set__`方法应该只是引发`AttributeError`并附带适当的消息。^([8](ch23.html#idm46582370312464))
+- en: Validation descriptors can work with `__set__` only
+  id: totrans-283
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 验证描述符只能与`__set__`一起使用
+- en: In a descriptor designed only for validation, the `__set__` method should check
+    the `value` argument it gets, and if valid, set it directly in the instance `__dict__`
+    using the descriptor instance name as key. That way, reading the attribute with
+    the same name from the instance will be as fast as possible, because it will not
+    require a `__get__`. See the code for [Example 23-3](#lineitem_class_v4).
+  id: totrans-284
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在仅用于验证的描述符中，`__set__`方法应该检查其接收到的`value`参数，如果有效，直接在实例的`__dict__`中使用描述符实例名称作为键设置它。这样，从实例中读取具有相同名称的属性将尽可能快，因为它不需要`__get__`。查看[示例
+    23-3](#lineitem_class_v4)的代码。
+- en: Caching can be done efficiently with `__get__` only
+  id: totrans-285
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 使用`__get__`可以高效地进行缓存
+- en: If you code just the `__get__` method, you have a nonoverriding descriptor.
+    These are useful to make some expensive computation and then cache the result
+    by setting an attribute by the same name on the instance.^([9](ch23.html#idm46582370302768))
+    The namesake instance attribute will shadow the descriptor, so subsequent access
+    to that attribute will fetch it directly from the instance `__dict__` and not
+    trigger the descriptor `__get__` anymore. The `@functools.cached_property` decorator
+    actually produces a nonoverriding descriptor.
+  id: totrans-286
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果只编写 `__get__` 方法，则具有非覆盖描述符。 这些对于进行一些昂贵的计算然后通过在实例上设置同名属性来缓存结果很有用。^([9](ch23.html#idm46582370302768))
+    同名实例属性将遮蔽描述符，因此对该属性的后续访问将直接从实例 `__dict__` 中获取，而不再触发描述符 `__get__`。 `@functools.cached_property`
+    装饰器实际上生成一个非覆盖描述符。
+- en: Nonspecial methods can be shadowed by instance attributes
+  id: totrans-287
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 非特殊方法可以被实例属性遮蔽
+- en: Because functions and methods only implement `__get__`, they are nonoverriding
+    descriptors. A simple assignment like `my_obj.the_method = 7` means that further
+    access to `the_method` through that instance will retrieve the number `7`—without
+    affecting the class or other instances. However, this issue does not interfere
+    with special methods. The interpreter only looks for special methods in the class
+    itself, in other words, `repr(x)` is executed as `x.__class__.__repr__(x)`, so
+    a `__repr__` attribute defined in `x` has no effect on `repr(x)`. For the same
+    reason, the existence of an attribute named `__getattr__` in an instance will
+    not subvert the usual attribute access algorithm.
+  id: totrans-288
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 因为函数和方法只实现 `__get__`，它们是非覆盖描述符。 诸如 `my_obj.the_method = 7` 这样的简单赋值意味着通过该实例进一步访问
+    `the_method` 将检索数字 `7` —— 而不会影响类或其他实例。 但是，这个问题不会干扰特殊方法。 解释器只在类本身中查找特殊方法，换句话说，`repr(x)`
+    被执行为 `x.__class__.__repr__(x)`，因此在 `x` 中定义的 `__repr__` 属性对 `repr(x)` 没有影响。 出于同样的原因，实例中存在名为
+    `__getattr__` 的属性不会颠覆通常的属性访问算法。
+- en: The fact that nonspecial methods can be overridden so easily in instances may
+    sound fragile and error prone, but I personally have never been bitten by this
+    in more than 20 years of Python coding. On the other hand, if you are doing a
+    lot of dynamic attribute creation, where the attribute names come from data you
+    don’t control (as we did in the earlier parts of this chapter), then you should
+    be aware of this and perhaps implement some filtering or escaping of the dynamic
+    attribute names to preserve your sanity.
+  id: totrans-289
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 实例中非特殊方法如此容易被覆盖可能听起来脆弱且容易出错，但在我个人超过 20 年的 Python 编码中从未受到过这方面的影响。 另一方面，如果您正在进行大量的动态属性创建，其中属性名称来自您无法控制的数据（就像我们在本章的前面部分所做的那样），那么您应该意识到这一点，并可能实现一些过滤或转义动态属性名称以保持理智。
+- en: Note
+  id: totrans-290
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 注意
+- en: 'The `FrozenJSON` class in [Example 22-5](ch22.html#ex_explore1) is safe from
+    instance attribute shadowing methods because its only methods are special methods
+    and the `build` class method. Class methods are safe as long as they are always
+    accessed through the class, as I did with `FrozenJSON.build` in [Example 22-5](ch22.html#ex_explore1)—later
+    replaced by `__new__` in [Example 22-6](ch22.html#ex_explore2). The `Record` and
+    `Event` classes presented in [“Computed Properties”](ch22.html#computed_props_sec)
+    are also safe: they implement only special methods, static methods, and properties.
+    Properties are overriding descriptors, so they are not shadowed by instance attributes.'
+  id: totrans-291
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`FrozenJSON` 类在 [示例 22-5](ch22.html#ex_explore1) 中受到实例属性遮蔽方法的保护，因为它的唯一方法是特殊方法和
+    `build` 类方法。 只要始终通过类访问类方法，类方法就是安全的，就像我在 [示例 22-5](ch22.html#ex_explore1) 中使用 `FrozenJSON.build`
+    一样——后来在 [示例 22-6](ch22.html#ex_explore2) 中被 `__new__` 取代。 [“计算属性”](ch22.html#computed_props_sec)
+    中介绍的 `Record` 和 `Event` 类也是安全的：它们只实现特殊方法、静态方法和属性。 属性是覆盖描述符，因此不会被实例属性遮蔽。'
+- en: 'To close this chapter, we’ll cover two features we saw with properties that
+    we have not addressed in the context of descriptors: documentation and handling
+    attempts to delete a managed attribute.'
+  id: totrans-292
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 结束本章时，我们将介绍两个我们在属性中看到但在描述符的上下文中尚未解决的功能：文档和处理尝试删除托管属性。
+- en: Descriptor Docstring and Overriding Deletion
+  id: totrans-293
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 描述符文档字符串和覆盖删除
+- en: The docstring of a descriptor class is used to document every instance of the
+    descriptor in the managed class. [Figure 23-4](#descriptor_help_screens) shows
+    the help displays for the `LineItem` class with the `Quantity` and `NonBlank`
+    descriptors from Examples [23-6](#model_v5_sub) and [23-7](#lineitem_class_v5).
+  id: totrans-294
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 描述符类的文档字符串用于记录托管类中每个描述符的实例。 [图 23-4](#descriptor_help_screens) 显示了带有示例 [23-6](#model_v5_sub)
+    和 [23-7](#lineitem_class_v5) 中的 `Quantity` 和 `NonBlank` 描述符的 `LineItem` 类的帮助显示。
+- en: That is somewhat unsatisfactory. In the case of `LineItem`, it would be good
+    to add, for example, the information that `weight` must be in kilograms. That
+    would be trivial with properties, because each property handles a specific managed
+    attribute. But with descriptors, the same `Quantity` descriptor class is used
+    for `weight` and `price`.^([10](ch23.html#idm46582370273232))
+  id: totrans-295
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这有点令人不满意。 对于 `LineItem`，例如，添加 `weight` 必须是千克的信息会很好。 这对于属性来说是微不足道的，因为每个属性处理一个特定的托管属性。
+    但是使用描述符，`Quantity` 描述符类用于 `weight` 和 `price`。^([10](ch23.html#idm46582370273232))
+- en: The second detail we discussed with properties, but have not addressed with
+    descriptors, is handling attempts to delete a managed attribute. That can be done
+    by implementing a `__delete__` method alongside or instead of the usual `__get__`
+    and/or `__set__` in the descriptor class. I deliberately omitted coverage of `__delete__`
+    because I believe real-world usage is rare. If you need this, please see the [“Implementing
+    Descriptors”](https://fpy.li/23-2) section of the [Python Data Model documentation](https://fpy.li/dtmodel).
+    Coding a silly descriptor class with `__delete__` is left as an exercise to the
+    leisurely reader.
+  id: totrans-296
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们讨论了与属性一起讨论的第二个细节，但尚未使用描述符处理尝试删除托管属性的尝试。这可以通过在描述符类中实现`__delete__`方法来完成，而不是通常的`__get__`和/或`__set__`。我故意省略了对`__delete__`的覆盖，因为我认为实际使用是罕见的。如果您需要此功能，请参阅[“实现描述符”](https://fpy.li/23-2)部分的[Python数据模型文档](https://fpy.li/dtmodel)。编写一个带有`__delete__`的愚蠢描述符类留给悠闲的读者作为练习。
+- en: '![Screenshots of the Python console with descriptor help.](assets/flpy_2304.png)'
+  id: totrans-297
+  prefs: []
+  type: TYPE_IMG
+  zh: '![带有描述符帮助的Python控制台截图。](assets/flpy_2304.png)'
+- en: Figure 23-4\. Screenshots of the Python console when issuing the commands `help(LineItem.weight)`
+    and `help(LineItem)`.
+  id: totrans-298
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 图23-4。在发出命令`help(LineItem.weight)`和`help(LineItem)`时Python控制台的屏幕截图。
+- en: Chapter Summary
+  id: totrans-299
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 章节总结
+- en: The first example of this chapter was a continuation of the `LineItem` examples
+    from [Chapter 22](ch22.html#dynamic_attributes). In [Example 23-2](#lineitem_class_v3),
+    we replaced properties with descriptors. We saw that a descriptor is a class that
+    provides instances that are deployed as attributes in the managed class. Discussing
+    this mechanism required special terminology, introducing terms such as *managed
+    instance* and *storage attribute*.
+  id: totrans-300
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 本章的第一个示例是从[第22章](ch22.html#dynamic_attributes)的`LineItem`示例中延续的。在[示例23-2](#lineitem_class_v3)中，我们用描述符替换了属性。我们看到描述符是一个提供实例的类，这些实例被部署为托管类中的属性。讨论这种机制需要特殊术语，引入了诸如*托管实例*和*存储属性*之类的术语。
+- en: 'In [“LineItem Take #4: Automatic Naming of Storage Attributes”](#auto_storage_sec),
+    we removed the requirement that `Quantity` descriptors were declared with an explicit
+    `storage_name`, which was redundant and error prone. The solution was to implement
+    the `__set_name__` special method in `Quantity`, to save the name of the managed
+    property as `self.storage_name`.'
+  id: totrans-301
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '在[“LineItem Take #4: Automatic Naming of Storage Attributes”](#auto_storage_sec)中，我们取消了要求使用显式`storage_name`声明`Quantity`描述符的要求，这是多余且容易出错的。解决方案是在`Quantity`中实现`__set_name__`特殊方法，将托管属性的名称保存为`self.storage_name`。'
+- en: '[“LineItem Take #5: A New Descriptor Type”](#new_descr_type_sec) showed how
+    to subclass an abstract descriptor class to share code while building specialized
+    descriptors with some common functionality.'
+  id: totrans-302
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[“LineItem Take #5: A New Descriptor Type”](#new_descr_type_sec)展示了如何对抽象描述符类进行子类化，以在构建具有一些共同功能的专门描述符时共享代码。'
+- en: We then looked at the different behaviors of descriptors providing or omitting
+    the `__set__` method, making the crucial distinction between overriding and nonoverriding
+    descriptors, a.k.a. data and nondata descriptors. Through detailed testing we
+    uncovered when descriptors are in control and when they are shadowed, bypassed,
+    or overwritten.
+  id: totrans-303
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 然后，我们研究了提供或省略`__set__`方法的描述符的不同行为，区分了重写和非重写描述符，即数据和非数据描述符。通过详细测试，我们揭示了描述符何时控制何时被遮蔽、绕过或覆盖。
+- en: 'Following that, we studied a particular category of nonoverriding descriptors:
+    methods. Console experiments revealed how a function attached to a class becomes
+    a method when accessed through an instance, by leveraging the descriptor protocol.'
+  id: totrans-304
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 随后，我们研究了一类特定的非重写描述符：方法。控制台实验揭示了当通过实例访问时，附加到类的函数如何通过利用描述符协议成为方法。
+- en: To conclude the chapter, [“Descriptor Usage Tips”](#descriptor_usage_sec) presented
+    practical tips, and [“Descriptor Docstring and Overriding Deletion”](#descriptor_doc_del_sec)
+    provided a brief look at how to document descriptors.
+  id: totrans-305
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 结束本章，[“描述符使用技巧”](#descriptor_usage_sec)提供了实用技巧，而[“描述符文档字符串和重写删除”](#descriptor_doc_del_sec)则简要介绍了如何记录描述符。
+- en: Note
+  id: totrans-306
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 注意
+- en: As noted in [“What’s New in This Chapter”](#whats_new_descriptor_sec), several
+    examples in this chapter became much simpler thanks to the `__set_name__` special
+    method of the descriptor protocol, added in Python 3.6\. That’s language evolution!
+  id: totrans-307
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 正如在[“本章新内容”](#whats_new_descriptor_sec)中所指出的，本章中的几个示例由于描述符协议中Python 3.6中添加的`__set_name__`特殊方法而变得简单得多。这就是语言的进化！
+- en: Further Reading
+  id: totrans-308
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 进一步阅读
+- en: Besides the obligatory reference to the [“Data Model” chapter](https://fpy.li/dtmodel),
+    Raymond Hettinger’s [“Descriptor HowTo Guide”](https://fpy.li/23-3) is a valuable
+    resource—part of the [HowTo collection](https://fpy.li/23-4) in the official Python
+    documentation.
+  id: totrans-309
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 除了对[“数据模型”章节](https://fpy.li/dtmodel)的必要参考外，Raymond Hettinger的[“描述符指南”](https://fpy.li/23-3)是一个宝贵的资源——它是官方Python文档中[HowTo系列](https://fpy.li/23-4)的一部分。
+- en: As usual with Python object model subjects, Martelli, Ravenscroft, and Holden’s
+    *Python in a Nutshell*, 3rd ed. (O’Reilly) is authoritative and objective. Martelli
+    also has a presentation titled “Python’s Object Model,” which covers properties
+    and descriptors in depth (see the [slides](https://fpy.li/23-5) and [video](https://fpy.li/23-6)).
+  id: totrans-310
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 与Python对象模型主题一样，Martelli、Ravenscroft和Holden的*Python in a Nutshell*，第3版（O’Reilly）是权威且客观的。Martelli还有一个名为“Python的对象模型”的演示，深入介绍了属性和描述符（请参阅[幻灯片](https://fpy.li/23-5)和[视频](https://fpy.li/23-6)）。
+- en: Warning
+  id: totrans-311
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 警告
+- en: Beware that any coverage of descriptors written or recorded before PEP 487 was
+    adopted in 2016 is likely to contain examples that are needlessly complicated
+    today, because `__set_name__` was not supported in Python versions prior to 3.6.
+  id: totrans-312
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 请注意，在2016年采用PEP 487之前编写或记录的描述符覆盖内容可能在今天显得过于复杂，因为在Python 3.6之前的版本中不支持`__set_name__`。
+- en: For more practical examples, *Python Cookbook*, 3rd ed., by David Beazley and
+    Brian K. Jones (O’Reilly), has many recipes illustrating descriptors, of which
+    I want to highlight “6.12\. Reading Nested and Variable-Sized Binary Structures,”
+    “8.10\. Using Lazily Computed Properties,” “8.13\. Implementing a Data Model or
+    Type System,” and “9.9\. Defining Decorators As Classes.” The last recipe of which
+    addresses deep issues with the interaction of function decorators, descriptors,
+    and methods, explaining how a function decorator implemented as a class with `__call__`
+    also needs to implement `__get__` if it wants to work with decorating methods
+    as well as functions.
+  id: totrans-313
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 对于更多实际示例，《Python Cookbook》，第3版，作者David Beazley和Brian K. Jones（O’Reilly）有许多示例说明描述符，其中我想强调“6.12\.
+    读取嵌套和可变大小的二进制结构”，“8.10\. 使用惰性计算属性”，“8.13\. 实现数据模型或类型系统”和“9.9\. 定义装饰器作为类”。最后一种方法解决了函数装饰器、描述符和方法交互的深层问题，解释了如果将函数装饰器实现为具有`__call__`的类，还需要实现`__get__`以便与装饰方法和函数一起使用。
+- en: '[PEP 487—Simpler customization of class creation](https://fpy.li/pep487) introduced
+    the `__set_name__` special method, and includes an example of a [validating descriptor](https://fpy.li/23-7).'
+  id: totrans-314
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[PEP 487—更简单的类创建自定义](https://fpy.li/pep487)引入了`__set_name__`特殊方法，并包括一个[验证描述符](https://fpy.li/23-7)的示例。'
+- en: ^([1](ch23.html#idm46582373585456-marker)) Raymond Hettinger, [*Descriptor HowTo
+    Guide*](https://fpy.li/descrhow).
+  id: totrans-315
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([1](ch23.html#idm46582373585456-marker)) Raymond Hettinger，《*描述符指南*》(https://fpy.li/descrhow)。
+- en: ^([2](ch23.html#idm46582373504224-marker)) Classes and instances are drawn as
+    rectangles in UML class diagrams. There are visual differences, but instances
+    are rarely shown in class diagrams, so developers may not recognize them as such.
+  id: totrans-316
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([2](ch23.html#idm46582373504224-marker)) 在UML类图中，类和实例被绘制为矩形。虽然在类图中有视觉差异，但实例很少在类图中显示，因此开发人员可能不会将其识别为实例。
+- en: ^([3](ch23.html#idm46582373099344-marker)) White truffles cost thousands of
+    dollars per pound. Disallowing the sale of truffles for $0.01 is left as an exercise
+    for the enterprising reader. I know a person who actually bought an $1,800 encyclopedia
+    of statistics for $18 because of an error in an online store (not *Amazon.com*
+    in this case).
+  id: totrans-317
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([3](ch23.html#idm46582373099344-marker)) 白松露每磅成本数千美元。不允��以0.01美元出售松露留给有企图的读者作为练习。我知道一个人实际上因为在线商店的错误（这次不是*Amazon.com*）而以18美元购买了一本价值1800美元的统计百科全书。
+- en: '^([4](ch23.html#idm46582372934224-marker)) More precisely, `__set_name__` is
+    called by `type.__new__`—the constructor of objects representing classes. The
+    `type` built-in is actually a metaclass, the default class of user-defined classes.
+    This is hard to grasp at first, but rest assured: [Chapter 24](ch24.html#class_metaprog)
+    is devoted to the dynamic configuration of classes, including the concept of metaclasses.'
+  id: totrans-318
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([4](ch23.html#idm46582372934224-marker)) 更准确地说，`__set_name__`是由`type.__new__`调用的——表示类的对象的构造函数。内置的`type`实际上是一个元类，用户定义类的默认类。这一点一开始很难理解，但请放心：[第24章](ch24.html#class_metaprog)专门讨论了类的动态配置，包括元类的概念。
+- en: '^([5](ch23.html#idm46582372566736-marker)) Gamma et al., *Design Patterns:
+    Elements of Reusable Object-Oriented Software*, p. 326.'
+  id: totrans-319
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([5](ch23.html#idm46582372566736-marker)) Gamma等人，《设计模式：可复用面向对象软件的元素》，第326页。
+- en: '^([6](ch23.html#idm46582372425376-marker)) Slide #50 of Alex Martelli’s [“Python
+    Design Patterns” talk](https://fpy.li/23-1). Highly recommended.'
+  id: totrans-320
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([6](ch23.html#idm46582372425376-marker)) Alex Martelli的“Python设计模式”演讲第50页幻灯片(https://fpy.li/23-1)。强烈推荐。
+- en: ^([7](ch23.html#idm46582370317776-marker)) A `__delete__` method is also provided
+    by the `property` decorator, even if no deleter method is defined by you.
+  id: totrans-321
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([7](ch23.html#idm46582370317776-marker)) `property`装饰器还提供了一个`__delete__`方法，即使您没有定义删除方法。
+- en: '^([8](ch23.html#idm46582370312464-marker)) Python is not consistent in such
+    messages. Trying to change the `c.real` attribute of a `complex` number gets `AttributeError:
+    readonly attribute`, but an attempt to change `c.conjugate` (a method of `complex`),
+    results in `AttributeError: ''complex'' object attribute ''conjugate'' is read-only`.
+    Even the spelling of “read-only” is different.'
+  id: totrans-322
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '^([8](ch23.html#idm46582370312464-marker)) Python 在这类消息中并不一致。尝试更改`complex`数的`c.real`属性会得到`AttributeError:
+    readonly attribute`，但尝试更改`complex`的方法`c.conjugate`会得到`AttributeError: ''complex''
+    object attribute ''conjugate'' is read-only`。甚至“read-only”的拼写也不同。'
+- en: ^([9](ch23.html#idm46582370302768-marker)) However, recall that creating instance
+    attributes after the `__init__` method runs defeats the key-sharing memory optimization,
+    as discussed in from [“Practical Consequences of How dict Works”](ch03.html#consequences_dict_internals).
+  id: totrans-323
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([9](ch23.html#idm46582370302768-marker)) 但是，请记住，在`__init__`方法运行后创建实例属性会破坏关键共享内存优化，正如从[“dict工作原理的实际后果”](ch03.html#consequences_dict_internals)中讨论的那样。
+- en: ^([10](ch23.html#idm46582370273232-marker)) Customizing the help text for each
+    descriptor instance is surprisingly hard. One solution requires dynamically building
+    a wrapper class for each descriptor instance.
+  id: totrans-324
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([10](ch23.html#idm46582370273232-marker)) 自定义每个描述符实例的帮助文本实际上是非常困难的。一种解决方案需要为每个描述符实例动态构建一个包装类。

@@ -1,0 +1,1253 @@
+- en: Chapter 10\. Design Patterns with First-Class Functions
+  id: totrans-0
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 第10章。具有一等函数的设计模式
+- en: Conformity to patterns is not a measure of goodness.
+  id: totrans-1
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+  zh: 符合模式并不是好坏的衡量标准。
+- en: ''
+  id: totrans-2
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: Ralph Johnson, coauthor of the *Design Patterns* classic^([1](ch10.html#idm46582435198688))
+  id: totrans-3
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+  zh: 拉尔夫·约翰逊，*设计模式*经典著作的合著者^([1](ch10.html#idm46582435198688))
+- en: In software engineering, a [*design pattern*](https://fpy.li/10-1) is a general
+    recipe for solving a common design problem. You don’t need to know design patterns
+    to follow this chapter. I will explain the patterns used in the examples.
+  id: totrans-4
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在软件工程中，[*设计模式*](https://fpy.li/10-1)是解决常见设计问题的通用配方。你不需要了解设计模式来阅读本章。我将解释示例中使用的模式。
+- en: 'The use of design patterns in programming was popularized by the landmark book
+    *Design Patterns: Elements of Reusable Object-Oriented Software* (Addison-Wesley)
+    by Erich Gamma, Richard Helm, Ralph Johnson, and John Vlissides—a.k.a. “the Gang
+    of Four.” The book is a catalog of 23 patterns consisting of arrangements of classes
+    exemplified with code in C++, but assumed to be useful in other object-oriented
+    languages as well.'
+  id: totrans-5
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 编程中设计模式的使用被*设计模式：可复用面向对象软件的元素*（Addison-Wesley）一书所推广，作者是Erich Gamma、Richard Helm、Ralph
+    Johnson和John Vlissides，也被称为“四人组”。这本书是一个包含23种模式的目录，其中有用C++代码示例的类排列，但也被认为在其他面向对象语言中也很有用。
+- en: Although design patterns are language independent, that does not mean every
+    pattern applies to every language. For example, [Chapter 17](ch17.html#iterables2generators)
+    will show that it doesn’t make sense to emulate the recipe of the [Iterator](https://fpy.li/10-2)
+    pattern in Python, because the pattern is embedded in the language and ready to
+    use in the form of generators—which don’t need classes to work, and require less
+    code than the classic recipe.
+  id: totrans-6
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 尽管设计模式是与语言无关的，但这并不意味着每种模式都适用于每种语言。例如，[第17章](ch17.html#iterables2generators)将展示在Python中模拟[Iterator](https://fpy.li/10-2)模式的配方是没有意义的，因为该模式已嵌入在语言中，并以生成器的形式准备好使用，不需要类来工作，并且比经典配方需要更少的代码。
+- en: 'The authors of *Design Patterns* acknowledge in their introduction that the
+    implementation language determines which patterns are relevant:'
+  id: totrans-7
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*设计模式*的作者在介绍中承认，实现语言决定了哪些模式是相关的：'
+- en: The choice of programming language is important because it influences one’s
+    point of view. Our patterns assume Smalltalk/C++-level language features, and
+    that choice determines what can and cannot be implemented easily. If we assumed
+    procedural languages, we might have included design patterns called “Inheritance,”
+    “Encapsulation,” and “Polymorphism.” Similarly, some of our patterns are supported
+    directly by the less common object-oriented languages. CLOS has multi-methods,
+    for example, which lessen the need for a pattern such as Visitor.^([2](ch10.html#idm46582435189568))
+  id: totrans-8
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+  zh: 编程语言的选择很重要，因为它影响一个人的观点。我们的模式假设具有Smalltalk/C++级别的语言特性，这种选择决定了什么可以轻松实现，什么不能。如果我们假设过程式语言，我们可能会包括称为“继承”、“封装”和“多态性”的设计模式。同样，一些我们的模式直接受到不太常见的面向对象语言的支持。例如，CLOS具有多方法，这减少了像Visitor这样的模式的需求^([2](ch10.html#idm46582435189568))
+- en: In his 1996 presentation, [“Design Patterns in Dynamic Languages”](https://fpy.li/norvigdp),
+    Peter Norvig states that 16 out of the 23 patterns in the original *Design Patterns*
+    book become either “invisible or simpler” in a dynamic language (slide 9). He’s
+    talking about the Lisp and Dylan languages, but many of the relevant dynamic features
+    are also present in Python. In particular, in the context of languages with first-class
+    functions, Norvig suggests rethinking the classic patterns known as Strategy,
+    Command, Template Method, and Visitor.
+  id: totrans-9
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在他1996年的演讲中，[“动态语言中的设计模式”](https://fpy.li/norvigdp)，Peter Norvig指出原始*设计模式*书中的23种模式中有16种在动态语言中变得“不可见或更简单”（幻灯片9）。他谈到的是Lisp和Dylan语言，但许多相关的动态特性也存在于Python中。特别是在具有一等函数的语言环境中，Norvig建议重新思考被称为Strategy、Command、Template
+    Method和Visitor的经典模式。
+- en: The goal of this chapter is to show how—in some cases—functions can do the same
+    work as classes, with code that is more readable and concise. We will refactor
+    an implementation of Strategy using functions as objects, removing a lot of boilerplate
+    code. We’ll also discuss a similar approach to simplifying the Command pattern.
+  id: totrans-10
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 本章的目标是展示如何——在某些情况下——函数可以像类一样完成工作，代码更易读且更简洁。我们将使用函数作为对象重构Strategy的实现，消除大量样板代码。我们还将讨论简化Command模式的类似方法。
+- en: What’s New in This Chapter
+  id: totrans-11
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 本章的新内容
+- en: I moved this chapter to the end of Part III so I could apply a registration
+    decorator in [“Decorator-Enhanced Strategy Pattern”](#decorated_strategy) and
+    also use type hints in the examples. Most type hints used in this chapter are
+    not complicated, and they do help with readability.
+  id: totrans-12
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我将这一章移到第三部分的末尾，这样我就可以在[“装饰增强的Strategy模式”](#decorated_strategy)中应用注册装饰器，并在示例中使用类型提示。本章中使用的大多数类型提示并不复杂，它们确实有助于可读性。
+- en: 'Case Study: Refactoring Strategy'
+  id: totrans-13
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 案例研究：重构Strategy
+- en: Strategy is a good example of a design pattern that can be simpler in Python
+    if you leverage functions as first-class objects. In the following section, we
+    describe and implement Strategy using the “classic” structure described in *Design
+    Patterns*. If you are familiar with the classic pattern, you can skip to [“Function-Oriented
+    Strategy”](#pythonic_strategy) where we refactor the code using functions, significantly
+    reducing the line count.
+  id: totrans-14
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Strategy是一个很好的设计模式示例，在Python中，如果你利用函数作为一等对象，它可能会更简单。在接下来的部分中，我们使用*设计模式*中描述的“经典”结构来描述和实现Strategy。如果你熟悉经典模式，可以直接跳到[“面向函数的Strategy”](#pythonic_strategy)，我们将使用函数重构代码，显著减少行数。
+- en: Classic Strategy
+  id: totrans-15
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 经典Strategy
+- en: The UML class diagram in [Figure 10-1](#strategy_uml) depicts an arrangement
+    of classes that exemplifies the Strategy pattern.
+  id: totrans-16
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[图10-1](#strategy_uml)中的UML类图描述了展示Strategy模式的类排列。'
+- en: '![Order discount calculations as strategies](assets/flpy_1001.png)'
+  id: totrans-17
+  prefs: []
+  type: TYPE_IMG
+  zh: '![将订单折扣计算作为策略](assets/flpy_1001.png)'
+- en: Figure 10-1\. UML class diagram for order discount processing implemented with
+    the Strategy design pattern.
+  id: totrans-18
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 图 10-1\. 使用策略设计模式实现订单折扣处理的 UML 类图。
+- en: 'The Strategy pattern is summarized like this in *Design Patterns*:'
+  id: totrans-19
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*设计模式* 中对策略模式的总结如下：'
+- en: Define a family of algorithms, encapsulate each one, and make them interchangeable.
+    Strategy lets the algorithm vary independently from clients that use it.
+  id: totrans-20
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+  zh: 定义一组算法家族，封装每个算法，并使它们可以互换。策略让算法独立于使用它的客户端变化。
+- en: A clear example of Strategy applied in the ecommerce domain is computing discounts
+    to orders according to the attributes of the customer or inspection of the ordered
+    items.
+  id: totrans-21
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在电子商务领域中应用策略的一个明显例子是根据客户属性或订购商品的检查计算订单折扣。
+- en: 'Consider an online store with these discount rules:'
+  id: totrans-22
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 考虑一个在线商店，具有以下折扣规则：
+- en: Customers with 1,000 or more fidelity points get a global 5% discount per order.
+  id: totrans-23
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 拥有 1,000 或更多忠诚积分的顾客每个订单可以获得全局 5% 的折扣。
+- en: A 10% discount is applied to each line item with 20 or more units in the same
+    order.
+  id: totrans-24
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 每个订单中有 20 个或更多单位的行项目都会获得 10% 的折扣。
+- en: Orders with at least 10 distinct items get a 7% global discount.
+  id: totrans-25
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 至少有 10 个不同商品的订单可以获得 7% 的全局折扣。
+- en: For brevity, let’s assume that only one discount may be applied to an order.
+  id: totrans-26
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为简洁起见，假设订单只能应用一个折扣。
+- en: 'The UML class diagram for the Strategy pattern is depicted in [Figure 10-1](#strategy_uml).
+    Its participants are:'
+  id: totrans-27
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 策略模式的 UML 类图在 [图 10-1](#strategy_uml) 中描述。参与者有：
+- en: Context
+  id: totrans-28
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 上下文
+- en: Provides a service by delegating some computation to interchangeable components
+    that implement alternative algorithms. In the ecommerce example, the context is
+    an `Order`, which is configured to apply a promotional discount according to one
+    of several algorithms.
+  id: totrans-29
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 通过将一些计算委托给实现替代算法的可互换组件来提供服务。在电子商务示例中，上下文是一个 `Order`，它被配置为根据几种算法之一应用促销折扣。
+- en: Strategy
+  id: totrans-30
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 策略
+- en: The interface common to the components that implement the different algorithms.
+    In our example, this role is played by an abstract class called `Promotion`.
+  id: totrans-31
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 实现不同算法的组件之间的公共接口。在我们的例子中，这个角色由一个名为 `Promotion` 的抽象类扮演。
+- en: Concrete strategy
+  id: totrans-32
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 具体策略
+- en: One of the concrete subclasses of Strategy. `FidelityPromo`, `BulkPromo`, and
+    `LargeOrderPromo` are the three concrete strategies implemented.
+  id: totrans-33
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Strategy 的具体子类之一。`FidelityPromo`、`BulkPromo` 和 `LargeOrderPromo` 是实现的三个具体策略。
+- en: The code in [Example 10-1](#ex_classic_strategy) follows the blueprint in [Figure 10-1](#strategy_uml).
+    As described in *Design Patterns*, the concrete strategy is chosen by the client
+    of the context class. In our example, before instantiating an order, the system
+    would somehow select a promotional discount strategy and pass it to the `Order`
+    constructor. The selection of the strategy is outside the scope of the pattern.
+  id: totrans-34
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 10-1](#ex_classic_strategy) 中的代码遵循 [图 10-1](#strategy_uml) 中的蓝图。如 *设计模式*
+    中所述，具体策略由上下文类的客户端选择。在我们的例子中，在实例化订单之前，系统会以某种方式选择促销折扣策略并将其传递给 `Order` 构造函数。策略的选择超出了模式的范围。'
+- en: Example 10-1\. Implementation of the `Order` class with pluggable discount strategies
+  id: totrans-35
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 10-1\. 实现具有可插入折扣策略的 `Order` 类
+- en: '[PRE0]'
+  id: totrans-36
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE0]'
+- en: Note that in [Example 10-1](#ex_classic_strategy), I coded `Promotion` as an
+    abstract base class (ABC) to use the `@abstractmethod` decorator and make the
+    pattern more explicit.
+  id: totrans-37
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 请注意，在 [示例 10-1](#ex_classic_strategy) 中，我将 `Promotion` 编码为抽象基类（ABC），以使用 `@abstractmethod`
+    装饰器并使模式更加明确。
+- en: '[Example 10-2](#ex_classic_strategy_tests) shows doctests used to demonstrate
+    and verify the operation of a module implementing the rules described earlier.'
+  id: totrans-38
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 10-2](#ex_classic_strategy_tests) 展示了用于演示和验证实现前述规则的模块操作的 doctests。'
+- en: Example 10-2\. Sample usage of `Order` class with different promotions applied
+  id: totrans-39
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 10-2\. 应用不同促销策略的 `Order` 类的示例用法
+- en: '[PRE1]'
+  id: totrans-40
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE1]'
+- en: '[![1](assets/1.png)](#co_design_patterns_with_first_class_functions_CO1-1)'
+  id: totrans-41
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_design_patterns_with_first_class_functions_CO1-1)'
+- en: 'Two customers: `joe` has 0 fidelity points, `ann` has 1,100.'
+  id: totrans-42
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 两位顾客：`joe` 没有忠诚积分，`ann` 有 1,100 积分。
+- en: '[![2](assets/2.png)](#co_design_patterns_with_first_class_functions_CO1-2)'
+  id: totrans-43
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_design_patterns_with_first_class_functions_CO1-2)'
+- en: One shopping cart with three line items.
+  id: totrans-44
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 一个购物车有三个行项目。
+- en: '[![3](assets/3.png)](#co_design_patterns_with_first_class_functions_CO1-3)'
+  id: totrans-45
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_design_patterns_with_first_class_functions_CO1-3)'
+- en: The `FidelityPromo` promotion gives no discount to `joe`.
+  id: totrans-46
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`FidelityPromo` 促销不给 `joe` 任何折扣。'
+- en: '[![4](assets/4.png)](#co_design_patterns_with_first_class_functions_CO1-4)'
+  id: totrans-47
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_design_patterns_with_first_class_functions_CO1-4)'
+- en: '`ann` gets a 5% discount because she has at least 1,000 points.'
+  id: totrans-48
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`ann` 因为拥有至少 1,000 积分，所以可以获得 5% 的折扣。'
+- en: '[![5](assets/5.png)](#co_design_patterns_with_first_class_functions_CO1-5)'
+  id: totrans-49
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_design_patterns_with_first_class_functions_CO1-5)'
+- en: The `banana_cart` has 30 units of the `"banana"` product and 10 apples.
+  id: totrans-50
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`banana_cart` 有 30 个单位的 `"banana"` 产品和 10 个苹果。'
+- en: '[![6](assets/6.png)](#co_design_patterns_with_first_class_functions_CO1-6)'
+  id: totrans-51
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![6](assets/6.png)](#co_design_patterns_with_first_class_functions_CO1-6)'
+- en: Thanks to the `BulkItemPromo`, `joe` gets a $1.50 discount on the bananas.
+  id: totrans-52
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 由于 `BulkItemPromo`，`joe` 在香蕉上获得 $1.50 的折扣。
+- en: '[![7](assets/7.png)](#co_design_patterns_with_first_class_functions_CO1-7)'
+  id: totrans-53
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![7](assets/7.png)](#co_design_patterns_with_first_class_functions_CO1-7)'
+- en: '`long_cart` has 10 different items at $1.00 each.'
+  id: totrans-54
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`long_cart` 有 10 个不同的商品，每个商品价格为 $1.00。'
+- en: '[![8](assets/8.png)](#co_design_patterns_with_first_class_functions_CO1-8)'
+  id: totrans-55
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![8](assets/8.png)](#co_design_patterns_with_first_class_functions_CO1-8)'
+- en: '`joe` gets a 7% discount on the whole order because of `LargerOrderPromo`.'
+  id: totrans-56
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`joe` 因为 `LargerOrderPromo` 而获得整个订单 7% 的折扣。'
+- en: '[Example 10-1](#ex_classic_strategy) works perfectly well, but the same functionality
+    can be implemented with less code in Python by using functions as objects. The
+    next section shows how.'
+  id: totrans-57
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 10-1](#ex_classic_strategy) 可以完美地运行，但是在 Python 中可以使用函数作为对象来实现相同的功能，代码更少。下一节将展示如何实现。'
+- en: Function-Oriented Strategy
+  id: totrans-58
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 面向函数的策略
+- en: Each concrete strategy in [Example 10-1](#ex_classic_strategy) is a class with
+    a single method, `discount`. Furthermore, the strategy instances have no state
+    (no instance attributes). You could say they look a lot like plain functions,
+    and you would be right. [Example 10-3](#ex_strategy) is a refactoring of [Example 10-1](#ex_classic_strategy),
+    replacing the concrete strategies with simple functions and removing the `Promo`
+    abstract class. Only small adjustments are needed in the `Order` class.^([3](ch10.html#idm46582434561168))
+  id: totrans-59
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 10-1](#ex_classic_strategy)中的每个具体策略都是一个只有一个方法`discount`的类。此外，策略实例没有状态（没有实例属性）。你可以说它们看起来很像普通函数，你说得对。[示例 10-3](#ex_strategy)是[示例 10-1](#ex_classic_strategy)的重构，用简单函数替换具体策略并移除`Promo`抽象类。在`Order`类中只需要做出小的调整。^([3](ch10.html#idm46582434561168))'
+- en: Example 10-3\. `Order` class with discount strategies implemented as functions
+  id: totrans-60
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 10-3。`Order`类中实现的折扣策略作为函数
+- en: '[PRE2]'
+  id: totrans-61
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE2]'
+- en: '[![1](assets/1.png)](#co_design_patterns_with_first_class_functions_CO2-1)'
+  id: totrans-62
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_design_patterns_with_first_class_functions_CO2-1)'
+- en: 'This type hint says: `promotion` may be `None`, or it may be a callable that
+    takes an `Order` argument and returns a `Decimal`.'
+  id: totrans-63
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这个类型提示说：`promotion`可能是`None`，也可能是一个接受`Order`参数并返回`Decimal`的可调用对象。
+- en: '[![2](assets/2.png)](#co_design_patterns_with_first_class_functions_CO2-2)'
+  id: totrans-64
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_design_patterns_with_first_class_functions_CO2-2)'
+- en: To compute a discount, call the `self.promotion` callable, passing `self` as
+    an argument. See the following tip for the reason.
+  id: totrans-65
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 要计算折扣，请调用`self.promotion`可调用对象，并传递`self`作为参数。请查看下面的提示原因。
+- en: '[![3](assets/3.png)](#co_design_patterns_with_first_class_functions_CO2-3)'
+  id: totrans-66
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_design_patterns_with_first_class_functions_CO2-3)'
+- en: No abstract class.
+  id: totrans-67
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 没有抽象类。
+- en: '[![4](assets/4.png)](#co_design_patterns_with_first_class_functions_CO2-4)'
+  id: totrans-68
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_design_patterns_with_first_class_functions_CO2-4)'
+- en: Each strategy is a function.
+  id: totrans-69
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 每个策略都是一个函数。
+- en: Why self.promotion(self)?
+  id: totrans-70
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 为什么是self.promotion(self)?
+- en: In the `Order` class, `promotion` is not a method. It’s an instance attribute
+    that happens to be callable. So the first part of the expression, `self.promotion`,
+    retrieves that callable. To invoke it, we must provide an instance of `Order`,
+    which in this case is `self`. That’s why `self` appears twice in that expression.
+  id: totrans-71
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在`Order`类中，`promotion`不是一个方法。它是一个可调用的实例属性。因此，表达式的第一部分`self.promotion`检索到了可调用对象。要调用它，我们必须提供一个`Order`实例，而在这种情况下是`self`。这就是为什么在表达式中`self`出现两次的原因。
+- en: '[“Methods Are Descriptors”](ch23.html#methods_are_descriptors_sec) will explain
+    the mechanism that binds methods to instances automatically. It does not apply
+    to `promotion` because it is not a method.'
+  id: totrans-72
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[“方法是描述符”](ch23.html#methods_are_descriptors_sec)将解释将方法自动绑定到实例的机制。这不适用于`promotion`，因为它不是一个方法。'
+- en: The code in [Example 10-3](#ex_strategy) is shorter than [Example 10-1](#ex_classic_strategy).
+    Using the new `Order` is also a bit simpler, as shown in the [Example 10-4](#ex_strategy_tests)
+    doctests.
+  id: totrans-73
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 10-3](#ex_strategy)中的代码比[示例 10-1](#ex_classic_strategy)要短。使用新的`Order`也更简单，如[示例 10-4](#ex_strategy_tests)中的doctests所示。'
+- en: Example 10-4\. Sample usage of `Order` class with promotions as functions
+  id: totrans-74
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 10-4。`Order`类使用函数作为促销的示例用法
+- en: '[PRE3]'
+  id: totrans-75
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE3]'
+- en: '[![1](assets/1.png)](#co_design_patterns_with_first_class_functions_CO3-1)'
+  id: totrans-76
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_design_patterns_with_first_class_functions_CO3-1)'
+- en: Same test fixtures as [Example 10-1](#ex_classic_strategy).
+  id: totrans-77
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 与[示例 10-1](#ex_classic_strategy)相同的测试固定装置。
+- en: '[![2](assets/2.png)](#co_design_patterns_with_first_class_functions_CO3-2)'
+  id: totrans-78
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_design_patterns_with_first_class_functions_CO3-2)'
+- en: To apply a discount strategy to an `Order`, just pass the promotion function
+    as an argument.
+  id: totrans-79
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 要将折扣策略应用于`Order`，只需将促销函数作为参数传递。
+- en: '[![3](assets/3.png)](#co_design_patterns_with_first_class_functions_CO3-3)'
+  id: totrans-80
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_design_patterns_with_first_class_functions_CO3-3)'
+- en: A different promotion function is used here and in the next test.
+  id: totrans-81
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这里和下一个测试中使用了不同的促销函数。
+- en: 'Note the callouts in [Example 10-4](#ex_strategy_tests)—there is no need to
+    instantiate a new promotion object with each new order: the functions are ready
+    to use.'
+  id: totrans-82
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意[示例 10-4](#ex_strategy_tests)中的标注——每个新订单不需要实例化一个新的促销对象：这些函数已经准备好使用。
+- en: 'It is interesting to note that in *Design Patterns*, the authors suggest: “Strategy
+    objects often make good flyweights.”^([4](ch10.html#idm46582434526272)) A definition
+    of the Flyweight pattern in another part of that work states: “A flyweight is
+    a shared object that can be used in multiple contexts simultaneously.”^([5](ch10.html#idm46582434525248))
+    The sharing is recommended to reduce the cost of creating a new concrete strategy
+    object when the same strategy is applied over and over again with every new context—with
+    every new `Order` instance, in our example. So, to overcome a drawback of the
+    Strategy pattern—its runtime cost—the authors recommend applying yet another pattern.
+    Meanwhile, the line count and maintenance cost of your code are piling up.'
+  id: totrans-83
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 有趣的是，在*设计模式*中，作者建议：“策略对象通常是很好的享元。”^([4](ch10.html#idm46582434526272)) 该作品的另一部分中对享元模式的定义是：“享元是一个可以在多个上下文中同时使用的共享对象。”^([5](ch10.html#idm46582434525248))
+    建议共享以减少在每个新上下文中重复应用相同策略时创建新具体策略对象的成本——在我们的例子中，每个新的`Order`实例。因此，为了克服策略模式的一个缺点——运行时成本——作者建议应用另一种模式。同时，您的代码行数和维护成本正在积累。
+- en: A thornier use case, with complex concrete strategies holding internal state,
+    may require all the pieces of the Strategy and Flyweight design patterns combined.
+    But often concrete strategies have no internal state; they only deal with data
+    from the context. If that is the case, then by all means use plain old functions
+    instead of coding single-method classes implementing a single-method interface
+    declared in yet another class. A function is more lightweight than an instance
+    of a user-defined class, and there is no need for Flyweight because each strategy
+    function is created just once per Python process when it loads the module. A plain
+    function is also “a shared object that can be used in multiple contexts simultaneously.”
+  id: totrans-84
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 一个更棘手的用例，具有内部状态的复杂具体策略可能需要将策略和享元设计模式的所有部分结合起来。但通常具体策略没有内部状态；它们只处理来自上下文的数据。如果是这种情况，那么请务必使用普通的函数，而不是编写实现单方法接口的单方法类的单方法类。函数比用户定义类的实例更轻量级，而且不需要享元，因为每个策略函数在Python进程加载模块时只创建一次。一个普通函数也是“一个可以同时在多个上下文中使用的共享对象”。
+- en: Now that we have implemented the Strategy pattern with functions, other possibilities
+    emerge. Suppose you want to create a “metastrategy” that selects the best available
+    discount for a given `Order`. In the following sections we study additional refactorings
+    that implement this requirement using a variety of approaches that leverage functions
+    and modules as objects.
+  id: totrans-85
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在我们已经使用函数实现了策略模式，其他可能性也出现了。假设您想创建一个“元策略”，为给定的`Order`选择最佳可用折扣。在接下来的几节中，我们研究了使用各种方法利用函数和模块作为对象实现此要求的额外重构。
+- en: 'Choosing the Best Strategy: Simple Approach'
+  id: totrans-86
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 选择最佳策略：简单方法
+- en: Given the same customers and shopping carts from the tests in [Example 10-4](#ex_strategy_tests),
+    we now add three additional tests in [Example 10-5](#ex_strategy_best_tests).
+  id: totrans-87
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在[示例 10-4](#ex_strategy_tests)中的测试中给定相同的顾客和购物车，我们现在在[示例 10-5](#ex_strategy_best_tests)中添加了三个额外的测试。
+- en: Example 10-5\. The `best_promo` function applies all discounts and returns the
+    largest
+  id: totrans-88
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 10-5。`best_promo`函数应用所有折扣并返回最大值
+- en: '[PRE4]'
+  id: totrans-89
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE4]'
+- en: '[![1](assets/1.png)](#co_design_patterns_with_first_class_functions_CO4-1)'
+  id: totrans-90
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_design_patterns_with_first_class_functions_CO4-1)'
+- en: '`best_promo` selected the `larger_order_promo` for customer `joe`.'
+  id: totrans-91
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`best_promo`为顾客`joe`选择了`larger_order_promo`。'
+- en: '[![2](assets/2.png)](#co_design_patterns_with_first_class_functions_CO4-2)'
+  id: totrans-92
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_design_patterns_with_first_class_functions_CO4-2)'
+- en: Here `joe` got the discount from `bulk_item_promo` for ordering lots of bananas.
+  id: totrans-93
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这里`joe`因为订购了大量香蕉而从`bulk_item_promo`获得了折扣。
+- en: '[![3](assets/3.png)](#co_design_patterns_with_first_class_functions_CO4-3)'
+  id: totrans-94
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_design_patterns_with_first_class_functions_CO4-3)'
+- en: Checking out with a simple cart, `best_promo` gave loyal customer `ann` the
+    discount for the `fidelity_promo`.
+  id: totrans-95
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 使用一个简单的购物车结账，`best_promo`为忠实顾客`ann`提供了`fidelity_promo`的折扣。
+- en: The implementation of `best_promo` is very simple. See [Example 10-6](#ex_strategy_best).
+  id: totrans-96
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`best_promo`的实现非常简单。参见[示例 10-6](#ex_strategy_best)。'
+- en: Example 10-6\. `best_promo` finds the maximum discount iterating over a list
+    of functions
+  id: totrans-97
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 10-6。`best_promo`在函数列表上迭代找到最大折扣
+- en: '[PRE5]'
+  id: totrans-98
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE5]'
+- en: '[![1](assets/1.png)](#co_design_patterns_with_first_class_functions_CO5-1)'
+  id: totrans-99
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_design_patterns_with_first_class_functions_CO5-1)'
+- en: '`promos`: list of the strategies implemented as functions.'
+  id: totrans-100
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`promos`：作为函数实现的策略列表。'
+- en: '[![2](assets/2.png)](#co_design_patterns_with_first_class_functions_CO5-2)'
+  id: totrans-101
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_design_patterns_with_first_class_functions_CO5-2)'
+- en: '`best_promo` takes an instance of `Order` as argument, as do the other `*_promo`
+    functions.'
+  id: totrans-102
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`best_promo`接受`Order`的实例作为参数，其他`*_promo`函数也是如此。'
+- en: '[![3](assets/3.png)](#co_design_patterns_with_first_class_functions_CO5-3)'
+  id: totrans-103
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_design_patterns_with_first_class_functions_CO5-3)'
+- en: Using a generator expression, we apply each of the functions from `promos` to
+    the `order`, and return the maximum discount computed.
+  id: totrans-104
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 使用生成器表达式，我们将`promos`中的每个函数应用于`order`，并返回计算出的最大折扣。
+- en: '[Example 10-6](#ex_strategy_best) is straightforward: `promos` is a `list`
+    of functions. Once you get used to the idea that functions are first-class objects,
+    it naturally follows that building data structures holding functions often makes
+    sense.'
+  id: totrans-105
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 10-6](#ex_strategy_best)很简单：`promos`是一个函数列表。一旦您习惯于函数是��等对象的概念，自然而然地会发现构建包含函数的数据结构通常是有意义的。'
+- en: 'Although [Example 10-6](#ex_strategy_best) works and is easy to read, there
+    is some duplication that could lead to a subtle bug: to add a new promotion strategy,
+    we need to code the function and remember to add it to the `promos` list, or else
+    the new promotion will work when explicitly passed as an argument to `Order`,
+    but will not be considered by `best_promotion`.'
+  id: totrans-106
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 尽管[示例 10-6](#ex_strategy_best)有效且易于阅读，但存在一些重复代码可能导致微妙的错误：要添加新的促销策略，我们需要编写该函数并记得将其添加到`promos`列表中，否则新的促销将在显式传递给`Order`时起作用，但不会被`best_promotion`考虑。
+- en: Read on for a couple of solutions to this issue.
+  id: totrans-107
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 继续阅读解决此问题的几种解决方案。
+- en: Finding Strategies in a Module
+  id: totrans-108
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 在模块中查找策略
+- en: 'Modules in Python are also first-class objects, and the standard library provides
+    several functions to handle them. The built-in `globals` is described as follows
+    in the Python docs:'
+  id: totrans-109
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Python中的模块也是头等对象，标准库提供了几个函数来处理它们。Python文档中对内置的`globals`描述如下：
+- en: '`globals()`'
+  id: totrans-110
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`globals()`'
+- en: Return a dictionary representing the current global symbol table. This is always
+    the dictionary of the current module (inside a function or method, this is the
+    module where it is defined, not the module from which it is called).
+  id: totrans-111
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 返回表示当前全局符号表的字典。这始终是当前模块的字典（在函数或方法内部，这是定义它的模块，而不是调用它的模块）。
+- en: '[Example 10-7](#ex_strategy_best2) is a somewhat hackish way of using `globals`
+    to help `best_promo` automatically find the other available `*_promo` functions.'
+  id: totrans-112
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 10-7](#ex_strategy_best2)是一种有些巧妙的使用`globals`来帮助`best_promo`自动找到其他可用的`*_promo`函数的方法。'
+- en: Example 10-7\. The `promos` list is built by introspection of the module global
+    namespace
+  id: totrans-113
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 10-7。`promos`列表是通过检查模块全局命名空间构建的
+- en: '[PRE6]'
+  id: totrans-114
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE6]'
+- en: '[![1](assets/1.png)](#co_design_patterns_with_first_class_functions_CO6-1)'
+  id: totrans-115
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_design_patterns_with_first_class_functions_CO6-1)'
+- en: Import the promotion functions so they are available in the global namespace.^([6](ch10.html#idm46582433604672))
+  id: totrans-116
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 导入促销函数，以便它们在全局命名空间中可用。^([6](ch10.html#idm46582433604672))
+- en: '[![2](assets/2.png)](#co_design_patterns_with_first_class_functions_CO6-2)'
+  id: totrans-117
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_design_patterns_with_first_class_functions_CO6-2)'
+- en: Iterate over each item in the `dict` returned by `globals()`.
+  id: totrans-118
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 遍历 `globals()` 返回的 `dict` 中的每个项目。
+- en: '[![3](assets/3.png)](#co_design_patterns_with_first_class_functions_CO6-3)'
+  id: totrans-119
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_design_patterns_with_first_class_functions_CO6-3)'
+- en: Select only values where the name ends with the `_promo` suffix and…
+  id: totrans-120
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 仅选择名称以 `_promo` 结尾的值，并…
+- en: '[![4](assets/4.png)](#co_design_patterns_with_first_class_functions_CO6-4)'
+  id: totrans-121
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_design_patterns_with_first_class_functions_CO6-4)'
+- en: …filter out `best_promo` itself, to avoid an infinite recursion when `best_promo`
+    is called.
+  id: totrans-122
+  prefs: []
+  type: TYPE_NORMAL
+  zh: …过滤掉 `best_promo` 本身，以避免在调用 `best_promo` 时出现无限递归。
+- en: '[![5](assets/5.png)](#co_design_patterns_with_first_class_functions_CO6-5)'
+  id: totrans-123
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_design_patterns_with_first_class_functions_CO6-5)'
+- en: No changes in `best_promo`.
+  id: totrans-124
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`best_promo` 没有变化。'
+- en: Another way of collecting the available promotions would be to create a module
+    and put all the strategy functions there, except for `best_promo`.
+  id: totrans-125
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 收集可用促销的另一种方法是创建一个模块，并将所有策略函数放在那里，除了 `best_promo`。
+- en: In [Example 10-8](#ex_strategy_best3), the only significant change is that the
+    list of strategy functions is built by introspection of a separate module called
+    `promotions`. Note that [Example 10-8](#ex_strategy_best3) depends on importing
+    the `promotions` module as well as `inspect`, which provides high-level introspection
+    functions.
+  id: totrans-126
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在 [示例 10-8](#ex_strategy_best3) 中，唯一的显著变化是策略函数列表是通过内省一个名为 `promotions` 的单独模块构建的。请注意，[示例 10-8](#ex_strategy_best3)
+    依赖于导入 `promotions` 模块以及提供高级内省函数的 `inspect`。
+- en: Example 10-8\. The `promos` list is built by introspection of a new `promotions`
+    module
+  id: totrans-127
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 10-8\. `promos` 列表通过检查新的 `promotions` 模块进行内省构建
+- en: '[PRE7]'
+  id: totrans-128
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE7]'
+- en: The function `inspect.getmembers` returns the attributes of an object—in this
+    case, the `promotions` module—optionally filtered by a predicate (a boolean function).
+    We use `inspect.isfunction` to get only the functions from the module.
+  id: totrans-129
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 函数 `inspect.getmembers` 返回对象的属性—在本例中是 `promotions` 模块—可选择通过谓词（布尔函数）进行过滤。我们使用
+    `inspect.isfunction` 仅从模块中获取函数。
+- en: '[Example 10-8](#ex_strategy_best3) works regardless of the names given to the
+    functions; all that matters is that the `promotions` module contains only functions
+    that calculate discounts given orders. Of course, this is an implicit assumption
+    of the code. If someone were to create a function with a different signature in
+    the `promotions` module, then `best_promo` would break while trying to apply it
+    to an order.'
+  id: totrans-130
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 10-8](#ex_strategy_best3) 不受函数名称的影响；重要的是 `promotions` 模块只包含计算订单折扣的函数。当然，这是代码的一个隐含假设。如果有人在
+    `promotions` 模块中创建一个具有不同签名的函数，那么在尝试将其应用于订单时，`best_promo` 将会出错。'
+- en: We could add more stringent tests to filter the functions, by inspecting their
+    arguments for instance. The point of [Example 10-8](#ex_strategy_best3) is not
+    to offer a complete solution, but to highlight one possible use of module introspection.
+  id: totrans-131
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们可以添加更严格的测试来过滤函数，例如检查它们的参数。[示例 10-8](#ex_strategy_best3) 的重点不是提供一个完整的解决方案，而是强调模块内省的一个可能用法。
+- en: A more explicit alternative to dynamically collecting promotional discount functions
+    would be to use a simple decorator. That’s next.
+  id: totrans-132
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 一个更明确的动态收集促销折扣函数的替代方法是使用一个简单的装饰器。接下来就是这个。
+- en: Decorator-Enhanced Strategy Pattern
+  id: totrans-133
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 装饰器增强策略模式
+- en: Recall that our main issue with [Example 10-6](#ex_strategy_best) is the repetition
+    of the function names in their definitions and then in the `promos` list used
+    by the `best_promo` function to determine the highest discount applicable. The
+    repetition is problematic because someone may add a new promotional strategy function
+    and forget to manually add it to the `promos` list—in which case, `best_promo`
+    will silently ignore the new strategy, introducing a subtle bug in the system.
+    [Example 10-9](#ex_strategy_best31) solves this problem with the technique covered
+    in [“Registration Decorators”](ch09.html#registration_deco_sec).
+  id: totrans-134
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 回想一下我们对 [示例 10-6](#ex_strategy_best) 的主要问题是在函数定义中重复函数名称，然后在 `promos` 列表中重复使用这些名称，供
+    `best_promo` 函数确定适用的最高折扣。重复是有问题的，因为有人可能会添加一个新的促销策略函数，并忘记手动将其添加到 `promos` 列表中——在这种情况下，`best_promo`
+    将悄悄地忽略新策略，在系统中引入一个微妙的错误。[示例 10-9](#ex_strategy_best31) 使用了 [“注册装饰器”](ch09.html#registration_deco_sec)
+    中介绍的技术解决了这个问题。
+- en: Example 10-9\. The `promos` list is filled by the `Promotion` decorator
+  id: totrans-135
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 10-9\. `promos` 列表由 `Promotion` 装饰器填充
+- en: '[PRE8]'
+  id: totrans-136
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE8]'
+- en: '[![1](assets/1.png)](#co_design_patterns_with_first_class_functions_CO7-1)'
+  id: totrans-137
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_design_patterns_with_first_class_functions_CO7-1)'
+- en: The `promos` list is a module global, and starts empty.
+  id: totrans-138
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`promos` 列表是一个模块全局变量，并且初始为空。'
+- en: '[![2](assets/2.png)](#co_design_patterns_with_first_class_functions_CO7-2)'
+  id: totrans-139
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_design_patterns_with_first_class_functions_CO7-2)'
+- en: '`Promotion` is a registration decorator: it returns the `promo` function unchanged,
+    after appending it to the `promos` list.'
+  id: totrans-140
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`Promotion` 是一个注册装饰器：它返回未更改的 `promo` 函数，并将其附加到 `promos` 列表中。'
+- en: '[![3](assets/3.png)](#co_design_patterns_with_first_class_functions_CO7-3)'
+  id: totrans-141
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_design_patterns_with_first_class_functions_CO7-3)'
+- en: No changes needed to `best_promo`, because it relies on the `promos` list.
+  id: totrans-142
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`best_promo` 不需要更改，因为它依赖于 `promos` 列表。'
+- en: '[![4](assets/4.png)](#co_design_patterns_with_first_class_functions_CO7-4)'
+  id: totrans-143
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_design_patterns_with_first_class_functions_CO7-4)'
+- en: Any function decorated by `@promotion` will be added to `promos`.
+  id: totrans-144
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 任何被 `@promotion` 装饰的函数都将被添加到 `promos` 中。
+- en: 'This solution has several advantages over the others presented before:'
+  id: totrans-145
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这种解决方案比之前提出的其他解决方案有几个优点：
+- en: The promotion strategy functions don’t have to use special names—no need for
+    the `_promo` suffix.
+  id: totrans-146
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 促销策略函数不必使用特殊名称—不需要 `_promo` 后缀。
+- en: 'The `@promotion` decorator highlights the purpose of the decorated function,
+    and also makes it easy to temporarily disable a promotion: just comment out the
+    decorator.'
+  id: totrans-147
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '`@promotion`装饰器突出了被装饰函数的目的，并且使得暂时禁用促销变得容易：只需注释掉装饰器。'
+- en: Promotional discount strategies may be defined in other modules, anywhere in
+    the system, as long as the `@promotion` decorator is applied to them.
+  id: totrans-148
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 促销折扣策略可以在系统中的任何其他模块中定义，只要对它们应用`@promotion`装饰器。
+- en: In the next section, we discuss Command—another design pattern that is sometimes
+    implemented via single-method classes when plain functions would do.
+  id: totrans-149
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在下一节中，我们将讨论命令——另一个设计模式，有时通过单方法类实现，而普通函数也可以胜任。
+- en: The Command Pattern
+  id: totrans-150
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 命令模式
+- en: Command is another design pattern that can be simplified by the use of functions
+    passed as arguments. [Figure 10-2](#command_uml) shows the arrangement of classes
+    in the Command pattern.
+  id: totrans-151
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 命令是另一个设计模式，可以通过将函数作为参数传递来简化。[图 10-2](#command_uml)显示了命令模式中类的排列。
+- en: '![Command pattern application to text editor](assets/flpy_1002.png)'
+  id: totrans-152
+  prefs: []
+  type: TYPE_IMG
+  zh: '![应用命令模式到文本编辑器](assets/flpy_1002.png)'
+- en: 'Figure 10-2\. UML class diagram for menu-driven text editor implemented with
+    the Command design pattern. Each command may have a different receiver: the object
+    that implements the action. For `PasteCommand`, the receiver is the Document.
+    For `OpenCommand`, the receiver is the application.'
+  id: totrans-153
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 图 10-2。使用命令设计模式实现的菜单驱动文本编辑器的 UML 类图。每个命令可能有不同的接收者：实现动作的对象。对于`PasteCommand`，接收者是文档。对于`OpenCommand`，接收者是应用程序。
+- en: The goal of Command is to decouple an object that invokes an operation (the
+    invoker) from the provider object that implements it (the receiver). In the example
+    from *Design Patterns*, each invoker is a menu item in a graphical application,
+    and the receivers are the document being edited or the application itself.
+  id: totrans-154
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 命令的目标是将调用操作的对象（调用者）与实现它的提供对象（接收者）解耦。在《设计模式》中的示例中，每个调用者是图形应用程序中的菜单项，而接收者是正在编辑的文档或应用程序本身。
+- en: The idea is to put a `Command` object between the two, implementing an interface
+    with a single method, `execute`, which calls some method in the receiver to perform
+    the desired operation. That way the invoker does not need to know the interface
+    of the receiver, and different receivers can be adapted through different `Command`
+    subclasses. The invoker is configured with a concrete command and calls its `execute`
+    method to operate it. Note in [Figure 10-2](#command_uml) that `MacroCommand`
+    may store a sequence of commands; its `execute()` method calls the same method
+    in each command stored.
+  id: totrans-155
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 思路是在两者之间放置一个`Command`对象，实现一个具有单个方法`execute`的接口，该方法调用接收者中的某个方法执行所需的操作。这样，调用者不需要知道接收者的接口，不同的接收者可以通过不同的`Command`子类进行适配。调用者配置具体命令并调用其`execute`方法来操作它。请注意，在[图 10-2](#command_uml)中，`MacroCommand`可以存储一系列命令；其`execute()`方法调用存储的每个命令中的相同方法。
+- en: 'Quoting from *Design Patterns*, “Commands are an object-oriented replacement
+    for callbacks.” The question is: do we need an object-oriented replacement for
+    callbacks? Sometimes yes, but not always.'
+  id: totrans-156
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 引用自《设计模式》，“命令是回调的面向对象替代品。”问题是：我们是否需要回调的面向对象替代品？有时是，但并非总是。
+- en: Instead of giving the invoker a `Command` instance, we can simply give it a
+    function. Instead of calling `command.execute()`, the invoker can just call `command()`.
+    The `MacroCommand` can be implemented with a class implementing `__call__`. Instances
+    of `MacroCommand` would be callables, each holding a list of functions for future
+    invocation, as implemented in [Example 10-10](#ex_macro_command).
+  id: totrans-157
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们可以简单地给调用者一个函数，而不是给一个`Command`实例。调用者可以直接调用`command()`，而不是调用`command.execute()`。`MacroCommand`可以用实现`__call__`的类来实现。`MacroCommand`的实例将是可调用对象，每个对象都保存着未来调用的函数列表，就像在[示例 10-10](#ex_macro_command)中实现的那样。
+- en: Example 10-10\. Each instance of `MacroCommand` has an internal list of commands
+  id: totrans-158
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 10-10。每个`MacroCommand`实例都有一个内部命令列表
+- en: '[PRE9]'
+  id: totrans-159
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE9]'
+- en: '[![1](assets/1.png)](#co_design_patterns_with_first_class_functions_CO8-1)'
+  id: totrans-160
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_design_patterns_with_first_class_functions_CO8-1)'
+- en: Building a list from the `commands` arguments ensures that it is iterable and
+    keeps a local copy of the command references in each `MacroCommand` instance.
+  id: totrans-161
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 从`commands`参数构建列表确保它是可迭代的，并在每个`MacroCommand`实例中保留命令引用的本地副本。
+- en: '[![2](assets/2.png)](#co_design_patterns_with_first_class_functions_CO8-2)'
+  id: totrans-162
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_design_patterns_with_first_class_functions_CO8-2)'
+- en: When an instance of `MacroCommand` is invoked, each command in `self.commands`
+    is called in sequence.
+  id: totrans-163
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当调用`MacroCommand`的实例时，`self.commands`中的每个命令按顺序调用。
+- en: 'More advanced uses of the Command pattern—to support undo, for example—may
+    require more than a simple callback function. Even then, Python provides a couple
+    of alternatives that deserve consideration:'
+  id: totrans-164
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 命令模式的更高级用法——支持撤销，例如——可能需要更多于简单回调函数的内容。即使如此，Python 提供了几种值得考虑的替代方案：
+- en: A callable instance like `MacroCommand` in [Example 10-10](#ex_macro_command)
+    can keep whatever state is necessary, and provide extra methods in addition to
+    `__call__`.
+  id: totrans-165
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 像[示例 10-10](#ex_macro_command)中的`MacroCommand`一样的可调用实例可以保持必要的任何状态，并提供除`__call__`之外的额外方法。
+- en: A closure can be used to hold the internal state of a function between calls.
+  id: totrans-166
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 闭包可以用来在函数调用之间保存内部状态。
+- en: 'This concludes our rethinking of the Command pattern with first-class functions.
+    At a high level, the approach here was similar to the one we applied to Strategy:
+    replacing with callables the instances of a participant class that implemented
+    a single-method interface. After all, every Python callable implements a single-method
+    interface, and that method is named `__call__`.'
+  id: totrans-167
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这里我们重新思考了使用一等函数的命令模式。在高层次上，这里的方法与我们应用于策略模式的方法类似：用可调用对象替换实现单方法接口的参与者类的实例。毕竟，每个
+    Python 可调用对象都实现了单方法接口，而该方法被命名为`__call__`。
+- en: Chapter Summary
+  id: totrans-168
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 章节总结
+- en: As Peter Norvig pointed out a couple of years after the classic *Design Patterns*
+    book appeared, “16 of 23 patterns have qualitatively simpler implementation in
+    Lisp or Dylan than in C++ for at least some uses of each pattern” (slide 9 of
+    Norvig’s [“Design Patterns in Dynamic Languages” presentation](https://fpy.li/10-4)).
+    Python shares some of the dynamic features of the Lisp and Dylan languages, in
+    particular, first-class functions, our focus in this part of the book.
+  id: totrans-169
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 正如 Peter Norvig 在经典《设计模式》书籍出现几年后指出的，“23 个模式中有 16 个模式在 Lisp 或 Dylan 中的某些用法上比在
+    C++ 中具有质量上更简单的实现”（Norvig 的 [“动态语言中的设计模式”演示文稿第 9 页](https://fpy.li/10-4)）。Python
+    共享 Lisp 和 Dylan 语言的一些动态特性，特别是一流函数，这是我们在本书的这部分关注的重点。
+- en: 'From the same talk quoted at the start of this chapter, in reflecting on the
+    20th anniversary of *Design Patterns: Elements of Reusable Object-Oriented Software*,
+    Ralph Johnson has stated that one of the failings of the book is: “Too much emphasis
+    on patterns as end-points instead of steps in the design process.”^([7](ch10.html#idm46582432981776))
+    In this chapter, we used the Strategy pattern as a starting point: a working solution
+    that we could simplify using first-class functions.'
+  id: totrans-170
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 从本章开头引用的同一次演讲中，在反思《设计模式：可复用面向对象软件的元素》20 周年时，Ralph Johnson 表示该书的一个失败之处是：“过分强调模式作为设计过程中的终点而不是步骤。”^([7](ch10.html#idm46582432981776))
+    在本章中，我们以策略模式作为起点：一个我们可以使用一流函数简化的工作解决方案。
+- en: 'In many cases, functions or callable objects provide a more natural way of
+    implementing callbacks in Python than mimicking the Strategy or the Command patterns
+    as described by Gamma, Helm, Johnson, and Vlissides in *Design Patterns*. The
+    refactoring of Strategy and the discussion of Command in this chapter are examples
+    of a more general insight: sometimes you may encounter a design pattern or an
+    API that requires that components implement an interface with a single method,
+    and that method has a generic-sounding name such as “execute,” “run,” or “do_it.”
+    Such patterns or APIs often can be implemented with less boilerplate code in Python
+    using functions as first-class objects.'
+  id: totrans-171
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在许多情况下，函数或可调用对象提供了在 Python 中实现回调的更自然的方式，而不是模仿 Gamma、Helm、Johnson 和 Vlissides
+    在《设计模式》中描述的策略或命令模式。本章中策略的重构和命令的讨论是更一般洞察的例子：有时你可能会遇到一个设计模式或一个需要组件实现一个具有单一方法的接口的
+    API，而该方法具有一个泛泛的名称，如“execute”、“run”或“do_it”。在 Python 中，这种模式或 API 通常可以使用函数作为一流对象来实现，减少样板代码。
+- en: Further Reading
+  id: totrans-172
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 进一步阅读
+- en: “Recipe 8.21\. Implementing the Visitor Pattern,” in the [*Python Cookbook*,
+    3rd ed.](https://fpy.li/pycook3), presents an elegant implementation of the Visitor
+    pattern in which a `NodeVisitor` class handles methods as first-class objects.
+  id: totrans-173
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在《Python Cookbook，第三版》中，“配方 8.21 实现访问者模式”展示了一个优雅的访问者模式实现，其中一个 `NodeVisitor`
+    类处理方法作为一流对象。
+- en: On the general topic of design patterns, the choice of readings for the Python
+    programmer is not as broad as what is available to other language communities.
+  id: totrans-174
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在设计模式的一般主题上，Python 程序员的阅读选择并不像其他语言社区那样广泛。
+- en: '*Learning Python Design Patterns*, by Gennadiy Zlobin (Packt), is the only
+    book that I have seen entirely devoted to patterns in Python. But Zlobin’s work
+    is quite short (100 pages) and covers 8 of the original 23 design patterns.'
+  id: totrans-175
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*Learning Python Design Patterns*，作者是 Gennadiy Zlobin（Packt），是我见过的唯一一本完全致力于
+    Python 中模式的书。但 Zlobin 的作品相当简短（100 页），涵盖了原始 23 个设计模式中的 8 个。'
+- en: '*Expert Python Programming*, by Tarek Ziadé (Packt), is one of the best intermediate-level
+    Python books in the market, and its final chapter, “Useful Design Patterns,” presents
+    several of the classic patterns from a Pythonic perspective.'
+  id: totrans-176
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*Expert Python Programming*，作者是 Tarek Ziadé（Packt），是市场上最好的中级 Python 书籍之一，其最后一章“有用的设计模式”从
+    Python 视角呈现了几个经典模式。'
+- en: Alex Martelli has given several talks about Python design patterns. There is
+    a video of his [EuroPython 2011 presentation](https://fpy.li/10-5) and a [set
+    of slides on his personal website](https://fpy.li/10-6). I’ve found different
+    slide decks and videos over the years, of varying lengths, so it is worthwhile
+    to do a thorough search for his name with the words “Python Design Patterns.”
+    A publisher told me Martelli is working on a book about this subject. I will certainly
+    get it when it comes out.
+  id: totrans-177
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Alex Martelli 关于 Python 设计模式的几次演讲。有他的一个 [EuroPython 2011 演讲视频](https://fpy.li/10-5)
+    和一个 [他个人网站上的幻灯片集](https://fpy.li/10-6)。多年来我发现了不同长度的幻灯片和视频，所以值得彻底搜索他的名字和“Python
+    设计模式”这几个词。一位出版商告诉我 Martelli 正在撰写一本关于这个主题的书。当它出版时，我一定会买。
+- en: There are many books about design patterns in the context of Java, but among
+    them the one I like most is *Head First Design Patterns*, 2nd ed., by Eric Freeman
+    and Elisabeth Robson (O’Reilly). It explains 16 of the 23 classic patterns. If
+    you like the wacky style of the *Head First* series and need an introduction to
+    this topic, you will love that work. It is Java-centric, but the second edition
+    was updated to reflect the addition of first-class functions in Java, making some
+    of the examples closer to code we’d write in Python.
+  id: totrans-178
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在 Java 上下文中有许多关于设计模式的书籍，但其中我最喜欢的是*Head First Design Patterns*，第二版，作者是埃里克·弗里曼和伊丽莎白·罗布森（O’Reilly）。它解释了
+    23 个经典模式中的 16 个。如果你喜欢*Head First*系列的古怪风格，并需要对这个主题有一个介绍，你会喜欢这部作品。它以 Java 为中心，但第二版已经更新，以反映
+    Java 中添加了一流函数，使得一些示例更接近我们在 Python 中编写的代码。
+- en: For a fresh look at patterns from the point of view of a dynamic language with
+    duck typing and first-class functions, *Design Patterns in Ruby* by Russ Olsen
+    (Addison-Wesley) has many insights that are also applicable to Python. In spite
+    of their many syntactic differences, at the semantic level Python and Ruby are
+    closer to each other than to Java or C++.
+  id: totrans-179
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 从动态语言的角度，具有鸭子类型和一流函数的视角重新审视模式，《Design Patterns in Ruby》作者是 Russ Olsen（Addison-Wesley）提供了许多见解，这些见解也适用于
+    Python。尽管它们在语法上有许多差异，在语义层面上，Python 和 Ruby 更接近于彼此，而不是 Java 或 C++。
+- en: In [“Design Patterns in Dynamic Languages”](https://fpy.li/norvigdp) (slides),
+    Peter Norvig shows how first-class functions (and other dynamic features) make
+    several of the original design patterns either simpler or unnecessary.
+  id: totrans-180
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在[“动态语言中的设计模式”](https://fpy.li/norvigdp)（幻灯片）中，彼得·诺维格展示了头等函数（和其他动态特性）如何使原始设计模式中的一些模式变得更简单或不再必要。
+- en: The introduction of the original *Design Patterns* book by Gamma et al. is worth
+    the price of the book—more than the catalog of 23 patterns, which includes recipes
+    ranging from very important to rarely useful. The widely quoted design principles,
+    “Program to an interface, not an implementation” and “Favor object composition
+    over class inheritance,” both come from that introduction.
+  id: totrans-181
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 原著*设计模式*书的介绍由Gamma等人撰写，其价值超过了书中的23种模式目录，其中包括从非常重要到很少有用的配方。广为引用的设计原则，“针对接口编程，而不是实现”和“优先使用对象组合而非类继承”，都来自该介绍部分。
+- en: The application of patterns to design originated with the architect Christopher
+    Alexander et al., presented in the book *A Pattern Language* (Oxford University
+    Press). Alexander’s idea is to create a standard vocabulary allowing teams to
+    share common design decisions while designing buildings. M. J. Dominus wrote [“‘Design
+    Patterns’ Aren’t”](https://fpy.li/10-7), an intriguing slide deck and postscript
+    text arguing that Alexander’s original vision of patterns is more profound, more
+    human, and also applicable to software engineering.
+  id: totrans-182
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 将模式应用于设计最初源自建筑师克里斯托弗·亚历山大等人，在书籍*模式语言*（牛津大学出版社）中展示。亚历山大的想法是创建一个标准词汇，使团队在设计建筑时能够共享共同的设计决策。M.
+    J. 多米努斯撰写了[“‘设计模式’并非如此”](https://fpy.li/10-7)，一个引人入胜的幻灯片和附录文本，论证了亚历山大原始模式的愿景更加深刻，更加人性化，也适用于软件工程。
+- en: ^([1](ch10.html#idm46582435198688-marker)) From a slide in the talk “Root Cause
+    Analysis of Some Faults in Design Patterns,” presented by Ralph Johnson at IME/CCSL,
+    Universidade de São Paulo, Nov. 15, 2014.
+  id: totrans-183
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([1](ch10.html#idm46582435198688-marker)) 来自拉尔夫·约翰逊在IME/CCSL，圣保罗大学，2014年11月15日展示的“设计模式中一些故障的根本原因分析”演讲中的幻灯片。
+- en: ^([2](ch10.html#idm46582435189568-marker)) Quoted from page 4 of *Design Patterns*.
+  id: totrans-184
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([2](ch10.html#idm46582435189568-marker)) 引自*设计模式*第4页。
+- en: '^([3](ch10.html#idm46582434561168-marker)) I had to reimplement `Order` with
+    `@dataclass` due to a bug in Mypy. You may ignore this detail, because this class
+    works with `NamedTuple` as well, just like in [Example 10-1](#ex_classic_strategy).
+    If `Order` is a `NamedTuple`, Mypy 0.910 crashes when checking the type hint for
+    `promotion`. I tried adding `# type ignore` to that specific line, but Mypy crashed
+    anyway. Mypy handles the same type hint correctly if `Order` is built with `@dataclass`.
+    [Issue #9397](https://fpy.li/10-3) is unresolved as of July 19, 2021\. Hopefully
+    it will be fixed by the time you read this.'
+  id: totrans-185
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([3](ch10.html#idm46582434561168-marker)) 由于Mypy中的一个错误，我不得不使用`@dataclass`重新实现`Order`。您可以忽略这个细节，因为这个类与`NamedTuple`一样工作，就像[示例10-1](#ex_classic_strategy)中一样。如果`Order`是一个`NamedTuple`，当检查`promotion`的类型提示时，Mypy
+    0.910会崩溃。我尝试在特定行添加`# type ignore`，但Mypy仍然崩溃。如果使用`@dataclass`构建`Order`，Mypy会正确处理相同的类型提示。截至2021年7月19日，[问题＃9397](https://fpy.li/10-3)尚未解决。希望在您阅读此文时已经修复。
+- en: ^([4](ch10.html#idm46582434526272-marker)) See page 323 of *Design Patterns*.
+  id: totrans-186
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([4](ch10.html#idm46582434526272-marker)) 请参阅*设计模式*第323页。
+- en: ^([5](ch10.html#idm46582434525248-marker)) Ibid., p. 196.
+  id: totrans-187
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([5](ch10.html#idm46582434525248-marker)) 同上，第196页。
+- en: ^([6](ch10.html#idm46582433604672-marker)) flake8 and VS Code both complain
+    that these names are imported but not used. By definition, static analysis tools
+    cannot understand the dynamic nature of Python. If we heed every advice from such
+    tools, we’ll soon be writing grim and verbose Java-like code with Python syntax.
+  id: totrans-188
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([6](ch10.html#idm46582433604672-marker)) flake8和VS Code都抱怨这些名称被导入但未被使用。根据定义，静态分析工具无法理解Python的动态特性。如果我们听从这些工具的每一个建议，我们很快就会用Python语法编写冗长且令人沮丧的类似Java的代码。
+- en: ^([7](ch10.html#idm46582432981776-marker)) “Root Cause Analysis of Some Faults
+    in Design Patterns,” presented by Johnson at IME-USP, November 15, 2014.
+  id: totrans-189
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([7](ch10.html#idm46582432981776-marker)) “设计模式中一些故障的根本原因分析”，由约翰逊在IME-USP于2014年11月15日展示。

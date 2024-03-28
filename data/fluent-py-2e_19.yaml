@@ -1,0 +1,2194 @@
+- en: Chapter 16\. Operator Overloading
+  id: totrans-0
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 第16章 运算符重载
+- en: There are some things that I kind of feel torn about, like operator overloading.
+    I left out operator overloading as a fairly personal choice because I had seen
+    too many people abuse it in C++.
+  id: totrans-1
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+  zh: 有一些事情让我感到矛盾，比如运算符重载。我在 C++ 中看到太多人滥用它，所以我把运算符重载略去了，这是一个相当个人的选择。
+- en: ''
+  id: totrans-2
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: James Gosling, creator of Java^([1](ch16.html#idm46582410953008))
+  id: totrans-3
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+  zh: Java 的创始人詹姆斯·高斯林^([1](ch16.html#idm46582410953008))
+- en: 'In Python, you can compute compound interest using a formula written like this:'
+  id: totrans-4
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在 Python 中，你可以使用以下公式计算复利：
+- en: '[PRE0]'
+  id: totrans-5
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE0]'
+- en: Operators that appear between operands, like `1 + rate`, are *infix operators*.
+    In Python, the infix operators can handle any arbitrary type. Thus, if you are
+    dealing with real money, you can make sure that `principal`, `rate`, and `periods`
+    are exact numbers—instances of the Python `decimal.Decimal` class—and that formula
+    will work as written, producing an exact result.
+  id: totrans-6
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 出现在操作数之间的运算符，如 `1 + rate`，是*中缀运算符*。在 Python 中，中缀运算符可以处理任意类型。因此，如果你处理真实货币，你可以确保
+    `principal`、`rate` 和 `periods` 是精确的数字 —— Python `decimal.Decimal` 类的实例 —— 并且该公式将按照写入的方式工作，产生精确的结果。
+- en: 'But in Java, if you switch from `float` to `BigDecimal` to get exact results,
+    you can’t use infix operators anymore, because they only work with the primitive
+    types. This is the same formula coded to work with `BigDecimal` numbers in Java:'
+  id: totrans-7
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 但是在 Java 中，如果你从 `float` 切换到 `BigDecimal` 以获得精确的结果，你就不能再使用中缀运算符了，因为它们只适用于原始类型。这是在
+    Java 中使用 `BigDecimal` 数字编写的相同公式：
+- en: '[PRE1]'
+  id: totrans-8
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE1]'
+- en: It’s clear that infix operators make formulas more readable. Operator overloading
+    is necessary to support infix operator notation with user-defined or extension
+    types, such as NumPy arrays. Having operator overloading in a high-level, easy-to-use
+    language was probably a key reason for the huge success of Python in data science,
+    including financial and scientific applications.
+  id: totrans-9
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 显然，中缀运算符使公式更易读。运算符重载是支持用户定义或扩展类型的中缀运算符表示法的必要条件，例如 NumPy 数组。在一个高级、易于使用的语言中具有运算符重载可能是
+    Python 在数据科学领域取得巨大成功的关键原因，包括金融和科学应用。
+- en: 'In [“Emulating Numeric Types”](ch01.html#data_model_emulating_sec) ([Chapter 1](ch01.html#data_model))
+    we saw some trivial implementations of operators in a bare-bones `Vector` class.
+    The `__add__` and `__mul__` methods in [Example 1-2](ch01.html#ex_vector2d) were
+    written to show how special methods support operator overloading, but there are
+    subtle problems in their implementations that we overlooked. Also, in [Example 11-2](ch11.html#ex_vector2d_v0),
+    we noted that the `Vector2d.__eq__` method considers this to be `True`: `Vector(3,
+    4) == [3, 4]`—which may or not make sense. We will address these matters in this
+    chapter, as well as:'
+  id: totrans-10
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在[“模拟数值类型”](ch01.html#data_model_emulating_sec)（[第1章](ch01.html#data_model)）中，我们看到了一个简单的
+    `Vector` 类中运算符的实现。[示例1-2](ch01.html#ex_vector2d)中的 `__add__` 和 `__mul__` 方法是为了展示特殊方法如何支持运算符重载，但是它们的实现中存在一些微妙的问题被忽略了。此外，在[示例11-2](ch11.html#ex_vector2d_v0)中，我们注意到
+    `Vector2d.__eq__` 方法认为这是 `True`：`Vector(3, 4) == [3, 4]` ——这可能有或没有意义。我们将在本章中解决这些问题，以及：
+- en: How an infix operator method should signal it cannot handle an operand
+  id: totrans-11
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 中缀运算符方法应如何表示无法处理操作数
+- en: Using duck typing or goose typing to deal with operands of various types
+  id: totrans-12
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 使用鸭子类型或���类型处理各种类型的操作数
+- en: The special behavior of the rich comparison operators (e.g., `==`, `>`, `<=`,
+    etc.)
+  id: totrans-13
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 丰富比较运算符的特殊行为（例如，`==`，`>`，`<=` 等）
+- en: The default handling of augmented assignment operators such as `+=`, and how
+    to overload them
+  id: totrans-14
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 增强赋值运算符（如 `+=`）的默认处理方式，以及如何对其进行重载
+- en: What’s New in This Chapter
+  id: totrans-15
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 本章的新内容
+- en: Goose typing is a key part of Python, but the `numbers` ABCs are not supported
+    in static typing, so I changed [Example 16-11](#ex_vector_v7) to use duck typing
+    instead of an explicit `isinstance` check against `numbers.Real`.^([2](ch16.html#idm46582410790832))
+  id: totrans-16
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 鹅类型是 Python 的一个关键部分，但 `numbers` ABCs 在静态类型中不受支持，因此我改变了[示例16-11](#ex_vector_v7)以使用鸭子类型而不是针对
+    `numbers.Real` 的显式 `isinstance` 检查。^([2](ch16.html#idm46582410790832))
+- en: I covered the `@` matrix multiplication operator in the first edition of *Fluent
+    Python* as an upcoming change when 3.5 was still in alpha. Accordingly, that operator
+    is no longer in a side note, but is integrated in the flow of the chapter in [“Using
+    @ as an Infix Operator”](#matmul_operator_sec). I leveraged goose typing to make
+    the implementation of `__matmul__` safer than the one in the first edition, without
+    compromising on flexibility.
+  id: totrans-17
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我在第一版的 *Fluent Python* 中介绍了 `@` 矩阵乘法运算符，当 3.5 版本还处于 alpha 阶段时，它被视为即将到来的变化。因此，该运算符不再是一个旁注，而是在[“使用
+    @ 作为中缀运算符”](#matmul_operator_sec)的章节流中整合了进去。我利用鹅类型使 `__matmul__` 的实现比第一版更安全，而不会影响灵活性。
+- en: '[“Further Reading”](#further_reading_op_sec) now has a couple of new references—including
+    a blog post by Guido van Rossum. I also added mentions of two libraries that showcase
+    effective use of operator overloading outside the domain of mathematics: `pathlib`
+    and `Scapy`.'
+  id: totrans-18
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[“进一步阅读”](#further_reading_op_sec) 现在有几个新的参考资料 —— 包括 Guido van Rossum 的一篇博客文章。我还添加了两个展示运算符重载在数学领域之外有效使用的库：`pathlib`
+    和 `Scapy`。'
+- en: Operator Overloading 101
+  id: totrans-19
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 运算符重载 101
+- en: Operator overloading allows user-defined objects to interoperate with infix
+    operators such as `+` and `|`, or unary operators like `-` and `~`. More generally,
+    function invocation (`()`), attribute access (`.`), and item access/slicing (`[]`)
+    are also operators in Python, but this chapter covers unary and infix operators.
+  id: totrans-20
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 运算符重载允许用户定义的对象与中缀运算符（如 `+` 和 `|`）或一元运算符（如 `-` 和 `~`）进行交互。更一般地说，函数调用（`()`）、属性访问（`.`）和项目访问/切片（`[]`）在
+    Python 中也是运算符，但本章涵盖一元和中缀运算符。
+- en: 'Operator overloading has a bad name in some circles. It is a language feature
+    that can be (and has been) abused, resulting in programmer confusion, bugs, and
+    unexpected performance bottlenecks. But if used well, it leads to pleasurable
+    APIs and readable code. Python strikes a good balance among flexibility, usability,
+    and safety by imposing some limitations:'
+  id: totrans-21
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 运算符重载在某些圈子里名声不佳。这是一种语言特性，可能会被滥用，导致程序员困惑、错误和意外的性能瓶颈。但如果使用得当，它会导致愉快的API和可读的代码。Python在灵活性、可用性和安全性之间取得了良好的平衡，通过施加一些限制：
+- en: We cannot change the meaning of the operators for the built-in types.
+  id: totrans-22
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 我们不能改变内置类型的运算符的含义。
+- en: We cannot create new operators, only overload existing ones.
+  id: totrans-23
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 我们不能创建新的运算符，只能重载现有的运算符。
+- en: 'A few operators can’t be overloaded: `is`, `and`, `or`, `not` (but the bitwise
+    `&`, `|`, `~`, can).'
+  id: totrans-24
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 有一些运算符无法重载：`is`，`and`，`or`，`not`（但位运算符`&`，`|`，`~`可以）。
+- en: 'In [Chapter 12](ch12.html#user_defined_sequences), we already had one infix
+    operator in `Vector`: `==`, supported by the `__eq__` method. In this chapter,
+    we’ll improve the implementation of `__eq__` to better handle operands of types
+    other than `Vector`. However, the rich comparison operators (`==`, `!=`, `>`,
+    `<`, `>=`, `<=`) are special cases in operator overloading, so we’ll start by
+    overloading four arithmetic operators in `Vector`: the unary `-` and `+`, followed
+    by the infix `+` and `*`.'
+  id: totrans-25
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在[第12章](ch12.html#user_defined_sequences)中，我们已经在`Vector`中有一个中缀运算符：`==`，由`__eq__`方法支持。在本章中，我们将改进`__eq__`的实现，以更好地处理除`Vector`之外的类型的操作数。然而，富比较运算符（`==`，`!=`，`>`，`<`，`>=`，`<=`）是运算符重载中的特殊情况，因此我们将从重载`Vector`中的四个算术运算符开始：一元`-`和`+`，然后是中缀`+`和`*`。
+- en: 'Let’s start with the easiest topic: unary operators.'
+  id: totrans-26
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 让我们从最简单的话题开始：一元运算符。
+- en: Unary Operators
+  id: totrans-27
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 一元运算符
+- en: '*The Python Language Reference*, [“6.5\. Unary arithmetic and bitwise operations”](https://fpy.li/16-2)
+    lists three unary operators, shown here with their associated special methods:'
+  id: totrans-28
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*Python语言参考*，[“6.5\. 一元算术和位运算”](https://fpy.li/16-2)列出了三个一元运算符，这里显示它们及其相关的特殊方法：'
+- en: '`-`, implemented by `__neg__`'
+  id: totrans-29
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`-`，由`__neg__`实现'
+- en: Arithmetic unary negation. If `x` is `-2` then `-x == 2`.
+  id: totrans-30
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 算术一元取反。如果`x`是`-2`，那么`-x == 2`。
+- en: '`+`, implemented by `__pos__`'
+  id: totrans-31
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`+`，由`__pos__`实现'
+- en: Arithmetic unary plus. Usually `x == +x`, but there are a few cases when that’s
+    not true. See [“When x and +x Are Not Equal”](#when_plus_x_sec) if you’re curious.
+  id: totrans-32
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 算术一元加号。通常`x == +x`，但也有一些情况不成立。如果你感兴趣，可以查看[“当 x 和 +x 不相等时”](#when_plus_x_sec)。
+- en: '`~`, implemented by `__invert__`'
+  id: totrans-33
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`~`，由`__invert__`实现'
+- en: Bitwise not, or bitwise inverse of an integer, defined as `~x == -(x+1)`. If
+    `x` is `2` then `~x == -3`.^([3](ch16.html#idm46582410742624))
+  id: totrans-34
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 位取反，或整数的位反，定义为`~x == -(x+1)`。如果`x`是`2`，那么`~x == -3`。^([3](ch16.html#idm46582410742624))
+- en: The [“Data Model” chapter](https://fpy.li/16-3) of *The Python Language Reference*
+    also lists the `abs()` built-in function as a unary operator. The associated special
+    method is `__abs__`, as we’ve seen before.
+  id: totrans-35
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*Python语言参考*的[“数据模型”章节](https://fpy.li/16-3)还将`abs()`内置函数列为一元运算符。相关的特殊方法是`__abs__`，正如我们之前看到的。'
+- en: 'It’s easy to support the unary operators. Simply implement the appropriate
+    special method, which will take just one argument: `self`. Use whatever logic
+    makes sense in your class, but stick to the general rule of operators: always
+    return a new object. In other words, do not modify the receiver (`self`), but
+    create and return a new instance of a suitable type.'
+  id: totrans-36
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 支持一元运算符很容易。只需实现适当的特殊方法，该方法只接受一个参数：`self`。在类中使用适当的逻辑，但遵循运算符的一般规则：始终返回一个新对象。换句话说，不要修改接收者（`self`），而是创建并返回一个适当类型的新实例。
+- en: In the case of `-` and `+`, the result will probably be an instance of the same
+    class as `self`. For unary `+`, if the receiver is immutable you should return
+    `self`; otherwise, return a copy of `self`. For `abs()`, the result should be
+    a scalar number.
+  id: totrans-37
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 对于`-`和`+`，结果可能是与`self`相同类的实例。对于一元`+`，如果接收者是不可变的，则应返回`self`；否则，返回`self`的副本。对于`abs()`，结果应该是一个标量数字。
+- en: As for `~`, it’s difficult to say what would be a sensible result if you’re
+    not dealing with bits in an integer. In the [*pandas*](https://fpy.li/pandas)
+    data analysis package, the tilde negates boolean filtering conditions; see [“Boolean
+    indexing”](https://fpy.li/16-4) in the *pandas* documentation for examples.
+  id: totrans-38
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 至于`~`，如果不处理整数中的位，很难说会得到什么合理的结果。在[*pandas*](https://fpy.li/pandas)数据分析包中，波浪线对布尔过滤条件取反；请参阅*pandas*文档中的[“布尔索引”](https://fpy.li/16-4)以获取示例。
+- en: As promised before, we’ll implement several new operators on the `Vector` class
+    from [Chapter 12](ch12.html#user_defined_sequences). [Example 16-1](#ex_vector_v6_unary)
+    shows the `__abs__` method we already had in [Example 12-16](ch12.html#ex_vector_v5),
+    and the newly added `__neg__` and `__pos__` unary operator method.
+  id: totrans-39
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 正如之前承诺的，我们将在[第12章](ch12.html#user_defined_sequences)的`Vector`类上实现几个新的运算符。[示例16-1](#ex_vector_v6_unary)展示了我们已经在[示例12-16](ch12.html#ex_vector_v5)中拥有的`__abs__`方法，以及新添加的`__neg__`和`__pos__`一元运算符方法。
+- en: 'Example 16-1\. vector_v6.py: unary operators - and + added to [Example 12-16](ch12.html#ex_vector_v5)'
+  id: totrans-40
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例16-1\. vector_v6.py：一元运算符 - 和 + 添加到[示例12-16](ch12.html#ex_vector_v5)
+- en: '[PRE2]'
+  id: totrans-41
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE2]'
+- en: '[![1](assets/1.png)](#co_operator_overloading_CO1-1)'
+  id: totrans-42
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_operator_overloading_CO1-1)'
+- en: To compute `-v`, build a new `Vector` with every component of `self` negated.
+  id: totrans-43
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 要计算`-v`，构建一个新的`Vector`，其中包含`self`的每个分量的取反。
+- en: '[![2](assets/2.png)](#co_operator_overloading_CO1-2)'
+  id: totrans-44
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_operator_overloading_CO1-2)'
+- en: To compute `+v`, build a new `Vector` with every component of `self`.
+  id: totrans-45
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 要计算`+v`，构建一个新的`Vector`，其中包含`self`的每个分量。
+- en: Recall that `Vector` instances are iterable, and the `Vector.__init__` takes
+    an iterable argument, so the implementations of `__neg__` and `__pos__` are short
+    and sweet.
+  id: totrans-46
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 请记住，`Vector`实例是可迭代的，`Vector.__init__`接受一个可迭代的参数，因此`__neg__`���`__pos__`的实现简洁明了。
+- en: 'We’ll not implement `__invert__`, so if the user tries `~v` on a `Vector` instance,
+    Python will raise `TypeError` with a clear message: “bad operand type for unary
+    ~: `''Vector''`.”'
+  id: totrans-47
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们不会实现`__invert__`，因此如果用户在`Vector`实例上尝试`~v`，Python将引发`TypeError`并显示清晰的消息：“一元~的错误操作数类型：`'Vector'`。”
+- en: The following sidebar covers a curiosity that may help you win a bet about unary
+    `+` someday.
+  id: totrans-48
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 以下侧边栏涵盖了一个关于一元`+`的好奇心，也许有一天可以帮你赢得一次赌注。
+- en: Overloading + for Vector Addition
+  id: totrans-49
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 重载 + 实现向量加法
+- en: The `Vector` class is a sequence type, and the section [“3.3.6\. Emulating container
+    types”](https://fpy.li/16-6) in the “Data Model” chapter of the official Python
+    documentation says that sequences should support the `+` operator for concatenation
+    and `*` for repetition. However, here we will implement `+` and `*` as mathematical
+    vector operations, which are a bit harder but more meaningful for a `Vector` type.
+  id: totrans-50
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`Vector`类是一个序列类型，在官方 Python 文档的“数据模型”章节中的[“3.3.6\. 模拟容器类型”](https://fpy.li/16-6)部分指出，序列应该支持`+`运算符进行连接和`*`进行重复。然而，在这里我们将实现`+`和`*`作为数学向量运算，这有点困难，但对于`Vector`类型更有意义。'
+- en: Tip
+  id: totrans-51
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 提示
+- en: 'If users want to concatenate or repeat `Vector` instances, they can convert
+    them to tuples or lists, apply the operator, and convert back—thanks to the fact
+    that `Vector` is iterable and can be constructed from an iterable:'
+  id: totrans-52
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果用户想要连接或重复`Vector`实例，他们可以将其转换为元组或列表，应用运算符，然后再转换回来——这要归功于`Vector`是可迭代的，并且可以从可迭代对象构建：
+- en: '[PRE3]'
+  id: totrans-53
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE3]'
+- en: 'Adding two Euclidean vectors results in a new vector in which the components
+    are the pairwise additions of the components of the operands. To illustrate:'
+  id: totrans-54
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 将两个欧几里德向量相加会得到一个新的向量，其中的分量是操作数的分量的成对相加。举例说明：
+- en: '[PRE4]'
+  id: totrans-55
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE4]'
+- en: 'What happens if we try to add two `Vector` instances of different lengths?
+    We could raise an error, but considering practical applications (such as information
+    retrieval), it’s better to fill out the shortest `Vector` with zeros. This is
+    the result we want:'
+  id: totrans-56
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果我们尝试将长度不同的两个`Vector`实例相加会发生什么？我们可以引发一个错误，但考虑到实际应用（如信息检索），最好是用零填充最短的`Vector`。这是我们想要的结果：
+- en: '[PRE5]'
+  id: totrans-57
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE5]'
+- en: Given these basic requirements, we can implement `__add__` like in [Example 16-4](#ex_vector_add_t1).
+  id: totrans-58
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 鉴于这些基本要求，我们可以像[示例 16-4](#ex_vector_add_t1)中那样实现`__add__`。
+- en: 'Example 16-4\. `Vector.__add__` method, take #1'
+  id: totrans-59
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 16-4\. `Vector.__add__` 方法，第一种情况
+- en: '[PRE6]'
+  id: totrans-60
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE6]'
+- en: '[![1](assets/1.png)](#co_operator_overloading_CO3-1)'
+  id: totrans-61
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_operator_overloading_CO3-1)'
+- en: '`pairs` is a generator that produces tuples `(a, b)`, where `a` is from `self`,
+    and `b` is from `other`. If `self` and `other` have different lengths, `fillvalue`
+    supplies the missing values for the shortest iterable.'
+  id: totrans-62
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`pairs`是一个生成器，产生元组`(a, b)`，其中`a`来自`self`，`b`来自`other`。如果`self`和`other`的长度不同，`fillvalue`会为最短的可迭代对象提供缺失值。'
+- en: '[![2](assets/2.png)](#co_operator_overloading_CO3-2)'
+  id: totrans-63
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_operator_overloading_CO3-2)'
+- en: A new `Vector` is built from a generator expression, producing one addition
+    for each `(a, b)` from `pairs`.
+  id: totrans-64
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 从生成器表达式构建一个新的`Vector`，为`pairs`中的每个`(a, b)`执行一次加法。
+- en: Note how `__add__` returns a new `Vector` instance, and does not change `self`
+    or `other`.
+  id: totrans-65
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意`__add__`如何返回一个新的`Vector`实例，并且不改变`self`或`other`。
+- en: Warning
+  id: totrans-66
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 警告
+- en: Special methods implementing unary or infix operators should never change the
+    value of the operands. Expressions with such operators are expected to produce
+    results by creating new objects. Only augmented assignment operators may change
+    the first operand (`self`), as discussed in [“Augmented Assignment Operators”](#augmented_assign_ops).
+  id: totrans-67
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 实现一元或中缀运算符的特殊方法永远不应更改操作数的值。带有这些运算符的表达式预期通过创建新对象来产生结果。只有增强赋值运算符可以更改第一个操作数（`self`），如[“增强赋值运算符”](#augmented_assign_ops)中所讨论的。
+- en: '[Example 16-4](#ex_vector_add_t1) allows adding `Vector` to a `Vector2d`, and
+    `Vector` to a tuple or to any iterable that produces numbers, as [Example 16-5](#ex_vector_add_demo_mixed_ok)
+    proves.'
+  id: totrans-68
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 16-4](#ex_vector_add_t1) 允许将`Vector`添加到`Vector2d`，以及将`Vector`添加到元组或任何产生数字的可迭代对象，正如[示例 16-5](#ex_vector_add_demo_mixed_ok)所证明的那样。'
+- en: 'Example 16-5\. `Vector.__add__` take #1 supports non-`Vector` objects, too'
+  id: totrans-69
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 16-5\. `Vector.__add__` 第一种情况也支持非`Vector`对象
+- en: '[PRE7]'
+  id: totrans-70
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE7]'
+- en: Both uses of `+` in [Example 16-5](#ex_vector_add_demo_mixed_ok) work because
+    `__add__` uses `zip_longest(…)`, which can consume any iterable, and the generator
+    expression to build the new `Vector` merely performs `a + b` with the pairs produced
+    by `zip_longest(…)`, so an iterable producing any number items will do.
+  id: totrans-71
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 16-5](#ex_vector_add_demo_mixed_ok)中`+`的两种用法都有效，因为`__add__`使用了`zip_longest(…)`，它可以消耗任何可迭代对象，并且用于构建新`Vector`的生成器表达式仅执行`zip_longest(…)`产生的对中的`a
+    + b`，因此产生任意数量项的可迭代对象都可以。'
+- en: However, if we swap the operands ([Example 16-6](#ex_vector_add_demo_mixed_fail)),
+    the mixed-type additions fail.
+  id: totrans-72
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 然而，如果我们交换操作数（[示例 16-6](#ex_vector_add_demo_mixed_fail)），混合类型的加法会失败。
+- en: 'Example 16-6\. `Vector.__add__` take #1 fails with non-`Vector` left operands'
+  id: totrans-73
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 16-6\. `Vector.__add__` 第一种情况在非`Vector`左操作数上失败
+- en: '[PRE8]'
+  id: totrans-74
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE8]'
+- en: 'To support operations involving objects of different types, Python implements
+    a special dispatching mechanism for the infix operator special methods. Given
+    an expression `a + b`, the interpreter will perform these steps (also see [Figure 16-1](#operator_flowchart)):'
+  id: totrans-75
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了支持涉及不同类型对象的操作，Python 为中缀运算符特殊方法实现了一种特殊的调度机制。给定表达式`a + b`，解释器将执行以下步骤（也参见[图 16-1](#operator_flowchart)）：
+- en: If `a` has `__add__`, call `a.__add__(b)` and return result unless it’s `NotImplemented`.
+  id: totrans-76
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 如果`a`有`__add__`，则调用`a.__add__(b)`并返回结果，除非它是`NotImplemented`。
+- en: If `a` doesn’t have `__add__`, or calling it returns `NotImplemented`, check
+    if `b` has `__radd__`, then call `b.__radd__(a)` and return result unless it’s
+    `NotImplemented`.
+  id: totrans-77
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 如果`a`没有`__add__`，或者调用它返回`NotImplemented`，则检查`b`是否有`__radd__`，然后调用`b.__radd__(a)`并返回结果，除非它是`NotImplemented`。
+- en: If `b` doesn’t have `__radd__`, or calling it returns `NotImplemented`, raise
+    `TypeError` with an *unsupported operand types* message.
+  id: totrans-78
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 如果`b`没有`__radd__`，或者调用它返回`NotImplemented`，则引发`TypeError`，并显示*不支持的操作数类型*消息。
+- en: Tip
+  id: totrans-79
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 提示
+- en: The `__radd__` method is called the “reflected” or “reversed” version of `__add__`.
+    I prefer to call them “reversed” special methods.^([4](ch16.html#idm46582409873344))
+  id: totrans-80
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`__radd__`方法被称为`__add__`的“反射”或“反转”版本。我更喜欢称它们为“反转”特殊方法。^([4](ch16.html#idm46582409873344))'
+- en: '![Flowchart operator](assets/flpy_1601.png)'
+  id: totrans-81
+  prefs: []
+  type: TYPE_IMG
+  zh: '![运算符流程图](assets/flpy_1601.png)'
+- en: Figure 16-1\. Flowchart for computing `a + b` with `__add__` and `__radd__`.
+  id: totrans-82
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 图 16-1\. 使用`__add__`和`__radd__`计算`a + b`的流程图。
+- en: Therefore, to make the mixed-type additions in [Example 16-6](#ex_vector_add_demo_mixed_fail)
+    work, we need to implement the `Vector.__radd__` method, which Python will invoke
+    as a fallback if the left operand does not implement `__add__`, or if it does
+    but returns `NotImplemented` to signal that it doesn’t know how to handle the
+    right operand.
+  id: totrans-83
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 因此，为了使[示例 16-6](#ex_vector_add_demo_mixed_fail)中的混合类型加法起作用，我们需要实现`Vector.__radd__`方法，如果左操作数不实现`__add__`，或者实现了但返回`NotImplemented`以表示不知道如何处理右操作数，则Python将调用它作为后备。
+- en: Warning
+  id: totrans-84
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 警告
+- en: Do not confuse `NotImplemented` with `NotImplementedError`. The first, `NotImplemented`,
+    is a special singleton value that an infix operator special method should `return`
+    to tell the interpreter it cannot handle a given operand. In contrast, `NotImplementedError`
+    is an exception that stub methods in abstract classes may `raise` to warn that
+    subclasses must implement them.
+  id: totrans-85
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 不要混淆`NotImplemented`和`NotImplementedError`。第一个`NotImplemented`是一个特殊的单例值，中缀运算符特殊方法应该`返回`以告诉解释器它无法处理给定的操作数。相反，`NotImplementedError`是一个异常，抽象类中的存根方法可能会`引发`以警告子类必须实现它们。
+- en: The simplest implementation of `__radd__` that works is shown in [Example 16-7](#ex_vector_add_t2).
+  id: totrans-86
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`__radd__`的最简单的工作实现在[示例 16-7](#ex_vector_add_t2)中显示。'
+- en: Example 16-7\. The `Vector` methods `__add__` and `__radd__`
+  id: totrans-87
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 16-7. `Vector`方法`__add__`和`__radd__`
+- en: '[PRE9]'
+  id: totrans-88
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE9]'
+- en: '[![1](assets/1.png)](#co_operator_overloading_CO4-1)'
+  id: totrans-89
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_operator_overloading_CO4-1)'
+- en: No changes to `__add__` from [Example 16-4](#ex_vector_add_t1); listed here
+    because `__radd__` uses it.
+  id: totrans-90
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 与[示例 16-4](#ex_vector_add_t1)中的`__add__`没有变化；这里列出是因为`__radd__`使用它。
+- en: '[![2](assets/2.png)](#co_operator_overloading_CO4-2)'
+  id: totrans-91
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_operator_overloading_CO4-2)'
+- en: '`__radd__` just delegates to `__add__`.'
+  id: totrans-92
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`__radd__`只是委托给`__add__`。'
+- en: 'Often, `__radd__` can be as simple as that: just invoke the proper operator,
+    therefore delegating to `__add__` in this case. This applies to any commutative
+    operator; `+` is commutative when dealing with numbers or our vectors, but it’s
+    not commutative when concatenating sequences in Python.'
+  id: totrans-93
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`__radd__`通常很简单：只需调用适当的运算符，因此在这种情况下委托给`__add__`。这适用于任何可交换的运算符；当处理数字或我们的向量时，`+`是可交换的，但在Python中连接序列时不是可交换的。'
+- en: 'If `__radd__` simply calls `__add__`, here is another way to achieve the same
+    effect:'
+  id: totrans-94
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果`__radd__`简单地调用`__add__`，那么这是实现相同效果的另一种方法：
+- en: '[PRE10]'
+  id: totrans-95
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE10]'
+- en: The methods in [Example 16-7](#ex_vector_add_t2) work with `Vector` objects,
+    or any iterable with numeric items, such as a `Vector2d`, a `tuple` of integers,
+    or an `array` of floats. But if provided with a noniterable object, `__add__`
+    raises an exception with a message that is not very helpful, as in [Example 16-8](#ex_vector_error_iter).
+  id: totrans-96
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 16-7](#ex_vector_add_t2)中的方法适用于`Vector`对象，或具有数字项的任何可迭代对象，例如`Vector2d`，一组整数的`tuple`，或一组浮点数的`array`。但如果提供了一个不可迭代的对象，`__add__`将引发一个带有不太有用消息的异常，就像[示例
+    16-8](#ex_vector_error_iter)中一样。'
+- en: Example 16-8\. `Vector.__add__` method needs an iterable operand
+  id: totrans-97
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 16-8. `Vector.__add__`方法需要一个可迭代的操作数
+- en: '[PRE11]'
+  id: totrans-98
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE11]'
+- en: Even worse, we get a misleading message if an operand is iterable but its items
+    cannot be added to the `float` items in the `Vector`. See [Example 16-9](#ex_vector_error_iter_not_add).
+  id: totrans-99
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 更糟糕的是，如果一个操作数是可迭代的，但其项无法添加到`Vector`中的`float`项中，则会得到一个误导性的消息。请参见[示例 16-9](#ex_vector_error_iter_not_add)。
+- en: Example 16-9\. `Vector.__add__` method needs an iterable with numeric items
+  id: totrans-100
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 16-9. `Vector.__add__`方法需要具有数字项的可迭代对象
+- en: '[PRE12]'
+  id: totrans-101
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE12]'
+- en: I tried to add `Vector` and a `str`, but the message complains about `float`
+    and `str`.
+  id: totrans-102
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我尝试添加`Vector`和一个`str`，但消息抱怨`float`和`str`。
+- en: 'The problems in Examples [16-8](#ex_vector_error_iter) and [16-9](#ex_vector_error_iter_not_add)
+    actually go deeper than obscure error messages: if an operator special method
+    cannot return a valid result because of type incompatibility, it should return
+    `NotImplemented` and not raise `TypeError`. By returning `NotImplemented`, you
+    leave the door open for the implementer of the other operand type to perform the
+    operation when Python tries the reversed method call.'
+  id: totrans-103
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 示例[16-8](#ex_vector_error_iter)和[16-9](#ex_vector_error_iter_not_add)中的问题实际上比晦涩的错误消息更深：如果一个运算符特殊方法由于类型不兼容而无法返回有效结果，它应该返回`NotImplemented`而不是引发`TypeError`。通过返回`NotImplemented`，您为另一个操作数类型的实现者留下了机会，在Python尝试调用反向方法时执行操作。
+- en: 'In the spirit of duck typing, we will refrain from testing the type of the
+    `other` operand, or the type of its elements. We’ll catch the exceptions and return
+    `NotImplemented`. If the interpreter has not yet reversed the operands, it will
+    try that. If the reverse method call returns `NotImplemented`, then Python will
+    raise `TypeError` with a standard error message like “unsupported operand type(s)
+    for +: *Vector* and *str*.”'
+  id: totrans-104
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 符合鸭子类型的精神，我们将避免测试`other`操作数的类型，或其元素的类型。我们将捕获异常并返回`NotImplemented`。如果解释器尚未颠倒操作数，则将尝试这样做。如果反向方法调用返回`NotImplemented`，那么Python将引发`TypeError`，并显示标准错误消息，如“不支持的操作数类型：*Vector*和*str*”。
+- en: The final implementation of the special methods for `Vector` addition is in
+    [Example 16-10](#ex_vector_v6).
+  id: totrans-105
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`Vector`加法的特殊方法的最终实现在[示例 16-10](#ex_vector_v6)中。'
+- en: 'Example 16-10\. vector_v6.py: operator `+` methods added to vector_v5.py ([Example 12-16](ch12.html#ex_vector_v5))'
+  id: totrans-106
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 16-10. vector_v6.py：向vector_v5.py添加了运算符`+`方法（[示例 12-16](ch12.html#ex_vector_v5)）
+- en: '[PRE13]'
+  id: totrans-107
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE13]'
+- en: Note that `__add__` now catches a `TypeError` and returns `NotImplemented`.
+  id: totrans-108
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意，`__add__`现在捕获`TypeError`并返回`NotImplemented`。
+- en: Warning
+  id: totrans-109
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 警告
+- en: If an infix operator method raises an exception, it aborts the operator dispatch
+    algorithm. In the particular case of `TypeError`, it is often better to catch
+    it and `return NotImplemented`. This allows the interpreter to try calling the
+    reversed operator method, which may correctly handle the computation with the
+    swapped operands, if they are of different types.
+  id: totrans-110
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果中缀运算符方法引发异常，则会中止运算符分派算法。在`TypeError`的特定情况下，通常最好捕获它并`返回NotImplemented`。这允许解释器尝试调用反向运算符方法，如果它们是不同类型的，则可能正确处理交换操作数的计算。
+- en: 'At this point, we have safely overloaded the `+` operator by writing `__add__`
+    and `__radd__`. We will now tackle another infix operator: `*`.'
+  id: totrans-111
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 到目前为止，我们已经通过编写`__add__`和`__radd__`安全地重载了`+`运算符。现在我们将处理另一个中缀运算符：`*`。
+- en: Overloading * for Scalar Multiplication
+  id: totrans-112
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 为标量乘法重载*
+- en: 'What does `Vector([1, 2, 3]) * x` mean? If `x` is a number, that would be a
+    scalar product, and the result would be a new `Vector` with each component multiplied
+    by `x`—also known as an elementwise multiplication:'
+  id: totrans-113
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`Vector([1, 2, 3]) * x`是什么意思？如果`x`是一个数字，那将是一个标量乘积，结果将是一个每个分量都乘以`x`的新`Vector`——也被称为逐元素乘法：'
+- en: '[PRE14]'
+  id: totrans-114
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE14]'
+- en: Note
+  id: totrans-115
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 注意
+- en: Another kind of product involving `Vector` operands would be the dot product
+    of two vectors—or matrix multiplication, if you take one vector as a 1 × N matrix
+    and the other as an N × 1 matrix. We will implement that operator in our `Vector`
+    class in [“Using @ as an Infix Operator”](#matmul_operator_sec).
+  id: totrans-116
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 涉及`Vector`操作数的另一种产品类型将是两个向量的点积，或者矩阵乘法，如果你将一个向量视为1×N矩阵，另一个向量视为N×1矩阵。我们将在我们的`Vector`类中实现该运算符，详见[“使用@作为中缀运算符”](#matmul_operator_sec)。
+- en: 'Back to our scalar product, again we start with the simplest `__mul__` and
+    `__rmul__` methods that could possibly work:'
+  id: totrans-117
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 再次回到我们的标量乘积，我们从可能起作用的最简单的`__mul__`和`__rmul__`方法开始：
+- en: '[PRE15]'
+  id: totrans-118
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE15]'
+- en: Those methods do work, except when provided with incompatible operands. The
+    `scalar` argument has to be a number that when multiplied by a `float` produces
+    another `float` (because our `Vector` class uses an `array` of floats internally).
+    So a `complex` number will not do, but the scalar can be an `int`, a `bool` (because
+    `bool` is a subclass of `int`), or even a `fractions.Fraction` instance. In [Example 16-11](#ex_vector_v7),
+    the `__mul__` method does not make an explicit type check on `scalar`, but instead
+    converts it into a `float`, and returns `NotImplemented` if that fails. That’s
+    a clear example of duck typing.
+  id: totrans-119
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这些方法确实有效，除非提供了不兼容的操作数。`scalar`参数必须是一个数字，当乘以一个`float`时产生另一个`float`（因为我们的`Vector`类在内部使用`float`��组）。因此，一个`complex`数是不行的，但标量可以是一个`int`、一个`bool`（因为`bool`是`int`的子类），甚至是一个`fractions.Fraction`实例。在[示例
+    16-11](#ex_vector_v7)中，`__mul__`方法没有对`scalar`进行显式类型检查，而是将其转换为`float`，如果失败则返回`NotImplemented`。这是鸭子类型的一个明显例子。
+- en: 'Example 16-11\. vector_v7.py: operator `*` methods added'
+  id: totrans-120
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 16-11\. vector_v7.py：添加`*`方法
+- en: '[PRE16]'
+  id: totrans-121
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE16]'
+- en: '[![1](assets/1.png)](#co_operator_overloading_CO5-1)'
+  id: totrans-122
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_operator_overloading_CO5-1)'
+- en: If `scalar` cannot be converted to `float`…
+  id: totrans-123
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果`scalar`无法转换为`float`…
+- en: '[![2](assets/2.png)](#co_operator_overloading_CO5-2)'
+  id: totrans-124
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_operator_overloading_CO5-2)'
+- en: …we don’t know how to handle it, so we return `NotImplemented` to let Python
+    try `__rmul__` on the `scalar` operand.
+  id: totrans-125
+  prefs: []
+  type: TYPE_NORMAL
+  zh: …我们不知道如何处理它，所以我们返回`NotImplemented`，让Python尝试在`scalar`操作数上执行`__rmul__`。
+- en: '[![3](assets/3.png)](#co_operator_overloading_CO5-3)'
+  id: totrans-126
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_operator_overloading_CO5-3)'
+- en: In this example, `__rmul__` works fine by just performing `self * scalar`, delegating
+    to the `__mul__` method.
+  id: totrans-127
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在这个例子中，`__rmul__`通过执行`self * scalar`来正常工作，委托给`__mul__`方法。
+- en: 'With [Example 16-11](#ex_vector_v7), we can multiply `Vectors` by scalar values
+    of the usual, and not so usual, numeric types:'
+  id: totrans-128
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 通过[示例 16-11](#ex_vector_v7)，我们可以将`Vectors`乘以通常和不太常见的数值类型的标量值：
+- en: '[PRE17]'
+  id: totrans-129
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE17]'
+- en: Now that we can multiply `Vector` by scalars, let’s see how to implement `Vector`
+    by `Vector` products.
+  id: totrans-130
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在我们可以将`Vector`乘以标量，让我们看看如何实现`Vector`乘以`Vector`的乘积。
+- en: Note
+  id: totrans-131
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 注意
+- en: 'In the first edition of *Fluent Python*, I used goose typing in [Example 16-11](#ex_vector_v7):
+    I checked the `scalar` argument of `__mul__` with `isinstance(scalar, numbers.Real)`.
+    Now I avoid using the `numbers` ABCs because they are not supported by PEP 484,
+    and using types at runtime that cannot also be statically checked seems a bad
+    idea to me.'
+  id: totrans-132
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在*Fluent Python*的第一版中，我在[示例 16-11](#ex_vector_v7)中使用了鹅类型：我用`isinstance(scalar,
+    numbers.Real)`检查了`__mul__`的`scalar`参数。现在我避免使用`numbers` ABCs，因为它们不受PEP 484支持，而且在运行时使用无法静态检查的类型对我来说似乎不是一个好主意。
+- en: Alternatively, I could have checked against the `typing.SupportsFloat` protocol
+    that we saw in [“Runtime Checkable Static Protocols”](ch13.html#runtime_checkable_proto_sec).
+    I chose duck typing in that example because I think fluent Pythonistas should
+    be comfortable with that coding pattern.
+  id: totrans-133
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 或者，我可以针对我们在[“运行时可检查的静态协议”](ch13.html#runtime_checkable_proto_sec)中看到的`typing.SupportsFloat`协议进行检查。在那个示例中，我选择了鸭子类型，因为我认为精通Python的人应该对这种编码模式感到舒适。
+- en: On the other hand, `__matmul__` in [Example 16-12](#ex_vector_v7_matmul) is
+    a good example of goose typing, new in this second edition.
+  id: totrans-134
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 另一方面，在[示例 16-12](#ex_vector_v7_matmul)中的`__matmul__`是鹅类型的一个很好的例子，这是第二版中新增的。
+- en: Using @ as an Infix Operator
+  id: totrans-135
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 使用@作为中缀运算符
+- en: The `@` sign is well-known as the prefix of function decorators, but since 2015,
+    it can also be used as an infix operator. For years, the dot product was written
+    as `numpy.dot(a, b)` in NumPy. The function call notation makes longer formulas
+    harder to translate from mathematical notation to Python,^([5](ch16.html#idm46582409038272))
+    so the numerical computing community lobbied for [PEP 465—A dedicated infix operator
+    for matrix multiplication](https://fpy.li/pep465), which was implemented in Python
+    3.5. Today, you can write `a @ b` to compute the dot product of two NumPy arrays.
+  id: totrans-136
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`@`符号众所周知是函数装饰器的前缀，但自2015年以来，它也可以用作中缀运算符。多年来，在NumPy中，点积被写为`numpy.dot(a, b)`。函数调用符号使得从数学符号到Python的长公式更难以转换，因此数值计算社区游说支持[PEP
+    465—用于矩阵乘法的专用中缀运算符](https://fpy.li/pep465)，这在Python 3.5中实现。今天，你可以写`a @ b`来计算两个NumPy数组的点积。'
+- en: The `@` operator is supported by the special methods `__matmul__`, `__rmatmul__`,
+    and `__imatmul__`, named for “matrix multiplication.” These methods are not used
+    anywhere in the standard library at this time, but are recognized by the interpreter
+    since Python 3.5, so the NumPy team—and the rest of us—can support the `@` operator
+    in user-defined types. The parser was also changed to handle the new operator
+    (`a @ b` was a syntax error in Python 3.4).
+  id: totrans-137
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`@`运算符由特殊方法`__matmul__`、`__rmatmul__`和`__imatmul__`支持，命名为“矩阵乘法”。这些方法目前在标准库中没有被使用，但自Python
+    3.5以来，解释器已经认可它们，因此NumPy团队——以及我们其他人——可以在用户定义的类型中支持`@`运算符。解析器也已更改以处理新运算符（在Python
+    3.4中，`a @ b`是语法错误）。'
+- en: 'These simple tests show how `@` should work with `Vector` instances:'
+  id: totrans-138
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这些简单的测试展示了`@`应该如何与`Vector`实例一起工作：
+- en: '[PRE18]'
+  id: totrans-139
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE18]'
+- en: '[Example 16-12](#ex_vector_v7_matmul) shows the code of the relevant special
+    methods.'
+  id: totrans-140
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 16-12](#ex_vector_v7_matmul) 展示了相关特殊方法的代码。'
+- en: 'Example 16-12\. vector_v7.py: operator `@` methods'
+  id: totrans-141
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 16-12\. vector_v7.py：操作符`@`方法
+- en: '[PRE19]'
+  id: totrans-142
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE19]'
+- en: '[![1](assets/1.png)](#co_operator_overloading_CO6-1)'
+  id: totrans-143
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_operator_overloading_CO6-1)'
+- en: Both operands must implement `__len__` and `__iter__`…
+  id: totrans-144
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 两个操作数必须实现`__len__`和`__iter__`…
+- en: '[![2](assets/2.png)](#co_operator_overloading_CO6-2)'
+  id: totrans-145
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_operator_overloading_CO6-2)'
+- en: …and have the same length to allow…
+  id: totrans-146
+  prefs: []
+  type: TYPE_NORMAL
+  zh: …并且具有相同的长度以允许…
+- en: '[![3](assets/3.png)](#co_operator_overloading_CO6-3)'
+  id: totrans-147
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_operator_overloading_CO6-3)'
+- en: …a beautiful application of `sum`, `zip`, and generator expression.
+  id: totrans-148
+  prefs: []
+  type: TYPE_NORMAL
+  zh: …`sum`、`zip`和生成器表达式的一个美妙应用。
+- en: New zip() Feature in Python 3.10
+  id: totrans-149
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: Python 3.10 中的新 zip() 特性
+- en: The `zip` built-in accepts a `strict` keyword-only optional argument since Python
+    3.10\. When `strict=True`, the function raises `ValueError` when the iterables
+    have different lengths. The default is `False`. This new strict behavior is in
+    line with Python’s [*fail fast*](https://fpy.li/16-8) philosophy. In [Example 16-12](#ex_vector_v7_matmul),
+    I’d replace the inner `if` with a `try/except ValueError` and add `strict=True`
+    to the `zip` call.
+  id: totrans-150
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`zip` 内置函数自 Python 3.10 起接受一个`strict`关键字参数。当`strict=True`时，当可迭代对象的长度不同时，函数会引发`ValueError`。默认值为`False`。这种新的严格行为符合
+    Python 的[*快速失败*](https://fpy.li/16-8)哲学。在[示例 16-12](#ex_vector_v7_matmul)中，我会用`try/except
+    ValueError`替换内部的`if`，并���`zip`调用中添加`strict=True`。'
+- en: '[Example 16-12](#ex_vector_v7_matmul) is a good example of *goose typing* in
+    practice. If we tested the `other` operand against `Vector`, we’d deny users the
+    flexibility of using lists or arrays as operands to `@`. As long as one operand
+    is a `Vector`, our `@` implementation supports other operands that are instances
+    of `abc.Sized` and `abc.Iterable`. Both of these ABCs implement the `__subclasshook__`,
+    therefore any object providing `__len__` and `__iter__` satisfies our test—no
+    need to actually subclass those ABCs or even register with them, as explained
+    in [“Structural Typing with ABCs”](ch13.html#subclasshook_sec). In particular,
+    our `Vector` class does not subclass either `abc.Sized` or `abc.Iterable`, but
+    it does pass the `isinstance` checks against those ABCs because it has the necessary
+    methods.'
+  id: totrans-151
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 16-12](#ex_vector_v7_matmul) 是实践中*鹅类型*的一个很好的例子。如果我们将`other`操作数与`Vector`进行测试，我们将剥夺用户使用列表或数组作为`@`操作数的灵活性。只要一个操作数是`Vector`，我们的`@`实现就支持其他操作数是`abc.Sized`和`abc.Iterable`的实例。这两个ABC都实现了`__subclasshook__`，因此任何提供`__len__`和`__iter__`的对象都满足我们的测试——无需实际子类化这些ABC，甚至无需向它们注册，如[“使用ABC进行结构化类型检查”](ch13.html#subclasshook_sec)中所解释的那样。特别是，我们的`Vector`类既不是`abc.Sized`的子类，也不是`abc.Iterable`的子类，但它通过了对这些ABC的`isinstance`检查，因为它具有必要的方法。'
+- en: Let’s review the arithmetic operators supported by Python, before diving into
+    the special category of [“Rich Comparison Operators”](#rich_comp_op_sec).
+  id: totrans-152
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在深入讨论[“富比较运算符”](#rich_comp_op_sec)的特殊类别之前，让我们回顾一下 Python 支持的算术运算符。
+- en: Wrapping-Up Arithmetic Operators
+  id: totrans-153
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 算术运算符总结
+- en: Implementing `+`, `*`, and `@`, we saw the most common patterns for coding infix
+    operators. The techniques we described are applicable to all operators listed
+    in [Table 16-1](#infix_operator_names_tbl) (the in-place operators will be covered
+    in [“Augmented Assignment Operators”](#augmented_assign_ops)).
+  id: totrans-154
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 通过实现`+`、`*`和`@`，我们看到了编写中缀运算符的最常见模式。我们描述的技术适用于[表 16-1](#infix_operator_names_tbl)中列出的所有运算符（就地运算符将在[“增强赋值运算符”](#augmented_assign_ops)中介绍）。
+- en: Table 16-1\. Infix operator method names (the in-place operators are used for
+    augmented assignment; comparison operators are in [Table 16-2](#reversed_rich_comp_op_tbl))
+  id: totrans-155
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 表 16-1\. 中缀运算符方法名称（就地运算符用于增强赋值；比较运算符在[表 16-2](#reversed_rich_comp_op_tbl)中）
+- en: '| Operator | Forward | Reverse | In-place | Description |'
+  id: totrans-156
+  prefs: []
+  type: TYPE_TB
+  zh: '| 运算符 | 正向 | 反向 | 就地 | 描述 |'
+- en: '| --- | --- | --- | --- | --- |'
+  id: totrans-157
+  prefs: []
+  type: TYPE_TB
+  zh: '| --- | --- | --- | --- | --- |'
+- en: '| `+` | `__add__` | `__radd__` | `__iadd__` | Addition or concatenation |'
+  id: totrans-158
+  prefs: []
+  type: TYPE_TB
+  zh: '| `+` | `__add__` | `__radd__` | `__iadd__` | 加法或连接 |'
+- en: '| `-` | `__sub__` | `__rsub__` | `__isub__` | Subtraction |'
+  id: totrans-159
+  prefs: []
+  type: TYPE_TB
+  zh: '| `-` | `__sub__` | `__rsub__` | `__isub__` | 减法 |'
+- en: '| `*` | `__mul__` | `__rmul__` | `__imul__` | Multiplication or repetition
+    |'
+  id: totrans-160
+  prefs: []
+  type: TYPE_TB
+  zh: '| `*` | `__mul__` | `__rmul__` | `__imul__` | 乘法或重复 |'
+- en: '| `/` | `__truediv__` | `__rtruediv__` | `__itruediv__` | True division |'
+  id: totrans-161
+  prefs: []
+  type: TYPE_TB
+  zh: '| `/` | `__truediv__` | `__rtruediv__` | `__itruediv__` | 真除法 |'
+- en: '| `//` | `__floordiv__` | `__rfloordiv__` | `__ifloordiv__` | Floor division
+    |'
+  id: totrans-162
+  prefs: []
+  type: TYPE_TB
+  zh: '| `//` | `__floordiv__` | `__rfloordiv__` | `__ifloordiv__` | 地板除法 |'
+- en: '| `%` | `__mod__` | `__rmod__` | `__imod__` | Modulo |'
+  id: totrans-163
+  prefs: []
+  type: TYPE_TB
+  zh: '| `%` | `__mod__` | `__rmod__` | `__imod__` | 取模 |'
+- en: '| `divmod()` | `__divmod__` | `__rdivmod__` | `__idivmod__` | Returns tuple
+    of floor division quotient and modulo |'
+  id: totrans-164
+  prefs: []
+  type: TYPE_TB
+  zh: '| `divmod()` | `__divmod__` | `__rdivmod__` | `__idivmod__` | 返回地板除法商和模数的元组
+    |'
+- en: '| `**`, `pow()` | `__pow__` | `__rpow__` | `__ipow__` | Exponentiation^([a](ch16.html#idm46582408719664))
+    |'
+  id: totrans-165
+  prefs: []
+  type: TYPE_TB
+  zh: '| `**`, `pow()` | `__pow__` | `__rpow__` | `__ipow__` | 指数运算^([a](ch16.html#idm46582408719664))
+    |'
+- en: '| `@` | `__matmul__` | `__rmatmul__` | `__imatmul__` | Matrix multiplication
+    |'
+  id: totrans-166
+  prefs: []
+  type: TYPE_TB
+  zh: '| `@` | `__matmul__` | `__rmatmul__` | `__imatmul__` | 矩阵乘法 |'
+- en: '| `&` | `__and__` | `__rand__` | `__iand__` | Bitwise and |'
+  id: totrans-167
+  prefs: []
+  type: TYPE_TB
+  zh: '| `&` | `__and__` | `__rand__` | `__iand__` | 位与 |'
+- en: '| &#124; | `__or__` | `__ror__` | `__ior__` | Bitwise or |'
+  id: totrans-168
+  prefs: []
+  type: TYPE_TB
+  zh: '| &#124; | `__or__` | `__ror__` | `__ior__` | 位或 |'
+- en: '| `^` | `__xor__` | `__rxor__` | `__ixor__` | Bitwise xor |'
+  id: totrans-169
+  prefs: []
+  type: TYPE_TB
+  zh: '| `^` | `__xor__` | `__rxor__` | `__ixor__` | 位异或 |'
+- en: '| `<<` | `__lshift__` | `__rlshift__` | `__ilshift__` | Bitwise shift left
+    |'
+  id: totrans-170
+  prefs: []
+  type: TYPE_TB
+  zh: '| `<<` | `__lshift__` | `__rlshift__` | `__ilshift__` | 位左移 |'
+- en: '| `>>` | `__rshift__` | `__rrshift__` | `__irshift__` | Bitwise shift right
+    |'
+  id: totrans-171
+  prefs: []
+  type: TYPE_TB
+  zh: '| `>>` | `__rshift__` | `__rrshift__` | `__irshift__` | 位右移 |'
+- en: '| ^([a](ch16.html#idm46582408719664-marker)) `pow` takes an optional third
+    argument, `modulo`: `pow(a, b, modulo)`, also supported by the special methods
+    when invoked directly (e.g., `a.__pow__(b, modulo)`). |'
+  id: totrans-172
+  prefs: []
+  type: TYPE_TB
+  zh: '| ^([a](ch16.html#idm46582408719664-marker)) `pow` 接受一个可选的第三个参数，`modulo`：`pow(a,
+    b, modulo)`，在直接调用时也由特殊方法支持（例如，`a.__pow__(b, modulo)`）。'
+- en: The rich comparison operators use a different set of rules.
+  id: totrans-173
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 富比较运算符使用不同的规则。
+- en: Rich Comparison Operators
+  id: totrans-174
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 富比较运算符
+- en: 'The handling of the rich comparison operators `==`, `!=`, `>`, `<`, `>=`, and
+    `<=` by the Python interpreter is similar to what we just saw, but differs in
+    two important aspects:'
+  id: totrans-175
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Python解释器对富比较运算符`==`、`!=`、`>`、`<`、`>=`和`<=`的处理与我们刚才看到的类似，但在两个重要方面有所不同：
+- en: The same set of methods is used in forward and reverse operator calls. The rules
+    are summarized in [Table 16-2](#reversed_rich_comp_op_tbl). For example, in the
+    case of `==`, both the forward and reverse calls invoke `__eq__`, only swapping
+    arguments; and a forward call to `__gt__` is followed by a reverse call to `__lt__`
+    with the arguments swapped.
+  id: totrans-176
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 在前向和反向运算符调用中使用相同的方法集。规则总结在[表 16-2](#reversed_rich_comp_op_tbl)中。例如，在`==`的情况下，前向和反向调用都调用`__eq__`，只是交换参数；前向调用`__gt__`后跟着反向调用`__lt__`，参数交换。
+- en: In the case of `==` and `!=`, if the reverse method is missing, or returns `NotImplemented`,
+    Python compares the object IDs instead of raising `TypeError`.
+  id: totrans-177
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 在`==`和`!=`的情况下，如果缺少反向方法，或者返回`NotImplemented`，Python会比较对象ID而不是引发`TypeError`。
+- en: 'Table 16-2\. Rich comparison operators: reverse methods invoked when the initial
+    method call returns `NotImplemented`'
+  id: totrans-178
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ��16-2\. 富比较运算符：当初始方法调用返回`NotImplemented`时调用反向方法
+- en: '| Group | Infix operator | Forward method call | Reverse method call | Fallback
+    |'
+  id: totrans-179
+  prefs: []
+  type: TYPE_TB
+  zh: '| 组 | 中缀运算符 | 前向方法调用 | 反向方法调用 | 回退 |'
+- en: '| --- | --- | --- | --- | --- |'
+  id: totrans-180
+  prefs: []
+  type: TYPE_TB
+  zh: '| --- | --- | --- | --- | --- |'
+- en: '| Equality | `a == b` | `a.__eq__(b)` | `b.__eq__(a)` | Return `id(a) == id(b)`
+    |'
+  id: totrans-181
+  prefs: []
+  type: TYPE_TB
+  zh: '| 相等性 | `a == b` | `a.__eq__(b)` | `b.__eq__(a)` | 返回`id(a) == id(b)` |'
+- en: '|  | `a != b` | `a.__ne__(b)` | `b.__ne__(a)` | Return `not (a == b)` |'
+  id: totrans-182
+  prefs: []
+  type: TYPE_TB
+  zh: '|  | `a != b` | `a.__ne__(b)` | `b.__ne__(a)` | 返回`not (a == b)` |'
+- en: '| Ordering | `a > b` | `a.__gt__(b)` | `b.__lt__(a)` | Raise `TypeError` |'
+  id: totrans-183
+  prefs: []
+  type: TYPE_TB
+  zh: '| 排序 | `a > b` | `a.__gt__(b)` | `b.__lt__(a)` | 引发`TypeError` |'
+- en: '|  | `a < b` | `a.__lt__(b)` | `b.__gt__(a)` | Raise `TypeError` |'
+  id: totrans-184
+  prefs: []
+  type: TYPE_TB
+  zh: '|  | `a < b` | `a.__lt__(b)` | `b.__gt__(a)` | 引发`TypeError` |'
+- en: '|  | `a >= b` | `a.__ge__(b)` | `b.__le__(a)` | Raise `TypeError` |'
+  id: totrans-185
+  prefs: []
+  type: TYPE_TB
+  zh: '|  | `a >= b` | `a.__ge__(b)` | `b.__le__(a)` | 引发`TypeError` |'
+- en: '|  | `a <= b` | `a.__le__(b)` | `b.__ge__(a)` | Raise `TypeError` |'
+  id: totrans-186
+  prefs: []
+  type: TYPE_TB
+  zh: '|  | `a <= b` | `a.__le__(b)` | `b.__ge__(a)` | 引发`TypeError` |'
+- en: 'Given these rules, let’s review and improve the behavior of the `Vector.__eq__`
+    method, which was coded as follows in *vector_v5.py* ([Example 12-16](ch12.html#ex_vector_v5)):'
+  id: totrans-187
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 鉴于这些规则，让我们审查并改进`Vector.__eq__`方法的行为，该方法在*vector_v5.py*中编码如下（[示例 12-16](ch12.html#ex_vector_v5)）：
+- en: '[PRE20]'
+  id: totrans-188
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE20]'
+- en: That method produces the results in [Example 16-13](#eq_initial_demo).
+  id: totrans-189
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 该方法产生了[示例 16-13](#eq_initial_demo)中的结果。
+- en: Example 16-13\. Comparing a `Vector` to a `Vector`, a `Vector2d`, and a `tuple`
+  id: totrans-190
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 16-13\. 将`Vector`与`Vector`、`Vector2d`和`tuple`进行比较
+- en: '[PRE21]'
+  id: totrans-191
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE21]'
+- en: '[![1](assets/1.png)](#co_operator_overloading_CO7-1)'
+  id: totrans-192
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_operator_overloading_CO7-1)'
+- en: Two `Vector` instances with equal numeric components compare equal.
+  id: totrans-193
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 具有相等数值组件的两个`Vector`实例比较相等。
+- en: '[![2](assets/2.png)](#co_operator_overloading_CO7-2)'
+  id: totrans-194
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_operator_overloading_CO7-2)'
+- en: A `Vector` and a `Vector2d` are also equal if their components are equal.
+  id: totrans-195
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果它们的组件相等，`Vector`和`Vector2d`也相等。
+- en: '[![3](assets/3.png)](#co_operator_overloading_CO7-3)'
+  id: totrans-196
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_operator_overloading_CO7-3)'
+- en: A `Vector` is also considered equal to a `tuple` or any iterable with numeric
+    items of equal value.
+  id: totrans-197
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`Vector`也被视为等于包含相同数值的`tuple`或任何可迭代对象。'
+- en: 'The result in [Example 16-13](#eq_initial_demo) is probably not desirable.
+    Do we really want a `Vector` to be considered equal to a `tuple` containing the
+    same numbers? I have no hard rule about this; it depends on the application context.
+    The “Zen of Python” says:'
+  id: totrans-198
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 16-13](#eq_initial_demo)中的结果可能不理想。我们真的希望`Vector`被视为等于包含相同数字的`tuple`吗？我对此没有硬性规定；这取决于应用上下文。《Python之禅》说：'
+- en: In the face of ambiguity, refuse the temptation to guess.
+  id: totrans-199
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+  zh: 面对模棱两可的情况，拒绝猜测的诱惑。
+- en: Excessive liberality in the evaluation of operands may lead to surprising results,
+    and programmers hate surprises.
+  id: totrans-200
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在评估操作数时过于宽松可能导致令人惊讶的结果，程序员讨厌惊喜。
+- en: Taking a clue from Python itself, we can see that `[1,2] == (1, 2)` is `False`.
+    Therefore, let’s be conservative and do some type checking. If the second operand
+    is a `Vector` instance (or an instance of a `Vector` subclass), then use the same
+    logic as the current `__eq__`. Otherwise, return `NotImplemented` and let Python
+    handle that. See [Example 16-14](#ex_vector_v8_eq).
+  id: totrans-201
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 借鉴于Python本身，我们可以看到`[1,2] == (1, 2)`是`False`。因此，让我们保守一点并进行一些类型检查。如果第二个操作数是`Vector`实例（或`Vector`子类的实例），那么使用与当前`__eq__`相同的逻辑。否则，返回`NotImplemented`并让Python处理。参见[示例 16-14](#ex_vector_v8_eq)。
+- en: 'Example 16-14\. vector_v8.py: improved `__eq__` in the `Vector` class'
+  id: totrans-202
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 16-14\. vector_v8.py：改进了`Vector`类中的`__eq__`
+- en: '[PRE22]'
+  id: totrans-203
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE22]'
+- en: '[![1](assets/1.png)](#co_operator_overloading_CO8-1)'
+  id: totrans-204
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_operator_overloading_CO8-1)'
+- en: If the `other` operand is an instance of `Vector` (or of a `Vector` subclass),
+    perform the comparison as before.
+  id: totrans-205
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果`other`操作数是`Vector`的实例（或`Vector`子类的实例），则像以前一样执行比较。
+- en: '[![2](assets/2.png)](#co_operator_overloading_CO8-2)'
+  id: totrans-206
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_operator_overloading_CO8-2)'
+- en: Otherwise, return `NotImplemented`.
+  id: totrans-207
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 否则，返回`NotImplemented`。
+- en: If you run the tests in [Example 16-13](#eq_initial_demo) with the new `Vector.__eq__`
+    from [Example 16-14](#ex_vector_v8_eq), what you get now is shown in [Example 16-15](#eq_demo_new_eq).
+  id: totrans-208
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果您使用来自[示例 16-14](#ex_vector_v8_eq)的新`Vector.__eq__`运行[示例 16-13](#eq_initial_demo)中的测试，现在得到的结果如[示例 16-15](#eq_demo_new_eq)所示。
+- en: 'Example 16-15\. Same comparisons as [Example 16-13](#eq_initial_demo): last
+    result changed'
+  id: totrans-209
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 16-15\. 与[示例 16-13](#eq_initial_demo)相同的比较：最后结果改变
+- en: '[PRE23]'
+  id: totrans-210
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE23]'
+- en: '[![1](assets/1.png)](#co_operator_overloading_CO9-1)'
+  id: totrans-211
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_operator_overloading_CO9-1)'
+- en: Same result as before, as expected.
+  id: totrans-212
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 与预期一样，与之前相同的结果。
+- en: '[![2](assets/2.png)](#co_operator_overloading_CO9-2)'
+  id: totrans-213
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_operator_overloading_CO9-2)'
+- en: Same result as before, but why? Explanation coming up.
+  id: totrans-214
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 与之前相同的结果，但为什么？解释即将到来。
+- en: '[![3](assets/3.png)](#co_operator_overloading_CO9-3)'
+  id: totrans-215
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_operator_overloading_CO9-3)'
+- en: Different result; this is what we wanted. But why does it work? Read on…
+  id: totrans-216
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 不同的结果；这就是我们想要的。但是为什么会起作用？继续阅读…
+- en: 'Among the three results in [Example 16-15](#eq_demo_new_eq), the first one
+    is no news, but the last two were caused by `__eq__` returning `NotImplemented`
+    in [Example 16-14](#ex_vector_v8_eq). Here is what happens in the example with
+    a `Vector` and a `Vector2d`, `vc == v2d`, step-by-step:'
+  id: totrans-217
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在 [示例 16-15](#eq_demo_new_eq) 中的三个结果中，第一个不是新闻，但最后两个是由 [示例 16-14](#ex_vector_v8_eq)
+    中的 `__eq__` 返回 `NotImplemented` 导致的。以下是在一个 `Vector` 和一个 `Vector2d` 的示例中发生的情况，`vc
+    == v2d`，逐步进行：
+- en: To evaluate `vc == v2d`, Python calls `Vector.__eq__(vc, v2d)`.
+  id: totrans-218
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 要评估 `vc == v2d`，Python 调用 `Vector.__eq__(vc, v2d)`。
+- en: '`Vector.__eq__(vc, v2d)` verifies that `v2d` is not a `Vector` and returns
+    `NotImplemented`.'
+  id: totrans-219
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: '`Vector.__eq__(vc, v2d)` 验证 `v2d` 不是 `Vector` 并返回 `NotImplemented`。'
+- en: Python gets the `NotImplemented` result, so it tries `Vector2d.__eq__(v2d, vc)`.
+  id: totrans-220
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: Python 得到 `NotImplemented` 的结果，因此尝试 `Vector2d.__eq__(v2d, vc)`。
+- en: '`Vector2d.__eq__(v2d, vc)` turns both operands into tuples and compares them:
+    the result is `True` (the code for `Vector2d.__eq__` is in [Example 11-11](ch11.html#ex_vector2d_v3_full)).'
+  id: totrans-221
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: '`Vector2d.__eq__(v2d, vc)` 将两个操作数转换为元组并进行比较：结果为 `True`（`Vector2d.__eq__` 的代码在
+    [示例 11-11](ch11.html#ex_vector2d_v3_full) 中）。'
+- en: 'As for the comparison `va == t3`, between `Vector` and `tuple` in [Example 16-15](#eq_demo_new_eq),
+    the actual steps are:'
+  id: totrans-222
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 至于比较 `va == t3`，在 [示例 16-15](#eq_demo_new_eq) 中的 `Vector` 和 `tuple` 之间，实际步骤如下：
+- en: To evaluate `va == t3`, Python calls `Vector.__eq__(va, t3)`.
+  id: totrans-223
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 要评估 `va == t3`，Python 调用 `Vector.__eq__(va, t3)`。
+- en: '`Vector.__eq__(va, t3)` verifies that `t3` is not a `Vector` and returns `NotImplemented`.'
+  id: totrans-224
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: '`Vector.__eq__(va, t3)` 验证 `t3` 不是 `Vector` 并返回 `NotImplemented`。'
+- en: Python gets the `NotImplemented` result, so it tries `tuple.__eq__(t3, va)`.
+  id: totrans-225
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: Python 得到 `NotImplemented` 的��果，因此尝试 `tuple.__eq__(t3, va)`。
+- en: '`tuple.__eq__(t3, va)` has no idea what a `Vector` is, so it returns `NotImplemented`.'
+  id: totrans-226
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: '`tuple.__eq__(t3, va)` 不知道什么是 `Vector`，所以返回 `NotImplemented`。'
+- en: In the special case of `==`, if the reversed call returns `NotImplemented`,
+    Python compares object IDs as a last resort.
+  id: totrans-227
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 在 `==` 的特殊情况下，如果反向调用返回 `NotImplemented`，Python 将比较对象 ID 作为最后的手段。
+- en: 'We don’t need to implement `__ne__` for `!=` because the fallback behavior
+    of `__ne__` inherited from `object` suits us: when `__eq__` is defined and does
+    not return `NotImplemented`, `__ne__` returns that result negated.'
+  id: totrans-228
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 对于 `!=` 我们不需要为 `__ne__` 实现，因为从 `object` 继承的 `__ne__` 的后备行为适合我们：当 `__eq__` 被定义且不返回
+    `NotImplemented` 时，`__ne__` 返回该结果的否定。
+- en: 'In other words, given the same objects we used in [Example 16-15](#eq_demo_new_eq),
+    the results for `!=` are consistent:'
+  id: totrans-229
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 换句话说，给定我们在 [示例 16-15](#eq_demo_new_eq) 中使用的相同对象，`!=` 的结果是一致的：
+- en: '[PRE24]'
+  id: totrans-230
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE24]'
+- en: The `__ne__` inherited from `object` works like the following code—except that
+    the original is written in C:^([6](ch16.html#idm46582408085776))
+  id: totrans-231
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 从 `object` 继承的 `__ne__` 的工作方式如下代码所示——只是原始代码是用 C 编写的:^([6](ch16.html#idm46582408085776))
+- en: '[PRE25]'
+  id: totrans-232
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE25]'
+- en: 'After covering the essentials of infix operator overloading, let’s turn to
+    a different class of operators: the augmented assignment operators.'
+  id: totrans-233
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在介绍了中缀运算符重载的基本知识之后，让我们转向另一类运算符：增强赋值运算符。
+- en: Augmented Assignment Operators
+  id: totrans-234
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 增强赋值运算符
+- en: Our `Vector` class already supports the augmented assignment operators `+=`
+    and `*=`. That’s because augmented assignment works with immutable receivers by
+    creating new instances and rebinding the lefthand variable.
+  id: totrans-235
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们的 `Vector` 类已经支持增强赋值运算符 `+=` 和 `*=`。这是因为增强赋值对于不可变接收者通过创建新实例并重新绑定左侧变量来工作。
+- en: '[Example 16-16](#eq_demo_augm_assign_immutable) shows them in action.'
+  id: totrans-236
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[示例 16-16](#eq_demo_augm_assign_immutable) 展示了它们的运行方式。'
+- en: Example 16-16\. Using `+=` and `*=` with `Vector` instances
+  id: totrans-237
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例 16-16\. 使用 `+=` 和 `*=` 与 `Vector` 实例
+- en: '[PRE26]'
+  id: totrans-238
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE26]'
+- en: '[![1](assets/1.png)](#co_operator_overloading_CO10-1)'
+  id: totrans-239
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_operator_overloading_CO10-1)'
+- en: Create an alias so we can inspect the `Vector([1, 2, 3])` object later.
+  id: totrans-240
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 创建一个别名，以便稍后检查 `Vector([1, 2, 3])` 对象。
+- en: '[![2](assets/2.png)](#co_operator_overloading_CO10-2)'
+  id: totrans-241
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_operator_overloading_CO10-2)'
+- en: Remember the ID of the initial `Vector` bound to `v1`.
+  id: totrans-242
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 记住绑定到 `v1` 的初始 `Vector` 的 ID。
+- en: '[![3](assets/3.png)](#co_operator_overloading_CO10-3)'
+  id: totrans-243
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_operator_overloading_CO10-3)'
+- en: Perform augmented addition.
+  id: totrans-244
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 执行增强加法。
+- en: '[![4](assets/4.png)](#co_operator_overloading_CO10-4)'
+  id: totrans-245
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_operator_overloading_CO10-4)'
+- en: The expected result…
+  id: totrans-246
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 预期的结果…
+- en: '[![5](assets/5.png)](#co_operator_overloading_CO10-5)'
+  id: totrans-247
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_operator_overloading_CO10-5)'
+- en: …but a new `Vector` was created.
+  id: totrans-248
+  prefs: []
+  type: TYPE_NORMAL
+  zh: …但是创建了一个新的 `Vector`。
+- en: '[![6](assets/6.png)](#co_operator_overloading_CO10-6)'
+  id: totrans-249
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![6](assets/6.png)](#co_operator_overloading_CO10-6)'
+- en: Inspect `v1_alias` to confirm the original `Vector` was not altered.
+  id: totrans-250
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 检查 `v1_alias` 以确认原始的 `Vector` 没有被改变。
+- en: '[![7](assets/7.png)](#co_operator_overloading_CO10-7)'
+  id: totrans-251
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![7](assets/7.png)](#co_operator_overloading_CO10-7)'
+- en: Perform augmented multiplication.
+  id: totrans-252
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 执行增强乘法。
+- en: '[![8](assets/8.png)](#co_operator_overloading_CO10-8)'
+  id: totrans-253
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![8](assets/8.png)](#co_operator_overloading_CO10-8)'
+- en: Again, the expected result, but a new `Vector` was created.
+  id: totrans-254
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 再次，预期的结果，但是创建了一个新的 `Vector`。
+- en: 'If a class does not implement the in-place operators listed in [Table 16-1](#infix_operator_names_tbl),
+    the augmented assignment operators work as syntactic sugar: `a += b` is evaluated
+    exactly as `a = a + b`. That’s the expected behavior for immutable types, and
+    if you have `__add__`, then `+=` will work with no additional code.'
+  id: totrans-255
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果一个类没有实现 [Table 16-1](#infix_operator_names_tbl) 中列出的原地操作符，增强赋值运算符将作为语法糖：`a
+    += b` 将被完全解释为 `a = a + b`。这是对于不可变类型的预期行为，如果你有 `__add__`，那么 `+=` 将可以工作而无需额外的代码。
+- en: However, if you do implement an in-place operator method such as `__iadd__`,
+    that method is called to compute the result of `a += b`. As the name says, those
+    operators are expected to change the lefthand operand in place, and not create
+    a new object as the result.
+  id: totrans-256
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 然而，如果你实现了一个原地操作符方法，比如 `__iadd__`，那么该方法将被调用来计算 `a += b` 的结果。正如其名称所示，这些操作符预期会就地更改左操作数，并且不会像结果那样创建一个新对象。
+- en: Warning
+  id: totrans-257
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 警告
+- en: The in-place special methods should never be implemented for immutable types
+    like our `Vector` class. This is fairly obvious, but worth stating anyway.
+  id: totrans-258
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 不可变类型如我们的 `Vector` 类不应该实现原地特殊方法。这是相当明显的，但无论如何值得声明。
+- en: To show the code of an in-place operator, we will extend the `BingoCage` class
+    from [Example 13-9](ch13.html#ex_tombola_bingo) to implement `__add__` and `__iadd__`.
+  id: totrans-259
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了展示就地运算符的代码，我们将扩展`BingoCage`类，从[示例13-9](ch13.html#ex_tombola_bingo)实现`__add__`和`__iadd__`。
+- en: We’ll call the subclass `AddableBingoCage`. [Example 16-17](#demo_addable_bingo_add)
+    is the behavior we want for the `+` operator.
+  id: totrans-260
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们将子类称为`AddableBingoCage`。[示例16-17](#demo_addable_bingo_add)是我们想要`+`运算符的行为。
+- en: Example 16-17\. The `+` operator creates a new `AddableBingoCage` instance
+  id: totrans-261
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例16-17。`+`运算符创建一个新的`AddableBingoCage`实例
+- en: '[PRE27]'
+  id: totrans-262
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE27]'
+- en: '[![1](assets/1.png)](#co_operator_overloading_CO11-1)'
+  id: totrans-263
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_operator_overloading_CO11-1)'
+- en: Create a `globe` instance with five items (each of the `vowels`).
+  id: totrans-264
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 创建一个具有五个项目（每个`vowels`）的`globe`实例。
+- en: '[![2](assets/2.png)](#co_operator_overloading_CO11-2)'
+  id: totrans-265
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_operator_overloading_CO11-2)'
+- en: Pop one of the items, and verify it is one of the `vowels`.
+  id: totrans-266
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 弹出其中一个项目，并验证它是否是`vowels`之一。
+- en: '[![3](assets/3.png)](#co_operator_overloading_CO11-3)'
+  id: totrans-267
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_operator_overloading_CO11-3)'
+- en: Confirm that the `globe` is down to four items.
+  id: totrans-268
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 确认`globe`只剩下四个项目。
+- en: '[![4](assets/4.png)](#co_operator_overloading_CO11-4)'
+  id: totrans-269
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_operator_overloading_CO11-4)'
+- en: Create a second instance, with three items.
+  id: totrans-270
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 创建第二个实例，有三个项目。
+- en: '[![5](assets/5.png)](#co_operator_overloading_CO11-5)'
+  id: totrans-271
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_operator_overloading_CO11-5)'
+- en: Create a third instance by adding the previous two. This instance has seven
+    items.
+  id: totrans-272
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 通过将前两个实例相加创建第三个实例。这个实例有七个项目。
+- en: '[![6](assets/6.png)](#co_operator_overloading_CO11-6)'
+  id: totrans-273
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![6](assets/6.png)](#co_operator_overloading_CO11-6)'
+- en: Attempting to add an `AddableBingoCage` to a `list` fails with `TypeError`.
+    That error message is produced by the Python interpreter when our `__add__` method
+    returns `NotImplemented`.
+  id: totrans-274
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 尝试将`AddableBingoCage`添加到`list`中会导致`TypeError`。当我们的`__add__`方法返回`NotImplemented`时，Python解释器会产生该错误消息。
+- en: Because an `AddableBingoCage` is mutable, [Example 16-18](#demo_addable_bingo_iadd)
+    shows how it will work when we implement `__iadd__`.
+  id: totrans-275
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 因为`AddableBingoCage`是可变的，[示例16-18](#demo_addable_bingo_iadd)展示了当我们实现`__iadd__`时它将如何工作。
+- en: Example 16-18\. An existing `AddableBingoCage` can be loaded with `+=` (continuing
+    from [Example 16-17](#demo_addable_bingo_add))
+  id: totrans-276
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例16-18。现有的`AddableBingoCage`可以使用`+=`加载（继续自[示例16-17](#demo_addable_bingo_add)）
+- en: '[PRE28]'
+  id: totrans-277
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE28]'
+- en: '[![1](assets/1.png)](#co_operator_overloading_CO12-1)'
+  id: totrans-278
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_operator_overloading_CO12-1)'
+- en: Create an alias so we can check the identity of the object later.
+  id: totrans-279
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 创建一个别名，以便稍后检查对象的标识。
+- en: '[![2](assets/2.png)](#co_operator_overloading_CO12-2)'
+  id: totrans-280
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_operator_overloading_CO12-2)'
+- en: '`globe` has four items here.'
+  id: totrans-281
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这里的`globe`有四个项目。
+- en: '[![3](assets/3.png)](#co_operator_overloading_CO12-3)'
+  id: totrans-282
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_operator_overloading_CO12-3)'
+- en: An `AddableBingoCage` instance can receive items from another instance of the
+    same class.
+  id: totrans-283
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 一个`AddableBingoCage`实例可以接收来自同一类的另一个实例的项目。
+- en: '[![4](assets/4.png)](#co_operator_overloading_CO12-4)'
+  id: totrans-284
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_operator_overloading_CO12-4)'
+- en: The righthand operand of `+=` can also be any iterable.
+  id: totrans-285
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`+=`的右操作数也可以是任何可迭代对象。'
+- en: '[![5](assets/5.png)](#co_operator_overloading_CO12-5)'
+  id: totrans-286
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_operator_overloading_CO12-5)'
+- en: Throughout this example, `globe` has always referred to the same object as `globe_orig`.
+  id: totrans-287
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在整个示例中，`globe`一直指的是与`globe_orig`相同的对象。
+- en: '[![6](assets/6.png)](#co_operator_overloading_CO12-6)'
+  id: totrans-288
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![6](assets/6.png)](#co_operator_overloading_CO12-6)'
+- en: Trying to add a noniterable to an `AddableBingoCage` fails with a proper error
+    message.
+  id: totrans-289
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 尝试将不可迭代的内容添加到`AddableBingoCage`中会失败，并显示适当的错误消息。
+- en: 'Note that the `+=` operator is more liberal than `+` with regard to the second
+    operand. With `+`, we want both operands to be of the same type (`AddableBingoCage`,
+    in this case), because if we accepted different types, this might cause confusion
+    as to the type of the result. With the `+=`, the situation is clearer: the lefthand
+    object is updated in place, so there’s no doubt about the type of the result.'
+  id: totrans-290
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意`+=`运算符相对于第二个操作数更加宽松。对于`+`，我们希望两个操作数的类型相同（在这种情况下为`AddableBingoCage`），因为如果我们接受不同类型，可能会导致对结果类型的混淆。对于`+=`，情况更加清晰：左侧对象在原地更新，因此对结果的类型没有疑问。
+- en: Tip
+  id: totrans-291
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 提示
+- en: 'I validated the contrasting behavior of `+` and `+=` by observing how the `list`
+    built-in type works. Writing `my_list + x`, you can only concatenate one `list`
+    to another `list`, but if you write `my_list += x`, you can extend the lefthand
+    `list` with items from any iterable `x` on the righthand side. This is how the
+    `list.extend()` method works: it accepts any iterable argument.'
+  id: totrans-292
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 通过观察`list`内置类型的工作方式，我验证了`+`和`+=`的对比行为。编写`my_list + x`，你只能将一个`list`连接到另一个`list`，但如果你写`my_list
+    += x`，你可以使用右侧的任何可迭代对象`x`扩展左侧的`list`。这就是`list.extend()`方法的工作方式：它接受任何可迭代的参数。
+- en: Now that we are clear on the desired behavior for `AddableBingoCage`, we can
+    look at its implementation in [Example 16-19](#ex_addable_bingo). Recall that
+    `BingoCage`, from [Example 13-9](ch13.html#ex_tombola_bingo), is a concrete subclass
+    of the `Tombola` ABC from [Example 13-7](ch13.html#ex_tombola_abc).
+  id: totrans-293
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在我们清楚了`AddableBingoCage`的期望行为，我们可以查看其在[示例16-19](#ex_addable_bingo)中的实现。回想一下，`BingoCage`，来自[示例13-9](ch13.html#ex_tombola_bingo)，是`Tombola`ABC的具体子类，来自[示例13-7](ch13.html#ex_tombola_abc)。
+- en: 'Example 16-19\. bingoaddable.py: `AddableBingoCage` extends `BingoCage` to
+    support `+` and `+=`'
+  id: totrans-294
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 示例16-19。bingoaddable.py：`AddableBingoCage`扩展`BingoCage`以支持`+`和`+=`
+- en: '[PRE29]'
+  id: totrans-295
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE29]'
+- en: '[![1](assets/1.png)](#co_operator_overloading_CO13-1)'
+  id: totrans-296
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_operator_overloading_CO13-1)'
+- en: '`AddableBingoCage` extends `BingoCage`.'
+  id: totrans-297
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`AddableBingoCage`扩展`BingoCage`。'
+- en: '[![2](assets/2.png)](#co_operator_overloading_CO13-2)'
+  id: totrans-298
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_operator_overloading_CO13-2)'
+- en: Our `__add__` will only work with an instance of `Tombola` as the second operand.
+  id: totrans-299
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们的`__add__`只能与`Tombola`的实例作为第二个操作数一起使用。
+- en: '[![3](assets/3.png)](#co_operator_overloading_CO13-3)'
+  id: totrans-300
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_operator_overloading_CO13-3)'
+- en: In `__iadd__`, retrieve items from `other`, if it is an instance of `Tombola`.
+  id: totrans-301
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在`__iadd__`中，从`other`中检索项目，如果它是`Tombola`的实例。
+- en: '[![4](assets/4.png)](#co_operator_overloading_CO13-4)'
+  id: totrans-302
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_operator_overloading_CO13-4)'
+- en: Otherwise, try to obtain an iterator over `other`.^([7](ch16.html#idm46582407177664))
+  id: totrans-303
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 否则，尝试从`other`中获取一个迭代器。^([7](ch16.html#idm46582407177664))
+- en: '[![5](assets/5.png)](#co_operator_overloading_CO13-5)'
+  id: totrans-304
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_operator_overloading_CO13-5)'
+- en: If that fails, raise an exception explaining what the user should do. When possible,
+    error messages should explicitly guide the user to the solution.
+  id: totrans-305
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果失败，引发一个解释用户应该做什么的异常。 在可能的情况下，错误消息应明确指导用户解决方案。
+- en: '[![6](assets/6.png)](#co_operator_overloading_CO13-6)'
+  id: totrans-306
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![6](assets/6.png)](#co_operator_overloading_CO13-6)'
+- en: If we got this far, we can load the `other_iterable` into `self`.
+  id: totrans-307
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果我们走到这一步，我们可以将 `other_iterable` 加载到 `self` 中。
+- en: '[![7](assets/7.png)](#co_operator_overloading_CO13-7)'
+  id: totrans-308
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[![7](assets/7.png)](#co_operator_overloading_CO13-7)'
+- en: 'Very important: augmented assignment special methods of mutable objects must
+    return `self`. That’s what users expect.'
+  id: totrans-309
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 非常重要：可变对象的增强赋值特殊方法必须返回 `self`。 这是用户的期望。
+- en: 'We can summarize the whole idea of in-place operators by contrasting the `return`
+    statements that produce results in `__add__` and `__iadd__` in [Example 16-19](#ex_addable_bingo):'
+  id: totrans-310
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们可以通过对比在[示例 16-19](#ex_addable_bingo)中产生结果的 `__add__` 和 `__iadd__` 中的 `return`
+    语句来总结就地运算符的整个概念：
+- en: '`__add__`'
+  id: totrans-311
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`__add__`'
+- en: The result is produced by calling the constructor `AddableBingoCage` to build
+    a new instance.
+  id: totrans-312
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 通过调用构造函数 `AddableBingoCage` 来生成结果以构建一个新实例。
+- en: '`__iadd__`'
+  id: totrans-313
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`__iadd__`'
+- en: The result is produced by returning `self`, after it has been modified.
+  id: totrans-314
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 通过修改后返回 `self` 生成结果。
+- en: 'To wrap up this example, a final observation on [Example 16-19](#ex_addable_bingo):
+    by design, no `__radd__` was coded in `AddableBingoCage`, because there is no
+    need for it. The forward method `__add__` will only deal with righthand operands
+    of the same type, so if Python is trying to compute `a + b`, where `a` is an `AddableBingoCage`
+    and `b` is not, we return `NotImplemented`—maybe the class of `b` can make it
+    work. But if the expression is `b + a` and `b` is not an `AddableBingoCage`, and
+    it returns `NotImplemented`, then it’s better to let Python give up and raise
+    `TypeError` because we cannot handle `b`.'
+  id: totrans-315
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 结束这个示例时，对[示例 16-19](#ex_addable_bingo)的最后观察：按设计，`AddableBingoCage` 中没有编写 `__radd__`，因为没有必要。
+    前向方法 `__add__` 仅处理相同类型的右操作数，因此如果 Python 尝试计算 `a + b`，其中 `a` 是 `AddableBingoCage`
+    而 `b` 不是，则返回 `NotImplemented`—也许 `b` 的类可以使其工作。 但是如果表达式是 `b + a` 而 `b` 不是 `AddableBingoCage`，并且返回
+    `NotImplemented`，那么最好让 Python 放弃并引发 `TypeError`，因为我们无法处理 `b`。
+- en: Tip
+  id: totrans-316
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+  zh: 提示
+- en: In general, if a forward infix operator method (e.g., `__mul__`) is designed
+    to work only with operands of the same type as `self`, it’s useless to implement
+    the corresponding reverse method (e.g., `__rmul__`) because that, by definition,
+    will only be invoked when dealing with an operand of a different type.
+  id: totrans-317
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 一般来说，如果一个前向中缀运算符方法（例如 `__mul__`）设计为仅与与 `self` 相同类型的操作数一起使用，那么实现相应的反向方法（例如 `__rmul__`）是没有用的，因为根据定义，只有在处理不同类型的操作数时才会调用它。
+- en: This concludes our exploration of operator overloading in Python.
+  id: totrans-318
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们的 Python 运算符重载探索到此结束。
+- en: Chapter Summary
+  id: totrans-319
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 章节总结
+- en: 'We started this chapter by reviewing some restrictions Python imposes on operator
+    overloading: no redefining of operators in the built-in types themselves, overloading
+    limited to existing operators, with a few operators left out (`is`, `and`, `or`,
+    `not`).'
+  id: totrans-320
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们从回顾 Python 对运算符重载施加的一些限制开始：不能在内置类型本身中重新定义运算符，重载仅限于现有运算符，有一些运算符被排除在外（`is`、`and`、`or`、`not`）。
+- en: We got down to business with the unary operators, implementing `__neg__` and
+    `__pos__`. Next came the infix operators, starting with `+`, supported by the
+    `__add__` method. We saw that unary and infix operators are supposed to produce
+    results by creating new objects, and should never change their operands. To support
+    operations with other types, we return the `NotImplemented` special value—not
+    an exception—allowing the interpreter to try again by swapping the operands and
+    calling the reverse special method for that operator (e.g., `__radd__`). The algorithm
+    Python uses to handle infix operators is summarized in the flowchart in [Figure 16-1](#operator_flowchart).
+  id: totrans-321
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们从一元运算符入手，实现了 `__neg__` 和 `__pos__`。 接下来是中缀运算符，从 `+` 开始，由 `__add__` 方法支持。 我们看到一元和中缀运算符应通过创建新对象来生成结果，并且永远不应更改其操作数。
+    为了支持与其他类型的操作，我们返回 `NotImplemented` 特殊值—而不是异常—允许解���器通过交换操作数并调用该运算符的反向特殊方法（例如 `__radd__`）再次尝试。
+    Python 用于处理中缀运算符的算法在[图 16-1](#operator_flowchart)中总结。
+- en: 'Mixing operand types requires detecting operands we can’t handle. In this chapter,
+    we did this in two ways: in the duck typing way, we just went ahead and tried
+    the operation, catching a `TypeError` exception if it happened; later, in `__mul__`
+    and `__matmul__`, we did it with an explicit `isinstance` test. There are pros
+    and cons to these approaches: duck typing is more flexible, but explicit type
+    checking is more predictable.'
+  id: totrans-322
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 混合操作数类型需要检测我们无法处理的操作数。 在本章中，我们以两种方式实现了这一点：在鸭子类型方式中，我们只是继续尝试操作，如果发生 `TypeError`
+    异常，则捕获它；稍后，在 `__mul__` 和 `__matmul__` 中，我们通过显式的 `isinstance` 测试来实现。 这些方法各有利弊：鸭子类型更灵活，但显式类型检查更可预测。
+- en: In general, libraries should leverage duck typing—opening the door for objects
+    regardless of their types, as long as they support the necessary operations. However,
+    Python’s operator dispatch algorithm may produce misleading error messages or
+    unexpected results when combined with duck typing. For this reason, the discipline
+    of type checking using `isinstance` calls against ABCs is often useful when writing
+    special methods for operator overloading. That’s the technique dubbed goose typing
+    by Alex Martelli—which we saw in [“Goose Typing”](ch13.html#goose_typing_sec).
+    Goose typing is a good compromise between flexibility and safety, because existing
+    or future user-defined types can be declared as actual or virtual subclasses of
+    an ABC. In addition, if an ABC implements the `__subclasshook__`, then objects
+    pass `isinstance` checks against that ABC by providing the required methods—no
+    subclassing or registration required.
+  id: totrans-323
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 一般来说，库应该利用鸭子类型——打开对象的大门，无论它们的类型如何，只要它们支持必要的操作即可。然而，Python 的运算符分发算法可能在与鸭子类型结合时产生误导性的错误消息或意外的结果。因此，在编写用于运算符重载的特殊方法时，使用`isinstance`调用
+    ABCs 进行类型检查的纪律通常是有用的。这就是亚历克斯·马特利所称的鹅类型技术，我们在[“鹅类型”](ch13.html#goose_typing_sec)中看到了。鹅类型是灵活性和安全性之间的一个很好的折衷方案，因为现有或未来的用户定义类型可以声明为
+    ABC 的实际或虚拟子类。此外，如果一个 ABC 实现了`__subclasshook__`，那么对象通过提供所需的方法可以通过该 ABC 的`isinstance`检查—不需要子类化或注册。
+- en: The next topic we covered was the rich comparison operators. We implemented
+    `==` with `__eq__` and discovered that Python provides a handy implementation
+    of `!=` in the `__ne__` inherited from the `object` base class. The way Python
+    evaluates these operators along with `>`, `<`, `>=`, and `<=` is slightly different,
+    with special logic for choosing the reverse method, and fallback handling for
+    `==` and `!=`, which never generate errors because Python compares the object
+    IDs as a last resort.
+  id: totrans-324
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们接下来讨论的话题是丰富的比较运算符。我们用`__eq__`实现了`==`，并发现 Python 在`object`基类中提供了一个方便的`!=`实现，即`__ne__`。Python
+    评估这些运算符的方式与`>`, `<`, `>=`, 和 `<=`略有不同，对于选择反向方法有特殊逻辑，并且对于`==`和`!=`有后备处理，因为 Python
+    比较对象 ID 作为最后的手段，从不生成错误。
+- en: 'In the last section, we focused on augmented assignment operators. We saw that
+    Python handles them by default as a combination of plain operator followed by
+    assignment, that is: `a += b` is evaluated exactly as `a = a + b`. That always
+    creates a new object, so it works for mutable or immutable types. For mutable
+    objects, we can implement in-place special methods such as `__iadd__` for `+=`,
+    and alter the value of the lefthand operand. To show this at work, we left behind
+    the immutable `Vector` class and worked on implementing a `BingoCage` subclass
+    to support `+=` for adding items to the random pool, similar to the way the `list`
+    built-in supports `+=` as a shortcut for the `list.extend()` method. While doing
+    this, we discussed how `+` tends to be stricter than `+=` regarding the types
+    it accepts. For sequence types, `+` usually requires that both operands are of
+    the same type, while `+=` often accepts any iterable as the righthand operand.'
+  id: totrans-325
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在最后一节中，我们专注于增强赋值运算符。我们看到 Python 默认将它们处理为普通运算符后跟赋值的组合，即：`a += b`被完全解释为`a = a
+    + b`。这总是创建一个新对象，因此适用于可变或不可变类型。对于可变对象，我们可以实现就地特殊方法，比如`__iadd__`用于`+=`，并改变左操作数的值。为了展示这一点，我们放下了不可变的`Vector`类，开始实现一个`BingoCage`子类，支持`+=`用于向随机池添加项目，类似于`list`内置支持`+=`作为`list.extend()`方法的快捷方式。在这个过程中，我们讨论了`+`相对于接受的类型更为严格的问题。对于序列类型，`+`通常要求两个操作数是相同类型，而`+=`通常接受任何可迭代对象作为右操作数。
+- en: Further Reading
+  id: totrans-326
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 进一步阅读
+- en: Guido van Rossum wrote a good defense of operator overloading in [“Why operators
+    are useful”](https://fpy.li/16-10). Trey Hunner blogged [“Tuple ordering and deep
+    comparisons in Python”](https://fpy.li/16-11), arguing that the rich comparison
+    operators in Python are more flexible and powerful than programmers may realize
+    when coming from other languages.
+  id: totrans-327
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Guido van Rossum 在[“为什么运算符有用”](https://fpy.li/16-10)中写了一篇很好的运算符重载辩护。Trey Hunner
+    在博客[“Python 中的元组排序和深度比较”](https://fpy.li/16-11)中辩称，Python 中的丰富比较运算符比程序员从其他语言转换过来时可能意识到的更灵活和强大。
+- en: Operator overloading is one area of Python programming where `isinstance` tests
+    are common. The best practice around such tests is goose typing, covered in [“Goose
+    Typing”](ch13.html#goose_typing_sec). If you skipped that, make sure to read it.
+  id: totrans-328
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 运算符重载是 Python 编程中一个常见的地方，其中`isinstance`测试很常见。围绕这些测试的最佳实践是鹅类型，详见[“鹅类型”](ch13.html#goose_typing_sec)。如果你跳过了这部分，请确保阅读一下。
+- en: The main reference for the operator special methods is the [“Data Model” chapter](https://fpy.li/dtmodel)
+    of the Python documentation. Another relevant reading is [“9.1.2.2\. Implementing
+    the arithmetic operations”](https://fpy.li/16-7) in the `numbers` module of *The
+    Python Standard Library*.
+  id: totrans-329
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 运算符特殊方法的主要参考是 Python 文档中的[“数据模型”章节](https://fpy.li/dtmodel)。另一个相关阅读是*Python
+    标准库*中`numbers`模块的[“9.1.2.2. 实现算术运算”](https://fpy.li/16-7)。
+- en: 'A clever example of operator overloading appeared in the [`pathlib`](https://fpy.li/16-13)
+    package, added in Python 3.4. Its `Path` class overloads the `/` operator to build
+    filesystem paths from strings, as shown in this example from the documentation:'
+  id: totrans-330
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 一个聪明的运算符重载例子出现在 Python 3.4 中添加的[`pathlib`](https://fpy.li/16-13)包中。���的`Path`类重载了`/`运算符，用于从字符串构建文件系统路径，如文档中所示的示例：
+- en: '[PRE30]'
+  id: totrans-331
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE30]'
+- en: Another nonarithmetic example of operator overloading is in the [Scapy](https://fpy.li/16-14)
+    library, used to “send, sniff, dissect, and forge network packets.” In Scapy,
+    the `/` operator builds packets by stacking fields from different network layers.
+    See [“Stacking layers”](https://fpy.li/16-15) for details.
+  id: totrans-332
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 另一个非算术运算符重载的例子是[Scapy](https://fpy.li/16-14)库，用于“发送、嗅探、解剖和伪造网络数据包”。在 Scapy 中，`/`运算符通过堆叠来自不同网络层的字段来构建数据包。详见[“堆叠层”](https://fpy.li/16-15)。
+- en: If you are about to implement comparison operators, study `functools.total_ordering`.
+    That is a class decorator that automatically generates methods for all rich comparison
+    operators in any class that defines at least a couple of them. See the [functools
+    module docs](https://fpy.li/16-16).
+  id: totrans-333
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果你即将实现比较运算符，请研究`functools.total_ordering`。这是一个类装饰器，可以自动生成定义了至少一些富比较运算符的类中的所有富比较运算符的方法。请参考[functools模块文档](https://fpy.li/16-16)。
+- en: If you are curious about operator method dispatching in languages with dynamic
+    typing, two seminal readings are [“A Simple Technique for Handling Multiple Polymorphism”](https://fpy.li/16-17)
+    by Dan Ingalls (member of the original Smalltalk team), and [“Arithmetic and Double
+    Dispatching in Smalltalk-80”](https://fpy.li/16-18) by Kurt J. Hebel and Ralph
+    Johnson (Johnson became famous as one of the authors of the original *Design Patterns*
+    book). Both papers provide deep insight into the power of polymorphism in languages
+    with dynamic typing, like Smalltalk, Python, and Ruby. Python does not use double
+    dispatching for handling operators as described in those articles. The Python
+    algorithm using forward and reverse operators is easier for user-defined classes
+    to support than double dispatching, but requires special handling by the interpreter.
+    In contrast, classic double dispatching is a general technique you can use in
+    Python or any object-oriented language beyond the specific context of infix operators,
+    and in fact Ingalls, Hebel, and Johnson use very different examples to describe
+    it.
+  id: totrans-334
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果你对动态类型语言中的运算符方法分派感兴趣，两篇开创性的文章是Dan Ingalls（原Smalltalk团队成员）的[“处理多态的简单技术”](https://fpy.li/16-17)，以及Kurt
+    J. Hebel和Ralph Johnson（Johnson因为是原始《设计模式》书籍的作者之一而出名）的[“Smalltalk-80中的算术和双重分派”](https://fpy.li/16-18)。这两篇论文深入探讨了动态类型语言（如Smalltalk、Python和Ruby）中多态的强大之处。Python不使用这些文章中描述的双重分派来处理运算符。Python算法使用前向和后向运算符对于用户定义的类来说更容易支持，但需要解释器进行特殊处理。相比之下，经典的双重分派是一种通用技术，你可以在Python或任何面向对象的语言中使用，超越了中缀运算符的特定上下文，事实上，Ingalls、Hebel和Johnson使用非常不同的例子来描述它。
+- en: 'The article, [“The C Family of Languages: Interview with Dennis Ritchie, Bjarne
+    Stroustrup, and James Gosling”](https://fpy.li/16-1), from which I quoted the
+    epigraph for this chapter, appeared in *Java Report*, 5(7), July 2000, and *C++
+    Report*, 12(7), July/August 2000, along with two other snippets I used in this
+    chapter’s “Soapbox” (next). If you are into programming language design, do yourself
+    a favor and read that interview.'
+  id: totrans-335
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 文章[“C语言家族：与丹尼斯·里奇、比雅尼·斯特劳斯特鲁普和詹姆斯·高斯林的访谈”](https://fpy.li/16-1)，我引用了本章前言中的摘录，发表于*Java
+    Report*，2000年7月，第5卷第7期，以及*C++ Report*，2000年7月/8月，第12卷第7期，还有本章“讲台”中使用的另外两个片段。如果你对编程语言设计感兴趣，请务必阅读该访谈。
+- en: '^([1](ch16.html#idm46582410953008-marker)) Source: [“The C Family of Languages:
+    Interview with Dennis Ritchie, Bjarne Stroustrup, and James Gosling”](https://fpy.li/16-1).'
+  id: totrans-336
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([1](ch16.html#idm46582410953008-marker)) 来源：[“C语言家族：与丹尼斯·里奇、比雅尼·斯特劳斯特鲁普和詹姆斯·高斯林的访谈”](https://fpy.li/16-1)。
+- en: ^([2](ch16.html#idm46582410790832-marker)) The remaining ABCs in Python’s standard
+    library are still valuable for goose typing and static typing. The issue with
+    the `numbers` ABCs is explained in [“The numbers ABCs and Numeric Protocols”](ch13.html#numbers_abc_proto_sec).
+  id: totrans-337
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([2](ch16.html#idm46582410790832-marker)) Python标准库中剩余的ABC对于鹅类型和静态类型仍然有价值。`numbers`
+    ABC的问题在[“数字ABC和数值协议”](ch13.html#numbers_abc_proto_sec)中有解释。
+- en: ^([3](ch16.html#idm46582410742624-marker)) See [*https://en.wikipedia.org/wiki/Bitwise_operation#NOT*](https://en.wikipedia.org/wiki/Bitwise_operation#NOT)
+    for an explanation of the bitwise not.
+  id: totrans-338
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([3](ch16.html#idm46582410742624-marker)) 请参考[*https://en.wikipedia.org/wiki/Bitwise_operation#NOT*](https://en.wikipedia.org/wiki/Bitwise_operation#NOT)解释按位非操作。
+- en: ^([4](ch16.html#idm46582409873344-marker)) The Python documentation uses both
+    terms. The [“Data Model” chapter](https://fpy.li/dtmodel) uses “reflected,” but
+    [“9.1.2.2\. Implementing the arithmetic operations”](https://fpy.li/16-7) in the
+    `numbers` module docs mention “forward” and “reverse” methods, and I find this
+    terminology better, because “forward” and “reversed” clearly name each of the
+    directions, while “reflected” doesn’t have an obvious opposite.
+  id: totrans-339
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([4](ch16.html#idm46582409873344-marker)) Python文档同时使用这两个术语。[“数据模型”章节](https://fpy.li/dtmodel)使用“reflected”，但`numbers`模块文档中的[“9.1.2.2\.
+    实现算术运算”](https://fpy.li/16-7)提到“forward”和“reverse”方法，我认为这个术语更好，因为“forward”和“reversed”清楚地命名了每个方向，而“reflected”没有明显的对应词。
+- en: ^([5](ch16.html#idm46582409038272-marker)) See [“Soapbox”](#operator_soapbox)
+    for a discussion of the problem.
+  id: totrans-340
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([5](ch16.html#idm46582409038272-marker)) 请参考[“讲台”](#operator_soapbox)讨论该问题。
+- en: ^([6](ch16.html#idm46582408085776-marker)) The logic for `object.__eq__` and
+    `object.__ne__` is in function `object_richcompare` in [*Objects/typeobject.c*](https://fpy.li/16-9)
+    in the CPython source code.
+  id: totrans-341
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([6](ch16.html#idm46582408085776-marker)) `object.__eq__`和`object.__ne__`的逻辑在CPython源代码的[*Objects/typeobject.c*](https://fpy.li/16-9)中的`object_richcompare`函数中。
+- en: ^([7](ch16.html#idm46582407177664-marker)) The `iter` built-in function will
+    be covered in the next chapter. Here I could have used `tuple(other)`, and it
+    would work, but at the cost of building a new `tuple` when all the `.load(…)`
+    method needs is to iterate over its argument.
+  id: totrans-342
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^([7](ch16.html#idm46582407177664-marker)) `iter`内置函数将在下一章中介绍。在这里，我可以使用`tuple(other)`，它也可以工作，但会建立一个新的`tuple`，而所有`.load(…)`方法需要的只是对其参数进行迭代。
