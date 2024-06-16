@@ -1,220 +1,313 @@
 - en: Chapter 19\. Web Scraping in Parallel
+  id: totrans-0
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 第19章 并行网络爬虫
 - en: Web crawling is fast. At least, it’s usually much faster than hiring a dozen
     interns to copy data from the internet by hand! Of course, the progression of
     technology and the hedonic treadmill demand that at a certain point even this
     will not be “fast enough.” That’s the point at which people generally start to
     look toward distributed computing.
+  id: totrans-1
   prefs: []
   type: TYPE_NORMAL
+  zh: 网络爬虫速度快。至少，通常比雇佣十几个实习生手工复制互联网数据要快得多！当然，科技的进步和享乐主义跑步机要求在某一点上甚至这都不够“快”。这就是人们通常开始寻求分布式计算的时候。
 - en: Unlike most other technology fields, web crawling cannot often be improved simply
     by “throwing more cycles at the problem.” Running one process is fast; running
     two processes is not necessarily twice as fast. Running three processes might
     get you banned from the remote server you’re hammering on with all your requests!
+  id: totrans-2
   prefs: []
   type: TYPE_NORMAL
+  zh: 与大多数其他技术领域不同，网络爬虫通常不能简单地通过“将更多的周期投入到问题中”来改进。运行一个进程是快速的；运行两个进程不一定是两倍快。运行三个进程可能会让你被禁止访问你正在猛击的远程服务器！
 - en: 'However, in some situations parallel web crawling, or running parallel threads
     or processes, can still be of benefit:'
+  id: totrans-3
   prefs: []
   type: TYPE_NORMAL
+  zh: 但是，在某些情况下，并行网络爬虫或运行并行线程或进程仍然有益：
 - en: Collecting data from multiple sources (multiple remote servers) instead of just
     a single source
+  id: totrans-4
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 从多个来源（多个远程服务器）收集数据而不仅仅是单个来源
 - en: Performing long or complex operations on the collected data (such as doing image
     analysis or OCR) that could be done in parallel with fetching the data
+  id: totrans-5
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 在收集的数据上执行长时间或复杂的操作（例如进行图像分析或OCR），这些操作可以与获取数据并行进行。
 - en: Collecting data from a large web service where you are paying for each query,
     or where creating multiple connections to the service is within the bounds of
     your usage agreement
+  id: totrans-6
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 从一个大型网络服务中收集数据，在这里你需要为每个查询付费，或者在你的使用协议范围内创建多个连接到服务。
 - en: Processes Versus Threads
+  id: totrans-7
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 进程与线程
 - en: Threads and processes are not a Python-specific concept. While the exact implementation
     details differ between (and are dependent on) operating systems, the general consensus
     in computer science is that processes are larger and have their own memory, while
     threads are smaller and share memory within the process that contains them.
+  id: totrans-8
   prefs: []
   type: TYPE_NORMAL
+  zh: 线程和进程不是Python特有的概念。虽然确切的实现细节在操作系统之间不同，并且依赖于操作系统，但计算机科学界的一般共识是，进程更大并且有自己的内存，而线程更小并且在包含它们的进程内共享内存。
 - en: 'Generally, when you run a simple Python program, you are running it within
     its own process which contains a single thread. But Python supports both multiprocessing
     and multithreading. Both multiprocessing and multithreading achieve the same ultimate
     goal: performing two programming tasks in parallel instead of running one function
     after another in a more traditional linear way.'
+  id: totrans-9
   prefs: []
   type: TYPE_NORMAL
+  zh: 通常，当你运行一个简单的Python程序时，你在自己的进程中运行它，该进程包含一个线程。但是Python支持多进程和多线程。多进程和多线程都实现了同样的最终目标：以并行方式执行两个编程任务，而不是以更传统的线性方式一个接一个地运行函数。
 - en: However, you must consider the pros and cons of each carefully. For example,
     each process has its own memory allocated separately by the operating system. This
     means that memory is not shared between processes. While multiple threads can
     happily write to the same shared Python queues, lists, and other objects, processes
     cannot and must communicate this information more explicitly.
+  id: totrans-10
   prefs: []
   type: TYPE_NORMAL
+  zh: 但是，你必须仔细考虑每个方案的利弊。例如，每个进程都有自己由操作系统分配的内存。这意味着内存不在进程之间共享。虽然多个线程可以愉快地写入相同的共享Python队列、列表和其他对象，但进程不能，必须更显式地传递这些信息。
 - en: Using multithreaded programming to execute tasks in separate threads with shared
     memory is often considered easier than multiprocess programming. But this convenience
     comes at a cost.
+  id: totrans-11
   prefs: []
   type: TYPE_NORMAL
+  zh: 使用多线程编程在单独的线程中执行具有共享内存的任务通常被认为比多进程编程更容易。但是这种方便性是有代价的。
 - en: Python’s global interpreter lock (or GIL) acts to prevent threads from executing
     the same line of code at once. The GIL ensures that the common memory shared by
     all processes does not become corrupted (for instance, bytes in memory being half
     written with one value and half written with another value). This locking makes
     it possible to write a multithreaded program and know what you’re getting, within
     the same line, but it also has the potential to create bottlenecks.
+  id: totrans-12
   prefs: []
   type: TYPE_NORMAL
+  zh: Python的全局解释器锁（GIL）用于防止多个线程同时执行同一行代码。GIL确保所有进程共享的通用内存不会变得损坏（例如，内存中的字节一半被写入一个值，另一半被写入另一个值）。这种锁定使得编写多线程程序并在同一行内知道你得到什么成为可能，但它也有可能造成瓶颈。
 - en: Multithreaded Crawling
+  id: totrans-13
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 多线程爬取
 - en: 'The following example illustrates using multiple threads to perform a task:'
+  id: totrans-14
   prefs: []
   type: TYPE_NORMAL
+  zh: 以下示例说明了使用多线程执行任务：
 - en: '[PRE0]'
+  id: totrans-15
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE0]'
 - en: 'This is a reference to the classic [FizzBuzz programming test](http://wiki.c2.com/?FizzBuzzTest),
     with a somewhat more verbose output:'
+  id: totrans-16
   prefs: []
   type: TYPE_NORMAL
+  zh: 这是对经典的[FizzBuzz编程测试](http://wiki.c2.com/?FizzBuzzTest)的参考，输出略显冗长：
 - en: '[PRE1]'
+  id: totrans-17
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE1]'
 - en: The script starts three threads, one that prints “Fizz” every three seconds,
     another that prints “Buzz” every five seconds, and a third that prints “Counter" every
     second.
+  id: totrans-18
   prefs: []
   type: TYPE_NORMAL
+  zh: 脚本启动三个线程，一个每三秒打印一次“Fizz”，另一个每五秒打印一次“Buzz”，第三个每秒打印一次“Counter”。
 - en: 'Rather than printing fizzes and buzzes, you can perform a useful task in the
     threads, such as crawling a website:'
+  id: totrans-19
   prefs: []
   type: TYPE_NORMAL
+  zh: 你可以在线程中执行有用的任务，如爬取网站，而不是打印Fizz和Buzz：
 - en: '[PRE2]'
+  id: totrans-20
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE2]'
 - en: 'Note the inclusion of this line:'
+  id: totrans-21
   prefs: []
   type: TYPE_NORMAL
+  zh: 注意包含这一行：
 - en: '[PRE3]'
+  id: totrans-22
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE3]'
 - en: Because you are crawling Wikipedia almost twice as fast as you would with just
     a single thread, the inclusion of this line prevents the script from putting too
     much of a load on Wikipedia’s servers. In practice, when running against a server
     where the number of requests is not an issue, this line should be removed.
+  id: totrans-23
   prefs: []
   type: TYPE_NORMAL
+  zh: 因为你几乎比单线程快了将近一倍的速度爬取维基百科，所以包含这一行可以防止脚本给维基百科的服务器造成过大负载。在实践中，在针对请求数量不是问题的服务器上运行时，应该删除这一行。
 - en: 'What if you want to rewrite this slightly to keep track of the articles the
     threads have collectively seen so far, so that no article is visited twice? You
     can use a list in a multithreaded environment in the same way that you use it
     in a single-threaded environment:'
+  id: totrans-24
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果你想要稍微改写这个例子，以便追踪线程迄今为止共同看到的文章，以便不会重复访问任何文章，你可以在多线程环境中使用列表的方式与在单线程环境中使用它一样：
 - en: '[PRE4]'
+  id: totrans-25
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE4]'
 - en: Note that you are appending the path to the list of visited paths as the first
     action that `scrape_article` takes. This reduces, but does not entirely eliminate,
     the chances that it will be scraped twice.
+  id: totrans-26
   prefs: []
   type: TYPE_NORMAL
+  zh: 注意，将路径附加到已访问路径列表的操作是`scrape_article`执行的第一个动作。这减少了但并没有完全消除它被重复爬取的机会。
 - en: If you are unlucky, both threads might still stumble across the same path at
     the same instant, both will see that it is not in the visited list, and both will
     subsequently add it to the list and scrape at the same time. However, in practice
     this is unlikely to happen because of the speed of execution and the number of
     pages that Wikipedia contains.
+  id: totrans-27
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果你运气不好，两个线程仍然可能在同一瞬间偶然遇到相同的路径，两者都会看到它不在已访问列表中，然后都会将其添加到列表并同时进行爬取。但是，实际上由于执行速度和维基百科包含的页面数量，这种情况不太可能发生。
 - en: This is an example of a *race condition*. Race conditions can be tricky to debug,
     even for experienced programmers, so it is important to evaluate your code for
     these potential situations, estimate their likelihood, and anticipate the seriousness
     of their impact.
+  id: totrans-28
   prefs: []
   type: TYPE_NORMAL
+  zh: 这是一个*竞争条件*的例子。竞争条件对于有经验的程序员来说可能很难调试，因此评估代码中这些潜在情况，估计它们发生的可能性，并预测其影响的严重性是很重要的。
 - en: In the case of this particular race condition, where the scraper goes over the
     same page twice, it may not be worth writing around.
+  id: totrans-29
   prefs: []
   type: TYPE_NORMAL
+  zh: 在这种特定的竞争条件下，爬虫两次访问同一页的情况可能不值得去解决。
 - en: Race Conditions and Queues
+  id: totrans-30
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 竞争条件和队列
 - en: Although you can communicate between threads with lists, lists are not specifically
     designed for communication between threads, and their misuse can easily cause
     slow program execution or even errors resulting from race conditions.
+  id: totrans-31
   prefs: []
   type: TYPE_NORMAL
+  zh: 虽然你可以使用列表在线程之间通信，但列表并非专门设计用于线程之间通信，它们的错误使用很容易导致程序执行缓慢甚至由竞争条件导致的错误。
 - en: 'Lists are great for appending to or reading from, but they’re not so great
     for removing items at arbitrary points, especially from the beginning of the list.
     Using a line like:'
+  id: totrans-32
   prefs: []
   type: TYPE_NORMAL
+  zh: 列表适用于追加或读取，但不太适合从任意点删除项目，尤其是从列表开头删除。使用如下语句：
 - en: '[PRE5]'
+  id: totrans-33
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE5]'
 - en: actually requires Python to rewrite the entire list, slowing program execution.
+  id: totrans-34
   prefs: []
   type: TYPE_NORMAL
+  zh: 实际上需要 Python 重新编写整个列表，从而减慢程序执行速度。
 - en: 'More dangerous, lists also make it convenient to accidentally write in a line
     that isn’t thread-safe. For instance:'
+  id: totrans-35
   prefs: []
   type: TYPE_NORMAL
+  zh: 更危险的是，列表还使得在不是线程安全的情况下方便地写入一行。例如：
 - en: '[PRE6]'
+  id: totrans-36
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE6]'
 - en: may not actually get you the last item in the list in a multithreaded environment,
     or it may even throw an exception if the value for `len(myList)-1` is calculated
     immediately before another operation modifies the list.
+  id: totrans-37
   prefs: []
   type: TYPE_NORMAL
+  zh: 在多线程环境中，这可能实际上并不会获取列表中的最后一个项目，或者如果计算 `len(myList)-1` 的值恰好在另一个操作修改列表之前立即进行，则可能会引发异常。
 - en: 'One might argue that the preceding statement can be more “Pythonically” written
     as `myList[-1]`, and of course, no one has *ever* accidentally written non-Pythonic
     code in a moment of weakness (especially not former Java developers like myself,
     thinking back to their days of patterns like `myList[myList.length-1]` )! But
     even if your code is beyond reproach, consider these other forms of nonthread-safe
     lines involving lists:'
+  id: totrans-38
   prefs: []
   type: TYPE_NORMAL
+  zh: 有人可能会认为前面的陈述可以更“Python化”地写成 `myList[-1]`，当然，像我这样的前 Java 开发者，在弱点时刻从未不小心写过非 Python
+    风格的代码（尤其是回想起像 `myList[myList.length-1]` 这样的模式的日子）！但即使您的代码毫无可指摘，也请考虑以下涉及列表的其他非线程安全代码形式：
 - en: '[PRE7]'
+  id: totrans-39
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE7]'
 - en: 'Both of these may result in a race condition that can cause unexpected results.
     You might be tempted to try another approach and use some other variable types
     besides lists. For example:'
+  id: totrans-40
   prefs: []
   type: TYPE_NORMAL
+  zh: 这两者都可能导致竞态条件，从而导致意外结果。您可能会尝试另一种方法，并使用除列表之外的其他变量类型。例如：
 - en: '[PRE8]'
+  id: totrans-41
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE8]'
 - en: This seems like an excellent solution until you realize that you might have
     inadvertently overwritten another message coming in from another thread, in the
     instant between the first and second lines, with the text “I’ve retrieved the
     message.” So now you just need to construct an elaborate series of personal message
     objects for each thread with some logic to figure out who gets what...or you could
     use the `Queue` module built for this exact purpose.
+  id: totrans-42
   prefs: []
   type: TYPE_NORMAL
+  zh: 这似乎是一个很好的解决方案，直到您意识到在第一行和第二行之间的瞬间，您可能已经无意中覆盖了来自另一个线程的另一条消息，其文本为“我已检索到消息”。因此，现在您只需为每个线程构建一系列复杂的个人消息对象，并添加一些逻辑来确定谁获取什么……或者您可以使用专为此目的构建的
+    `Queue` 模块。
 - en: Queues are list-like objects that operate on either a first in, first out (FIFO)
     or a last in, first out (LIFO) approach. A queue receives messages from any thread
     via `queue.put('My message')` and can transmit the message to any thread that
     calls `queue.get()`.
+  id: totrans-43
   prefs: []
   type: TYPE_NORMAL
+  zh: 队列是类似列表的对象，可以采用先进先出（FIFO）或后进先出（LIFO）方法。队列通过 `queue.put('My message')` 从任何线程接收消息，并可以将消息传输给调用
+    `queue.get()` 的任何线程。
 - en: Queues are not designed to store static data but to transmit it in a thread-safe
     way. After the data is retrieved from the queue, it should exist only in the thread
     that retrieved it. For this reason, they are commonly used to delegate tasks or
     send temporary notifications.
+  id: totrans-44
   prefs: []
   type: TYPE_NORMAL
+  zh: 队列不是设计用来存储静态数据的，而是以线程安全的方式传输数据。从队列检索数据后，它应该仅存在于检索它的线程中。因此，它们通常用于委派任务或发送临时通知。
 - en: This can be useful in web crawling. For instance, let’s say that you want to
     persist the data collected by your scraper into a database, and you want each
     thread to be able to persist its data quickly. A single shared connection for
@@ -224,126 +317,179 @@
     data from a hundred different websites in a hundred different threads), this might
     translate into a lot of mostly idle database connections doing only an occasional
     write after a page loads.
+  id: totrans-45
   prefs: []
   type: TYPE_NORMAL
+  zh: 这在网页抓取中可能很有用。例如，假设您希望将爬取器收集到的数据持久化到数据库中，并且希望每个线程能够快速持久化其数据。一个共享的单一连接可能会导致问题（单一连接无法并行处理请求），但每个爬取线程都分配自己的数据库连接也是没有意义的。随着爬取器的规模扩大（最终您可能从一百个不同的网站中收集数据，每个网站一个线程），这可能会转化为大量大多数空闲的数据库连接，仅在加载页面后偶尔进行写入。
 - en: 'Instead, you can have a smaller number of database threads, each with its own
     connection, sitting around taking items from a queue and storing them. This provides
     a much more manageable set of database connections:'
+  id: totrans-46
   prefs: []
   type: TYPE_NORMAL
+  zh: 相反，您可以拥有少量数据库线程，每个线程都有自己的连接，等待从队列中接收并存储项目。这提供了一组更易管理的数据库连接：
 - en: '[PRE9]'
+  id: totrans-47
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE9]'
 - en: 'This script creates three threads: two to scrape pages from Wikipedia in a
     random walk, and a third to store the collected data in a MySQL database. For
     more information about MySQL and data storage, see [Chapter 9](ch09.html#c-9).'
+  id: totrans-48
   prefs: []
   type: TYPE_NORMAL
+  zh: 此脚本创建三个线程：两个线程在维基百科上进行随机遍历页面，第三个线程将收集的数据存储在MySQL数据库中。有关MySQL和数据存储的更多信息，请参见[第9章](ch09.html#c-9)。
 - en: This scraper is also simplified somewhat from the previous one. Rather than
     deal with both the title and the page’s URL, it concerns itself with the URL only. Also,
     as an acknowledgement to the fact that both threads might attempt to add the exact
     same URL to the `visited` list at the exact same time, I’ve turned this list into
     a set. Although it is not strictly thread-safe, the redundancies are built in
     so that any duplicates won’t have any effect on the end result.
+  id: totrans-49
   prefs: []
   type: TYPE_NORMAL
+  zh: 此爬虫也比之前的版本简化了一些。它不再处理页面的标题和URL，而是只关注URL。此外，鉴于两个线程可能同时尝试将相同的URL添加到`visited`列表中，我已将此列表转换为集合。虽然它不严格地线程安全，但冗余设计确保任何重复不会对最终结果产生影响。
 - en: More Features of the Threading Module
+  id: totrans-50
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 线程模块的更多特性
 - en: The Python `threading` module is a higher-level interface built on the lower-level  `_thread`
     module. Although `_thread` is perfectly usable all on its own, it takes a little
     more effort and doesn’t provide the little things that make life so enjoyable—like
     convenience functions and nifty features.
+  id: totrans-51
   prefs: []
   type: TYPE_NORMAL
+  zh: Python的`threading`模块是在低级别`_thread`模块之上构建的高级接口。虽然`_thread`可以完全独立使用，但它需要更多的工作，而且不提供让生活变得如此愉快的小东西——例如便捷函数和巧妙功能。
 - en: For example, you can use static functions like `enumerate` to get a list of
     all active threads initialized through the `threading` module without needing
     to keep track of them yourself. The `activeCount` function, similarly, provides
     the total number of threads. Many functions from `_thread` are given more convenient
     or memorable names, like `currentThread` instead of `get_ident` to get the name
     of the current thread.
+  id: totrans-52
   prefs: []
   type: TYPE_NORMAL
+  zh: 例如，您可以使用像`enumerate`这样的静态函数来获取通过`threading`模块初始化的所有活动线程列表，而无需自己跟踪它们。类似地，`activeCount`函数提供线程的总数。来自`_thread`的许多函数都有更方便或更易记的名称，例如`currentThread`而不是`get_ident`来获取当前线程的名称。
 - en: One of the nice things about the threading module is the ease of creating local
     thread data that is unavailable to the other threads. This might be a nice feature
     if you have several threads, each scraping a different website, and each keeping
     track of its own local list of visited pages.
+  id: totrans-53
   prefs: []
   type: TYPE_NORMAL
+  zh: 关于线程模块的一个很好的特点是，可以轻松创建本地线程数据，这些数据对其他线程不可用。如果您有多个线程，每个线程分别从不同的网站抓取数据，并且每个线程跟踪其自己的本地已访问页面列表，这可能是一个不错的功能。
 - en: 'This local data can be created at any point within the thread function by calling
     `threading.local()`:'
+  id: totrans-54
   prefs: []
   type: TYPE_NORMAL
+  zh: 此本地数据可以在线程函数内的任何点上通过调用`threading.local()`来创建：
 - en: '[PRE10]'
+  id: totrans-55
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE10]'
 - en: This solves the problem of race conditions happening between shared objects
     in threads. Whenever an object does not need to be shared, it should not be, and
     should be kept in local thread memory. To safely share objects between threads,
     the `Queue` from the previous section can still be used.
+  id: totrans-56
   prefs: []
   type: TYPE_NORMAL
+  zh: 这解决了在线程共享对象之间发生竞争条件的问题。每当一个对象不需要被共享时，它就不应该被共享，并且应该保留在本地线程内存中。为了安全地在线程之间共享对象，仍然可以使用前一节中的`Queue`。
 - en: The threading module acts as a thread babysitter of sorts, and it can be highly
     customized to define what that babysitting entails. The `isAlive` function by
     default looks to see if the thread is still active. It will be true until a thread
     completes crawling (or crashes).
+  id: totrans-57
   prefs: []
   type: TYPE_NORMAL
+  zh: 线程模块充当一种线程保姆，并且可以高度定制以定义这种保姆的具体任务。`isAlive`函数默认查看线程是否仍然活动。直到线程完成（或崩溃）时，该函数将返回`True`。
 - en: 'Often, crawlers are designed to run for a very long time. The `isAlive` method
     can ensure that, if a thread crashes, it restarts:'
+  id: totrans-58
   prefs: []
   type: TYPE_NORMAL
+  zh: 通常，爬虫设计为长时间运行。`isAlive`方法可以确保如果线程崩溃，它将重新启动：
 - en: '[PRE11]'
+  id: totrans-59
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE11]'
 - en: 'Other monitoring methods can be added by extending the `threading.Thread` object:'
+  id: totrans-60
   prefs: []
   type: TYPE_NORMAL
+  zh: 另外，可以通过扩展`threading.Thread`对象来添加其他监控方法：
 - en: '[PRE12]'
+  id: totrans-61
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE12]'
 - en: This new `Crawler` class contains an `isDone` method that can be used to check
     if the crawler is done crawling. This may be useful if there are some additional
     logging methods that need to be finished so the thread cannot close, but the bulk
     of the crawling work is done. In general, `isDone` can be replaced with some sort
     of status or progress measure—how many pages logged, or the current page, for
     example.
+  id: totrans-62
   prefs: []
   type: TYPE_NORMAL
+  zh: 这个新的`Crawler`类包含一个`isDone`方法，可以用来检查爬虫是否完成了爬取工作。如果还有一些需要完成的额外记录方法，以便线程不能关闭，但大部分爬取工作已经完成，这可能会很有用。通常情况下，`isDone`可以替换为某种状态或进度度量
+    - 例如已记录的页面数或当前页面。
 - en: Any exceptions raised by `Crawler.run` will cause the class to be restarted
     until `isDone` is `True` and the program exits.
+  id: totrans-63
   prefs: []
   type: TYPE_NORMAL
+  zh: 任何由`Crawler.run`引发的异常都会导致类重新启动，直到`isDone`为`True`并退出程序。
 - en: Extending `threading.Thread` in your crawler classes can improve their robustness
     and flexibility, as well as your ability to monitor any property of many crawlers
     at once.
+  id: totrans-64
   prefs: []
   type: TYPE_NORMAL
+  zh: 在您的爬虫类中扩展`threading.Thread`可以提高它们的健壮性和灵活性，以及您同时监视许多爬虫的任何属性的能力。
 - en: Multiple Processes
+  id: totrans-65
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 多进程
 - en: 'The Python `Processing` module creates new process objects that can be started
     and joined from the main process. The following code uses the FizzBuzz example
     from the section on threading processes to demonstrate:'
+  id: totrans-66
   prefs: []
   type: TYPE_NORMAL
+  zh: Python的`Processing`模块创建了可以从主进程启动和加入的新进程对象。以下代码使用了线程进程部分中的FizzBuzz示例来演示：
 - en: '[PRE13]'
+  id: totrans-67
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE13]'
 - en: Remember that each process is treated as an individual independent program by
     the OS. If you view your processes through your OS’s activity monitor or task
     manager, you should see this reflected, as shown in [Figure 19-1](#five-python-processes-running).
+  id: totrans-68
   prefs: []
   type: TYPE_NORMAL
+  zh: 请记住，每个进程都被操作系统视为独立的个体程序。如果通过操作系统的活动监视器或任务管理器查看进程，您应该能看到这一点，就像在图19-1中所示。
 - en: '![](assets/wsp3_1901.png)'
+  id: totrans-69
   prefs: []
   type: TYPE_IMG
+  zh: '![](assets/wsp3_1901.png)'
 - en: Figure 19-1\. Five Python processes running while running FizzBuzz
+  id: totrans-70
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 图19-1. 在运行FizzBuzz时运行的五个Python进程
 - en: The fourth process with PID 76154 is a running Jupyter notebook instance, which
     should appear if you are running this from the IPython notebook. The fifth process,
     83560, is the main thread of execution, which starts up when the program is first
@@ -351,100 +497,151 @@
     have another program that quickly allocates a PID while the FizzBuzz script is
     running, you should see three more sequential PIDs—in this case 83561, 83562,
     and 83563.
+  id: totrans-71
   prefs: []
   type: TYPE_NORMAL
+  zh: 第四个进程的PID为76154，是运行中的Jupyter笔记本实例，如果您是从IPython笔记本中运行此程序，应该会看到它。第五个进程83560是执行的主线程，在程序首次执行时启动。PID是由操作系统顺序分配的。除非在FizzBuzz脚本运行时有另一个程序快速分配PID，否则您应该会看到另外三个顺序PID
+    - 在本例中为83561、83562和83563。
 - en: 'These PIDs also can be found in code by using the `os` module:'
+  id: totrans-72
   prefs: []
   type: TYPE_NORMAL
+  zh: 这些PID也可以通过使用`os`模块在代码中找到：
 - en: '[PRE14]'
+  id: totrans-73
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE14]'
 - en: Each process in your program should print a different PID for the line `os.getpid()`,
     but will print the same parent PID on `os.getppid()`.
+  id: totrans-74
   prefs: []
   type: TYPE_NORMAL
+  zh: 您程序中的每个进程应该为`os.getpid()`行打印不同的PID，但在`os.getppid()`上将打印相同的父PID。
 - en: 'Technically, a couple of lines of code are not needed for this particular program.
     If the ending `join` statement is not included:'
+  id: totrans-75
   prefs: []
   type: TYPE_NORMAL
+  zh: 从技术上讲，对于这个特定程序，不需要几行代码。如果不包括结束的`join`语句：
 - en: '[PRE15]'
+  id: totrans-76
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE15]'
 - en: the parent process will still end and terminate the child processes with it
     automatically. However, this joining is needed if you wish to execute any code
     after these child processes complete.
+  id: totrans-77
   prefs: []
   type: TYPE_NORMAL
+  zh: 父进程仍将结束并自动终止子进程。但是，如果希望在这些子进程完成后执行任何代码，则需要这种连接。
 - en: 'For example:'
+  id: totrans-78
   prefs: []
   type: TYPE_NORMAL
+  zh: 例如：
 - en: '[PRE16]'
+  id: totrans-79
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE16]'
 - en: 'If the `join` statement is not included, the output will be as follows:'
+  id: totrans-80
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果不包括`join`语句，输出将如下所示：
 - en: '[PRE17]'
+  id: totrans-81
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE17]'
 - en: 'If the `join` statement is included, the program waits for each process to
     finish before continuing:'
+  id: totrans-82
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果包括`join`语句，程序将等待每个进程完成后再继续：
 - en: '[PRE18]'
+  id: totrans-83
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE18]'
 - en: '[PRE19]'
+  id: totrans-84
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE19]'
 - en: If you want to stop program execution prematurely, you can of course use Ctrl-C
     to terminate the parent process. The termination of the parent process will also
     terminate any child processes that have been spawned, so using Ctrl-C is safe
     to do without worrying about accidentally leaving processes running in the background.
+  id: totrans-85
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果您想要提前停止程序执行，您当然可以使用Ctrl-C来终止父进程。父进程的终止也将终止已生成的任何子进程，因此可以放心使用Ctrl-C，不用担心意外地使进程在后台运行。
 - en: Multiprocess Crawling
+  id: totrans-86
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 多进程爬取
 - en: 'The multithreaded Wikipedia crawling example can be modified to use separate
     processes rather than separate threads:'
+  id: totrans-87
   prefs: []
   type: TYPE_NORMAL
+  zh: 多线程维基百科爬取示例可以修改为使用单独的进程而不是单独的线程：
 - en: '[PRE20]'
+  id: totrans-88
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE20]'
 - en: Again, you are artificially slowing the process of the scraper by including
     a `time.sleep(5)` so that this can be used for example purposes without placing
     an unreasonably high load on Wikipedia’s servers.
+  id: totrans-89
   prefs: []
   type: TYPE_NORMAL
+  zh: 再次，您通过包含`time.sleep(5)`来人为地减慢爬虫的过程，以便可以在不对维基百科服务器施加不合理负载的情况下用于示例目的。
 - en: Here, you are replacing the user-defined `thread_name`, passed around as an
     argument, with `os.getpid()`, which does not need to be passed as an argument
     and can be accessed at any point.
+  id: totrans-90
   prefs: []
   type: TYPE_NORMAL
+  zh: 在这里，您正在用`os.getpid()`替换传递为参数的用户定义的`thread_name`，这不需要作为参数传递，并且可以在任何时候访问。
 - en: 'This produces output like this:'
+  id: totrans-91
   prefs: []
   type: TYPE_NORMAL
+  zh: 这将产生如下的输出：
 - en: '[PRE21]'
+  id: totrans-92
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE21]'
 - en: 'Crawling in separate processes is, in theory, slightly faster than crawling
     in separate threads for two major reasons:'
+  id: totrans-93
   prefs: []
   type: TYPE_NORMAL
+  zh: 理论上，与分开线程爬行相比，单独进程爬行略快，有两个主要原因：
 - en: Processes are not subject to locking by the GIL and can execute the same lines
     of code and modify the same (really, separate instantiations of the same) object
     at the same time.
+  id: totrans-94
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 进程不受GIL锁定的限制，可以同时执行相同的代码行并修改同一个（实际上是同一对象的不同实例化）对象。
 - en: Processes can run on multiple CPU cores, which may provide speed advantages
     if each of your processes or threads is processor intensive.
+  id: totrans-95
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 进程可以在多个CPU核心上运行，这可能会提供速度优势，如果您的每个进程或线程都是处理器密集型的。
 - en: However, these advantages come with one major disadvantage. In the preceding
     program, all found URLs are stored in a global `visited` list. When you were using
     multiple threads, this list was shared among all threads; and one thread, in the
@@ -452,65 +649,93 @@
     visited by another thread. However, each process now gets its own independent
     version of the visited list and is free to visit pages that have already been
     visited by other processes.
+  id: totrans-96
   prefs: []
   type: TYPE_NORMAL
+  zh: 然而，这些优势伴随着一个主要的缺点。在前述程序中，所有找到的URL都存储在全局的`visited`列表中。当您使用多个线程时，此列表在所有线程之间共享；除非存在罕见的竞争条件，否则一个线程无法访问已被另一个线程访问过的页面。然而，现在每个进程都获得其自己独立版本的visited列表，并且可以自由地访问其他进程已经访问过的页面。
 - en: Communicating Between Processes
+  id: totrans-97
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 在进程之间通信
 - en: Processes operate in their own independent memory, which can cause problems
     if you want them to share information.
+  id: totrans-98
   prefs: []
   type: TYPE_NORMAL
+  zh: 进程在其自己独立的内存中运行，如果您希望它们共享信息，这可能会导致问题。
 - en: 'Modifying the previous example to print the current output of the visited list,
     you can see this principle in action:'
+  id: totrans-99
   prefs: []
   type: TYPE_NORMAL
+  zh: 将前面的示例修改为打印visited列表的当前输出，您可以看到这个原理的实际应用：
 - en: '[PRE22]'
+  id: totrans-100
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE22]'
 - en: 'This results in output like the following:'
+  id: totrans-101
   prefs: []
   type: TYPE_NORMAL
+  zh: 这导致输出如下所示：
 - en: '[PRE23]'
+  id: totrans-102
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE23]'
 - en: 'But there is a way to share information between processes on the same machine
     through two types of Python objects: queues and pipes.'
+  id: totrans-103
   prefs: []
   type: TYPE_NORMAL
+  zh: 但是通过两种类型的Python对象：队列和管道，可以在同一台机器上的进程之间共享信息。
 - en: A *queue* is similar to the threading queue seen previously. Information can
     be put into it by one process and removed by another process. After this information
     has been removed, it’s gone from the queue. Because queues are designed as a method
     of “temporary data transmission,” they’re not well suited to hold a static reference
     such as a “list of web pages that have already been visited.”
+  id: totrans-104
   prefs: []
   type: TYPE_NORMAL
+  zh: 一个*队列*与先前看到的线程队列类似。信息可以由一个进程放入队列，由另一个进程移除。一旦这些信息被移除，它就从队列中消失了。因为队列被设计为“临时数据传输”的一种方法，所以不适合保存静态引用，例如“已经访问过的网页列表”。
 - en: 'But what if this static list of web pages was replaced with some sort of a
     scraping delegator? The scrapers could pop off a task from one queue in the form
     of a path to scrape (for example, */wiki/Monty_Python*) and in return, add a list
     of “found URLs” back onto a separate queue that would be processed by the scraping
     delegator so that only new URLs were added to the first task queue:'
+  id: totrans-105
   prefs: []
   type: TYPE_NORMAL
+  zh: 但是，如果这个静态的网页列表被某种爬取委托替代怎么办？爬虫可以从一个队列中弹出一个路径来爬取（例如*/wiki/Monty_Python*），并且返回一个包含“找到的URL”列表的独立队列，该队列将由爬取委托处理，以便只有新的URL被添加到第一个任务队列中：
 - en: '[PRE24]'
+  id: totrans-106
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE24]'
 - en: Some structural differences exist between this scraper and the ones originally
     created. Rather than each process or thread following its own random walk from
     the starting point they were assigned, they work together to do a complete coverage
     crawl of the website. Each process can pull any “task” from the queue, not just
     links that they have found themselves.
+  id: totrans-107
   prefs: []
   type: TYPE_NORMAL
+  zh: 这个爬虫与最初创建的爬虫之间存在一些结构上的差异。不同于每个进程或线程按照其分配的起始点进行自己的随机漫步，它们共同努力完成对网站的完整覆盖爬行。每个进程可以从队列中获取任何“任务”，而不仅仅是它们自己找到的链接。
 - en: 'You can see this in action, as process 97024 scrapes both *Monty Python* and
     *Philadelphia* (a Kevin Bacon movie):'
+  id: totrans-108
   prefs: []
   type: TYPE_NORMAL
 - en: '[PRE25]'
+  id: totrans-109
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE25]'
 - en: Multiprocess Crawling—Another Approach
+  id: totrans-110
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
@@ -518,27 +743,35 @@
     assume that you require some sort of “parental guidance” over the child threads
     and processes. You can start them all at once, you can end them all at once, and
     you can send messages or share memory between them.
+  id: totrans-111
   prefs: []
   type: TYPE_NORMAL
 - en: But what if your scraper is designed in such a way that no guidance or communication
     is required? There may be very little reason to start going crazy with `import
     _thread` just yet.
+  id: totrans-112
   prefs: []
   type: TYPE_NORMAL
 - en: 'For example, let’s say you want to crawl two similar websites in parallel.
     You have a crawler written that can crawl either of these websites, determined
     by a small configuration change or perhaps a command-line argument. There’s absolutely
     no reason you can’t simply do the following:'
+  id: totrans-113
   prefs: []
   type: TYPE_NORMAL
 - en: '[PRE26]'
+  id: totrans-114
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE26]'
 - en: '[PRE27]'
+  id: totrans-115
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE27]'
 - en: And voilà, you’ve just kicked off a multiprocess web crawler, while saving your
     CPU the overhead of keeping around a parent process to boot!
+  id: totrans-116
   prefs: []
   type: TYPE_NORMAL
 - en: Of course, this approach has downsides. If you want to run two web crawlers
@@ -546,6 +779,7 @@
     accidentally start scraping the same pages. The solution might be to create a
     URL rule (“crawler 1 scrapes the blog pages, crawler 2 scrapes the product pages”)
     or divide the site in some way.
+  id: totrans-117
   prefs: []
   type: TYPE_NORMAL
 - en: Alternatively, you may be able to handle this coordination through some sort
@@ -555,6 +789,7 @@
     system. Of course, without careful consideration, this method may lead to race
     conditions or lag if the database connection is slow (likely only a problem if
     connecting to a remote database).
+  id: totrans-118
   prefs: []
   type: TYPE_NORMAL
 - en: You may also find that this method isn’t quite as scalable. Using the `Process`
@@ -562,10 +797,12 @@
     crawling the site or even storing data. Kicking them off by hand requires either
     a person physically running the script or a separate managing script (whether
     a bash script, a cron job, or something else) doing this.
+  id: totrans-119
   prefs: []
   type: TYPE_NORMAL
 - en: However, I have used this method with great success in the past. For small,
     one-off projects, it is a great way to get a lot of information quickly, especially
     across multiple websites.
+  id: totrans-120
   prefs: []
   type: TYPE_NORMAL
