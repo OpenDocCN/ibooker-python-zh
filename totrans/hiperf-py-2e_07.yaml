@@ -1,28 +1,36 @@
 - en: Chapter 7\. Compiling to C
+  id: totrans-0
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 第7章。编译为C
 - en: The easiest way to get your code to run faster is to make it do less work. Assuming
     you’ve already chosen good algorithms and you’ve reduced the amount of data you’re
     processing, the easiest way to execute fewer instructions is to compile your code
     down to machine code.
+  id: totrans-1
   prefs: []
   type: TYPE_NORMAL
+  zh: 使代码运行更快的最简单方法是减少工作量。假设您已经选择了良好的算法并减少了处理的数据量，那么减少执行指令数的最简单方法就是将代码编译为机器码。
 - en: Python offers a number of options for this, including pure C-based compiling
     approaches like Cython; LLVM-based compiling via Numba; and the replacement virtual
     machine PyPy, which includes a built-in just-in-time (JIT) compiler. You need
     to balance the requirements of code adaptability and team velocity when deciding
     which route to take.
+  id: totrans-2
   prefs: []
   type: TYPE_NORMAL
+  zh: Python为此提供了多种选项，包括像Cython这样的纯C编译方法；基于LLVM的编译通过Numba；以及包含内置即时编译器（JIT）的替代虚拟机PyPy。在决定采取哪种路径时，您需要平衡代码适应性和团队速度的需求。
 - en: Each of these tools adds a new dependency to your toolchain, and Cython requires
     you to write in a new language type (a hybrid of Python and C), which means you
     need a new skill. Cython’s new language may hurt your team’s velocity, as team
     members without knowledge of C may have trouble supporting this code; in practice,
     though, this is probably a minor concern, as you’ll use Cython only in well-chosen,
     small regions of your code.
+  id: totrans-3
   prefs: []
   type: TYPE_NORMAL
+  zh: 每个工具都会向您的工具链添加新的依赖项，而Cython要求您使用一种新的语言类型（Python和C的混合），这意味着您需要掌握一种新技能。Cython的新语言可能会降低团队的速度，因为没有C知识的团队成员可能会在支持此代码时遇到困难；但实际上，这可能只是一个小问题，因为您只会在精心选择的代码小区域中使用Cython。
 - en: It is worth noting that performing CPU and memory profiling on your code will
     probably start you thinking about higher-level algorithmic optimizations that
     you might apply. These algorithmic changes (such as additional logic to avoid
@@ -30,71 +38,98 @@
     work in your code, and Python’s expressivity helps you to spot these algorithmic
     opportunities. Radim Řehůřek discusses how a Python implementation can beat a
     pure C implementation in [“Making Deep Learning Fly with RadimRehurek.com (2014)”](ch12.xhtml#lessons-from-field-radim).
+  id: totrans-4
   prefs: []
   type: TYPE_NORMAL
+  zh: 值得注意的是，在您的代码上执行CPU和内存分析可能会让您开始考虑可以应用的更高级别算法优化。这些算法更改（例如避免计算的附加逻辑或缓存以避免重新计算）可以帮助您避免在代码中执行不必要的工作，而Python的表达能力有助于发现这些算法机会。Radim
+    Řehůřek在[“使用RadimRehurek.com（2014年）使深度学习飞起来”的领域经验](ch12.xhtml#lessons-from-field-radim)中讨论了Python实现如何击败纯C实现。
 - en: 'In this chapter we’ll review the following:'
+  id: totrans-5
   prefs: []
   type: TYPE_NORMAL
+  zh: 在本章中，我们将回顾以下内容：
 - en: Cython, the most commonly used tool for compiling to C, covering both `numpy`
     and normal Python code (requires some knowledge of C)
+  id: totrans-6
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: Cython，最常用于编译为C的工具，涵盖了`numpy`和普通Python代码（需要一些C语言知识）
 - en: Numba, a new compiler specialized for `numpy` code
+  id: totrans-7
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: Numba，专门针对`numpy`代码的新编译器
 - en: PyPy, a stable just-in-time compiler for non-`numpy` code that is a replacement
     for the normal Python executable
+  id: totrans-8
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: PyPy，用于非`numpy`代码的稳定即时编译器，是普通Python可执行文件的替代品
 - en: Later in the chapter we’ll look at foreign function interfaces, which allow
     C code to be compiled into extension modules for Python. Python’s native API is
     used with `ctypes` or with `cffi` (from the authors of PyPy), along with the `f2py`
     Fortran-to-Python converter.
+  id: totrans-9
   prefs: []
   type: TYPE_NORMAL
+  zh: 本章稍后我们将探讨外部函数接口，允许将C代码编译为Python扩展模块。Python的本地API与`ctypes`或者来自PyPy作者的`cffi`一起使用，以及Fortran到Python转换器`f2py`。
 - en: What Sort of Speed Gains Are Possible?
+  id: totrans-10
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 可能实现什么样的速度提升？
 - en: Gains of an order of magnitude or more are quite possible if your problem yields
     to a compiled approach. Here, we’ll look at various ways to achieve speedups of
     one to two orders of magnitude on a single core, along with using multiple cores
     through OpenMP.
+  id: totrans-11
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果您的问题可以采用编译方法，很可能会实现一个数量级或更大的性能提升。在这里，我们将探讨在单个核心上实现一到两个数量级加速以及通过OpenMP使用多核的各种方法。
 - en: Python code that tends to run faster after compiling is mathematical, and it
     has lots of loops that repeat the same operations many times. Inside these loops,
     you’re probably making lots of temporary objects.
+  id: totrans-12
   prefs: []
   type: TYPE_NORMAL
+  zh: 经编译后，Python代码通常运行更快的是数学代码，其中包含许多重复相同操作的循环。在这些循环内部，您可能会创建许多临时对象。
 - en: Code that calls out to external libraries (such as regular expressions, string
     operations, and calls to database libraries) is unlikely to show any speedup after
     compiling. Programs that are I/O-bound are also unlikely to show significant speedups.
+  id: totrans-13
   prefs: []
   type: TYPE_NORMAL
+  zh: 调用外部库的代码（例如正则表达式、字符串操作和调用数据库库）在编译后不太可能加速。受I/O限制的程序也不太可能显示显著的加速。
 - en: Similarly, if your Python code focuses on calling vectorized `numpy` routines,
     it may not run any faster after compilation—it’ll run faster only if the code
     being compiled is mainly Python (and probably if it is mainly looping). We looked
     at `numpy` operations in [Chapter 6](ch06_split_000.xhtml#matrix_computation);
     compiling doesn’t really help because there aren’t many intermediate objects.
+  id: totrans-14
   prefs: []
   type: TYPE_NORMAL
+  zh: 类似地，如果你的Python代码专注于调用向量化的`numpy`例程，那么在编译后可能不会运行得更快——只有在被编译的代码主要是Python（也许主要是循环）时才会更快。我们在[第6章](ch06_split_000.xhtml#matrix_computation)中讨论了`numpy`操作；编译并不真正有帮助，因为中间对象并不多。
 - en: Overall, it is very unlikely that your compiled code will run any faster than
     a handcrafted C routine, but it is also unlikely to run much slower. It is quite
     possible that the generated C code from your Python will run as fast as a handwritten
     C routine, unless the C coder has particularly good knowledge of ways to tune
     the C code to the target machine’s architecture.
+  id: totrans-15
   prefs: []
   type: TYPE_NORMAL
+  zh: 总体来说，编译后的代码很少会比手工编写的C例程运行得更快，但也不太可能运行得更慢。可能由你的Python生成的C代码会像手写的C例程一样快，除非C程序员特别了解如何调整C代码以适应目标机器的架构。
 - en: For math-focused code, it is possible that a handcoded Fortran routine will
     beat an equivalent C routine, but again, this probably requires expert-level knowledge.
     Overall, a compiled result (probably using Cython) will be as close to a handcoded-in-C
     result as most programmers will need.
+  id: totrans-16
   prefs: []
   type: TYPE_NORMAL
+  zh: 对于以数学为重点的代码，手写的Fortran例程可能会比等效的C例程更快，但这可能需要专家级别的知识。总体来说，编译后的结果（可能使用Cython）将与大多数程序员所需的手写C代码结果非常接近。
 - en: Keep the diagram in [Figure 7-1](#FIG-04b-diminishing-returns) in mind when
     you profile and work on your algorithm. A small amount of work understanding your
     code through profiling should enable you to make smarter choices at an algorithmic
@@ -102,43 +137,60 @@
     speedup. It will probably be possible to keep tweaking your algorithm, but don’t
     be surprised to see increasingly small improvements coming from increasingly large
     amounts of work on your part. Know when additional effort isn’t useful.
+  id: totrans-17
   prefs: []
   type: TYPE_NORMAL
+  zh: 在分析和优化算法时，请记住[图 7-1](#FIG-04b-diminishing-returns)中的图表。通过分析你的代码，你可以更明智地选择算法级别的优化。之后，与编译器的一些集中工作应该可以带来额外的加速。可能会继续微调算法，但不要奇怪看到你的大量工作带来越来越小的改进。要知道额外的努力何时不再有用。
 - en: '![](Images/hpp2_0701.png)'
+  id: totrans-18
   prefs: []
   type: TYPE_IMG
+  zh: '![](Images/hpp2_0701.png)'
 - en: Figure 7-1\. Some effort profiling and compiling brings a lot of reward, but
     continued effort tends to pay increasingly less
+  id: totrans-19
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 图 7-1\. 一些分析和编译工作会带来很多收益，但持续的努力往往会带来越来越少的回报
 - en: If you’re dealing with Python code and batteries-included libraries without
     `numpy`, Cython and PyPy are your main choices. If you’re working with `numpy`,
     Cython and Numba are the right choices. These tools all support Python 3.6+.
+  id: totrans-20
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果你处理的是没有`numpy`的Python代码和“电池内置”库，那么Cython和PyPy是你的主要选择。如果你使用`numpy`，那么Cython和Numba是正确的选择。这些工具都支持Python
+    3.6及以上版本。
 - en: Some of the following examples require a little understanding of C compilers
     and C code. If you lack this knowledge, you should learn a little C and compile
     a working C program before diving in too deeply.
+  id: totrans-21
   prefs: []
   type: TYPE_NORMAL
+  zh: 以下一些示例需要一些对C编译器和C代码的了解。如果你缺乏这方面的知识，你应该学习一些C，并在深入研究之前编译一个可工作的C程序。
 - en: JIT Versus AOT Compilers
+  id: totrans-22
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: JIT与AOT编译器
 - en: 'The tools we’ll look at split roughly into two sets: tools for compiling ahead
     of time, or AOT (Cython), and tools for compiling “just in time,” or JIT (Numba,
     PyPy).'
+  id: totrans-23
   prefs: []
   type: TYPE_NORMAL
+  zh: 我们将要讨论的工具大致分为两类：提前编译的工具（AOT，例如Cython）和即时编译的工具（JIT，例如Numba、PyPy）。
 - en: By compiling AOT, you create a static library that’s specialized to your machine.
     If you download `numpy`, `scipy`, or scikit-learn, it will compile parts of the
     library using Cython on your machine (or you’ll use a prebuilt compiled library,
     if you’re using a distribution like Continuum’s Anaconda). By compiling ahead
     of use, you’ll have a library that can instantly be used to work on solving your
     problem.
+  id: totrans-24
   prefs: []
   type: TYPE_NORMAL
+  zh: 通过AOT编译，你会创建一个针对你的机器专门优化的静态库。如果你下载`numpy`、`scipy`或scikit-learn，它将使用Cython在你的机器上编译库的部分（或者你将使用像Continuum的Anaconda这样的发行版预编译的库）。通过预先编译，你将拥有一个可立即用于解决问题的库。
 - en: By compiling JIT, you don’t have to do much (if any) work up front; you let
     the compiler step in to compile just the right parts of the code at the time of
     use. This means you have a “cold start” problem—if most of your program could
@@ -147,145 +199,211 @@
     and you run the script many times, this cost can become significant. PyPy suffers
     from this problem, so you may not want to use it for short but frequently running
     scripts.
+  id: totrans-25
   prefs: []
   type: TYPE_NORMAL
+  zh: 通过JIT编译，你无需做太多（或者干脆不做）前期工作；你让编译器在使用时编译代码的恰当部分。这意味着你会遇到“冷启动”问题——如果你的程序的大部分内容可以编译而目前没有编译，那么当你开始运行代码时，它将运行非常缓慢，因为它在编译代码。如果每次运行脚本时都发生这种情况，而你运行脚本的次数很多，这个成本就会变得很大。PyPy就遭受这个问题，所以你可能不想将其用于频繁运行但是运行时间较短的脚本。
 - en: The current state of affairs shows us that compiling ahead of time buys us the
     best speedups, but often this requires the most manual effort. Just-in-time compiling
     offers some impressive speedups with very little manual intervention, but it can
     also run into the problem just described. You’ll have to consider these trade-offs
     when choosing the right technology for your problem.
+  id: totrans-26
   prefs: []
   type: TYPE_NORMAL
+  zh: 目前的情况表明，预先编译可以为我们带来最佳的速度提升，但通常这需要较多的手动工作。即时编译提供了一些令人印象深刻的速度提升，而几乎不需要手动干预，但它也可能遇到刚刚描述的问题。在选择适合你问题的正确技术时，你必须考虑这些权衡。
 - en: Why Does Type Information Help the Code Run Faster?
+  id: totrans-27
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 为什么类型信息可以帮助代码运行更快？
 - en: Python is dynamically typed—a variable can refer to an object of any type, and
     any line of code can change the type of the object that is referred to. This makes
     it difficult for the virtual machine to optimize how the code is executed at the
     machine code level, as it doesn’t know which fundamental datatype will be used
     for future operations. Keeping the code generic makes it run more slowly.
+  id: totrans-28
   prefs: []
   type: TYPE_NORMAL
+  zh: Python是动态类型的——一个变量可以引用任何类型的对象，并且任何代码行都可以改变所引用对象的类型。这使得虚拟机很难优化代码在机器码级别的执行方式，因为它不知道将来的操作将使用哪种基本数据类型。使代码保持通用性会使其运行速度变慢。
 - en: 'In the following example, `v` is either a floating-point number or a pair of
     floating-point numbers that represent a `complex` number. Both conditions could
     occur in the same loop at different points in time, or in related serial sections
     of code:'
+  id: totrans-29
   prefs: []
   type: TYPE_NORMAL
+  zh: 在下面的示例中，`v`要么是一个浮点数，要么是表示`complex`数的一对浮点数。这两种情况可能在同一循环的不同时间点发生，或者在相关的串行代码段中发生：
 - en: '[PRE0]'
+  id: totrans-30
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE0]'
 - en: '[PRE1]'
+  id: totrans-31
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE1]'
 - en: '[PRE2]'
+  id: totrans-32
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE2]'
 - en: '[PRE3]'
+  id: totrans-33
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE3]'
 - en: 'The `abs` function works differently depending on the underlying datatype.
     Using `abs` for an integer or a floating-point number turns a negative value into
     a positive value. Using `abs` for a complex number involves taking the square
     root of the sum of the squared components:'
+  id: totrans-34
   prefs: []
   type: TYPE_NORMAL
+  zh: '`abs`函数的工作方式取决于底层数据类型。对整数或浮点数使用`abs`会将负值变为正值。对复数使用`abs`则涉及对平方和的平方根：'
 - en: <math alttext="left-bracket dollar-sign a b s left-parenthesis c right-parenthesis
     equals StartRoot c period r e a l squared plus c period i m a g squared EndRoot
     dollar-sign right-bracket"><mrow><mi>a</mi> <mi>b</mi> <mi>s</mi> <mrow><mo>(</mo>
     <mi>c</mi> <mo>)</mo></mrow> <mo>=</mo> <msqrt><mrow><mi>c</mi> <mo>.</mo> <mi>r</mi>
     <mi>e</mi> <mi>a</mi> <msup><mi>l</mi> <mn>2</mn></msup> <mo>+</mo> <mi>c</mi>
     <mo>.</mo> <mi>i</mi> <mi>m</mi> <mi>a</mi> <msup><mi>g</mi> <mn>2</mn></msup></mrow></msqrt></mrow></math>
+  id: totrans-35
   prefs: []
   type: TYPE_NORMAL
+  zh: <math alttext="left-bracket dollar-sign a b s left-parenthesis c right-parenthesis
+    equals StartRoot c period r e a l squared plus c period i m a g squared EndRoot
+    dollar-sign right-bracket"><mrow><mi>a</mi> <mi>b</mi> <mi>s</mi> <mrow><mo>(</mo>
+    <mi>c</mi> <mo>)</mo></mrow> <mo>=</mo> <msqrt><mrow><mi>c</mi> <mo>.</mo> <mi>r</mi>
+    <mi>e</mi> <mi>a</mi> <msup><mi>l</mi> <mn>2</mn></msup> <mo>+</mo> <mi>c</mi>
+    <mo>.</mo> <mi>i</mi> <mi>m</mi> <mi>a</mi> <msup><mi>g</mi> <mn>2</mn></msup></mrow></msqrt></mrow></math>
 - en: The machine code for the `complex` example involves more instructions and will
     take longer to run. Before calling `abs` on a variable, Python first has to look
     up the type of the variable and then decide which version of a function to call—this
     overhead adds up when you make a lot of repeated calls.
+  id: totrans-36
   prefs: []
   type: TYPE_NORMAL
+  zh: '`complex`示例的机器码涉及更多的指令，运行时间更长。在对一个变量调用`abs`之前，Python首先必须查找变量的类型，然后决定调用哪个版本的函数——当你进行大量重复调用时，这种开销会累积起来。'
 - en: Inside Python, every fundamental object, such as an integer, will be wrapped
     up in a higher-level Python object (e.g., an `int` for an integer). The higher-level
     object has extra functions like `__hash__` to assist with storage and `__str__`
     for printing.
+  id: totrans-37
   prefs: []
   type: TYPE_NORMAL
+  zh: 在Python内部，每个基本对象，比如整数，都会被包装在一个更高级的Python对象中（例如，整数的高级对象是`int`）。更高级的对象具有额外的函数，如用于存储的`__hash__`和用于打印的`__str__`。
 - en: Inside a section of code that is CPU-bound, it is often the case that the types
     of variables do not change. This gives us an opportunity for static compilation
     and faster code execution.
+  id: totrans-38
   prefs: []
   type: TYPE_NORMAL
+  zh: 在一个受 CPU 限制的代码段中，变量的类型通常不会改变。这为我们提供了进行静态编译和更快代码执行的机会。
 - en: If all we want are a lot of intermediate mathematical operations, we don’t need
     the higher-level functions, and we may not need the machinery for reference counting
     either. We can drop down to the machine code level and do our calculations quickly
     using machine code and bytes, rather than manipulating the higher-level Python
     objects, which involves greater overhead. To do this, we determine the types of
     our objects ahead of time so we can generate the correct C code.
+  id: totrans-39
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果我们只想要大量的中间数学运算，我们不需要更高级的函数，也许我们也不需要引用计数的机制。我们可以降到机器代码级别，使用机器代码和字节快速计算，而不是操作更高级别的
+    Python 对象，这涉及更大的开销。为此，我们提前确定对象的类型，以便我们可以生成正确的 C 代码。
 - en: Using a C Compiler
+  id: totrans-40
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 使用 C 编译器
 - en: In the following examples, we’ll use `gcc` and `g++` from the GNU C Compiler
     toolset. You could use an alternative compiler (e.g., Intel’s `icc` or Microsoft’s
     `cl`) if you configure your environment correctly. Cython uses `gcc`.
+  id: totrans-41
   prefs: []
   type: TYPE_NORMAL
+  zh: 在接下来的例子中，我们将使用来自 GNU C 编译器工具集的`gcc`和`g++`。如果您正确配置您的环境，您可以使用其他编译器（例如，Intel 的`icc`或
+    Microsoft 的`cl`）。Cython 使用`gcc`。
 - en: '`gcc` is a very good choice for most platforms; it is well supported and quite
     advanced. It is often possible to squeeze out more performance by using a tuned
     compiler (e.g., Intel’s `icc` may produce faster code than `gcc` on Intel devices),
     but the cost is that you have to gain more domain knowledge and learn how to tune
     the flags on the alternative compiler.'
+  id: totrans-42
   prefs: []
   type: TYPE_NORMAL
+  zh: '`gcc` 对大多数平台来说都是一个非常好的选择；它得到了很好的支持并且相当先进。通过使用调优的编译器（例如，Intel 的`icc`在 Intel
+    设备上可能会比`gcc`产生更快的代码），通常可以挤出更多性能，但代价是您必须获得更多的领域知识，并学习如何调整替代编译器的标志。'
 - en: C and C++ are often used for static compilation rather than other languages
     like Fortran because of their ubiquity and the wide range of supporting libraries.
     The compiler and the converter, such as Cython, can study the annotated code to
     determine whether static optimization steps (like inlining functions and unrolling
     loops) can be applied.
+  id: totrans-43
   prefs: []
   type: TYPE_NORMAL
+  zh: C 和 C++ 经常用于静态编译，而不是像 Fortran 这样的其他语言，因为它们普及并且支持广泛的库。编译器和转换器（例如 Cython）可以研究注释的代码，以确定是否可以应用静态优化步骤（如内联函数和展开循环）。
 - en: Aggressive analysis of the intermediate abstract syntax tree (performed by Numba
     and PyPy) provides opportunities to combine knowledge of Python’s way of expressing
     things to inform the underlying compiler how best to take advantage of the patterns
     that have been seen.
+  id: totrans-44
   prefs: []
   type: TYPE_NORMAL
+  zh: 对中间抽象语法树的积极分析（由 Numba 和 PyPy 执行）提供了结合 Python 表达方式的知识的机会，以通知底层编译器如何最好地利用已见到的模式。
 - en: Reviewing the Julia Set Example
+  id: totrans-45
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 重新审视朱利亚集合示例
 - en: Back in [Chapter 2](ch02.xhtml#chapter-profiling) we profiled the Julia set
     generator. This code uses integers and complex numbers to produce an output image.
     The calculation of the image is CPU-bound.
+  id: totrans-46
   prefs: []
   type: TYPE_NORMAL
+  zh: 回顾[第二章](ch02.xhtml#chapter-profiling)中我们对朱利亚集合生成器进行了性能分析。该代码使用整数和复数生成输出图像。图像的计算受到
+    CPU 的限制。
 - en: The main cost in the code was the CPU-bound nature of the inner loop that calculates
     the `output` list. This list can be drawn as a square pixel array, where each
     value represents the cost to generate that pixel.
+  id: totrans-47
   prefs: []
   type: TYPE_NORMAL
+  zh: 代码中的主要成本是计算`output`列表的 CPU 限制的内部循环。该列表可以绘制为一个方形像素数组，其中每个值表示生成该像素的成本。
 - en: The code for the inner function is shown in [Example 7-1](#compiling-review-julia).
+  id: totrans-48
   prefs: []
   type: TYPE_NORMAL
+  zh: 内部函数的代码在[示例 7-1](#compiling-review-julia)中显示。
 - en: Example 7-1\. Reviewing the Julia function’s CPU-bound code
+  id: totrans-49
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 7-1\. 回顾朱利亚函数的 CPU 限制代码
 - en: '[PRE4]'
+  id: totrans-50
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE4]'
 - en: On Ian’s laptop, the original Julia set calculation on a 1,000 × 1,000 grid
     with `maxiter=300` takes approximately 8 seconds using a pure Python implementation
     running on CPython 3.7.
+  id: totrans-51
   prefs: []
   type: TYPE_NORMAL
+  zh: 在 Ian 的笔记本电脑上，使用纯 Python 实现在 CPython 3.7 上运行时，对 1,000 × 1,000 网格进行朱利亚集合计算，`maxiter=300`大约需要
+    8 秒。
 - en: Cython
+  id: totrans-52
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: Cython
 - en: '[Cython](http://cython.org) is a compiler that converts type-annotated Python
     into a compiled extension module. The type annotations are C-like. This extension
     can be imported as a regular Python module using `import`. Getting started is
@@ -293,187 +411,276 @@
     and optimization. For Ian, this is the tool of choice for turning calculation-bound
     functions into faster code, because of its wide usage, its maturity, and its OpenMP
     support.'
+  id: totrans-53
   prefs: []
   type: TYPE_NORMAL
+  zh: '[Cython](http://cython.org) 是一个编译器，将带有类型注解的 Python 转换为编译的扩展模块。类型注解类似于 C 语言。可以使用`import`将此扩展作为常规
+    Python 模块导入。入门简单，但随着复杂性和优化水平的增加，需要逐步攀登学习曲线。对 Ian 而言，这是将计算密集型函数转换为更快代码的首选工具，因为它被广泛使用、成熟，并且支持
+    OpenMP。'
 - en: With the OpenMP standard, it is possible to convert parallel problems into multiprocessing-aware
     modules that run on multiple CPUs on one machine. The threads are hidden from
     your Python code; they operate via the generated C code.
+  id: totrans-54
   prefs: []
   type: TYPE_NORMAL
+  zh: 借助 OpenMP 标准，可以将并行问题转换为在单台机器上多个 CPU 上运行的多进程感知模块。线程对你的 Python 代码是隐藏的；它们通过生成的
+    C 代码操作。
 - en: Cython (announced in 2007) is a fork of Pyrex (announced in 2002) that expands
     the capabilities beyond the original aims of Pyrex. Libraries that use Cython
     include SciPy, scikit-learn, lxml, and ZeroMQ.
+  id: totrans-55
   prefs: []
   type: TYPE_NORMAL
+  zh: Cython（2007 年发布）是 Pyrex（2002 年发布）的一个分支，扩展了超出 Pyrex 初始目标的能力。使用 Cython 的库包括 SciPy、scikit-learn、lxml
+    和 ZeroMQ。
 - en: Cython can be used via a *setup.py* script to compile a module. It can also
     be used interactively in IPython via a “magic” command. Typically, the types are
     annotated by the developer, although some automated annotation is possible.
+  id: totrans-56
   prefs: []
   type: TYPE_NORMAL
+  zh: 可以通过*setup.py*脚本使用 Cython 编译模块。也可以通过 IPython 中的“magic”命令交互使用。通常，开发人员会为类型进行注解，尽管某些自动注解也是可能的。
 - en: Compiling a Pure Python Version Using Cython
+  id: totrans-57
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 使用 Cython 编译纯 Python 版本
 - en: 'The easy way to begin writing a compiled extension module involves three files.
     Using our Julia set as an example, they are as follows:'
+  id: totrans-58
   prefs: []
   type: TYPE_NORMAL
+  zh: 开始编写编译扩展模块的简便方法涉及三个文件。以我们的朱利亚集为例，它们如下所示：
 - en: The calling Python code (the bulk of our Julia code from earlier)
+  id: totrans-59
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 调用 Python 代码（我们之前的朱利亚代码的主体）
 - en: The function to be compiled in a new *.pyx* file
+  id: totrans-60
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 要在新的*.pyx*文件中编译的函数
 - en: A *setup.py* that contains the instructions for calling Cython to make the extension
     module
+  id: totrans-61
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 包含调用 Cython 制作扩展模块的指令的*setup.py*
 - en: Using this approach, the *setup.py* script is called to use Cython to compile
     the *.pyx* file into a compiled module. On Unix-like systems, the compiled module
     will probably be a *.so* file; on Windows it should be a *.pyd* (DLL-like Python
     library).
+  id: totrans-62
   prefs: []
   type: TYPE_NORMAL
+  zh: 使用这种方法，调用*setup.py*脚本使用 Cython 将*.pyx*文件编译为编译模块。在类 Unix 系统上，编译后的模块可能是*.so*文件；在
+    Windows 上，应该是*.pyd*（类似 DLL 的 Python 库）。
 - en: 'For the Julia example, we’ll use the following:'
+  id: totrans-63
   prefs: []
   type: TYPE_NORMAL
+  zh: 对于朱利亚示例，我们将使用以下内容：
 - en: '*julia1.py* to build the input lists and call the calculation function'
+  id: totrans-64
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '*julia1.py*用于构建输入列表和调用计算函数'
 - en: '*cythonfn.pyx*, which contains the CPU-bound function that we can annotate'
+  id: totrans-65
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '*cythonfn.pyx*，其中包含我们可以注释的 CPU-bound 函数'
 - en: '*setup.py*, which contains the build instructions'
+  id: totrans-66
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '*setup.py*，其中包含构建说明'
 - en: The result of running *setup.py* is a module that can be imported. In our *julia1.py*
     script in [Example 7-2](#compiling-cython-import), we need only to make some tiny
     changes to `import` the new module and call our function.
+  id: totrans-67
   prefs: []
   type: TYPE_NORMAL
+  zh: 运行*setup.py*的结果是一个可以导入的模块。在我们的*julia1.py*脚本中，在[Example 7-2](#compiling-cython-import)中，我们只需要对`import`新模块和调用我们的函数做一些微小的更改。
 - en: Example 7-2\. Importing the newly compiled module into our main code
+  id: totrans-68
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 7-2\. 将新编译的模块导入我们的主要代码
 - en: '[PRE5]'
+  id: totrans-69
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE5]'
 - en: In [Example 7-3](#compiling-cython-pure-python), we will start with a pure Python
     version without type annotations.
+  id: totrans-70
   prefs: []
   type: TYPE_NORMAL
+  zh: 在[Example 7-3](#compiling-cython-pure-python)中，我们将从纯 Python 版本开始，没有类型注解。
 - en: Example 7-3\. Unmodified pure Python code in cythonfn.pyx (renamed from .py)
     for Cython’s setup.py
+  id: totrans-71
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 7-3\. Cython 的 setup.py 中未修改的纯 Python 代码（从.py重命名为pyx）
 - en: '[PRE6]'
+  id: totrans-72
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE6]'
 - en: The *setup.py* script shown in [Example 7-4](#compiling-cython-setup) is short;
     it defines how to convert *cythonfn.pyx* into *calculate.so*.
+  id: totrans-73
   prefs: []
   type: TYPE_NORMAL
+  zh: 在[Example 7-4](#compiling-cython-setup)中显示的*setup.py*脚本很简短；它定义了如何将*cythonfn.pyx*转换为*calculate.so*。
 - en: Example 7-4\. setup.py, which converts cythonfn.pyx into C code for compilation
     by Cython
+  id: totrans-74
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 7-4\. setup.py，将 cythonfn.pyx 转换为 Cython 编译的 C 代码
 - en: '[PRE7]'
+  id: totrans-75
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE7]'
 - en: When we run the *setup.py* script in [Example 7-5](#compiling-cython-setup-build)
     with the argument `build_ext`, Cython will look for *cythonfn.pyx* and build *cythonfn[…].so*.
     The `language_level` is hardcoded to `3` here to force Python 3.*x* support.
+  id: totrans-76
   prefs: []
   type: TYPE_NORMAL
+  zh: 当我们在[示例 7-5](#compiling-cython-setup-build)中使用`build_ext`参数运行*setup.py*脚本时，Cython将查找*cythonfn.pyx*并构建*cythonfn[…].so*。这里`language_level`被硬编码为`3`以强制支持Python
+    3.*x*。
 - en: Note
+  id: totrans-77
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 注意
 - en: Remember that this is a manual step—if you update your *.pyx* or *setup.py*
     and forget to rerun the build command, you won’t have an updated *.so* module
     to import. If you’re unsure whether you compiled the code, check the timestamp
     for the *.so* file. If in doubt, delete the generated C files and the *.so* file
     and build them again.
+  id: totrans-78
   prefs: []
   type: TYPE_NORMAL
+  zh: 请记住，这是一个手动步骤 —— 如果您更新了*.pyx*或*setup.py*并忘记重新运行构建命令，则不会有更新的*.so*模块可供导入。如果您不确定是否已编译代码，请检查*.so*文件的时间戳。如有疑问，请删除生成的C文件和*.so*文件，然后重新构建它们。
 - en: Example 7-5\. Running setup.py to build a new compiled module
+  id: totrans-79
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 7-5\. 运行setup.py构建新的编译模块
 - en: '[PRE8]'
+  id: totrans-80
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE8]'
 - en: The `--inplace` argument tells Cython to build the compiled module into the
     current directory rather than into a separate *build* directory. After the build
     has completed, we’ll have the intermediate *cythonfn.c*, which is rather hard
     to read, along with *cythonfn[…].so*.
+  id: totrans-81
   prefs: []
   type: TYPE_NORMAL
+  zh: '`--inplace`参数告诉Cython将编译的模块构建到当前目录而不是单独的*build*目录中。构建完成后，我们将得到中间文件*cythonfn.c*，这相当难以阅读，以及*cythonfn[…].so*。'
 - en: Now when the *julia1.py* code is run, the compiled module is imported, and the
     Julia set is calculated on Ian’s laptop in 4.7 seconds, rather than the more usual
     8.3 seconds. This is a useful improvement for very little effort.
+  id: totrans-82
   prefs: []
   type: TYPE_NORMAL
+  zh: 现在运行*julia1.py*代码时，导入了编译的模块，并且在Ian的笔记本电脑上计算出朱利叶集耗时4.7秒，而不是通常的8.3秒。这是非常小的努力带来的有用改进。
 - en: pyximport
+  id: totrans-83
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: pyximport
 - en: A simplified build system has been introduced via `pyximport`. If your code
     has a simple setup and doesn’t require third-party modules, you may be able to
     do away with *setup.py* completely.
+  id: totrans-84
   prefs: []
   type: TYPE_NORMAL
+  zh: 通过`pyximport`引入了一个简化的构建系统。如果您的代码具有简单的设置且不需要第三方模块，您可能完全可以不使用*setup.py*。
 - en: By importing `pyximport` as seen in [Example 7-6](#compiling-cython-pyximport)
     and calling `install`, any subsequently imported *.pyx* file will be automatically
     compiled. This *.pyx* file can include annotations, or in this case, it can be
     the unannotated code. The result runs in 4.7 seconds, as before; the only difference
     is that we didn’t have to write a *setup.py* file.
+  id: totrans-85
   prefs: []
   type: TYPE_NORMAL
+  zh: 通过在[示例 7-6](#compiling-cython-pyximport)中看到的方式导入`pyximport`并调用`install`，任何随后导入的*.pyx*文件都将自动编译。此*.pyx*文件可以包含注释，或者在本例中，它可以是未注释的代码。结果运行时间仍为4.7秒，唯一的区别是我们没有编写*setup.py*文件。
 - en: Example 7-6\. Using `pyximport` to replace setup.py
+  id: totrans-86
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 7-6\. 使用`pyximport`替换setup.py
 - en: '[PRE9]'
+  id: totrans-87
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE9]'
 - en: Cython Annotations to Analyze a Block of Code
+  id: totrans-88
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 用于分析代码块的Cython注解
 - en: The preceding example shows that we can quickly build a compiled module. For
     tight loops and mathematical operations, this alone often leads to a speedup.
     Obviously, though, we should not optimize blindly—we need to know which lines
     of code take a lot of time so we can decide where to focus our efforts.
+  id: totrans-89
   prefs: []
   type: TYPE_NORMAL
+  zh: 前面的示例显示，我们可以快速构建一个编译模块。对于紧密的循环和数学运算，这通常会导致速度提升。显然，我们不应该盲目优化 —— 我们需要知道哪些代码行花费了大量时间，以便决定在哪里集中精力。
 - en: Cython has an annotation option that will output an HTML file we can view in
     a browser. We use the command `cython -a cythonfn.pyx`, and the output file *cythonfn.html*
     is generated. Viewed in a browser, it looks something like [Figure 7-2](#FIG-04b-cython-lists-1).
     A similar image is available in the [Cython documentation](http://bit.ly/cythonize).
+  id: totrans-90
   prefs: []
   type: TYPE_NORMAL
+  zh: Cython具有一个注解选项，可以输出一个HTML文件，我们可以在浏览器中查看。我们使用命令`cython -a cythonfn.pyx`，并生成输出文件*cythonfn.html*。在浏览器中查看，它看起来像[图
+    7-2](#FIG-04b-cython-lists-1)。在[Cython文档](http://bit.ly/cythonize)中也提供了类似的图像。
 - en: '![](Images/hpp2_0702.png)'
+  id: totrans-91
   prefs: []
   type: TYPE_IMG
+  zh: '![](Images/hpp2_0702.png)'
 - en: Figure 7-2\. Colored Cython output of unannotated function
+  id: totrans-92
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 图 7-2\. 未注释函数的彩色Cython输出
 - en: Each line can be expanded with a double-click to show the generated C code.
     More yellow means “more calls into the Python virtual machine,” while more white
     means “more non-Python C code.” The goal is to remove as many of the yellow lines
     as possible and end up with as much white as possible.
+  id: totrans-93
   prefs: []
   type: TYPE_NORMAL
+  zh: 每行都可以双击展开，显示生成的C代码。更多的黄色表示“更多的调用进入Python虚拟机”，而更多的白色表示“更多的非Python C代码”。目标是尽可能减少黄色行，并尽可能增加白色行。
 - en: Although “more yellow lines” means more calls into the virtual machine, this
     won’t necessarily cause your code to run slower. Each call into the virtual machine
     has a cost, but the cost of those calls will be significant only if the calls
@@ -481,305 +688,447 @@
     to create `output` at the start of the function) are not expensive relative to
     the cost of the inner calculation loop. Don’t waste your time on the lines that
     don’t cause a slowdown.
+  id: totrans-94
   prefs: []
   type: TYPE_NORMAL
+  zh: 尽管“更多黄线”意味着更多调用进入虚拟机，这并不一定会导致你的代码运行变慢。每次调用进入虚拟机都是有成本的，但这些调用的成本只有在发生在大循环内部时才会显著。在大循环之外的调用（例如，在函数开始时用于创建`output`的行）相对于内部计算循环的成本来说并不昂贵。不要浪费时间在不会导致减速的行上。
 - en: In our example, the lines with the most calls back into the Python virtual machine
     (the “most yellow”) are lines 4 and 8\. From our previous profiling work, we know
     that line 8 is likely to be called over 30 million times, so that’s a great candidate
     to focus on.
+  id: totrans-95
   prefs: []
   type: TYPE_NORMAL
+  zh: 在我们的例子中，回调到 Python 虚拟机次数最多的行（“最黄色的”）是第 4 和第 8 行。根据我们以前的分析工作，我们知道第 8 行可能被调用超过
+    3000 万次，因此这是一个需要重点关注的绝佳候选项。
 - en: Lines 9, 10, and 11 are almost as yellow, and we also know they’re inside the
     tight inner loop. In total they’ll be responsible for the bulk of the execution
     time of this function, so we need to focus on these first. Refer back to [“Using
     line_profiler for Line-by-Line Measurements”](ch02.xhtml#profiling-line-profiler)
     if you need to remind yourself of how much time is spent in this section.
+  id: totrans-96
   prefs: []
   type: TYPE_NORMAL
+  zh: 第 9、10 和 11 行几乎同样是黄色的，并且我们也知道它们位于紧密的内部循环中。总体而言，它们将负责这个函数的大部分执行时间，因此我们需要首先关注这些行。如果需要回顾一下在这一部分中花费了多少时间，请参阅[“使用
+    line_profiler 进行逐行测量”](ch02.xhtml#profiling-line-profiler)。
 - en: Lines 6 and 7 are less yellow, and since they’re called only 1 million times,
     they’ll have a much smaller effect on the final speed, so we can focus on them
     later. In fact, since they are `list` objects, there’s actually nothing we can
     do to speed up their access except, as you’ll see in [“Cython and numpy”](#compiling-cython-and-numpy),
     to replace the `list` objects with `numpy` arrays, which will buy a small speed
     advantage.
+  id: totrans-97
   prefs: []
   type: TYPE_NORMAL
+  zh: 第 6 和 7 行的黄色较少，因为它们只被调用了 100 万次，它们对最终速度的影响将会小得多，因此我们稍后可以专注于它们。事实上，由于它们是`list`对象，除了您将在[“Cython
+    和 numpy”](#compiling-cython-and-numpy)中看到的，用`numpy`数组替换`list`对象将带来小的速度优势外，我们实际上无法加速它们的访问。
 - en: To better understand the yellow regions, you can expand each line. In [Figure 7-3](#FIG-04b-cython-lists-1-expanded),
     we can see that to create the `output` list, we iterate over the length of `zs`,
     building new Python objects that are reference-counted by the Python virtual machine.
     Even though these calls are expensive, they won’t really affect the execution
     time of this function.
+  id: totrans-98
   prefs: []
   type: TYPE_NORMAL
+  zh: 为了更好地理解黄色区域，您可以展开每一行。在[图 7-3](#FIG-04b-cython-lists-1-expanded)中，我们可以看到为了创建`output`列表，我们迭代了`zs`的长度，构建了新的
+    Python 对象，这些对象由 Python 虚拟机进行引用计数。尽管这些调用很昂贵，但它们实际上不会影响此函数的执行时间。
 - en: To improve the execution time of our function, we need to start declaring the
     types of objects that are involved in the expensive inner loops. These loops can
     then make fewer of the relatively expensive calls back into the Python virtual
     machine, saving us time.
+  id: totrans-99
   prefs: []
   type: TYPE_NORMAL
+  zh: 要改善函数的执行时间，我们需要开始声明涉及昂贵内部循环的对象类型。这些循环可以减少相对昂贵的回调到 Python 虚拟机，从而节省时间。
 - en: 'In general, the lines that probably cost the most CPU time are those:'
+  id: totrans-100
   prefs: []
   type: TYPE_NORMAL
+  zh: 总的来说，可能消耗最多 CPU 时间的是这些行：
 - en: Inside tight inner loops
+  id: totrans-101
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 在紧密的内部循环中
 - en: Dereferencing `list`, `array`, or `np.array` items
+  id: totrans-102
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 解引用`list`、`array`或`np.array`的项目
 - en: Performing mathematical operations
+  id: totrans-103
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 执行数学运算
 - en: '![](Images/hpp2_0703.png)'
+  id: totrans-104
   prefs: []
   type: TYPE_IMG
+  zh: '![](Images/hpp2_0703.png)'
 - en: Figure 7-3\. C code behind a line of Python code
+  id: totrans-105
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 图 7-3\. Python 代码背后的 C 代码
 - en: Tip
+  id: totrans-106
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 提示
 - en: If you don’t know which lines are most frequently executed, using a profiling
     tool—`line_profiler`, discussed in [“Using line_profiler for Line-by-Line Measurements”](ch02.xhtml#profiling-line-profiler),
     would be the most appropriate. You’ll learn which lines are executed most frequently
     and which lines cost the most inside the Python virtual machine, so you’ll have
     clear evidence of which lines you need to focus on to get the best speed gain.
+  id: totrans-107
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果您不知道哪些行被执行频率最高，使用性能分析工具——`line_profiler`，详见[“使用 line_profiler 进行逐行测量”](ch02.xhtml#profiling-line-profiler)，将是最合适的选择。您将了解哪些行被执行得最频繁，以及哪些行在
+    Python 虚拟机内部花费最多，因此您将清楚地知道需要专注于哪些行来获得最佳的速度增益。
 - en: Adding Some Type Annotations
+  id: totrans-108
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 添加一些类型注解
 - en: '[Figure 7-2](#FIG-04b-cython-lists-1) shows that almost every line of our function
     is calling back into the Python virtual machine. All of our numeric work is also
     calling back into Python as we are using the higher-level Python objects. We need
     to convert these into local C objects, and then, after doing our numerical coding,
     we need to convert the result back to a Python object.'
+  id: totrans-109
   prefs: []
   type: TYPE_NORMAL
+  zh: '[图 7-2](#FIG-04b-cython-lists-1) 显示我们函数的几乎每一行都在回调到 Python 虚拟机。我们所有的数值工作也在回调到
+    Python，因为我们使用了更高级别的 Python 对象。我们需要将这些转换为本地 C 对象，然后，在进行数值编码后，需要将结果转换回 Python 对象。'
 - en: In [Example 7-7](#compiling-cython-primitive-types), we see how to add some
     primitive types by using the `cdef` syntax.
+  id: totrans-110
   prefs: []
   type: TYPE_NORMAL
+  zh: 在 [示例 7-7](#compiling-cython-primitive-types) 中，我们看到如何使用 `cdef` 语法添加一些原始类型。
 - en: Note
+  id: totrans-111
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 注意
 - en: It is important to note that these types will be understood only by Cython and
     *not* by Python. Cython uses these types to convert the Python code to C objects,
     which do not have to call back into the Python stack; this means the operations
     run at a faster speed, but they lose flexibility and development speed.
+  id: totrans-112
   prefs: []
   type: TYPE_NORMAL
+  zh: 需要注意的是，这些类型只有 Cython 能理解，*而不是* Python。Cython 使用这些类型将 Python 代码转换为 C 对象，这些对象不需要回调到
+    Python 栈；这意味着操作速度更快，但失去了灵活性和开发速度。
 - en: 'The types we add are as follows:'
+  id: totrans-113
   prefs: []
   type: TYPE_NORMAL
+  zh: 我们添加的类型如下：
 - en: '`int` for a signed integer'
+  id: totrans-114
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '`int` 表示带符号整数'
 - en: '`unsigned int` for an integer that can only be positive'
+  id: totrans-115
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '`unsigned int` 表示只能为正数的整数'
 - en: '`double complex` for double-precision complex numbers'
+  id: totrans-116
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '`double complex` 表示双精度复数'
 - en: The `cdef` keyword lets us declare variables inside the function body. These
     must be declared at the top of the function, as that’s a requirement from the
     C language specification.
+  id: totrans-117
   prefs: []
   type: TYPE_NORMAL
+  zh: '`cdef` 关键字允许我们在函数体内声明变量。这些必须在函数顶部声明，因为这是 C 语言规范的要求。'
 - en: Example 7-7\. Adding primitive C types to start making our compiled function
     run faster by doing more work in C and less via the Python virtual machine
+  id: totrans-118
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 7-7\. 添加原始 C 类型，通过在 C 中执行更多工作而不是通过 Python 虚拟机运行，来使我们的编译函数开始运行更快
 - en: '[PRE10]'
+  id: totrans-119
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE10]'
 - en: Note
+  id: totrans-120
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 注意
 - en: When adding Cython annotations, you’re adding non-Python code to the *.pyx*
     file. This means you lose the interactive nature of developing Python in the interpreter.
     For those of you familiar with coding in C, we go back to the code-compile-run-debug
     cycle.
+  id: totrans-121
   prefs: []
   type: TYPE_NORMAL
+  zh: 在添加 Cython 注释时，你正在向 *.pyx* 文件添加非 Python 代码。这意味着你失去了在解释器中开发 Python 的交互性。对于那些熟悉在
+    C 中编码的人，我们回到了代码-编译-运行-调试的循环中。
 - en: You might wonder if we could add a type annotation to the lists that we pass
     in. We can use the `list` keyword, but this has no practical effect for this example.
     The `list` objects still have to be interrogated at the Python level to pull out
     their contents, and this is very slow.
+  id: totrans-122
   prefs: []
   type: TYPE_NORMAL
+  zh: 你可能会想知道是否可以为我们传入的列表添加类型注释。我们可以使用 `list` 关键字，但对于这个示例没有实际效果。`list` 对象仍然需要在 Python
+    级别进行询问以获取其内容，这是非常慢的。
 - en: The act of giving types to some of the primitive objects is reflected in the
     annotated output in [Figure 7-4](#FIG-04b-cython-lists-2). Critically, lines 11
     and 12—two of our most frequently called lines—have now turned from yellow to
     white, indicating that they no longer call back to the Python virtual machine.
     We can anticipate a great speedup compared to the previous version.
+  id: totrans-123
   prefs: []
   type: TYPE_NORMAL
+  zh: 在给一些原始对象分配类型的行为反映在 [图 7-4](#FIG-04b-cython-lists-2) 的注释输出中。关键是，第 11 和 12 行——我们最频繁调用的两行——现在已经从黄色变成白色，表明它们不再回调到
+    Python 虚拟机。相比于之前的版本，我们可以预期有很大的加速。
 - en: '![](Images/hpp2_0704.png)'
+  id: totrans-124
   prefs: []
   type: TYPE_IMG
+  zh: '![](Images/hpp2_0704.png)'
 - en: Figure 7-4\. Our first type annotations
+  id: totrans-125
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 图 7-4\. 我们的第一个类型注释
 - en: After compiling, this version takes 0.49 seconds to complete. With only a few
     changes to the function, we are running at 15 times the speed of the original
     Python version.
+  id: totrans-126
   prefs: []
   type: TYPE_NORMAL
+  zh: 编译后，这个版本完成所需的时间为 0.49 秒。仅对函数进行少量更改后，我们的运行速度比原始 Python 版本快了 15 倍。
 - en: It is important to note that the reason we are gaining speed is that more of
     the frequently performed operations are being pushed down to the C level—in this
     case, the updates to `z` and `n`. This means that the C compiler can optimize
     the way the lower-level functions are operating on the bytes that represent these
     variables, without calling into the relatively slow Python virtual machine.
+  id: totrans-127
   prefs: []
   type: TYPE_NORMAL
+  zh: 需要注意的是，我们之所以获得速度提升的原因是因为更多频繁执行的操作被推送到了 C 级别——在这种情况下，对 `z` 和 `n` 的更新。这意味着 C 编译器可以优化较低级别函数在表示这些变量的字节上操作的方式，而不调用相对较慢的
+    Python 虚拟机。
 - en: As noted earlier in this chapter, `abs` for a complex number involves taking
     the square root of the sum of the squares of the real and imaginary components.
     In our test, we want to see if the square root of the result is less than 2\.
     Rather than taking the square root, we can instead square the other side of the
     comparison, so we turn `< 2` into `< 4`. This avoids having to calculate the square
     root as the final part of the `abs` function.
+  id: totrans-128
   prefs: []
   type: TYPE_NORMAL
+  zh: 正如本章早前所述，复数的 `abs` 涉及计算实部和虚部平方和的平方根。在我们的测试中，我们希望查看结果的平方根是否小于 2。与其计算平方根，我们可以将比较式的另一边平方，将
+    `< 2` 转换为 `< 4`。这样避免了最后计算 `abs` 函数时需要计算平方根。
 - en: In essence, we started with
+  id: totrans-129
   prefs: []
   type: TYPE_NORMAL
+  zh: 本质上，我们从以下内容开始
 - en: <math display="block"><mrow><msqrt><mrow><mi>c</mi> <mo>.</mo> <mi>r</mi> <mi>e</mi>
     <mi>a</mi> <msup><mi>l</mi> <mn>2</mn></msup> <mo>+</mo> <mi>c</mi> <mo>.</mo>
     <mi>i</mi> <mi>m</mi> <mi>a</mi> <msup><mi>g</mi> <mn>2</mn></msup></mrow></msqrt>
     <mo><</mo> <msqrt><mn>4</mn></msqrt></mrow></math>
+  id: totrans-130
   prefs: []
   type: TYPE_NORMAL
+  zh: <math display="block"><mrow><msqrt><mrow><mi>c</mi> <mo>.</mo> <mi>r</mi> <mi>e</mi>
+    <mi>a</mi> <msup><mi>l</mi> <mn>2</mn></msup> <mo>+</mo> <mi>c</mi> <mo>.</mo>
+    <mi>i</mi> <mi>m</mi> <mi>a</mi> <msup><mi>g</mi> <mn>2</mn></msup></mrow></msqrt>
+    <mo><</mo> <msqrt><mn>4</mn></msqrt></mrow></math>
 - en: and we have simplified the operation to
+  id: totrans-131
   prefs: []
   type: TYPE_NORMAL
+  zh: 我们已经简化了操作为
 - en: <math display="block"><mrow><mi>c</mi> <mo>.</mo> <mi>r</mi> <mi>e</mi> <mi>a</mi>
     <msup><mi>l</mi> <mn>2</mn></msup> <mo>+</mo> <mi>c</mi> <mo>.</mo> <mi>i</mi>
     <mi>m</mi> <mi>a</mi> <msup><mi>g</mi> <mn>2</mn></msup> <mo><</mo> <mn>4</mn></mrow></math>
+  id: totrans-132
   prefs: []
   type: TYPE_NORMAL
+  zh: <math display="block"><mrow><mi>c</mi> <mo>.</mo> <mi>r</mi> <mi>e</mi> <mi>a</mi>
+    <msup><mi>l</mi> <mn>2</mn></msup> <mo>+</mo> <mi>c</mi> <mo>.</mo> <mi>i</mi>
+    <mi>m</mi> <mi>a</mi> <msup><mi>g</mi> <mn>2</mn></msup> <mo><</mo> <mn>4</mn></mrow></math>
 - en: If we retained the `sqrt` operation in the following code, we would still see
     an improvement in execution speed. One of the secrets to optimizing code is to
     make it do as little work as possible. Removing a relatively expensive operation
     by considering the ultimate aim of a function means that the C compiler can focus
     on what it is good at, rather than trying to intuit the programmer’s ultimate
     needs.
+  id: totrans-133
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果我们在以下代码中保留了 `sqrt` 操作，仍然会看到执行速度的提升。优化代码的一个秘诀是尽量减少其工作量。通过考虑函数的最终目的而消除一个相对昂贵的操作，使得
+    C 编译器可以专注于其擅长的部分，而不是试图推测程序员的最终需求。
 - en: Writing equivalent but more specialized code to solve the same problem is known
     as *strength reduction*. You trade worse flexibility (and possibly worse readability)
     for faster execution.
+  id: totrans-134
   prefs: []
   type: TYPE_NORMAL
+  zh: 编写等效但更专业化的代码来解决相同的问题被称为*强度降低*。您牺牲了更差的灵活性（可能还有更差的可读性），换取更快的执行速度。
 - en: This mathematical unwinding leads to [Example 7-8](#augmentingwithtypes-cython-expanding-abs),
     in which we have replaced the relatively expensive `abs` function with a simplified
     line of expanded mathematics.
+  id: totrans-135
   prefs: []
   type: TYPE_NORMAL
+  zh: 这种数学展开导致 [示例 7-8](#augmentingwithtypes-cython-expanding-abs)，其中我们用一行简化的数学公式替换了相对昂贵的
+    `abs` 函数。
 - en: Example 7-8\. Expanding the `abs` function by using Cython
+  id: totrans-136
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 7-8\. 通过 Cython 扩展 `abs` 函数
 - en: '[PRE11]'
+  id: totrans-137
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE11]'
 - en: By annotating the code, we see that the `while` on line 10 ([Figure 7-5](#FIG-04b-cython-lists-4))
     has become a little more yellow—it looks as though it might be doing more work
     rather than less. It isn’t immediately obvious how much of a speed gain we’ll
     get, but we know that this line is called over 30 million times, so we anticipate
     a good improvement.
+  id: totrans-138
   prefs: []
   type: TYPE_NORMAL
+  zh: 通过对代码进行注释，我们看到第 10 行的 `while`（[图 7-5](#FIG-04b-cython-lists-4)）变得更加黄色——看起来它可能在做更多的工作而不是更少。目前不清楚我们将获得多少速度增益，但我们知道这一行被调用了超过
+    3000 万次，因此我们预计会有很大的改进。
 - en: This change has a dramatic effect—by reducing the number of Python calls in
     the innermost loop, we greatly reduce the calculation time of the function. This
     new version completes in just 0.19 seconds, an amazing 40× speedup over the original
     version. As ever, take a guide from what you see, but *measure* to test all of
     your changes!
+  id: totrans-139
   prefs: []
   type: TYPE_NORMAL
+  zh: 这个改变产生了显著效果——通过减少内部循环中 Python 调用的数量，大大降低了函数的计算时间。这个新版本仅需 0.19 秒完成，比原始版本快了惊人的
+    40 倍。无论如何，看到什么就取经验，但*测量*来测试您所有的更改！
 - en: '![](Images/hpp2_0705.png)'
+  id: totrans-140
   prefs: []
   type: TYPE_IMG
+  zh: '![](Images/hpp2_0705.png)'
 - en: Figure 7-5\. Expanded math to get a final win
+  id: totrans-141
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 图 7-5\. 扩展数学运算以获取最终优势
 - en: Note
+  id: totrans-142
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 注意
 - en: Cython supports several methods of compiling to C, some easier than the full-type-annotation
     method described here. You should familiarize yourself with the [pure Python mode](https://oreil.ly/5y9_a)
     if you’d like an easier start to using Cython, and look at `pyximport` to ease
     the introduction of Cython to colleagues.
+  id: totrans-143
   prefs: []
   type: TYPE_NORMAL
+  zh: Cython 支持多种编译到 C 的方法，其中一些比这里描述的全类型注释方法更简单。如果您希望更轻松地开始使用 Cython，应该先熟悉 [纯 Python
+    模式](https://oreil.ly/5y9_a)，并查看 `pyximport`，以便为同事们引入 Cython 提供便利。
 - en: For a final possible improvement on this piece of code, we can disable bounds
     checking for each dereference in the list. The goal of the bounds checking is
     to ensure that the program does not access data outside the allocated array—in
     C it is easy to accidentally access memory outside the bounds of an array, and
     this will give unexpected results (and probably a segmentation fault!).
+  id: totrans-144
   prefs: []
   type: TYPE_NORMAL
+  zh: 对于这段代码的最后可能改进，我们可以禁用列表中每个解引用的边界检查。边界检查的目标是确保程序不会访问超出分配数组的数据——在 C 语言中，不小心访问数组边界之外的内存会导致意外结果（很可能是段错误！）。
 - en: By default, Cython protects the developer from accidentally addressing outside
     the list’s limits. This protection costs a little bit of CPU time, but it occurs
     in the outer loop of our function, so in total it won’t account for much time.
     Disabling bounds checking is usually safe unless you are performing your own calculations
     for array addressing, in which case you will have to be careful to stay within
     the bounds of the list.
+  id: totrans-145
   prefs: []
   type: TYPE_NORMAL
+  zh: 默认情况下，Cython会保护开发人员免受意外超出列表限制的影响。这种保护会消耗一点CPU时间，但它发生在我们函数的外循环中，因此总体上不会占用太多时间。通常情况下，禁用边界检查是安全的，除非您正在执行自己的数组地址计算，否则您必须小心保持在列表的边界内。
 - en: 'Cython has a set of flags that can be expressed in various ways. The easiest
     is to add them as single-line comments at the start of the *.pyx* file. It is
     also possible to use a decorator or compile-time flag to change these settings.
     To disable bounds checking, we add a directive for Cython inside a comment at
     the start of the *.pyx* file:'
+  id: totrans-146
   prefs: []
   type: TYPE_NORMAL
+  zh: Cython有一组可以用各种方式表示的标志。最简单的方法是将它们作为单行注释添加到*.pyx*文件的开头。也可以使用装饰器或编译时标志来更改这些设置。要禁用边界检查，我们在*.pyx*文件的开头的注释中添加了一个Cython的指令：
 - en: '[PRE12]'
+  id: totrans-147
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE12]'
 - en: As noted, disabling the bounds checking will save only a little bit of time
     as it occurs in the outer loop, not in the inner loop, which is more expensive.
     For this example, it doesn’t save us any more time.
+  id: totrans-148
   prefs: []
   type: TYPE_NORMAL
+  zh: 如上所述，禁用边界检查只会节省一点时间，因为它发生在外循环中，而不是内循环中，后者更昂贵。对于这个例子，它不会再节省我们任何时间。
 - en: Tip
+  id: totrans-149
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 提示
 - en: Try disabling bounds checking and wraparound checking if your CPU-bound code
     is in a loop that is dereferencing items frequently.
+  id: totrans-150
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果您的CPU绑定代码处于频繁解引用项的循环中，请尝试禁用边界检查和包裹检查。
 - en: Cython and numpy
+  id: totrans-151
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: Cython和numpy
 - en: '`list` objects (for background, see [Chapter 3](ch03.xhtml#chapter-lists-tuples))
     have an overhead for each dereference, as the objects they reference can occur
     anywhere in memory. In contrast, `array` objects store primitive types in contiguous
     blocks of RAM, which enables faster addressing.'
+  id: totrans-152
   prefs: []
   type: TYPE_NORMAL
+  zh: '`list`对象（有关背景，请参阅[第3章](ch03.xhtml#chapter-lists-tuples)）对每个解引用都有开销，因为它们引用的对象可能出现在内存中的任何位置。相比之下，`array`对象在连续的RAM块中存储原始类型，这样可以更快地寻址。'
 - en: Python has the `array` module, which offers 1D storage for basic primitives
     (including integers, floating-point numbers, characters, and Unicode strings).
     NumPy’s `numpy.array` module allows multidimensional storage and a wider range
     of primitive types, including complex numbers.
+  id: totrans-153
   prefs: []
   type: TYPE_NORMAL
+  zh: Python有`array`模块，为基本的原始类型（包括整数、浮点数、字符和Unicode字符串）提供了1D存储。NumPy的`numpy.array`模块允许多维存储和更广泛的原始类型，包括复数。
 - en: When iterating over an `array` object in a predictable fashion, the compiler
     can be instructed to avoid asking Python to calculate the appropriate address
     and instead to move to the next primitive item in the sequence by going directly
@@ -787,8 +1136,10 @@
     trivial to calculate the address of the next item in C by using an offset, rather
     than asking CPython to calculate the same result, which would involve a slow call
     back into the virtual machine.
+  id: totrans-154
   prefs: []
   type: TYPE_NORMAL
+  zh: 当以可预测的方式遍历`array`对象时，可以指示编译器避免要求Python计算适当的地址，而是直接通过移动到其内存地址中的下一个原始项目来处理序列。由于数据是按照连续块布局的，因此通过使用偏移量来计算C中下一个项目的地址要比要求CPython计算相同结果要容易得多，后者需要缓慢调用回虚拟机。
 - en: You should note that if you run the following `numpy` version *without* any
     Cython annotations (that is, if you just run it as a plain Python script), it’ll
     take about 21 seconds to run—far in excess of the plain Python `list` version,
@@ -796,35 +1147,48 @@
     individual elements in the `numpy` lists—it was never designed to be used this
     way, even though to a beginner this might feel like the intuitive way of handling
     operations. By compiling the code, we remove this overhead.
+  id: totrans-155
   prefs: []
   type: TYPE_NORMAL
+  zh: 请注意，如果您运行以下`numpy`版本*没有*任何Cython注释（也就是说，如果您只是将其作为普通的Python脚本运行），它将花费大约21秒的时间来运行——远远超过普通的Python`list`版本，后者大约需要8秒。这种减速是因为在`numpy`列表中解引用单个元素的开销——即使对于初学者来说，这可能感觉像处理操作的直观方式，但`numpy`从未设计用于这种方式。通过编译代码，我们可以消除这种开销。
 - en: Cython has two special syntax forms for this. Older versions of Cython had a
     special access type for `numpy` arrays, but more recently the generalized buffer
     interface protocol has been introduced through the `memoryview`—this allows the
     same low-level access to any object that implements the buffer interface, including
     `numpy` arrays and Python arrays.
+  id: totrans-156
   prefs: []
   type: TYPE_NORMAL
+  zh: Cython有两种特殊的语法形式。 旧版本的Cython有一个用于`numpy`数组的特殊访问类型，但是最近引入了通过`memoryview`来实现通用缓冲区接口协议——这允许对实现了缓冲区接口的任何对象进行相同的低级访问，包括`numpy`数组和Python数组。
 - en: An added bonus of the buffer interface is that blocks of memory can easily be
     shared with other C libraries, without any need to convert them from Python objects
     into another form.
+  id: totrans-157
   prefs: []
   type: TYPE_NORMAL
+  zh: 缓冲区接口的另一个优点是，内存块可以轻松地与其他C库共享，无需将它们从Python对象转换为另一种形式。
 - en: The code block in [Example 7-9](#augmentingwithtypes-cython-numpy) looks a little
     like the original implementation, except that we have added `memoryview` annotations.
     The function’s second argument is `double complex[:] zs`, which means we have
     a double-precision `complex` object using the buffer protocol as specified using
     `[]`, which contains a one-dimensional data block specified by the single colon
     `:`.
+  id: totrans-158
   prefs: []
   type: TYPE_NORMAL
+  zh: '[示例 7-9](#augmentingwithtypes-cython-numpy)中的代码块看起来有点像原始实现，只是我们添加了`memoryview`注释。
+    函数的第二个参数是`double complex[:] zs`，这意味着我们使用缓冲区协议指定了一个双精度`complex`对象，该协议使用`[]`指定，其中包含由单冒号`:`指定的一维数据块。'
 - en: Example 7-9\. Annotated `numpy` version of the Julia calculation function
+  id: totrans-159
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 7-9\. Julia计算函数的`numpy`版本添加了注释
 - en: '[PRE13]'
+  id: totrans-160
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE13]'
 - en: In addition to specifying the input arguments by using the buffer annotation
     syntax, we also annotate the `output` variable, assigning a 1D `numpy` array to
     it via `empty`. The call to `empty` will allocate a block of memory but will not
@@ -832,8 +1196,12 @@
     overwrite the contents of this array in the inner loop so we don’t need to reassign
     it with a default value. This is slightly faster than allocating and setting the
     contents of the array with a default value.
+  id: totrans-161
   prefs: []
   type: TYPE_NORMAL
+  zh: 除了使用缓冲区注释语法指定输入参数之外，我们还使用`empty`为`output`变量添加了注释，通过`empty`将其分配给1D `numpy`数组。
+    调用`empty`将分配一块内存块，但不会使用合理的值初始化内存，因此它可能包含任何内容。 我们将在内部循环中重写此数组的内容，因此我们不需要使用默认值重新分配它。
+    这比使用默认值分配和设置数组内容略快。
 - en: We also expanded the call to `abs` by using the faster, more explicit math version.
     This version runs in 0.18 seconds—a slightly faster result than the original Cythonized
     version of the pure Python Julia example in [Example 7-8](#augmentingwithtypes-cython-expanding-abs).
@@ -844,30 +1212,43 @@
     example and the former pure Python example are doing the same work on the same
     data, so the time difference is accounted for by the outer loop dereferences and
     the creation of the `output` arrays.
+  id: totrans-162
   prefs: []
   type: TYPE_NORMAL
+  zh: 我们还通过使用更快、更明确的数学版本扩展了对`abs`的调用。 这个版本运行时间为0.18秒——比[示例 7-8](#augmentingwithtypes-cython-expanding-abs)中纯Python
+    Julia示例的原始Cython版本稍快一些。 纯Python版本在每次解引用Python `complex`对象时都会有一些开销，但这些解引用发生在外部循环中，因此不会占用太多执行时间。
+    在外部循环之后，我们制作了这些变量的本机版本，它们以“C速度”运行。 对于这个`numpy`示例和以前的纯Python示例的内部循环都在相同的数据上执行相同的工作，因此时间差异由外部循环解引用和创建`output`数组所解释。
 - en: For reference, if we use the preceding code but don’t expand the `abs` math,
     then the Cythonized result takes 0.49 seconds. This result makes it identical
     to the earlier equivalent pure Python version’s runtime.
+  id: totrans-163
   prefs: []
   type: TYPE_NORMAL
+  zh: 供参考，如果我们使用前面的代码但不扩展`abs`数学，则Cython化结果需要0.49秒。 这个结果使它与早期等效的纯Python版本的运行时间相同。
 - en: Parallelizing the Solution with OpenMP on One Machine
+  id: totrans-164
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 在一台计算机上使用OpenMP并行化解决方案
 - en: As a final step in the evolution of this version of the code, let’s look at
     the use of the OpenMP C++ extensions to parallelize our embarrassingly parallel
     problem. If your problem fits this pattern, you can quickly take advantage of
     multiple cores in your computer.
+  id: totrans-165
   prefs: []
   type: TYPE_NORMAL
+  zh: 作为这个版本代码演变的最后一步，让我们来看看使用OpenMP C++扩展并行化我们的尴尬并行问题。 如果您的问题符合这种模式，您可以快速利用计算机中的多个核心。
 - en: Open Multi-Processing (OpenMP is a well-defined cross-platform API that supports
     parallel execution and memory sharing for C, C++, and Fortran. It is built into
     most modern C compilers, and if the C code is written appropriately, the parallelization
     occurs at the compiler level, so it comes with relatively little effort to the
     developer through Cython.
+  id: totrans-166
   prefs: []
   type: TYPE_NORMAL
+  zh: 开放多处理（OpenMP 是一个明确定义的跨平台 API，支持 C、C++ 和 Fortran 的并行执行和内存共享。它内置于大多数现代 C 编译器中，如果
+    C 代码编写得当，那么并行化将在编译器级别发生，因此对于开发者来说工作量相对较小，通过 Cython 实现。
 - en: With Cython, OpenMP can be added by using the `prange` (parallel range) operator
     and adding the `-fopenmp` compiler directive to *setup.py*. Work in a `prange`
     loop can be performed in parallel because we disable the (GIL). The GIL protects
@@ -875,73 +1256,107 @@
     the same memory simultaneously, which might lead to corruption. By manually disabling
     the GIL, we’re asserting that we won’t corrupt our own memory. Be careful when
     you do this, and keep your code as simple as possible to avoid subtle bugs.
+  id: totrans-167
   prefs: []
   type: TYPE_NORMAL
+  zh: 使用 Cython，可以通过使用`prange`（并行范围）操作符，并将`-fopenmp`编译器指令添加到*setup.py*来添加 OpenMP。在`prange`循环中进行的工作可以并行执行，因为我们禁用了（GIL）。GIL
+    保护对 Python 对象的访问，防止多个线程或进程同时访问同一内存，这可能导致数据损坏。通过手动禁用 GIL，我们断言我们不会破坏自己的内存。在执行此操作时要小心，并尽可能保持代码简单，以避免细微的
+    bug。
 - en: A modified version of the code with `prange` support is shown in [Example 7-10](#augmentingwithtypes-cython-omp1).
     `with nogil:` specifies the block, where the GIL is disabled; inside this block,
     we use `prange` to enable an OpenMP parallel `for` loop to independently calculate
     each `i`.
+  id: totrans-168
   prefs: []
   type: TYPE_NORMAL
+  zh: 支持`prange`的代码修改版本在[示例 7-10](#augmentingwithtypes-cython-omp1)中展示。`with nogil:`指定禁用
+    GIL 的代码块；在此块内，我们使用`prange`来启用 OpenMP 并行`for`循环，独立计算每个`i`。
 - en: Warning
+  id: totrans-169
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 警告
 - en: When disabling the GIL, we must *not* operate on regular Python objects (such
     as lists); we must operate only on primitive objects and objects that support
     the `memoryview` interface. If we operated on normal Python objects in parallel,
     we’d have to solve the associated memory-management problems that the GIL deliberately
     avoids. Cython doesn’t prevent us from manipulating Python objects, and only pain
     and confusion can result if you do this!
+  id: totrans-170
   prefs: []
   type: TYPE_NORMAL
+  zh: 当禁用全局解释器锁（GIL）时，我们必须*不*操作常规的 Python 对象（如列表）；我们只能操作原始对象和支持`memoryview`接口的对象。如果我们并行操作普通的
+    Python 对象，那么我们将不得不解决 GIL 故意避免的相关内存管理问题。Cython 并不阻止我们操纵 Python 对象，但如果你这样做，只会带来痛苦和混乱！
 - en: Example 7-10\. Adding `prange` to enable parallelization using OpenMP
+  id: totrans-171
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 7-10\. 添加`prange`以启用使用 OpenMP 进行并行化
 - en: '[PRE14]'
+  id: totrans-172
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE14]'
 - en: To compile *cythonfn.pyx*, we have to modify the *setup.py* script as shown
     in [Example 7-11](#compiling-cython-openmp-setup). We tell it to inform the C
     compiler to use `-fopenmp` as an argument during compilation to enable OpenMP
     and to link with the OpenMP libraries.
+  id: totrans-173
   prefs: []
   type: TYPE_NORMAL
+  zh: 要编译*cythonfn.pyx*，我们必须修改*setup.py*脚本，如[示例 7-11](#compiling-cython-openmp-setup)所示。我们告诉它在编译期间使用`-fopenmp`作为参数通知
+    C 编译器启用 OpenMP，并链接 OpenMP 库。
 - en: Example 7-11\. Adding the OpenMP compiler and linker flags to setup.py for Cython
+  id: totrans-174
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 7-11\. 为 Cython 的 setup.py 添加 OpenMP 编译器和链接器标志
 - en: '[PRE15]'
+  id: totrans-175
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE15]'
 - en: With Cython’s `prange`, we can choose different scheduling approaches. With
     `static`, the workload is distributed evenly across the available CPUs. Some of
     our calculation regions are expensive in time, and some are cheap. If we ask Cython
     to schedule the work chunks equally using `static` across the CPUs, the results
     for some regions will complete faster than others, and those threads will then
     sit idle.
+  id: totrans-176
   prefs: []
   type: TYPE_NORMAL
+  zh: 使用 Cython 的`prange`，我们可以选择不同的调度方法。使用`static`，工作负载均匀分布在可用的 CPU 上。我们的某些计算区域时间昂贵，而某些则便宜。如果我们请求
+    Cython 使用`static`在 CPU 上均匀调度工作块，则某些区域的结果将比其他区域更快完成，并且这些线程将会空闲。
 - en: Both the `dynamic` and `guided` schedule options attempt to mitigate this problem
     by allocating work in smaller chunks dynamically at runtime, so that the CPUs
     are more evenly distributed when the workload’s calculation time is variable.
     The correct choice will vary depending on the nature of your workload.
+  id: totrans-177
   prefs: []
   type: TYPE_NORMAL
+  zh: '`dynamic`和`guided`调度选项都试图通过在运行时动态分配更小的工作块来缓解这个问题，以便在工作负载计算时间变化时更均匀地分配 CPU。正确的选择取决于工作负载的性质。'
 - en: By introducing OpenMP and using `schedule="guided"`, we drop our execution time
     to approximately 0.05 seconds—the `guided` schedule will dynamically assign work,
     so fewer threads will wait for new work.
+  id: totrans-178
   prefs: []
   type: TYPE_NORMAL
+  zh: 引入 OpenMP 并使用 `schedule="guided"`，我们将执行时间降至约 0.05 秒——`guided` 调度将动态分配工作，因此更少的线程将等待新的工作。
 - en: 'We also could have disabled the bounds checking for this example by using `#cython:
     boundscheck=False`, but it wouldn’t improve our runtime.'
+  id: totrans-179
   prefs: []
   type: TYPE_NORMAL
+  zh: '对于这个示例，我们也可以通过使用 `#cython: boundscheck=False` 禁用边界检查，但这不会改善我们的运行时间。'
 - en: Numba
+  id: totrans-180
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: Numba
 - en: '[Numba](http://numba.pydata.org) from Continuum Analytics is a just-in-time
     compiler that specializes in `numpy` code, which it compiles via the LLVM compiler
     (*not* via `g++` or `gcc++`, as used by our earlier examples) at runtime. It doesn’t
@@ -949,54 +1364,81 @@
     each annotated function for your hardware. The beauty is that you provide a decorator
     telling it which functions to focus on and then you let Numba take over. It aims
     to run on all standard `numpy` code.'
+  id: totrans-181
   prefs: []
   type: TYPE_NORMAL
+  zh: '[Numba](http://numba.pydata.org) 是 Continuum Analytics 推出的一个即时编译器，专门用于处理 `numpy`
+    代码，它通过 LLVM 编译器在运行时编译代码（*不*是像我们之前的示例中使用 `g++` 或 `gcc++` 那样预先编译）。它不需要预编译过程，因此当您针对新代码运行它时，它会为您的硬件编译每个带有注释的函数。美妙之处在于，您只需提供一个装饰器告诉它应该关注哪些函数，然后让
+    Numba 接管。它旨在运行所有标准的 `numpy` 代码。'
 - en: Numba has been rapidly evolving since the first edition of this book. It is
     now fairly stable, so if you use `numpy` arrays and have nonvectorized code that
     iterates over many items, Numba should give you a quick and very painless win.
     Numba does not bind to external `C` libraries (which Cython can do), but it can
     automatically generate code for GPUs (which Cython cannot).
+  id: totrans-182
   prefs: []
   type: TYPE_NORMAL
+  zh: 自本书第一版以来，Numba 已经迅速发展。现在它非常稳定，因此如果你使用 `numpy` 数组并且有非向量化的代码，需要迭代多个项目，Numba 应该能为你带来快速而无痛的优势。Numba
+    不绑定外部的 `C` 库（Cython 可以做到），但它可以自动为 GPU 生成代码（Cython 不能做到）。
 - en: One drawback when using Numba is the toolchain—it uses LLVM, and this has many
     dependencies. We recommend that you use Continuum’s Anaconda distribution, as
     everything is provided; otherwise, getting Numba installed in a fresh environment
     can be a very time-consuming task.
+  id: totrans-183
   prefs: []
   type: TYPE_NORMAL
+  zh: 使用 Numba 的一个缺点是工具链——它使用 LLVM，而 LLVM 有许多依赖项。我们建议您使用 Continuum 的 Anaconda 发行版，因为它提供了所有内容；否则，在新环境中安装
+    Numba 可能会非常耗时。
 - en: '[Example 7-12](#augmentingwithtypes-numba1) shows the addition of the `@jit`
     decorator to our core Julia function. This is all that’s required; the fact that
     `numba` has been imported means that the LLVM machinery kicks in at execution
     time to compile this function behind the scenes.'
+  id: totrans-184
   prefs: []
   type: TYPE_NORMAL
+  zh: '[示例 7-12](#augmentingwithtypes-numba1) 展示了将 `@jit` 装饰器添加到我们核心 Julia 函数的过程。这就是所需的全部操作；导入
+    `numba` 意味着 LLVM 机制在执行时会在后台编译这个函数。'
 - en: Example 7-12\. Applying the `@jit` decorator to a function
+  id: totrans-185
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 7-12\. 将`@jit`装饰器应用于一个函数
 - en: '[PRE16]'
+  id: totrans-186
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE16]'
 - en: If the `@jit` decorator is removed, this is just the `numpy` version of the
     Julia demo running with Python 3.7, and it takes 21 seconds. Adding the `@jit`
     decorator drops the execution time to 0.75 seconds. This is very close to the
     result we achieved with Cython, but without all of the annotation effort.
+  id: totrans-187
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果去除 `@jit` 装饰器，这只是在 Python 3.7 中运行的 Julia 演示的 `numpy` 版本，需要 21 秒。添加 `@jit`
+    装饰器将执行时间降至 0.75 秒。这与我们使用 Cython 实现的结果非常接近，但不需要所有的注释工作。
 - en: If we run the same function a second time in the same Python session, it runs
     even faster at 0.47 seconds—there’s no need to compile the target function on
     the second pass if the argument types are the same, so the overall execution speed
     is faster. On the second run, the Numba result is equivalent to the Cython with
     `numpy` result we obtained before (so it came out as fast as Cython for very little
     work!). PyPy has the same warm-up requirement.
+  id: totrans-188
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果我们在同一个 Python 会话中第二次运行相同的函数，它的运行速度会更快，仅为 0.47 秒——如果参数类型相同，则无需在第二次通过编译目标函数，因此整体执行速度更快。在第二次运行时，Numba
+    的结果与我们之前获得的使用 `numpy` 的 Cython 结果相当（所以它和 Cython 一样快，几乎没有额外工作！）。PyPy 有相同的预热要求。
 - en: If you’d like to read another view on what Numba offers, see [“Numba”](ch12.xhtml#lesson-from-field-numba),
     where core developer Valentin Haenel talks about the `@jit` decorator, viewing
     the original Python source, and going further with parallel options and the `typed
     List` and `typed Dict` for pure Python compiled interoperability.
+  id: totrans-189
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果您想了解 Numba 提供的另一个视角，请参阅 [“Numba”](ch12.xhtml#lesson-from-field-numba)，其中核心开发者
+    Valentin Haenel 谈到了 `@jit` 装饰器，查看原始 Python 源代码，并进一步探讨了并行选项以及纯 Python 编译互操作性的 `typed
+    List` 和 `typed Dict`。
 - en: Just as with Cython, we can add OpenMP parallelization support with `prange`.
     [Example 7-13](#augmentingwithtypes-numba1-prange) expands the decorator to require
     `nopython` and `parallel`. The `nopython` specifier means that if Numba cannot
@@ -1006,41 +1448,59 @@
     the general runtime from 0.47 seconds to 0.06 seconds. Currently Numba lacks support
     for OpenMP scheduling options (and with Cython, the `guided` scheduler runs slightly
     faster for this problem), but we expect support will be added in a future version.
+  id: totrans-190
   prefs: []
   type: TYPE_NORMAL
+  zh: 就像Cython一样，我们可以使用`prange`添加OpenMP并行化支持。[示例 7-13](#augmentingwithtypes-numba1-prange)扩展了装饰器以要求`nopython`和`parallel`。`nopython`说明如果Numba无法编译所有代码，将会失败。没有这个参数，Numba可能会悄悄地回退到一个较慢的Python模式；你的代码会运行正确，但是不会看到任何加速效果。添加`parallel`可以启用对`prange`的支持。这个版本将一般的运行时间从0.47秒降低到0.06秒。目前Numba不支持OpenMP调度选项（而且使用Cython，`guided`调度器在这个问题上运行稍快），但我们预计未来版本将会增加支持。
 - en: Example 7-13\. Using `prange` to add parallelization
+  id: totrans-191
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 7-13\. 使用`prange`添加并行化
 - en: '[PRE17]'
+  id: totrans-192
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE17]'
 - en: When debugging with Numba, it is useful to note that you can ask Numba to show
     both the intermediate representation and the types for the function call. In [Example 7-14](#augmentingwithtypes-numba2),
     we can see that `calculate_z` takes an `int64` and three `array` types.
+  id: totrans-193
   prefs: []
   type: TYPE_NORMAL
+  zh: 在使用Numba进行调试时，有用的是注意你可以要求Numba显示函数调用的中间表示和类型。在[示例 7-14](#augmentingwithtypes-numba2)中，我们可以看到`calculate_z`接受一个`int64`和三个`array`类型。
 - en: Example 7-14\. Debugging inferred types
+  id: totrans-194
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 7-14\. 调试推断类型
 - en: '[PRE18]'
+  id: totrans-195
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE18]'
 - en: '[Example 7-15](#augmentingwithtypes-numba3) shows the continued output from
     the call to `inspect_types()`, where each line of compiled code is shown augmented
     by type information. This output is invaluable if you find that you can’t get
     `nopython=True` to work; here, you’ll be able to discover where your code isn’t
     recognized by Numba.'
+  id: totrans-196
   prefs: []
   type: TYPE_NORMAL
+  zh: '[示例 7-15](#augmentingwithtypes-numba3)展示了从调用`inspect_types()`得到的持续输出，其中每行编译代码都增加了类型信息。如果你发现无法使`nopython=True`工作，这个输出非常宝贵；在这里，你可以发现Numba无法识别你的代码的地方。'
 - en: Example 7-15\. Viewing the intermediate representation from Numba
+  id: totrans-197
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 7-15\. 查看来自Numba的中间表示
 - en: '[PRE19]'
+  id: totrans-198
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE19]'
 - en: Numba is a powerful JIT compiler that is now maturing. Do not expect magic on
     your first attempt—you may have to introspect the generated code to figure out
     how to make your code compile in `nopython` mode. Once you’ve solved this, you’ll
@@ -1048,18 +1508,24 @@
     small (<10 line) and discrete functions and to tackle these one at a time. Do
     not try to throw a large function into Numba; you can debug the process far more
     quickly if you have only small, discrete chunks to review individually.
+  id: totrans-199
   prefs: []
   type: TYPE_NORMAL
+  zh: Numba是一个强大的即时编译器，现在正在成熟。不要期望一次成功的魔术——你可能需要审视生成的代码来弄清楚如何使你的代码在`nopython`模式下编译。一旦解决了这个问题，你可能会看到不错的收获。你最好的方法是将当前的代码分解成小的（<10行）和离散的函数，并逐个解决它们。不要试图将一个大函数抛到Numba中；如果你只有小而离散的代码块需要逐个审查，你可以更快地调试这个过程。
 - en: Numba to Compile NumPy for Pandas
+  id: totrans-200
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 使用Numba为Pandas编译NumPy
 - en: In [“Pandas”](ch06_split_001.xhtml#pandas-ols), we looked at solving the slope
     calculation task for 100,000 rows of data in a Pandas DataFrame using Ordinary
     Least Squares. We can make that approach an order of magnitude faster by using
     Numba.
+  id: totrans-201
   prefs: []
   type: TYPE_NORMAL
+  zh: 在[“Pandas”](ch06_split_001.xhtml#pandas-ols)中，我们讨论了使用普通最小二乘法解决Pandas DataFrame中10万行数据的斜率计算任务。通过使用Numba，我们可以将该方法的速度提高一个数量级。
 - en: We can take the `ols_lstsq_raw` function that we used before and, decorated
     with `numba.jit` as shown in [Example 7-16](#pandas_ols_functions_numba), can
     generate a compiled variant. Note the `nopython=True` argument—this forces Numba
@@ -1068,85 +1534,117 @@
     to run correctly but slowly on the wrong datatype if we pass in a Pandas Series;
     here we want to be informed that we’ve passed in the wrong data. In this edition,
     Numba can compile only NumPy datatypes, not Pandas types like Series.
+  id: totrans-202
   prefs: []
   type: TYPE_NORMAL
+  zh: 我们可以取出之前使用的`ols_lstsq_raw`函数，并像[示例 7-16](#pandas_ols_functions_numba)中所示装饰为`numba.jit`，生成一个编译版本。请注意`nopython=True`参数——这将强制Numba在传入不理解的数据类型时引发异常，否则它会悄悄地回退到纯Python模式。如果我们传入Pandas
+    Series，我们不希望它运行正确但速度慢；我们希望得到通知，表明我们传入了错误的数据。在这个版本中，Numba只能编译NumPy数据类型，不能编译像Series这样的Pandas类型。
 - en: Example 7-16\. Solving Ordinary Least Squares with `numpy` on a Pandas DataFrame
+  id: totrans-203
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例7-16\. 在Pandas DataFrame上使用`numpy`解决普通最小二乘法
 - en: '[PRE20]'
+  id: totrans-204
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE20]'
 - en: The first time we call this function in, we get the expected short delay while
     the function is compiled; processing 100,000 rows takes 2.3 seconds including
     compilation time. Subsequent calls to process 100,000 rows are very fast—the noncompiled
     `ols_lstsq_raw` takes 5.3 seconds per 100,000 rows, whereas after using Numba
     it takes 0.58 seconds. That’s nearly a tenfold speedup!
+  id: totrans-205
   prefs: []
   type: TYPE_NORMAL
+  zh: 第一次调用此函数时，我们会得到预期的短延迟，因为函数正在编译；处理10万行需要2.3秒，包括编译时间。后续调用处理10万行非常快——未编译的`ols_lstsq_raw`每10万行需要5.3秒，而使用Numba后只需要0.58秒。这几乎是十倍的加速！
 - en: PyPy
+  id: totrans-206
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: PyPy
 - en: '[PyPy](http://pypy.org) is an alternative implementation of the Python language
     that includes a tracing just-in-time compiler; it is compatible with Python 3.5+.
     Typically, it lags behind the most recent version of Python; at the time of writing
     this second edition Python 3.7 is standard, and PyPy supports up to Python 3.6.'
+  id: totrans-207
   prefs: []
   type: TYPE_NORMAL
+  zh: '[PyPy](http://pypy.org)是Python语言的另一种实现，包含一个追踪即时编译器；它与Python 3.5+兼容。通常，它落后于最新的Python版本；在撰写第二版时，Python
+    3.7是标准版本，而PyPy支持最多到Python 3.6。'
 - en: PyPy is a drop-in replacement for CPython and offers all the built-in modules.
     The project comprises the RPython Translation Toolchain, which is used to build
     PyPy (and could be used to build other interpreters). The JIT compiler in PyPy
     is very effective, and good speedups can be seen with little or no work on your
     part. See [“PyPy for Successful Web and Data Processing Systems (2014)”](ch12.xhtml#lessons-from-field-marko)
     for a large PyPy deployment success story.
+  id: totrans-208
   prefs: []
   type: TYPE_NORMAL
+  zh: PyPy是CPython的即插即用替代品，并提供所有内置模块。该项目包括RPython翻译工具链，用于构建PyPy（也可以用于构建其他解释器）。PyPy中的JIT编译器非常有效，几乎不需要或不需要您付出任何努力就可以看到很好的速度提升。查看[“PyPy用于成功的Web和数据处理系统（2014年）”](ch12.xhtml#lessons-from-field-marko)了解一个大型PyPy部署成功故事。
 - en: PyPy runs our pure Python Julia demo without any modifications. With CPython
     it takes 8 seconds, and with PyPy it takes 0.9 seconds. This means that PyPy achieves
     a result that’s very close to the Cython example in [Example 7-8](#augmentingwithtypes-cython-expanding-abs),
     without *any effort at all*—that’s pretty impressive! As we observed in our discussion
     of Numba, if the calculations are run again *in the same session*, then the second
     and subsequent runs are faster than the first one, as they are already compiled.
+  id: totrans-209
   prefs: []
   type: TYPE_NORMAL
+  zh: PyPy在不修改的情况下运行我们的纯Python Julia演示。使用CPython需要8秒，而使用PyPy只需要0.9秒。这意味着PyPy实现了与示例7-8中的Cython示例非常接近的结果，而*毫无努力*——这非常令人印象深刻！正如我们在Numba讨论中观察到的那样，如果计算在*同一个会话*中再次运行，则第二次及后续运行比第一次运行更快，因为它们已经编译过了。
 - en: By expanding the math and removing the call to `abs`, the PyPy runtime drops
     to 0.2 seconds. This is equivalent to the Cython versions using pure Python and
     `numpy` without any work! Note that this result is true only if you’re not using
     `numpy` with PyPy.
+  id: totrans-210
   prefs: []
   type: TYPE_NORMAL
+  zh: 通过扩展数学并去除对`abs`的调用，PyPy运行时降至0.2秒。这相当于使用纯Python和`numpy`的Cython版本，而无需任何工作！请注意，这个结果只在没有使用`numpy`与PyPy时才成立。
 - en: The fact that PyPy supports all the built-in modules is interesting—this means
     that `multiprocessing` works as it does in CPython. If you have a problem that
     runs with the batteries-included modules and can run in parallel with `multiprocessing`,
     you can expect that all the speed gains you might hope to get will be available.
+  id: totrans-211
   prefs: []
   type: TYPE_NORMAL
+  zh: PyPy支持所有内置模块的事实很有趣——这意味着`multiprocessing`在CPython中的运行方式也可以在PyPy中使用。如果您遇到可以使用内置模块并且可以使用`multiprocessing`并行运行的问题，那么您可以期望所有可能希望获得的速度增益都将可用。
 - en: PyPy’s speed has evolved over time. The older chart in [Figure 7-6](#FIG-speed-pypy-org)
     (from [*speed.pypy.org*](http://speed.pypy.org/)) will give you an idea about
     PyPy’s maturity. These speed tests reflect a wide range of use cases, not just
     mathematical operations. It is clear that PyPy offers a faster experience than
     CPython.
+  id: totrans-212
   prefs: []
   type: TYPE_NORMAL
+  zh: PyPy的速度随时间而演变。[*speed.pypy.org*](http://speed.pypy.org/)上较旧的图表会让您了解PyPy的成熟度。这些速度测试反映了各种用例，而不仅仅是数学运算。显然，PyPy提供比CPython更快的体验。
 - en: '![](Images/hpp2_0706.png)'
+  id: totrans-213
   prefs: []
   type: TYPE_IMG
+  zh: '![](Images/hpp2_0706.png)'
 - en: Figure 7-6\. Each new version of PyPy offers speed improvements
+  id: totrans-214
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 图7-6\. 每个新版本的PyPy都提供了速度改进。
 - en: Garbage Collection Differences
+  id: totrans-215
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 垃圾回收差异
 - en: PyPy uses a different type of garbage collector than CPython, and this can cause
     some nonobvious behavior changes to your code. Whereas CPython uses reference
     counting, PyPy uses a modified mark-and-sweep approach that may clean up an unused
     object much later. Both are correct implementations of the Python specification;
     you just have to be aware that code modifications might be required when swapping.
+  id: totrans-216
   prefs: []
   type: TYPE_NORMAL
+  zh: PyPy使用不同类型的垃圾收集器比CPython，这可能会导致代码的一些不明显的行为变化。而CPython使用引用计数，PyPy使用了一种修改后的标记-清除方法，可能会在很长时间后清理未使用的对象。两者都是Python规范的正确实现；你只需要意识到在切换时可能需要进行代码修改。
 - en: Some coding approaches seen in CPython depend on the behavior of the reference
     counter—particularly the flushing of files, if you open and write to them without
     an explicit file close. With PyPy the same code will run, but the updates to the
@@ -1154,46 +1652,65 @@
     alternative form that works in both PyPy and Python is to use a context manager
     using `with` to open and automatically close files. The [Differences Between PyPy
     and CPython page](http://bit.ly/PyPy_CPy_diff) on the PyPy website lists the details.
+  id: totrans-217
   prefs: []
   type: TYPE_NORMAL
+  zh: 在CPython中看到的一些编码方法依赖于引用计数器的行为，特别是在没有显式文件关闭的情况下打开并写入文件时的文件刷新。使用PyPy相同的代码将运行，但对文件的更新可能会在下次垃圾收集器运行时稍后刷新到磁盘上。在PyPy和Python中都有效的另一种形式是使用`with`来打开并自动关闭文件的上下文管理器。PyPy网站上的[Differences
+    Between PyPy and CPython page](http://bit.ly/PyPy_CPy_diff)列出了详细信息。
 - en: Running PyPy and Installing Modules
+  id: totrans-218
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 运行PyPy和安装模块
 - en: If you’ve never run an alternative Python interpreter, you might benefit from
     a short example. Assuming you’ve downloaded and extracted PyPy, you’ll now have
     a folder structure containing a *bin* directory. Run it as shown in [Example 7-17](#compiling-pypy-run)
     to start PyPy.
+  id: totrans-219
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果您从未运行过另一种Python解释器，则可以从一个简短的示例中受益。假设您已经下载并解压了PyPy，现在将有一个包含*bin*目录的文件夹结构。按照[Example 7-17](#compiling-pypy-run)中显示的方式运行它以启动PyPy。
 - en: Example 7-17\. Running PyPy to see that it implements Python 3.6
+  id: totrans-220
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 7-17. 运行PyPy以查看它是否实现了Python 3.6
 - en: '[PRE21]'
+  id: totrans-221
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE21]'
 - en: Note that PyPy 7.1 runs as Python 3.6\. Now we need to set up `pip`, and we’ll
     want to install IPython. The steps shown in [Example 7-18](#compiling-pypy-pip)
     are the same as you might have performed with CPython if you’ve installed `pip`
     without the help of an existing distribution or package manager. Note that when
     running IPython, we get the same build number as we see when running `pypy3` in
     the preceding example.
+  id: totrans-222
   prefs: []
   type: TYPE_NORMAL
+  zh: 请注意，PyPy 7.1作为Python 3.6运行。现在我们需要设置`pip`，并且我们想要安装IPython。在[Example 7-18](#compiling-pypy-pip)中显示的步骤与您可能在没有现有分发或包管理器的帮助下安装`pip`时使用的CPython相同。请注意，当运行IPython时，我们得到与在前面示例中运行`pypy3`时看到的相同的构建号。
 - en: You can see that IPython runs with PyPy just the same as with CPython, and using
     the `%run` syntax, we execute the Julia script inside IPython to achieve 0.2-second
     runtimes.
+  id: totrans-223
   prefs: []
   type: TYPE_NORMAL
+  zh: 您可以看到IPython与CPython一样运行PyPy，并使用`%run`语法在IPython中执行Julia脚本以获得0.2秒的运行时间。
 - en: Example 7-18\. Installing `pip` for PyPy to install third-party modules like
     IPython
+  id: totrans-224
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 7-18. 为PyPy安装`pip`以安装第三方模块，如IPython
 - en: '[PRE22]'
+  id: totrans-225
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE22]'
 - en: Note that PyPy supports projects like `numpy` that require C bindings through
     the CPython extension compatibility layer [`cpyext`](http://bit.ly/PyPy_compatibility),
     but it has an overhead of 4–6×, which generally makes `numpy` too slow. If your
@@ -1201,8 +1718,10 @@
     significant overall gains. If your code, like the Julia example, makes many calls
     to `numpy`, then it’ll run significantly slower. The Julia benchmark here with
     `numpy` arrays runs 6× slower than when it is run with CPython.
+  id: totrans-226
   prefs: []
   type: TYPE_NORMAL
+  zh: 请注意，PyPy支持像`numpy`这样需要C绑定的项目，通过CPython扩展兼容层[`cpyext`](http://bit.ly/PyPy_compatibility)，但这会增加4-6倍的开销，通常使`numpy`变得太慢。如果你的代码大部分是纯Python，并且只有少量调用`numpy`，你仍然可能会看到明显的整体收益。如果你的代码，像Julia示例一样，对`numpy`进行了多次调用，那么它将运行得明显慢。这里使用`numpy`数组的Julia基准运行速度比使用CPython运行时慢6倍。
 - en: If you need other packages, they should install thanks to the `cpyext` compatibility
     module, which is essentially PyPy’s version of `python.h`. It handles the different
     memory management requirements of PyPy and CPython; however, this management incurs
@@ -1210,155 +1729,243 @@
     by this overhead. A new project named `HPy` (formerly `PyHandle`) aims to remove
     this overhead by providing a higher-level object handle—one not tied to CPython’s
     implementation—which can be shared with other projects like Cython.
+  id: totrans-227
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果您需要其他软件包，它们应该能够安装，多亏了 `cpyext` 兼容模块，这基本上是 PyPy 版本的 `python.h`。它处理 PyPy 和 CPython
+    不同的内存管理需求；然而，每个管理调用的成本为 4-6×，因此 `numpy` 的速度优势可能会被这些开销抵消。一个名为 `HPy`（以前称为 `PyHandle`）的新项目旨在通过提供更高级的对象句柄来消除这些开销，该句柄不与
+    CPython 的实现绑定，并且可以与 Cython 等其他项目共享。
 - en: If you want to understand PyPy’s performance characteristics, look at the `vmprof`
     lightweight sampling profiler. It is thread-safe and supports a web-based user
     interface.
+  id: totrans-228
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果您想了解 PyPy 的性能特征，请查看 `vmprof` 轻量级抽样分析器。它是线程安全的，并支持基于 Web 的用户界面。
 - en: Another downside of PyPy is that it can use a lot of RAM. Each release is better
     in this respect, but in practice it may use more RAM than CPython. RAM is fairly
     cheap, though, so it makes sense to try to trade it for enhanced performance.
     Some users have also reported *lower* RAM usage when using PyPy. As ever, perform
     an experiment using representative data if this is important to you.
+  id: totrans-229
   prefs: []
   type: TYPE_NORMAL
+  zh: PyPy 的另一个缺点是它可能使用大量内存。每个发布版在这方面都更好，但实际上可能比 CPython 使用更多内存。尽管如此，内存是相当便宜的，因此有意将其用于性能提升是有意义的。有些用户在使用
+    PyPy 时还报告了更低的内存使用情况。如果这对您很重要，请根据代表性数据进行实验。
 - en: A Summary of Speed Improvements
+  id: totrans-230
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 速度改进摘要
 - en: To summarize the previous results, in [Table 7-1](#table_compiler_results1)
     we see that PyPy on a pure Python math-based code sample is approximately 9× faster
     than CPython with no code changes, and it’s even faster if the `abs` line is simplified.
     Cython runs faster than PyPy in both instances but requires annotated code, which
     increases development and support effort.
+  id: totrans-231
   prefs: []
   type: TYPE_NORMAL
+  zh: 总结之前的结果，在 [Table 7-1](#table_compiler_results1) 中我们看到，对于纯 Python 数学代码样本，PyPy
+    大约比不经过代码更改的 CPython 快 9 倍，如果简化 `abs` 行，它甚至更快。在这两种情况下，Cython 都比 PyPy 运行得更快，但需要有注释的代码，这会增加开发和支持的工作量。
 - en: Table 7-1\. Julia (no `numpy`) results
+  id: totrans-232
   prefs: []
   type: TYPE_NORMAL
+  zh: Table 7-1\. Julia（无 `numpy`）结果
 - en: '|   | Speed |'
+  id: totrans-233
   prefs: []
   type: TYPE_TB
+  zh: '|   | 速度 |'
 - en: '| --- | --- |'
+  id: totrans-234
   prefs: []
   type: TYPE_TB
+  zh: '| --- | --- |'
 - en: '| CPython | 8.00s |'
+  id: totrans-235
   prefs: []
   type: TYPE_TB
+  zh: '| CPython | 8.00秒 |'
 - en: '| Cython | 0.49s |'
+  id: totrans-236
   prefs: []
   type: TYPE_TB
+  zh: '| Cython | 0.49秒 |'
 - en: '| Cython on expanded math | 0.19s |'
+  id: totrans-237
   prefs: []
   type: TYPE_TB
+  zh: '| Cython 在扩展数学上 | 0.19秒 |'
 - en: '| PyPy | 0.90s |'
+  id: totrans-238
   prefs: []
   type: TYPE_TB
+  zh: '| PyPy | 0.90秒 |'
 - en: '| PyPy on expanded math | 0.20s |'
+  id: totrans-239
   prefs: []
   type: TYPE_TB
+  zh: '| PyPy 在扩展数学上 | 0.20秒 |'
 - en: The Julia solver with `numpy` enables the investigation of OpenMP. In [Table 7-2](#table_compiler_results2),
     we see that both Cython and Numba run faster than the non-`numpy` versions with
     expanded math. When we add OpenMP, both Cython and Numba provide further speedups
     for very little additional coding.
+  id: totrans-240
   prefs: []
   type: TYPE_NORMAL
+  zh: 使用 `numpy` 的 Julia 求解器可以探索 OpenMP。在 [Table 7-2](#table_compiler_results2) 中，我们可以看到，无论是
+    Cython 还是 Numba，在扩展数学运算中都比非 `numpy` 版本运行得更快。当我们加入 OpenMP 时，无论是 Cython 还是 Numba
+    都可以进一步提高速度，而额外编码的工作量非常少。
 - en: Table 7-2\. Julia (with `numpy` and expanded math) results
+  id: totrans-241
   prefs: []
   type: TYPE_NORMAL
+  zh: Table 7-2\. Julia（使用 `numpy` 和扩展数学运算）结果
 - en: '|  | Speed |'
+  id: totrans-242
   prefs: []
   type: TYPE_TB
+  zh: '|  | 速度 |'
 - en: '| --- | --- |'
+  id: totrans-243
   prefs: []
   type: TYPE_TB
+  zh: '| --- | --- |'
 - en: '| CPython | 21.00s |'
+  id: totrans-244
   prefs: []
   type: TYPE_TB
+  zh: '| CPython | 21.00秒 |'
 - en: '| Cython | 0.18s |'
+  id: totrans-245
   prefs: []
   type: TYPE_TB
+  zh: '| Cython | 0.18秒 |'
 - en: '| Cython and OpenMP “guided” | 0.05s |'
+  id: totrans-246
   prefs: []
   type: TYPE_TB
+  zh: '| Cython 和 OpenMP “guided” | 0.05秒 |'
 - en: '| Numba (2nd & subsequent runs) | 0.17s |'
+  id: totrans-247
   prefs: []
   type: TYPE_TB
+  zh: '| Numba（第二次及后续运行）| 0.17秒 |'
 - en: '| Numba and OpenMP | 0.06s |'
+  id: totrans-248
   prefs: []
   type: TYPE_TB
+  zh: '| Numba 和 OpenMP | 0.06秒 |'
 - en: For pure Python code, PyPy is an obvious first choice. For `numpy` code, Numba
     is a great first choice.
+  id: totrans-249
   prefs: []
   type: TYPE_NORMAL
+  zh: 对于纯 Python 代码来说，PyPy 是显而易见的首选。对于 `numpy` 代码来说，Numba 是一个很好的首选。
 - en: When to Use Each Technology
+  id: totrans-250
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 何时使用每种技术
 - en: If you’re working on a numeric project, then each of these technologies could
     be useful to you. [Table 7-3](#table_compiler_summary) summarizes the main options.
+  id: totrans-251
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果您正在处理数字项目，那么这些技术都可能对您有用。[Table 7-3](#table_compiler_summary) 总结了主要选项。
 - en: Table 7-3\. Compiler options
+  id: totrans-252
   prefs: []
   type: TYPE_NORMAL
+  zh: Table 7-3\. 编译器选项
 - en: '|  | Cython | Numba | PyPy |'
+  id: totrans-253
   prefs: []
   type: TYPE_TB
+  zh: '|  | Cython | Numba | PyPy |'
 - en: '| --- | --- | --- | --- |'
+  id: totrans-254
   prefs: []
   type: TYPE_TB
+  zh: '| --- | --- | --- | --- |'
 - en: '| Mature | Y | Y | Y |'
+  id: totrans-255
   prefs: []
   type: TYPE_TB
+  zh: '| 成熟 | Y | Y | Y |'
 - en: '| Widespread | Y | – | – |'
+  id: totrans-256
   prefs: []
   type: TYPE_TB
+  zh: '| 广泛使用 | Y | – | – |'
 - en: '| `numpy` support | Y | Y | Y |'
+  id: totrans-257
   prefs: []
   type: TYPE_TB
+  zh: '| `numpy` 支持 | Y | Y | Y |'
 - en: '| Nonbreaking code changes | – | Y | Y |'
+  id: totrans-258
   prefs: []
   type: TYPE_TB
+  zh: '| 不会破坏现有代码 | – | Y | Y |'
 - en: '| Needs C knowledge | Y | – | – |'
+  id: totrans-259
   prefs: []
   type: TYPE_TB
+  zh: '| 需要 C 知识 | Y | – | – |'
 - en: '| Supports OpenMP | Y | Y | – |'
+  id: totrans-260
   prefs: []
   type: TYPE_TB
+  zh: '| 支持 OpenMP | Y | Y | – |'
 - en: Numba may offer quick wins for little effort, but it too has limitations that
     might stop it working well on your code. It is also a relatively young project.
+  id: totrans-261
   prefs: []
   type: TYPE_NORMAL
+  zh: Numba 可能会为您带来快速的收获，付出的努力很少，但它也有一些限制，可能会导致它在您的代码上表现不佳。它也是一个相对年轻的项目。
 - en: Cython probably offers the best results for the widest set of problems, but
     it does require more effort and has an additional “support tax” due to mixing
     Python with C annotations.
+  id: totrans-262
   prefs: []
   type: TYPE_NORMAL
+  zh: Cython 可能为最广泛的问题集提供了最佳结果，但它确实需要更多的投入，并且由于将Python与C注释混合，存在额外的“支持税”。
 - en: PyPy is a strong option if you’re not using `numpy` or other hard-to-port C
     extensions.
+  id: totrans-263
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果您不使用`numpy`或其他难以移植的C扩展，PyPy是一个强有力的选择。
 - en: If you’re deploying a production tool, you probably want to stick with well-understood
     tools—Cython should be your main choice, and you may want to check out [“Making
     Deep Learning Fly with RadimRehurek.com (2014)”](ch12.xhtml#lessons-from-field-radim).
     PyPy is also being used in production settings (see [“PyPy for Successful Web
     and Data Processing Systems (2014)”](ch12.xhtml#lessons-from-field-marko)).
+  id: totrans-264
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果您部署生产工具，您可能希望坚持使用已知的工具 —— Cython 应该是您的主要选择，并且您可能想查看 [“Making Deep Learning
+    Fly with RadimRehurek.com (2014)”](ch12.xhtml#lessons-from-field-radim)。PyPy 在生产环境中也被使用（参见
+    [“PyPy for Successful Web and Data Processing Systems (2014)”](ch12.xhtml#lessons-from-field-marko)）。
 - en: If you’re working with light numeric requirements, note that Cython’s buffer
     interface accepts `array.array` matrices—this is an easy way to pass a block of
     data to Cython for fast numeric processing without having to add `numpy` as a
     project dependency.
+  id: totrans-265
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果您处理轻量级数值需求，请注意Cython的缓冲区接口接受`array.array`矩阵 —— 这是一种向Cython传递数据块进行快速数值处理的简便方法，而不必将`numpy`作为项目依赖添加进来。
 - en: Overall, Numba is maturing and is a promising project, whereas Cython is mature.
     PyPy is regarded as being fairly mature now and should definitely be evaluated
     for long-running processes.
+  id: totrans-266
   prefs: []
   type: TYPE_NORMAL
+  zh: 总体而言，Numba 正在成熟，是一个有前途的项目，而Cython已经非常成熟。PyPy现在被认为相当成熟，应该绝对被评估为长时间运行的进程。
 - en: In a class run by Ian, a capable student implemented a C version of the Julia
     algorithm and was disappointed to see it execute more slowly than his Cython version.
     It transpired that he was using 32-bit floats on a 64-bit machine—these run more
@@ -1368,8 +1975,11 @@
     Cython version, ran at roughly the same speed. The act of writing the raw C version,
     comparing its speed, and figuring out how to fix it took longer than using Cython
     in the first place.
+  id: totrans-267
   prefs: []
   type: TYPE_NORMAL
+  zh: 在由Ian主持的班级中，一个能干的学生实现了Julia算法的C版本，并且失望地发现它比他的Cython版本执行得更慢。事实证明，他在64位机器上使用32位浮点数
+    —— 这比64位机器上的64位双精度浮点数运行更慢。尽管这位学生是一位优秀的C程序员，但他不知道这可能导致速度成本。他改变了他的代码，尽管这个手工编写的C版本比自动生成的Cython版本短得多，但速度大致相同。编写原始的C版本、比较其速度以及找出如何修复它的过程比一开始就使用Cython花费了更长的时间。
 - en: This is just an anecdote; we’re not suggesting that Cython will generate the
     best code, and competent C programmers can probably figure out how to make *their*
     code run faster than the version generated by Cython. It is worth noting, though,
@@ -1378,16 +1988,23 @@
     C compilers are pretty good at converting code into fairly efficient machine code,
     and Python is pretty good at letting you express your problem in an easy-to-understand
     language—combine these two powers sensibly.
+  id: totrans-268
   prefs: []
   type: TYPE_NORMAL
+  zh: 这只是一个轶事；我们并不认为Cython会生成最佳代码，而且有能力的C程序员可能会找出如何使他们的代码比Cython生成的版本运行更快的方法。值得注意的是，手写的C比转换的Python更快这一假设并不安全。您必须始终进行基准测试并根据证据做出决策。C编译器在将代码转换为相当高效的机器代码方面非常出色，而Python在让您用易于理解的语言表达问题方面也非常出色
+    —— 合理地结合这两种力量。
 - en: Other Upcoming Projects
+  id: totrans-269
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 其他即将推出的项目
 - en: The [PyData compilers page](http://compilers.pydata.org) lists a set of high
     performance and compiler tools.
+  id: totrans-270
   prefs: []
   type: TYPE_NORMAL
+  zh: '[PyData 编译器页面](http://compilers.pydata.org) 列出了一组高性能和编译器工具。'
 - en: '[Pythran](https://oreil.ly/Zi4r5) is an AOT compiler aimed at scientists who
     are using `numpy`. Using few annotations, it will compile Python numeric code
     to a faster binary—it produces speedups that are very similar to `Cython` but
@@ -1396,45 +2013,64 @@
     you have tight, locally bound loops in Numpy, Pythran is certainly worth evaluating.
     The associated FluidPython project aims to make Pythran even easier to write and
     provides JIT capability.'
+  id: totrans-271
   prefs: []
   type: TYPE_NORMAL
+  zh: '[Pythran](https://oreil.ly/Zi4r5)是一个面向使用`numpy`的科学家的AOT编译器。通过少量的注解，它可以将Python数值代码编译成更快的二进制代码——它的加速效果与`Cython`非常相似，但工作量要少得多。除了其他功能外，它总是释放GIL并且可以使用SIMD指令和OpenMP。像Numba一样，它不支持类。如果你在Numpy中有紧密的局部循环，Pythran绝对值得评估。相关的FluidPython项目旨在使Pythran编写更加简单，并提供JIT能力。'
 - en: '[Transonic](https://oreil.ly/tT4Sf) attempts to unify Cython, Pythran, and
     Numba, and potentially other compilers, behind one interface to enable quick evaluation
     of multiple compilers without having to rewrite code.'
+  id: totrans-272
   prefs: []
   type: TYPE_NORMAL
+  zh: '[Transonic](https://oreil.ly/tT4Sf)试图通过一个接口将Cython、Pythran、Numba以及可能的其他编译器整合在一起，以便快速评估多个编译器，而无需重写代码。'
 - en: '[ShedSkin](https://oreil.ly/BePH-) is an AOT compiler aimed at nonscientific,
     pure Python code. It has no `numpy` support, but if your code is pure Python,
     ShedSkin produces speedups similar to those seen by PyPy (without using `numpy`).
     It supports Python 2.7 with some Python 3.*x* support.'
+  id: totrans-273
   prefs: []
   type: TYPE_NORMAL
+  zh: '[ShedSkin](https://oreil.ly/BePH-)是一个面向非科学纯Python代码的AOT编译器。它不支持`numpy`，但如果你的代码是纯Python的，ShedSkin可以产生类似于PyPy（不使用`numpy`）的加速效果。它支持Python
+    2.7，并部分支持Python 3.*x*。'
 - en: '[PyCUDA](https://oreil.ly/Lg4H3) and [PyOpenCL](https://oreil.ly/8e3OA) offer
     CUDA and OpenCL bindings into Python for direct access to GPUs. Both libraries
     are mature and support Python 3.4+.'
+  id: totrans-274
   prefs: []
   type: TYPE_NORMAL
+  zh: '[PyCUDA](https://oreil.ly/Lg4H3)和[PyOpenCL](https://oreil.ly/8e3OA)为Python提供了CUDA和OpenCL的绑定，可以直接访问GPU。这两个库已经非常成熟，并支持Python
+    3.4+。'
 - en: '[Nuitka](https://oreil.ly/dLPEw) is a Python compiler that aims to be an alternative
     to the usual CPython interpreter, with the option of creating compiled executables.
     It supports all of Python 3.7, though in our testing it didn’t produce any noticeable
     speed gains for our plain Python numerical tests.'
+  id: totrans-275
   prefs: []
   type: TYPE_NORMAL
+  zh: '[Nuitka](https://oreil.ly/dLPEw)是一个Python编译器，旨在成为传统CPython解释器的替代品，并支持创建编译后的可执行文件。它支持完整的Python
+    3.7，尽管在我们的测试中，它对我们的纯Python数值测试并没有显著的速度提升。'
 - en: Our community is rather blessed with a wide array of compilation options. While
     they all have trade-offs, they also offer a lot of power so that complex projects
     can take advantage of the full power of CPUs and multicore architectures.
+  id: totrans-276
   prefs: []
   type: TYPE_NORMAL
+  zh: 我们的社区拥有多种编译选项，这是一种幸运。尽管它们都有各自的权衡，但它们也提供了强大的功能，使得复杂的项目能够充分利用CPU和多核架构的全部性能。
 - en: Graphics Processing Units (GPUs)
+  id: totrans-277
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 图形处理单元（GPU）
 - en: Graphics Processing Units (GPUs) are becoming incredibly popular as a method
     to speed up arithmetic-heavy computational workloads. Originally designed to help
     handle the heavy linear algebra requirements of 3D graphics, GPUs are particularly
     well suited for solving easily parallelizable problems.
+  id: totrans-278
   prefs: []
   type: TYPE_NORMAL
+  zh: 图形处理单元（GPU）因其加速算术密集型计算工作负载的能力而变得非常流行。最初设计用于处理3D图形的重型线性代数需求，GPU特别适合解决易于并行化的问题。
 - en: Interestingly, GPUs themselves are slower than most CPUs if we just look at
     clock speeds. This may seem counterintuitive, but as we discussed in [“Computing
     Units”](ch01_split_000.xhtml#computing-units), clock speed is just one measurement
@@ -1444,8 +2080,12 @@
     used to run benchmarks for this section, the AMD Ryzen 7 1700 CPU has 8 cores,
     each at 3.2 GHz, while the NVIDIA RTX 2080 TI GPU has 4,352 cores, each at 1.35
     GHz.^([1](ch07.xhtml#idm46122415613752))
+  id: totrans-279
   prefs: []
   type: TYPE_NORMAL
+  zh: 有趣的是，如果仅看时钟速度，GPU本身比大多数CPU要慢。这可能看起来有些反直觉，但正如我们在[“计算单元”](ch01_split_000.xhtml#computing-units)中讨论的那样，时钟速度只是硬件计算能力的一个衡量标准。GPU在大规模并行任务方面表现出色，因为它们拥有惊人数量的计算核心。一般来说，CPU通常有大约12个核心，而现代GPU有数千个核心。例如，在用于运行本节基准测试的机器上，AMD
+    Ryzen 7 1700 CPU每个核心运行速度为3.2 GHz，而NVIDIA RTX 2080 TI GPU有4,352个核心，每个核心运行速度为1.35
+    GHz。^([1](ch07.xhtml#idm46122415613752))
 - en: This incredible amount of parallelism can speed up many numerical tasks by a
     staggering amount. However, programming on these devices can be quite tough. Because
     of the amount of parallelism, data locality needs to be considered and can be
@@ -1453,29 +2093,39 @@
     write native GPU code (also called `kernels`) in Python, such as [CuPy](https://cupy.chainer.org).
     However, the needs of modern deep learning algorithms have been pushing new interfaces
     into GPUs that are easy and intuitive to use.
+  id: totrans-280
   prefs: []
   type: TYPE_NORMAL
+  zh: 这种令人难以置信的并行计算能力可以显著加快许多数值任务的速度。然而，在这些设备上编程可能非常困难。由于并行性的增加，需要考虑数据的局部性，并且这可能是速度提升的决定性因素。有许多工具可以在Python中编写本地GPU代码（也称为`kernels`），例如[CuPy](https://cupy.chainer.org)。然而，现代深度学习算法的需求已经推动了易于使用和直观的GPU新接口。
 - en: The two front-runners in terms of easy-to-use GPU mathematics libraries are
     TensorFlow and PyTorch. We will focus on PyTorch for its ease of use and great
     speed.^([2](ch07.xhtml#idm46122415607560))
+  id: totrans-281
   prefs: []
   type: TYPE_NORMAL
+  zh: 在易于使用的GPU数学库方面，TensorFlow和PyTorch是两个领先者。我们将专注于PyTorch，因为它易于使用且速度快。^([2](ch07.xhtml#idm46122415607560))
 - en: 'Dynamic Graphs: PyTorch'
+  id: totrans-282
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 动态图：PyTorch
 - en: '[PyTorch](https://pytorch.org) is a static computational graph tensor library
     that is particularly user-friendly and has a very intuitive API for anyone familiar
     with `numpy`. In addition, since it is a tensor library, it has all the same functionality
     as `numpy`, with the added advantages of being able to create functions through
     its static computational graph and calculate derivatives of those functions by
     using a mechanism called `autograd`.'
+  id: totrans-283
   prefs: []
   type: TYPE_NORMAL
+  zh: '[PyTorch](https://pytorch.org)是一个静态计算图张量库，特别适合用户，并且对于任何熟悉`numpy`的人来说，它具有非常直观的API。此外，由于它是一个张量库，它具有与`numpy`相同的所有功能，还可以通过其静态计算图创建函数，并通过称为`autograd`的机制计算这些函数的导数。'
 - en: Note
+  id: totrans-284
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 注意
 - en: The `autograd` functionality of PyTorch is left out since it isn’t relevant
     to our discussion. However, this module is quite amazing and can take the derivative
     of any arbitrary function made up of PyTorch operations. It can do it on the fly
@@ -1484,8 +2134,10 @@
     and efficiently. While this may also be off-topic for your work, we recommend
     learning about `autograd` and automatic-differentiation in general, as it truly
     is an incredible advancement in numerical computation.
+  id: totrans-285
   prefs: []
   type: TYPE_NORMAL
+  zh: 由于它与我们的讨论无关，PyTorch的`autograd`功能被省略。然而，这个模块非常了不起，可以对由PyTorch操作组成的任意函数进行求导。它可以在任意值处实时进行，并且可以非常简单高效地完成。尽管这对你的工作可能也不相关，但我们建议学习`autograd`和自动微分，因为这确实是数值计算中的一个令人难以置信的进步。
 - en: By *static computational graph*, we mean that performing operations on PyTorch
     objects creates a dynamic definition of a program that gets compiled to GPU code
     in the background when it is executed (exactly like a JIT from [“JIT Versus AOT
@@ -1493,8 +2145,11 @@
     automatically get reflected in changes in the GPU code without an explicit compilation
     step needed. This hugely aids debugging and interactivity, as compared to static
     graph libraries like TensorFlow.
+  id: totrans-286
   prefs: []
   type: TYPE_NORMAL
+  zh: 通过*静态计算图*，我们指的是在PyTorch对象上执行操作时，会创建程序的动态定义，在执行时会在后台编译为GPU代码（就像从[“JIT Versus
+    AOT Compilers”](#jit_vs_compiler)中的JIT一样）。由于它是动态的，Python代码的更改会自动反映在GPU代码的更改中，无需显式编译步骤。这极大地帮助了调试和交互性，与TensorFlow等静态图库相比。
 - en: In a static graph, like TensorFlow, we first set up our computation, then compile
     it. From then on, our compute is fixed in stone, and we can change it only by
     recompiling the entire thing. With the dynamic graph of PyTorch, we can conditionally
@@ -1502,57 +2157,86 @@
     debugging in our code or lets us play with the GPU in an interactive session in
     IPython. The ability to flexibly control the GPU is a complete game changer when
     dealing with complex GPU-based workloads.
+  id: totrans-287
   prefs: []
   type: TYPE_NORMAL
+  zh: 在静态图中，如TensorFlow，我们首先设置我们的计算，然后编译它。从那时起，我们的计算被固定在石头上，只能通过重新编译整个过程来进行更改。使用PyTorch的动态图，我们可以有条件地更改我们的计算图或者逐步构建它。这允许我们在代码中进行有条件的调试，或者在IPython的交互会话中与GPU进行互动。在处理复杂的基于GPU的工作负载时，灵活控制GPU的能力是一个完全改变游戏规则的因素。
 - en: As an example of the library’s ease of use as well as its speed, in [Example 7-19](#compilation-diffusion-pytorch)
     we port the `numpy` code from [Example 6-9](ch06_split_000.xhtml#matrix_numpy_naive)
     to use the GPU using PyTorch.
+  id: totrans-288
   prefs: []
   type: TYPE_NORMAL
+  zh: 作为库易用性和速度的示例，在[示例 7-19](#compilation-diffusion-pytorch)中，我们将 [示例 6-9](ch06_split_000.xhtml#matrix_numpy_naive)
+    的 `numpy` 代码改用 PyTorch 在 GPU 上运行。
 - en: Example 7-19\. PyTorch 2D diffusion
+  id: totrans-289
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 7-19\. PyTorch 2D 扩散
 - en: '[PRE23]'
+  id: totrans-290
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE23]'
 - en: '[![1](Images/1.png)](#co_compiling_to_c_CO1-1a), [![2](Images/2.png)](#co_compiling_to_c_CO1-2a)'
+  id: totrans-291
   prefs: []
   type: TYPE_NORMAL
+  zh: '[![1](Images/1.png)](#co_compiling_to_c_CO1-1a), [![2](Images/2.png)](#co_compiling_to_c_CO1-2a)'
 - en: The only changes needed.
+  id: totrans-292
   prefs: []
   type: TYPE_NORMAL
+  zh: 唯一需要的更改。
 - en: Most of the work is done in the modified import, where we changed `numpy` to
     `torch`. In fact, if we just wanted to run our optimized code on the CPU, we could
     stop here.^([3](ch07.xhtml#idm46122415458168)) To use the GPU, we simply need
     to move our data to the GPU, and then `torch` will automatically compile all computations
     we do on that data into GPU code.
+  id: totrans-293
   prefs: []
   type: TYPE_NORMAL
+  zh: 大部分工作都是在修改后的导入中完成的，我们将 `numpy` 更改为 `torch`。实际上，如果我们只想在 CPU 上运行优化后的代码，我们可以到此为止。^([3](ch07.xhtml#idm46122415458168))
+    要使用 GPU，我们只需要将数据移动到 GPU 上，然后 `torch` 将自动将我们对该数据的所有计算编译成 GPU 代码。
 - en: As we can see in [Figure 7-7](#pytorch_versus_numpy), this small code change
     has given us an incredible speedup.^([4](ch07.xhtml#idm46122415455528)) For a
     512 × 512 grid, we have a 5.3× speedup, and for a 4,096 × 4,096 grid we have a
     102× speedup! It is interesting that the GPU code doesn’t seem to be as affected
     by increases to grid size as the `numpy` code is.
+  id: totrans-294
   prefs: []
   type: TYPE_NORMAL
+  zh: 如我们在[图 7-7](#pytorch_versus_numpy)中所见，这个小的代码改变给了我们惊人的加速。^([4](ch07.xhtml#idm46122415455528))
+    对于一个 512 × 512 的网格，我们获得了 5.3× 的加速，对于一个 4,096 × 4,096 的网格，我们获得了 102× 的加速！有趣的是，GPU
+    代码似乎不像 `numpy` 代码那样受网格大小增加的影响。
 - en: '![Comparison of Numpy and PyTorch on CPU and GPU (using an NVIDIA RTX 2080TI)](Images/hpp2_0707.png)'
+  id: totrans-295
   prefs: []
   type: TYPE_IMG
+  zh: '![比较 Numpy 和 PyTorch 在 CPU 和 GPU 上的性能（使用 NVIDIA RTX 2080TI）](Images/hpp2_0707.png)'
 - en: Figure 7-7\. PyTorch versus `numpy` performance
+  id: totrans-296
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 图 7-7\. PyTorch 对 `numpy` 性能的比较
 - en: This speedup is a result of how parallelizable the diffusion problem is. As
     we said before, the GPU we are using has 4,362 independent computation cores.
     It seems that once the diffusion problem is parallelized, none of these GPU cores
     are being fully utilized.
+  id: totrans-297
   prefs: []
   type: TYPE_NORMAL
+  zh: 这种加速是扩散问题可并行化程度的结果。正如我们之前所说，我们使用的 GPU 具有 4,362 个独立的计算核心。似乎一旦扩散问题被并行化，这些 GPU
+    核心中没有一个被充分利用。
 - en: Warning
+  id: totrans-298
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 警告
 - en: When timing the performance of GPU code, it is important to set the environmental
     flag `CUDA_LAUNCH_BLOCKING=1`. By default, GPU operations are run asynchronously
     to allow more operations to be pipelined together and thus to minimize the total
@@ -1561,83 +2245,122 @@
     data is copied to another device or a `torch.cuda.synchronize()` command is issued.
     By enabling the preceding environmental variable, we can make sure that computations
     are completed when they are issued and that we are indeed measuring compute time.
+  id: totrans-299
   prefs: []
   type: TYPE_NORMAL
+  zh: 在测试 GPU 代码性能时，设置环境标志 `CUDA_LAUNCH_BLOCKING=1` 是很重要的。默认情况下，GPU 操作是异步运行的，允许更多操作被流水线化在一起，从而最大限度地减少
+    GPU 的总利用率并增加并行性。当启用异步行为时，我们可以保证只有在数据复制到另一个设备或发出 `torch.cuda.synchronize()` 命令时，计算才会完成。通过启用上述环境变量，我们可以确保计算在发出时完成，并且我们确实在测量计算时间。
 - en: Basic GPU Profiling
+  id: totrans-300
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 基本 GPU 分析
 - en: 'One way to verify exactly how much of the GPU we are utilizing is by using
     the `nvidia-smi` command to inspect the resource utilization of the GPU. The two
     values we are most interested in are the power usage and the GPU utilization:'
+  id: totrans-301
   prefs: []
   type: TYPE_NORMAL
+  zh: 验证我们使用 GPU 的具体利用率的一种方法是使用 `nvidia-smi` 命令来检查 GPU 的资源利用情况。我们最感兴趣的两个值是功率使用和 GPU
+    利用率：
 - en: '[PRE24]'
+  id: totrans-302
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE24]'
 - en: GPU utilization, here at 95%, is a slightly mislabeled field. It tells us what
     percentage of the last second has been spent running at least one kernel. So it
     isn’t telling us what percentage of the GPU’s total computational power we’re
     using but rather how much time was spent *not* being idle. This is a very useful
     measurement to look at when debugging memory transfer issues and making sure that
     the CPU is providing the GPU with enough work.
+  id: totrans-303
   prefs: []
   type: TYPE_NORMAL
+  zh: GPU 利用率，在这里是 95%，是一个稍微误标的字段。它告诉我们在过去一秒钟内至少运行了一个核函数的百分比。因此，它并没有告诉我们我们使用了 GPU
+    的总计算能力的百分比，而是告诉我们有多少时间是*非*空闲的。这是一个在调试内存传输问题和确保 CPU 提供足够工作给 GPU 时非常有用的测量。
 - en: Power usage, on the other hand, is a good proxy for judging how much of the
     GPU’s compute power is being used. As a rule of thumb, the more power the GPU
     is drawing, the more compute it is currently doing. If the GPU is waiting for
     data from the CPU or using only half of the available cores, power use will be
     reduced from the maximum.
+  id: totrans-304
   prefs: []
   type: TYPE_NORMAL
+  zh: 另一方面，功耗是评估 GPU 计算能力使用情况的良好代理。作为经验法则，GPU 消耗的功率越大，当前执行的计算量就越大。如果 GPU 正在等待 CPU
+    的数据或仅使用了一半的可用核心，那么从最大值减少功耗。
 - en: Another useful tool is [`gpustat`](https://oreil.ly/3Sa1r). This project provides
     a nice view into many of NVIDIA’s stats using a much friendlier interface than
     `nvidia-smi`.
+  id: totrans-305
   prefs: []
   type: TYPE_NORMAL
+  zh: 另一个有用的工具是 [`gpustat`](https://oreil.ly/3Sa1r)。该项目通过比 `nvidia-smi` 更友好的界面提供了对
+    NVIDIA 许多统计数据的良好视图。
 - en: To help understand what specifically is causing slowdowns in your PyTorch code,
     the project provides a special profiling tool. Running your code with `python
     -m torch.utils.bottleneck` will show both CPU and GPU runtime stats to help you
     identify potential optimizations to either portion of your code.
+  id: totrans-306
   prefs: []
   type: TYPE_NORMAL
+  zh: 为了帮助理解您的 PyTorch 代码中具体导致减速的原因，该项目提供了一个特殊的性能分析工具。使用 `python -m torch.utils.bottleneck`
+    运行您的代码将显示 CPU 和 GPU 运行时统计信息，帮助您识别可能的优化部分。
 - en: Performance Considerations of GPUs
+  id: totrans-307
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: GPU 的性能考虑
 - en: Since a GPU is a completely auxiliary piece of hardware on the computer, with
     its own architecture as compared with the CPU, there are many GPU-specific performance
     considerations to keep in mind.
+  id: totrans-308
   prefs: []
   type: TYPE_NORMAL
+  zh: 由于 GPU 是计算机上完全辅助的硬件部件，与 CPU 相比，其具有自己的体系结构，因此需要考虑许多特定于 GPU 的性能因素。
 - en: The biggest speed consideration for GPUs is the transfer time of data from the
     system memory to the GPU memory. When we use `tensor.to(*DEVICE*)`, we are triggering
     a transfer of data that may take some time depending on the speed of the GPU’s
     bus and the amount of data being transferred.
+  id: totrans-309
   prefs: []
   type: TYPE_NORMAL
+  zh: 对于 GPU 来说，最大的速度考虑因素是从系统内存到 GPU 内存的数据传输时间。当我们使用 `tensor.to(*DEVICE*)` 时，我们触发了一个数据传输，可能需要一些时间，具体取决于
+    GPU 总线的速度和传输的数据量。
 - en: Other operations may trigger a transfer as well. In particular, `tensor.items()`
     and `tensor.tolist()` often cause problems when introduced for debugging purposes.
     In fact, running `tensor.numpy()` to convert a PyTorch tensor into a `numpy` array
     specifically requires an explicit copy out of the GPU, which ensures you understand
     the potential penalty.
+  id: totrans-310
   prefs: []
   type: TYPE_NORMAL
+  zh: 其他操作可能会触发传输。特别是，`tensor.items()` 和 `tensor.tolist()` 在引入用于调试目的时经常引发问题。实际上，运行
+    `tensor.numpy()` 将 PyTorch 张量转换为 `numpy` 数组，这需要明确地从 GPU 复制数据，以确保您了解可能的惩罚。
 - en: 'As an example, let’s add a `grid.cpu()` call inside the solver loop of our
     diffusion code:'
+  id: totrans-311
   prefs: []
   type: TYPE_NORMAL
+  zh: 例如，让我们在我们扩散代码的求解器循环中添加一个 `grid.cpu()` 调用：
 - en: '[PRE25]'
+  id: totrans-312
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE25]'
 - en: To ensure that we have a fair comparison, we will also add `torch.cuda.synchronize()`
     to the control code so that we are simply testing the time to copy the data from
     the CPU. In addition to this slowing down your code by triggering a data transfer
     from the GPU to the system memory, your code will slow down because the GPU will
     pause code execution that would have continued in the background until the transfer
     is complete.
+  id: totrans-313
   prefs: []
   type: TYPE_NORMAL
+  zh: 为了确保我们进行公平比较，我们还将在控制代码中添加 `torch.cuda.synchronize()`，以便我们仅仅测试从 CPU 复制数据的时间。除了通过触发从
+    GPU 到系统内存的数据传输来减慢您的代码之外，您的代码还会因为 GPU 将暂停本应在后台继续执行的代码而减慢。
 - en: This change to the code for a 2,048 × 2,048 grid slows down our code by 2.54×!
     Even though our GPU has an advertised bandwidth of 616.0 GB/s, this overhead can
     quickly add up. In addition, other overhead costs are associated with a memory
@@ -1645,15 +2368,20 @@
     execution. Then, because we are no longer pipelining, our data on the GPU must
     all be synchronized out of the memory of the individual CUDA cores. Finally, space
     on system memory needs to be prepared to receive the new data from the GPU.
+  id: totrans-314
   prefs: []
   type: TYPE_NORMAL
+  zh: 这次对于 2,048 × 2,048 网格的代码修改使我们的代码减慢了 2.54×！尽管我们的 GPU 宣传的带宽为 616.0 GB/s，但这种额外开销会迅速累积起来。此外，还有其他与内存拷贝相关的开销。首先，我们正在为我们的代码执行的任何潜在流水线创建一个硬性停止。然后，因为我们不再进行流水线操作，我们在
+    GPU 上的数据必须全部同步出各个 CUDA 核的内存。最后，需要准备系统内存空间以接收来自 GPU 的新数据。
 - en: While this seems like a ridiculous addition to make to our code, this sort of
     thing happens all the time. In fact, one of the biggest things slowing down PyTorch
     code when it comes to deep learning is copying training data from the host into
     the GPU. Often the training data is simply too big to fit on the GPU, and doing
     these constant data transfers is an unavoidable penalty.
+  id: totrans-315
   prefs: []
   type: TYPE_NORMAL
+  zh: 尽管这似乎是对我们的代码做了一个荒谬的补充，但这种情况经常发生。事实上，当涉及深度学习时，导致PyTorch代码运行变慢的最大因素之一是将训练数据从主机复制到GPU上。通常情况下，训练数据简直太大，无法完全放入GPU中，因此进行这些频繁的数据传输是不可避免的惩罚。
 - en: There are ways to alleviate the overhead from this inevitable data transfer
     when the problem is going from CPU to GPU. First, the memory region can be marked
     as `pinned`. This can be done by calling the `Tensor.pin_memory()` method, which
@@ -1663,8 +2391,10 @@
     GPU. While training a deep learning model, data loading is generally done with
     the `DataLoader` class, which conveniently has a `pin_memory` parameter that can
     automatically do this for all your training data.^([5](ch07.xhtml#idm46122415396520))
+  id: totrans-316
   prefs: []
   type: TYPE_NORMAL
+  zh: 有方法可以减轻从CPU到GPU数据传输中的开销。首先，内存区域可以标记为`pinned`。这可以通过调用`Tensor.pin_memory()`方法来完成，该方法返回一个将CPU张量复制到内存的“页锁定”区域的副本。这个页锁定区域可以更快地复制到GPU，并且可以异步复制，以避免干扰GPU正在进行的任何计算。在训练深度学习模型时，数据加载通常使用`DataLoader`类完成，该类方便地具有一个`pin_memory`参数，可以自动为所有训练数据执行此操作。^([5](ch07.xhtml#idm46122415396520))
 - en: The most important step is to profile your code by using the tools outlined
     in [“Basic GPU Profiling”](#gpu-profiling). When your code is spending most of
     its time doing data transfers, you will see a low power draw, a smaller GPU utilization
@@ -1673,31 +2403,41 @@
     power the GPU can support and have 100% utilization. This is possible even when
     large amounts of data transfer are required—even when training deep learning models
     with a large number of images!
+  id: totrans-317
   prefs: []
   type: TYPE_NORMAL
+  zh: 使用[“基本GPU性能分析”](#gpu-profiling)中提到的工具来对代码进行性能分析是最重要的一步。当您的代码大部分时间花在数据传输上时，您会看到低功耗、较小的GPU利用率（如`nvidia-smi`报告）、大部分时间花在`to`函数中（如`bottleneck`报告）。理想情况下，您将使用GPU可以支持的最大功率，并且利用率达到100%。即使需要大量数据传输，比如训练大量图片的深度学习模型，这也是可能的！
 - en: Caution
+  id: totrans-318
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 注意
 - en: GPUs are not particularly good at running multiple tasks at the same time. When
     starting up a task that requires heavy use of the GPU, ensure that no other tasks
     are utilizing it by running `nvidia-smi`. However, if you are running a graphical
     environment, you may have no choice but to have your desktop and GPU code use
     the GPU at the same time.
+  id: totrans-319
   prefs: []
   type: TYPE_NORMAL
+  zh: GPU并不擅长同时运行多个任务。在启动需要大量使用GPU的任务时，请确保没有其他任务在使用GPU，可以通过运行`nvidia-smi`来查看。然而，如果您正在运行图形环境，您可能别无选择，必须让您的桌面和GPU代码同时使用GPU。
 - en: When to Use GPUs
+  id: totrans-320
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 何时使用GPU
 - en: We’ve seen that GPUs can be incredibly quick; however, memory considerations
     can be quite devastating to this runtime. This seems to indicate that if your
     task requires mainly linear algebra and matrix manipulations (like multiplication,
     addition, and Fourier transforms), then GPUs are a fantastic tool. This is particularly
     true if the calculation can happen on the GPU uninterrupted for a period of time
     before being copied back into system memory.
+  id: totrans-321
   prefs: []
   type: TYPE_NORMAL
+  zh: 我们已经看到GPU可以非常快速；然而，内存考虑因素可能对运行时产生严重影响。这似乎表明，如果您的任务主要需要线性代数和矩阵操作（如乘法、加法和傅里叶变换），那么GPU是一个非常好的工具。特别是如果计算可以在GPU上连续一段时间进行，然后再复制回系统内存。
 - en: As an example of a task that requires a lot of branching, we can imagine code
     where every step of the computation requires the previous result. If we compare
     running [Example 7-20](#very-branching-no-gpu) using PyTorch versus using NumPy,
@@ -1707,151 +2447,223 @@
     GPU than on the CPU. This example task can run only one computation at a time,
     so having many compute cores doesn’t help at all; it’s better to simply have one
     very fast core.
+  id: totrans-322
   prefs: []
   type: TYPE_NORMAL
+  zh: 作为需要大量分支的任务的示例，我们可以想象每一步计算都需要前一步结果的代码。如果我们比较使用 PyTorch 与使用 NumPy 运行 [示例 7-20](#very-branching-no-gpu)，我们会发现对于包含的示例，NumPy
+    一直更快（速度快98%！）。这是合乎逻辑的，考虑到 GPU 的架构。虽然 GPU 可以同时运行更多任务，但每个任务在 GPU 上运行比在 CPU 上慢得多。这个示例任务一次只能运行一个计算，因此拥有多个计算核心并不会帮助；最好只有一个非常快速的核心。
 - en: Example 7-20\. Highly branching task
+  id: totrans-323
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 7-20\. 高度分支任务
 - en: '[PRE26]'
+  id: totrans-324
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE26]'
 - en: In addition, because of the limited memory of the GPU, it is not a good tool
     for tasks that require exceedingly large amounts of data, many conditional manipulations
     of the data, or changing data. Most GPUs made for computational tasks have around
     12 GB of memory, which puts a significant limitation on “large amounts of data.”
     However, as technology improves, the size of GPU memory increases, so hopefully
     this limitation becomes less drastic in the future.
+  id: totrans-325
   prefs: []
   type: TYPE_NORMAL
+  zh: 另外，由于 GPU 的有限内存，它不是需要处理极大量数据、对数据进行多次条件操作或更改数据的好工具。大多数用于计算任务的 GPU 具有约 12 GB 的内存，这对“大量数据”是一个显著限制。然而，随着技术的进步，GPU
+    内存的大小增加，因此希望这种限制在未来变得不那么严重。
 - en: 'The general recipe for evaluating whether to use the GPU consists of the following
     steps:'
+  id: totrans-326
   prefs: []
   type: TYPE_NORMAL
+  zh: 评估是否使用 GPU 的一般步骤如下：
 - en: Ensure that the memory use of the problem will fit within the GPU (in [“Using
     memory_profiler to Diagnose Memory Usage”](ch02.xhtml#memory_profiler), we explore
     profiling memory use).
+  id: totrans-327
   prefs:
   - PREF_OL
   type: TYPE_NORMAL
+  zh: 确保问题的内存使用适合于 GPU（在 [“使用 memory_profiler 诊断内存使用”](ch02.xhtml#memory_profiler)
+    中，我们探索了内存使用的分析）。
 - en: Evaluate whether the algorithm requires a lot of branching conditions versus
     vectorized operations. As a rule of thumb, `numpy` functions generally vectorize
     very well, so if your algorithm can be written in terms of `numpy` calls, your
     code probably will vectorize well! You can also check the `branches` result when
     running `perf` (as explained in [“Understanding perf”](ch06_split_000.xhtml#understanding_perf)).
+  id: totrans-328
   prefs:
   - PREF_OL
   type: TYPE_NORMAL
+  zh: 评估算法是否需要大量分支条件而不是矢量化操作。作为经验法则，`numpy` 函数通常非常适合矢量化，因此如果您的算法可以用 `numpy` 调用编写，您的代码可能会很好地矢量化！在运行
+    `perf` 时，您还可以检查 `branches` 的结果（如 [“理解 perf”](ch06_split_000.xhtml#understanding_perf)
+    中所述）。
 - en: Evaluate how much data needs to be moved between the GPU and the CPU. Some questions
     to ask here are “How much computation can I do before I need to plot/save results?”
     and “Are there times my code will have to copy the data to run in a library I
     know isn’t GPU-compatible?”
+  id: totrans-329
   prefs:
   - PREF_OL
   type: TYPE_NORMAL
+  zh: 评估需要在 GPU 和 CPU 之间移动多少数据。这里可以问一些问题：“在需要绘制/保存结果之前我可以做多少计算？”和“是否有时我的代码将不得不复制数据以运行一个我知道不兼容
+    GPU 的库？”
 - en: Make sure PyTorch supports the operations you’d like to do! PyTorch implements
     a large portion of the `numpy` API, so this shouldn’t be an issue. For the most
     part, the API is even the same, so you don’t need to change your code at all.
     However, in some cases either PyTorch doesn’t support an operation (such as dealing
     with complex numbers) or the API is slightly different (for example, with generating
     random numbers).
+  id: totrans-330
   prefs:
   - PREF_OL
   type: TYPE_NORMAL
+  zh: 确保 PyTorch 支持您想要执行的操作！PyTorch 实现了大部分 `numpy` API，因此这不应该是问题。在大多数情况下，API 甚至是相同的，因此您根本不需要更改代码。但是，在某些情况下，PyTorch
+    可能不支持某些操作（例如处理复数）或 API 稍有不同（例如生成随机数）。
 - en: Considering these four points will help give you confidence that a GPU approach
     would be worthwhile. There are no hard rules for when the GPU will work better
     than the CPU, but these questions will help you gain some intuition. However,
     PyTorch also makes converting code to use the GPU painless, so the barrier to
     entry is quite low, even if you are just evaluating the GPU’s performance.
+  id: totrans-331
   prefs: []
   type: TYPE_NORMAL
+  zh: 考虑这四点将有助于确保 GPU 方法是值得的。关于 GPU 何时比 CPU 更好没有硬性规则，但这些问题将帮助您获得一些直觉。然而，PyTorch 还使得将代码转换为使用
+    GPU 几乎无痛，因此即使只是评估 GPU 的性能，进入门槛也很低。
 - en: Foreign Function Interfaces
+  id: totrans-332
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 外部函数接口
 - en: Sometimes the automatic solutions just don’t cut it, and you need to write custom
     C or Fortran code yourself. This could be because the compilation methods don’t
     find some potential optimizations, or because you want to take advantage of libraries
     or language features that aren’t available in Python. In all of these cases, you’ll
     need to use foreign function interfaces, which give you access to code written
     and compiled in another language.
+  id: totrans-333
   prefs: []
   type: TYPE_NORMAL
+  zh: 有时自动解决方案并不尽如人意，您需要自己编写定制的 C 或 Fortran 代码。这可能是因为编译方法没有找到一些潜在的优化，或者因为您想利用 Python
+    中不可用的库或语言功能。在所有这些情况下，您都需要使用外部函数接口，这使您可以访问用另一种语言编写和编译的代码。
 - en: For the rest of this chapter, we will attempt to use an external library to
     solve the 2D diffusion equation in the same way we did in [Chapter 6](ch06_split_000.xhtml#matrix_computation).^([6](ch07.xhtml#idm46122415229448))
     The code for this library, shown in [Example 7-21](#c_diffusion_2d), could be
     representative of a library you’ve installed or code that you have written. The
     methods we’ll look at serve as great ways to take small parts of your code and
     move them to another language in order to do very targeted language-based optimizations.
+  id: totrans-334
   prefs: []
   type: TYPE_NORMAL
+  zh: 在本章的其余部分，我们将尝试使用外部库以与我们在 [第 6 章](ch06_split_000.xhtml#matrix_computation) 中所做的方式相同来解决二维扩散方程。[^6]（ch07.xhtml#idm46122415229448）此库的代码，如
+    [示例 7-21](#c_diffusion_2d) 所示，可能代表您已安装的库或您编写的代码。我们将要研究的方法是将代码的小部分移到另一种语言中以进行非常有针对性的基于语言的优化的好方法。
 - en: Example 7-21\. Sample C code for solving the 2D diffusion problem
+  id: totrans-335
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 7-21\. 解决二维扩散问题的样例 C 代码
 - en: '[PRE27]'
+  id: totrans-336
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE27]'
 - en: Note
+  id: totrans-337
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 注意
 - en: We fix the grid size to be 512 × 512 in order to simplify the example code.
     To accept an arbitrarily sized grid, you must pass in the `in` and `out` parameters
     as double pointers and include function arguments for the actual size of the grid.
+  id: totrans-338
   prefs: []
   type: TYPE_NORMAL
+  zh: 为了简化示例代码，我们将网格大小固定为 512 × 512。要接受任意大小的网格，您必须将 `in` 和 `out` 参数作为双指针传入，并包含用于网格实际大小的函数参数。
 - en: 'To use this code, we must compile it into a shared module that creates a *.so*
     file. We can do this using `gcc` (or any other C compiler) by following these
     steps:'
+  id: totrans-339
   prefs: []
   type: TYPE_NORMAL
+  zh: 要使用此代码，我们必须将其编译成创建 *.so* 文件的共享模块。我们可以使用 `gcc`（或任何其他 C 编译器）按照以下步骤执行此操作：
 - en: '[PRE28]'
+  id: totrans-340
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE28]'
 - en: We can place this final shared library file anywhere that is accessible to our
     Python code, but standard *nix organization stores shared libraries in */usr/lib*
     and */usr/local/lib*.
+  id: totrans-341
   prefs: []
   type: TYPE_NORMAL
+  zh: 我们可以将这个最终的共享库文件放在任何对我们的 Python 代码可访问的地方，但标准的 *nix 组织会将共享库存储在 */usr/lib* 和 */usr/local/lib*
+    中。
 - en: ctypes
+  id: totrans-342
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: ctypes
 - en: The most basic foreign function interface in CPython is through the `ctypes`
     module.^([7](ch07.xhtml#idm46122415064632)) The bare-bones nature of this module
     can be quite inhibitive at times—you are in charge of doing everything, and it
     can take quite a while to make sure that you have everything in order. This extra
     level of complexity is evident in our `ctypes` diffusion code, shown in [Example 7-22](#ctypes_2D_diffusion_code).
+  id: totrans-343
   prefs: []
   type: TYPE_NORMAL
+  zh: 在 CPython 中最基本的外部函数接口是通过 `ctypes` 模块实现的。[^7]（ch07.xhtml#idm46122415064632）这个模块的基本特性有时会相当具有抑制性——您需要负责做所有事情，而且确保一切井井有条可能需要相当长的时间。我们的
+    `ctypes` 扩散代码中体现了这种额外的复杂性，如 [示例 7-22](#ctypes_2D_diffusion_code) 所示。
 - en: Example 7-22\. `ctypes` 2D diffusion code
+  id: totrans-344
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 7-22\. `ctypes` 二维扩散代码
 - en: '[PRE29]'
+  id: totrans-345
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE29]'
 - en: '[![1](Images/1.png)](#co_compiling_to_c_CO1-1)'
+  id: totrans-346
   prefs: []
   type: TYPE_NORMAL
+  zh: '[![1](Images/1.png)](#co_compiling_to_c_CO1-1)'
 - en: This is similar to importing the `diffusion.so` library. Either this file is
     in one of the standard system paths for library files or we can enter an absolute
     path.
+  id: totrans-347
   prefs: []
   type: TYPE_NORMAL
+  zh: 这与导入 `diffusion.so` 库类似。要么这个文件位于标准系统路径中的一个，要么我们可以输入一个绝对路径。
 - en: '[![2](Images/2.png)](#co_compiling_to_c_CO1-2)'
+  id: totrans-348
   prefs: []
   type: TYPE_NORMAL
+  zh: '[![2](Images/2.png)](#co_compiling_to_c_CO1-2)'
 - en: '`grid` and `out` are both `numpy` arrays.'
+  id: totrans-349
   prefs: []
   type: TYPE_NORMAL
+  zh: '`grid` 和 `out` 都是 `numpy` 数组。'
 - en: '[![3](Images/3.png)](#co_compiling_to_c_CO1-3)'
+  id: totrans-350
   prefs: []
   type: TYPE_NORMAL
+  zh: '[![3](Images/3.png)](#co_compiling_to_c_CO1-3)'
 - en: We finally have all the setup necessary and can call the C function directly.
+  id: totrans-351
   prefs: []
   type: TYPE_NORMAL
+  zh: 最终，我们已经准备好了所有必要的设置，并可以直接调用 C 函数。
 - en: This first thing we do is “import” our shared library. This is done with the
     `ctypes.CDLL` call. In this line, we can specify any shared library that Python
     can access (for example, the `ctypes-opencv` module loads the `libcv.so` library).
@@ -1860,8 +2672,13 @@
     `evolve`, which is now made available to us as a property of the `_diffusion`
     object. If `diffusion.so` had many functions and properties, we could access them
     all through the `_diffusion` object.
+  id: totrans-352
   prefs: []
   type: TYPE_NORMAL
+  zh: 我们首先要做的是“导入”我们的共享库。这通过 `ctypes.CDLL` 调用完成。在此行中，我们可以指定 Python 可访问的任何共享库（例如，`ctypes-opencv`
+    模块加载 `libcv.so` 库）。从中，我们得到一个 `_diffusion` 对象，其中包含共享库包含的所有成员。在这个示例中，`diffusion.so`
+    只包含一个名为 `evolve` 的函数，现在作为 `_diffusion` 对象的一个属性对我们可用。如果 `diffusion.so` 包含许多函数和属性，我们可以通过
+    `_diffusion` 对象访问它们所有。
 - en: However, even though the `_diffusion` object has the `evolve` function available
     within it, Python doesn’t know how to use it. C is statically typed, and the function
     has a very specific signature. To properly work with the `evolve` function, we
@@ -1870,8 +2687,12 @@
     when dealing with a quickly changing library. Furthermore, since `ctypes` can’t
     check if you have given it the correct types, your code may silently fail or segfault
     if you make a mistake!
+  id: totrans-353
   prefs: []
   type: TYPE_NORMAL
+  zh: 然而，尽管 `_diffusion` 对象内部有 `evolve` 函数可用，Python 并不知道如何使用它。C 是静态类型的，函数具有非常具体的签名。要正确使用
+    `evolve` 函数，我们必须明确设置输入参数类型和返回类型。在与 Python 接口同时开发库或处理快速变化的库时，这可能变得非常繁琐。此外，由于 `ctypes`
+    无法检查您是否提供了正确的类型，如果出错，您的代码可能会悄无声息地失败或导致段错误！
 - en: Furthermore, in addition to setting the arguments and return type of the function
     object, we also need to convert any data we care to use with it (this is called
     *casting*). Every argument we send to the function must be carefully casted into
@@ -1880,19 +2701,29 @@
     know that this is a Python `float`, and thus we should use a `ctype.c_float`.
     On the other hand, for `num2 = 1e300`, we would have to use `ctype.c_double`,
     because it would overflow a standard C `float`.
+  id: totrans-354
   prefs: []
   type: TYPE_NORMAL
+  zh: 此外，除了设置函数对象的参数和返回类型之外，我们还需要转换我们希望与之一起使用的任何数据（这称为*类型转换*）。我们发送给函数的每个参数都必须仔细转换为本地的
+    C 类型。有时这可能会变得非常棘手，因为 Python 对其变量类型非常宽松。例如，如果我们有 `num1 = 1e5`，我们必须知道这是一个 Python
+    的 `float`，因此我们应该使用 `ctype.c_float`。另一方面，对于 `num2 = 1e300`，我们必须使用 `ctype.c_double`，因为它会超出标准
+    C 的 `float` 范围。
 - en: That being said, `numpy` provides a `.ctypes` property to its arrays that makes
     it easily compatible with `ctypes`. If `numpy` didn’t provide this functionality,
     we would have had to initialize a `ctypes` array of the correct type and then
     find the location of our original data and have our new `ctypes` object point
     there.
+  id: totrans-355
   prefs: []
   type: TYPE_NORMAL
+  zh: 话虽如此，`numpy` 提供了 `.ctypes` 属性，使其数组与 `ctypes` 易于兼容。如果 `numpy` 没有提供这种功能，我们将不得不初始化一个正确类型的
+    `ctypes` 数组，然后找到我们原始数据的位置，让新的 `ctypes` 对象指向它。
 - en: Warning
+  id: totrans-356
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 警告
 - en: Unless the object you are turning into a `ctype` object implements a buffer
     (as do the `array` module, `numpy` arrays, `io.StringIO`, etc.), your data will
     be copied into the new object. In the case of casting an `int` to a `float`, this
@@ -1902,17 +2733,26 @@
     using the `struct` module, would help. This does, however, hurt the readability
     of your code, since these objects are generally less flexible than their native
     Python counterparts.
+  id: totrans-357
   prefs: []
   type: TYPE_NORMAL
+  zh: 除非您将要转换为 `ctype` 对象的对象实现了缓冲区（如 `array` 模块、`numpy` 数组、`io.StringIO` 等），否则您的数据将被复制到新对象中。在将
+    `int` 转换为 `float` 时，这对代码的性能影响不大。但是，如果您要转换一个非常长的 Python 列表，这可能会带来相当大的性能损失！在这些情况下，使用
+    `array` 模块或 `numpy` 数组，甚至使用 `struct` 模块构建自己的缓冲对象，将有所帮助。然而，这会影响代码的可读性，因为这些对象通常比其原生
+    Python 对应物不够灵活。
 - en: 'This memory management can get even more complicated if you have to send the
     library a complicated data structure. For example, if your library expects a C
     `struct` representing a point in space with the properties `x` and `y`, you would
     have to define the following:'
+  id: totrans-358
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果你需要向库发送一个复杂的数据结构，内存管理就会变得更加复杂。例如，如果你的库期望一个表示空间中点的C `struct`，具有 `x` 和 `y` 属性，你需要定义如下内容：
 - en: '[PRE30]'
+  id: totrans-359
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE30]'
 - en: At this point you could start creating C-compatible objects by initializing
     a `cPoint` object (i.e., `point = cPoint(10, 5)`). This isn’t a terrible amount
     of work, but it can become tedious and results in some fragile code. What happens
@@ -1920,24 +2760,33 @@
     This will make your code very hard to maintain and generally results in stagnant
     code, where the developers simply decide never to upgrade the underlying libraries
     that are being used.
+  id: totrans-360
   prefs: []
   type: TYPE_NORMAL
+  zh: 在这一点上，你可以通过初始化一个 `cPoint` 对象（即 `point = cPoint(10, 5)`）来开始创建C兼容的对象。这并不是一件很麻烦的工作，但可能会变得乏味，并导致一些脆弱的代码。如果发布了一个略微更改了结构的库的新版本会发生什么？这将使您的代码非常难以维护，并且通常会导致代码停滞，开发人员决定永远不升级正在使用的底层库。
 - en: For these reasons, using the `ctypes` module is great if you already have a
     good understanding of C and want to be able to tune every aspect of the interface.
     It has great portability since it is part of the standard library, and if your
     task is simple, it provides simple solutions. Just be careful because the complexity
     of `ctypes` solutions (and similar low-level solutions) quickly becomes unmanageable.
+  id: totrans-361
   prefs: []
   type: TYPE_NORMAL
+  zh: 因此，如果你已经对C语言有了很好的理解，并且希望能够调整接口的每个方面，使用 `ctypes` 模块是一个很好的选择。它具有很好的可移植性，因为它是标准库的一部分，如果你的任务很简单，它提供了简单的解决方案。只需小心，因为
+    `ctypes` 解决方案（以及类似的低级解决方案）的复杂性很快就会变得难以管理。
 - en: cffi
+  id: totrans-362
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: cffi
 - en: Realizing that `ctypes` can be quite cumbersome to use at times, `cffi` attempts
     to simplify many of the standard operations that programmers use. It does this
     by having an internal C parser that can understand function and structure definitions.
+  id: totrans-363
   prefs: []
   type: TYPE_NORMAL
+  zh: 虽然意识到 `ctypes` 有时可能使用起来相当麻烦，`cffi` 尝试简化程序员使用的许多标准操作。它通过具有内部C解析器来理解函数和结构定义来实现这一点。
 - en: 'As a result, we can simply write the C code that defines the structure of the
     library we wish to use, and then `cffi` will do all the heavy work for us: it
     imports the module and makes sure we specify the correct types to the resulting
@@ -1945,29 +2794,45 @@
     is available, since the header files (the files ending in *.h*) will include all
     the relevant definitions we need.^([8](ch07.xhtml#idm46122414779272)) [Example 7-23](#cffi_2D_diffusion_code)
     shows the `cffi` version of the 2D diffusion code.'
+  id: totrans-364
   prefs: []
   type: TYPE_NORMAL
+  zh: 因此，我们可以简单地编写定义我们希望使用的库结构的C代码，然后 `cffi` 将为我们完成所有繁重的工作：它导入模块，并确保我们向结果函数指定了正确的类型。事实上，如果库的源代码是可用的，这项工作几乎可以是微不足道的，因为头文件（以
+    *.h 结尾的文件）将包含我们需要的所有相关定义。^([8](ch07.xhtml#idm46122414779272)) [示例 7-23](#cffi_2D_diffusion_code)
+    展示了二维扩散代码的 `cffi` 版本。
 - en: Example 7-23\. `cffi` 2D diffusion code
+  id: totrans-365
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 7-23\. `cffi` 二维扩散代码
 - en: '[PRE31]'
+  id: totrans-366
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE31]'
 - en: '[![1](Images/1.png)](#co_compiling_to_c_CO2-1)'
+  id: totrans-367
   prefs: []
   type: TYPE_NORMAL
+  zh: '[![1](Images/1.png)](#co_compiling_to_c_CO2-1)'
 - en: The contents of this definition can normally be acquired from the manual of
     the library that you are using or by looking at the library’s header files.
+  id: totrans-368
   prefs: []
   type: TYPE_NORMAL
+  zh: 通常可以从你正在使用的库的手册或查看库的头文件获取这些定义的内容。
 - en: '[![2](Images/2.png)](#co_compiling_to_c_CO2-2)'
+  id: totrans-369
   prefs: []
   type: TYPE_NORMAL
+  zh: '[![2](Images/2.png)](#co_compiling_to_c_CO2-2)'
 - en: While we still need to cast nonnative Python objects for use with our C module,
     the syntax is very familiar to those with experience in C.
+  id: totrans-370
   prefs: []
   type: TYPE_NORMAL
+  zh: 尽管我们仍然需要为了与我们的C模块一起使用而强制转换非本地的Python对象，但是对于有C经验的人来说，语法是非常熟悉的。
 - en: In the preceding code, we can think of the `cffi` initialization as being two-stepped.
     First, we create an `FFI` object and give it all the global C declarations we
     need. This can include datatypes in addition to function signatures. These signatures
@@ -1977,8 +2842,10 @@
     the function signature for the `evolve` function and then loaded up two different
     implantations and stored them in different objects (which is fantastic for debugging
     and profiling!).
+  id: totrans-371
   prefs: []
   type: TYPE_NORMAL
+  zh: 在前述代码中，我们可以将`cffi`的初始化视为两步操作。首先，我们创建一个`FFI`对象，并提供所有需要的全局C声明。这可能包括数据类型和函数签名。这些签名并不一定包含任何代码；它们只需要定义代码的外观。然后，我们可以使用`dlopen`导入包含函数实际实现的共享库。这意味着我们可以告诉`FFI`关于`evolve`函数的函数签名，然后加载两种不同的实现并将它们存储在不同的对象中（这对于调试和性能分析非常棒！）。
 - en: In addition to easily importing a shared C library, `cffi` allows you to write
     C code and have it be dynamically compiled using the `verify` function. This has
     many immediate benefits—for example, you can easily rewrite small portions of
@@ -1990,68 +2857,96 @@
     being dynamically compiled, you can specify compile instructions to every chunk
     of code you need to compile. Note, however, that this compilation has a one-time
     penalty every time the `verify` function is run to actually perform the compilation.
+  id: totrans-372
   prefs: []
   type: TYPE_NORMAL
+  zh: 除了轻松导入共享的C库之外，`cffi`还允许您编写C代码，并使用`verify`函数动态编译它。这有许多即时的好处，例如，您可以轻松地将代码的小部分重写为C代码，而无需调用单独的C库大机制。或者，如果您希望使用某个库，但需要一些C语言粘合代码以使接口完美工作，您可以将其内联到您的`cffi`代码中，如示例7-24所示，使一切都集中在一个位置。此外，由于代码是动态编译的，您可以为每个需要编译的代码块指定编译指令。然而，请注意，每次运行`verify`函数以执行编译时都会有一次性的惩罚。
 - en: Example 7-24\. `cffi` with inline 2D diffusion code
+  id: totrans-373
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 7-24. `cffi`与内联2D扩散代码
 - en: '[PRE32]'
+  id: totrans-374
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE32]'
 - en: '[![1](Images/1.png)](#co_compiling_to_c_CO3-1)'
+  id: totrans-375
   prefs: []
   type: TYPE_NORMAL
+  zh: '[![1](Images/1.png)](#co_compiling_to_c_CO3-1)'
 - en: Since we are just-in-time compiling this code, we can also provide relevant
     compilation flags.
+  id: totrans-376
   prefs: []
   type: TYPE_NORMAL
+  zh: 由于我们是即时编译此代码，我们还可以提供相关的编译标志。
 - en: Another benefit of the `verify` functionality is that it plays nicely with complicated
     `cdef` statements. For example, if we were using a library with a complicated
     structure but wanted to use only a part of it, we could use the partial struct
     definition. To do this, we add a `...` in the struct definition in `ffi.cdef`
     and `#include` the relevant header file in a later `verify`.
+  id: totrans-377
   prefs: []
   type: TYPE_NORMAL
+  zh: '`verify`功能的另一个好处是它与复杂的`cdef`语句很好地配合。例如，如果我们正在使用一个具有复杂结构的库，但只想使用其中的一部分，我们可以使用部分结构定义。为此，在`ffi.cdef`中的结构定义中添加`...`，并在稍后的`verify`中包含相关的头文件。'
 - en: 'For example, suppose we were working with a library with header `complicated.h`
     that included a structure that looked like this:'
+  id: totrans-378
   prefs: []
   type: TYPE_NORMAL
+  zh: 例如，假设我们正在使用一个包含结构如下的头文件`complicated.h`的库：
 - en: '[PRE33]'
+  id: totrans-379
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE33]'
 - en: 'If we cared only about the `x` and `y` properties, we could write some simple
     `cffi` code that cares only about those values:'
+  id: totrans-380
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果我们只关心`x`和`y`属性，我们可以编写一些简单的`cffi`代码，只关注这些值：
 - en: '[PRE34]'
+  id: totrans-381
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE34]'
 - en: We could then run the `do_calculation` function from the `complicated.h` library
     and have returned to us a `Point` object with its `x` and `y` properties accessible.
     This is amazing for portability, since this code will run just fine on systems
     with a different implementation of `Point` or when new versions of `complicated.h`
     come out, as long as they all have the `x` and `y` properties.
+  id: totrans-382
   prefs: []
   type: TYPE_NORMAL
+  zh: 然后，我们可以运行来自`complicated.h`库的`do_calculation`函数，并返回一个具有可访问的`x`和`y`属性的`Point`对象。这对于可移植性来说是令人惊讶的，因为只要它们都具有`x`和`y`属性，此代码将在具有不同`Point`实现或`complicated.h`新版本的系统上正常运行。
 - en: All of these niceties really make `cffi` an amazing tool to have when you’re
     working with C code in Python. It is much simpler than `ctypes`, while still giving
     you the same amount of fine-grained control you may want when working directly
     with a foreign function interface.
+  id: totrans-383
   prefs: []
   type: TYPE_NORMAL
+  zh: 所有这些细节使得`cffi`在你使用Python处理C代码时成为一个了不起的工具。它比`ctypes`简单得多，同时在直接使用外部函数接口时提供了同样精细的控制能力。
 - en: f2py
+  id: totrans-384
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: f2py
 - en: For many scientific applications, Fortran is still the gold standard. While
     its days of being a general-purpose language are over, it still has many niceties
     that make vector operations easy to write and quite quick. In addition, many performance
     math libraries are written in Fortran ([LAPACK](https://oreil.ly/WwULF), [BLAS](https://oreil.ly/9-pR7),
     etc.), all of which are fundamental in libraries such as SciPy, and being able
     to use them in your performance Python code may be critical.
+  id: totrans-385
   prefs: []
   type: TYPE_NORMAL
+  zh: 对于许多科学应用程序，Fortran仍然是金标准。虽然它作为通用语言的日子已经过去，但它仍然有许多细节使得向量操作易于编写且非常快速。此外，许多性能数学库都是用Fortran编写的（如[LAPACK](https://oreil.ly/WwULF)、[BLAS](https://oreil.ly/9-pR7)等），这些库在诸如SciPy等库中至关重要，能够在性能Python代码中使用它们可能非常关键。
 - en: For such situations, [`f2py`](https://oreil.ly/h5cwN) provides a dead-simple
     way of importing Fortran code into Python. This module is able to be so simple
     because of the explicitness of types in Fortran. Since the types can be easily
@@ -2060,8 +2955,10 @@
     you are using `f2py`, you are actually autogenerating a C module that knows how
     to use Fortran code! As a result, a lot of the confusion inherent in the `ctypes`
     and `cffi` solutions simply doesn’t exist.
+  id: totrans-386
   prefs: []
   type: TYPE_NORMAL
+  zh: 对于这种情况，[`f2py`](https://oreil.ly/h5cwN) 提供了一种非常简单的方法将Fortran代码导入Python。由于Fortran中类型的显式性，这个模块可以如此简单。因为类型可以轻松解析和理解，`f2py`可以轻松地生成一个CPython模块，使用C中的原生外部函数支持来使用Fortran代码。这意味着当您使用`f2py`时，实际上是在自动生成一个懂得如何使用Fortran代码的C模块！因此，在使用`f2py`时，`ctypes`和`cffi`解决方案中存在的许多困惑根本不存在。
 - en: 'In [Example 7-25](#f2py_diffusion), we can see some simple `f2py`-compatible
     code for solving the diffusion equation. In fact, all native Fortran code is `f2py`-compatible;
     however, the annotations to the function arguments (the statements prefaced by
@@ -2073,51 +2970,73 @@
     has this information on hand. When we set the type as “hidden,” `f2py` can automatically
     fill those values for us, essentially keeping them hidden from us in the final
     Python interface.'
+  id: totrans-387
   prefs: []
   type: TYPE_NORMAL
+  zh: 在[示例 7-25](#f2py_diffusion)中，我们可以看到一些简单的`f2py`兼容代码，用于解决扩散方程问题。事实上，所有本地的Fortran代码都是`f2py`兼容的；然而，函数参数的注解（以`!f2py`开头的语句）简化了生成的Python模块，并提供了一个更易于使用的接口。这些注解隐式地告诉`f2py`我们是否打算将一个参数仅作为输出或输入，或者是我们希望在原地修改或完全隐藏的内容。隐藏类型特别适用于向量的大小：虽然Fortran可能需要显式指定这些数字，但我们的Python代码已经具备了这些信息。当我们将类型设置为“隐藏”时，`f2py`可以自动为我们填充这些值，在最终的Python接口中将它们隐藏起来。
 - en: Example 7-25\. Fortran 2D diffusion code with `f2py` annotations
+  id: totrans-388
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 7-25\. 使用`f2py`注解的Fortran 2D扩散代码
 - en: '[PRE35]'
+  id: totrans-389
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE35]'
 - en: 'To build the code into a Python module, we run the following command:'
+  id: totrans-390
   prefs: []
   type: TYPE_NORMAL
+  zh: 要将代码构建为Python模块，运行以下命令：
 - en: '[PRE36]'
+  id: totrans-391
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE36]'
 - en: Tip
+  id: totrans-392
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 提示
 - en: We specifically use `gfortran` in the preceding call to `f2py`. Make sure it
     is installed on your system or that you change the corresponding argument to use
     the Fortran compiler you have installed.
+  id: totrans-393
   prefs: []
   type: TYPE_NORMAL
+  zh: 我们在前面的`f2py`调用中特别使用了`gfortran`。确保它已安装在您的系统上，或者您更改对应的参数以使用您已安装的Fortran编译器。
 - en: This will create a library file pinned to your Python version and operating
     system (*diffusion.cpython-37m-x86_64-linux-gnu.so*, in our case) that can be
     imported directly into Python.
+  id: totrans-394
   prefs: []
   type: TYPE_NORMAL
+  zh: 这将创建一个库文件，固定到您的Python版本和操作系统上（在我们的案例中是*diffusion.cpython-37m-x86_64-linux-gnu.so*），可以直接导入到Python中使用。
 - en: 'If we play around with the resulting module interactively, we can see the niceties
     that `f2py` has given us, thanks to our annotations and its ability to parse the
     Fortran code:'
+  id: totrans-395
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果我们在交互式环境中使用生成的模块进行测试，我们可以看到`f2py`给我们带来的便利，这要归功于我们的注解和它解析Fortran代码的能力。
 - en: '[PRE37]'
+  id: totrans-396
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE37]'
 - en: This code shows that the result from the `f2py` generation is automatically
     documented, and the interface is quite simplified. For example, instead of us
     having to extract the sizes of the vectors, `f2py` has figured out how to automatically
     find this information and simply hides it in the resulting interface. In fact,
     the resulting `evolve` function looks exactly the same in its signature as the
     pure Python version we wrote in [Example 6-14](ch06_split_000.xhtml#matrix_numpy_memory1).
+  id: totrans-397
   prefs: []
   type: TYPE_NORMAL
+  zh: 该代码显示了`f2py`生成结果的自动文档化，并且接口非常简化。例如，我们不需要提取向量的大小，`f2py`已经找出如何自动找到这些信息，并且只是在生成的接口中隐藏了它。事实上，生成的`evolve`函数在其签名上看起来与我们在[示例 6-14](ch06_split_000.xhtml#matrix_numpy_memory1)中编写的纯Python版本完全相同。
 - en: The only thing we must be careful of is the ordering of the `numpy` arrays in
     memory. Since most of what we do with `numpy` and Python focuses on code derived
     from C, we always use the C convention for ordering data in memory (called *row-major
@@ -2126,12 +3045,17 @@
     for a 2D array, columns or rows are contiguous in memory.^([9](ch07.xhtml#idm46122413870280))
     Luckily, this simply means we specify the `order='F'` parameter to `numpy` when
     declaring our vectors.
+  id: totrans-398
   prefs: []
   type: TYPE_NORMAL
+  zh: 我们唯一需要注意的是`numpy`数组在内存中的排序。由于大部分与`numpy`和Python相关的代码源自C，我们始终使用C约定来排序内存中的数据（称为*行主序排序*）。Fortran使用不同的约定（*列主序排序*），我们必须确保我们的向量遵循这种排序。这些排序简单地说明了对于2D数组，列或行在内存中是连续的。^([9](ch07.xhtml#idm46122413870280))
+    幸运的是，这意味着我们在声明向量时可以简单地指定`order='F'`参数给`numpy`。
 - en: Caution
+  id: totrans-399
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 注意
 - en: The difference in ordering basically changes which is the outer loop when iterating
     over a multidimensional array. In Python and C, if you define an array as `array[X][Y]`,
     your outer loop will be over `X` and your inner loop will be over `Y`. In `fortran`,
@@ -2139,51 +3063,73 @@
     use the wrong loop ordering, you will at best suffer a major performance penalty
     because of an increase in `cache-misses` (see [“Memory Fragmentation”](ch06_split_000.xhtml#matrix_memory_fragmentation))
     and at worst access the wrong data!
+  id: totrans-400
   prefs: []
   type: TYPE_NORMAL
+  zh: 排序上的差异基本上改变了在多维数组上进行迭代时的外部循环。在Python和C中，如果您将一个数组定义为`array[X][Y]`，您的外部循环将是在`X`上，内部循环将是在`Y`上。在Fortran中，您的外部循环将是在`Y`上，内部循环将是在`X`上。如果您使用错误的循环顺序，您最多会因为增加`cache-misses`（参见[“内存碎片化”](ch06_split_000.xhtml#matrix_memory_fragmentation)）而遭受严重的性能惩罚，最坏情况下可能访问错误的数据！
 - en: 'This results in the following code to use our Fortran subroutine. This code
     looks exactly the same as what we used in [Example 6-14](ch06_split_000.xhtml#matrix_numpy_memory1),
     except for the import from the `f2py`-derived library and the explicit Fortran
     ordering of our data:'
+  id: totrans-401
   prefs: []
   type: TYPE_NORMAL
+  zh: 这导致了以下代码用于调用我们的Fortran子例程。这段代码看起来与我们在[示例 6-14](ch06_split_000.xhtml#matrix_numpy_memory1)中使用的完全相同，除了从`f2py`派生的库导入和我们数据的显式Fortran顺序之外：
 - en: '[PRE38]'
+  id: totrans-402
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE38]'
 - en: '[![1](Images/1.png)](#co_compiling_to_c_CO4-1)'
+  id: totrans-403
   prefs: []
   type: TYPE_NORMAL
+  zh: '[![1](Images/1.png)](#co_compiling_to_c_CO4-1)'
 - en: Fortran orders numbers differently in memory, so we must remember to set our
     `numpy` arrays to use that standard.
+  id: totrans-404
   prefs: []
   type: TYPE_NORMAL
+  zh: Fortran在内存中以不同的顺序排序数字，因此我们必须记住设置我们的`numpy`数组以使用该标准。
 - en: CPython Module
+  id: totrans-405
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: CPython模块
 - en: Finally, we can always go right down to the CPython API level and write a CPython
     module. This requires us to write code in the same way that CPython is developed
     and take care of all of the interactions between our code and the implementation
     of CPython.
+  id: totrans-406
   prefs: []
   type: TYPE_NORMAL
+  zh: 最后，我们总是可以直接到达CPython API级别并编写一个CPython模块。这要求我们以与CPython开发的方式编写代码，并处理我们的代码与CPython实现之间的所有交互。
 - en: This has the advantage that it is incredibly portable, depending on the Python
     version. We don’t require any external modules or libraries, just a C compiler
     and Python! However, this doesn’t necessarily scale well to new versions of Python.
     For example, CPython modules written for Python 2.7 won’t work with Python 3,
     and vice versa.
+  id: totrans-407
   prefs: []
   type: TYPE_NORMAL
+  zh: 这种方法的优点在于它的移植性非常强，取决于Python版本。我们不需要任何外部模块或库，只需一个C编译器和Python！然而，这并不一定能很好地适应Python的新版本。例如，为Python
+    2.7编写的CPython模块无法与Python 3一起使用，反之亦然。
 - en: Note
+  id: totrans-408
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 注意
 - en: In fact, much of the slowdown in the Python 3 rollout was rooted in the difficulty
     in making this change. When creating a CPython module, you are coupled very closely
     to the actual Python implementation, and large changes in the language (such as
     the change from 2.7 to 3) require large modifications to your module.
+  id: totrans-409
   prefs: []
   type: TYPE_NORMAL
+  zh: 实际上，Python 3 的推出中很多的减速问题都源于进行这种更改的困难。创建 CPython 模块时，你与实际的 Python 实现紧密耦合，语言的大规模变更（比如从
+    2.7 到 3 的变更）需要对你的模块进行大规模修改。
 - en: That portability comes at a big cost, though—you are responsible for every aspect
     of the interface between your Python code and the module. This can make even the
     simplest tasks take dozens of lines of code. For example, to interface with the
@@ -2195,53 +3141,80 @@
     lot of pain when creating CPython modules that deal with native Python types).
     Because of this, the resulting code tends to be minutely faster than other interface
     methods.
+  id: totrans-410
   prefs: []
   type: TYPE_NORMAL
+  zh: 这种便携性虽然带来了很大的成本，但你需要负责 Python 代码与模块之间的每一个接口细节。这会导致即使是最简单的任务也要编写数十行代码。例如，为了与
+    [示例 7-21](#c_diffusion_2d) 中的扩散库进行接口交互，我们必须编写 28 行代码，仅仅是为了读取函数的参数并解析它们（[示例 7-26](#compiling_cpython_module)）。当然，这确实意味着你能够非常精细地控制正在发生的事情。这甚至可以到达手动更改
+    Python 垃圾收集的引用计数的程度（这在创建处理本地 Python 类型的 CPython 模块时可能会带来很多痛苦）。因此，由于这个原因，最终生成的代码往往比其他接口方法稍微快一点。
 - en: Warning
+  id: totrans-411
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 警告
 - en: All in all, this method should be left as a last resort. While it is quite informative
     to write a CPython module, the resulting code is not as reusable or maintainable
     as other potential methods. Making subtle changes in the module can often require
     completely reworking it. In fact, we include the module code and the required
     *setup.py* to compile it ([Example 7-27](#compiling_cpython_module_setup)) as
     a cautionary tale.
+  id: totrans-412
   prefs: []
   type: TYPE_NORMAL
+  zh: 总而言之，这种方法应该被作为最后的选择。虽然编写 CPython 模块确实很有信息量，但生成的代码不如其他潜在方法那样可重用或可维护。在模块中进行微小的更改通常可能需要完全重新设计它。实际上，我们包括了模块代码和必需的
+    *setup.py* 来编译它（[示例 7-27](#compiling_cpython_module_setup)）作为一个警示故事。
 - en: Example 7-26\. CPython module to interface to the 2D diffusion library
+  id: totrans-413
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 7-26\. 用于 2D 扩散库接口的 CPython 模块
 - en: '[PRE39]'
+  id: totrans-414
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE39]'
 - en: To build this code, we need to create a *setup.py* script that uses the `distutils`
     module to figure out how to build the code such that it is Python-compatible ([Example 7-27](#compiling_cpython_module_setup)).
     In addition to the standard `distutils` module, `numpy` provides its own module
     to help with adding `numpy` integration in your CPython modules.
+  id: totrans-415
   prefs: []
   type: TYPE_NORMAL
+  zh: 要构建这段代码，我们需要创建一个 *setup.py* 脚本，使用 `distutils` 模块来确保构建的代码与 Python 兼容（[示例 7-27](#compiling_cpython_module_setup)）。除了标准的
+    `distutils` 模块外，`numpy` 还提供了自己的模块来帮助将 `numpy` 整合到你的 CPython 模块中。
 - en: Example 7-27\. Setup file for the CPython module diffusion interface
+  id: totrans-416
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 7-27\. CPython 模块扩散接口的设置文件
 - en: '[PRE40]'
+  id: totrans-417
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE40]'
 - en: 'The result from this is a *cdiffusion.so* file that can be imported directly
     from Python and used quite easily. Since we had complete control over the signature
     of the resulting function and exactly how our C code interacted with the library,
     we were able to (with some hard work) create a module that is easy to use:'
+  id: totrans-418
   prefs: []
   type: TYPE_NORMAL
+  zh: 由此产生的结果是一个 *cdiffusion.so* 文件，可以直接从 Python 中导入并且非常容易使用。由于我们完全控制了生成函数的签名以及我们的
+    C 代码如何与库交互，我们能够（通过一些艰苦的工作）创建一个易于使用的模块：
 - en: '[PRE41]'
+  id: totrans-419
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE41]'
 - en: Wrap-Up
+  id: totrans-420
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 总结
 - en: The various strategies introduced in this chapter allow you to specialize your
     code to different degrees in order to reduce the number of instructions the CPU
     must execute and to increase the efficiency of your programs. Sometimes this can
@@ -2251,61 +3224,86 @@
     Regardless of the motivation, Python allows us to benefit from the speedups that
     other languages can offer on some problems, while still maintaining verbosity
     and flexibility when needed.
+  id: totrans-421
   prefs: []
   type: TYPE_NORMAL
+  zh: 本章介绍的各种策略允许您根据需要专门化您的代码，以减少CPU必须执行的指令数，并提高程序的效率。有时可以通过算法实现，尽管通常必须手动完成（参见[“JIT
+    Versus AOT Compilers”](#jit_vs_compiler)）。此外，有时候必须使用这些方法仅仅是为了使用已经用其他语言编写的库。无论出于何种动机，Python都使我们能够在某些问题上享受其他语言可以提供的加速效果，同时在需要时保持冗长和灵活性。
 - en: We also looked into how to use the GPU to use purpose-specific hardware to solve
     problems faster than a CPU could alone. These devices are very specialized and
     can have very different performance considerations than classical high performance
     programming. However, we’ve seen that new libraries like PyTorch make evaluating
     the GPU much simpler than it ever has been.
+  id: totrans-422
   prefs: []
   type: TYPE_NORMAL
+  zh: 我们还研究了如何利用GPU使用特定目的的硬件比单独使用CPU解决问题更快。这些设备非常专业化，其性能考虑与传统的高性能编程有很大不同。然而，我们已经看到像PyTorch这样的新库使评估GPU比以往任何时候都更简单。
 - en: It is important to note, though, that these optimizations are done to optimize
     the efficiency of compute instructions only. If you have I/O-bound processes coupled
     to a compute-bound problem, simply compiling your code may not provide any reasonable
     speedups. For these problems, we must rethink our solutions and potentially use
     parallelism to run different tasks at the same time.
+  id: totrans-423
   prefs: []
   type: TYPE_NORMAL
+  zh: 但需要注意的是，这些优化仅用于优化计算指令的效率。如果您的I/O限制进程与计算限制问题耦合在一起，仅仅编译代码可能不会提供任何合理的加速效果。对于这些问题，我们必须重新思考我们的解决方案，并可能使用并行处理来同时运行不同的任务。
 - en: ^([1](ch07.xhtml#idm46122415613752-marker)) The RTX 2080 TI also includes 544
     tensor cores specifically created to help with mathematical operations that are
     particularly useful for deep learning.
+  id: totrans-424
   prefs: []
   type: TYPE_NORMAL
+  zh: ^([1](ch07.xhtml#idm46122415613752-marker)) RTX 2080 TI还包括544个张量核心，专门用于帮助特别适用于深度学习的数学运算。
 - en: ^([2](ch07.xhtml#idm46122415607560-marker)) For comparisons of the performance
     of TensorFlow and PyTorch, see [*https://oreil.ly/8NOJW*](https://oreil.ly/8NOJW)
     and [*https://oreil.ly/4BKM5*](https://oreil.ly/4BKM5).
+  id: totrans-425
   prefs: []
   type: TYPE_NORMAL
+  zh: ^([2](ch07.xhtml#idm46122415607560-marker)) 要比较TensorFlow和PyTorch的性能，请参见[*https://oreil.ly/8NOJW*](https://oreil.ly/8NOJW)和[*https://oreil.ly/4BKM5*](https://oreil.ly/4BKM5)。
 - en: ^([3](ch07.xhtml#idm46122415458168-marker)) PyTorch CPU performance isn’t terribly
     great unless you install from source. When installing from source, optimized linear
     algebra libraries are used to give speeds comparable to NumPy.
+  id: totrans-426
   prefs: []
   type: TYPE_NORMAL
+  zh: ^([3](ch07.xhtml#idm46122415458168-marker)) PyTorch在CPU上的性能并不是非常出色，除非你从源代码安装。从源代码安装时，会使用优化的线性代数库，以提供与NumPy相媲美的速度。
 - en: ^([4](ch07.xhtml#idm46122415455528-marker)) As with any JIT, the first time
     a function is called, it will have the overhead of having to compile the code.
     In [Example 7-19](#compilation-diffusion-pytorch), we profile the functions multiple
     times and ignore the first time in order to measure only the runtime speeds.
+  id: totrans-427
   prefs: []
   type: TYPE_NORMAL
+  zh: ^([4](ch07.xhtml#idm46122415455528-marker)) 与任何JIT一样，第一次调用函数时，将需要编译代码的开销。在[示例 7-19](#compilation-diffusion-pytorch)中，我们多次对函数进行剖析，并忽略第一次，以便仅测量运行时速度。
 - en: ^([5](ch07.xhtml#idm46122415396520-marker)) The `DataLoader` object also supports
     running with multiple workers. Having several workers is recommended if data is
     being loaded from disk in order to minimize I/O time.
+  id: totrans-428
   prefs: []
   type: TYPE_NORMAL
+  zh: ^([5](ch07.xhtml#idm46122415396520-marker)) `DataLoader`对象还支持多个工作线程的运行。如果数据从磁盘加载，建议使用多个工作线程以最小化I/O时间。
 - en: ^([6](ch07.xhtml#idm46122415229448-marker)) For simplicity, we will not implement
     the boundary conditions.
+  id: totrans-429
   prefs: []
   type: TYPE_NORMAL
+  zh: ^([6](ch07.xhtml#idm46122415229448-marker)) 为简单起见，我们不会实现边界条件。
 - en: ^([7](ch07.xhtml#idm46122415064632-marker)) This is CPython-dependent. Other
     versions of Python may have their own versions of `ctypes`, which may work differently.
+  id: totrans-430
   prefs: []
   type: TYPE_NORMAL
+  zh: ^([7](ch07.xhtml#idm46122415064632-marker)) 这与CPython相关。其他版本的Python可能有它们自己的`ctypes`版本，其工作方式可能有所不同。
 - en: ^([8](ch07.xhtml#idm46122414779272-marker)) In Unix systems, header files for
     system libraries can be found in */usr/include*.
+  id: totrans-431
   prefs: []
   type: TYPE_NORMAL
+  zh: ^([8](ch07.xhtml#idm46122414779272-marker)) 在Unix系统中，系统库的头文件可以在*/usr/include*找到。
 - en: ^([9](ch07.xhtml#idm46122413870280-marker)) For more information, see [the Wikipedia
     page](http://bit.ly/row-major_order) on row-major and column-major ordering.
+  id: totrans-432
   prefs: []
   type: TYPE_NORMAL
+  zh: ^([9](ch07.xhtml#idm46122413870280-marker)) 更多信息，请参阅[维基百科页面](http://bit.ly/row-major_order)，了解行主序和列主序的排序。
