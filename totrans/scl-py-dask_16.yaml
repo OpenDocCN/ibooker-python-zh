@@ -1,22 +1,30 @@
 - en: Appendix D. Streaming with Streamz and Dask
+  id: totrans-0
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 附录 D. 使用 Streamz 和 Dask 进行流式处理
 - en: This book has been focused on using Dask to build batch applications, where
     data is collected from or provided by the user and then used for calculations.
     Another important group of use cases are the situations requiring you to process
     data as it becomes available.^([1](app04.xhtml#id1091)) Processing data as it
     becomes available is called streaming.
+  id: totrans-1
   prefs: []
   type: TYPE_NORMAL
+  zh: 本书专注于使用 Dask 构建批处理应用程序，其中数据是从用户收集或提供的，并用于计算。 另一组重要的用例是需要在数据变得可用时处理数据的情况。^([1](app04.xhtml#id1091))
+    处理数据变得可用时称为流式处理。
 - en: Streaming data pipelines and analytics are becoming more popular as people have
     higher expectations from their data-powered products. Think about how you would
     feel if a bank transaction took weeks to settle; it would seem archaically slow.
     Or if you block someone on social media, you expect that block to take effect
     immediately. While Dask excels at interactive analytics, we believe it does not
     (currently) excel at interactive responses to user queries.^([2](app04.xhtml#id1093))
+  id: totrans-2
   prefs: []
   type: TYPE_NORMAL
+  zh: 由于人们对其数据驱动产品有更高期望，流数据管道和分析变得越来越受欢迎。 想象一下，如果银行交易需要数周才能完成，那将显得极其缓慢。 或者，如果您在社交媒体上阻止某人，您期望该阻止立即生效。
+    虽然 Dask 擅长交互式分析，但我们认为它（目前）并不擅长对用户查询做出即时响应。^([2](app04.xhtml#id1093))
 - en: Streaming jobs are different from batch jobs in a number of important ways.
     They tend to have faster processing time requirements, and the jobs themselves
     often have no defined endpoint (besides when the company or service is shut down).
@@ -24,159 +32,234 @@
     (tens to hundreds of milliseconds). Many other data problems may straddle the
     line, such as recommendations, where you want to update them based on user interactions
     but a delay of a few minutes is probably (mostly) OK.
+  id: totrans-3
   prefs: []
   type: TYPE_NORMAL
+  zh: 流式作业与批处理作业在许多重要方面有所不同。 它们往往需要更快的处理时间，并且这些作业本身通常没有定义的终点（除非公司或服务被关闭）。 小批处理作业可能无法胜任的一种情况包括动态广告（几十到几百毫秒）。
+    许多其他数据问题可能会模糊界限，例如推荐系统，其中您希望根据用户互动更新它们，但是几分钟的延迟可能（主要）是可以接受的。
 - en: As discussed in [Chapter 8](ch08.xhtml#ch08), Dask’s streaming component appears
     to be less frequently used than other components. Streaming in Dask is, to an
     extent, added on after the fact,^([3](app04.xhtml#id1095)) and there are certain
     places and times when you may notice this. This is most apparent when loading
     and writing data—everything must move through the main client program and is then
     either scattered or collected.
+  id: totrans-4
   prefs: []
   type: TYPE_NORMAL
+  zh: 如 [第 8 章](ch08.xhtml#ch08) 中所讨论的，Dask 的流式组件似乎比其他组件使用频率低。 在 Dask 中，流式处理在一定程度上是事后添加的，^([3](app04.xhtml#id1095))
+    在某些场合和时间，您可能会注意到这一点。 当加载和写入数据时，这一点最为明显 —— 一切都必须通过主客户端程序移动，然后分散或收集。
 - en: Warning
+  id: totrans-5
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 警告
 - en: Streamz is not currently capable of handling more data per batch than can fit
     on the client computer in memory.
+  id: totrans-6
   prefs: []
   type: TYPE_NORMAL
+  zh: 目前，Streamz 无法处理比客户端计算机内存中可以容纳的更多数据。
 - en: In this appendix, you will learn the basics of how Dask streaming is designed,
     its limitations, and how it compares to some other streaming systems.
+  id: totrans-7
   prefs: []
   type: TYPE_NORMAL
+  zh: 在本附录中，您将学习 Dask 流处理的基本设计，其限制以及与其他一些流式系统的比较。
 - en: Note
+  id: totrans-8
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 注意
 - en: As of this writing, Streamz does not implement `ipython_display` in many places,
     which may result in error-like messages in Jupyter. You can ignore these (it falls
     back to `repr`).
+  id: totrans-9
   prefs: []
   type: TYPE_NORMAL
+  zh: 截至本文撰写时，Streamz 在许多地方尚未实现 `ipython_display`，这可能导致在 Jupyter 中出现类似错误的消息。 您可以忽略这些消息（它会回退到
+    `repr`）。
 - en: Getting Started with Streamz on Dask
+  id: totrans-10
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 在 Dask 上开始使用 Streamz
 - en: Streamz is straightforward to install. It’s available from PyPI, and you can
     use `pip` to install it, although as with all libraries, you must make it available
     on all the workers. Once you have installed Streamz, you just need to create a
     Dask client (even in local mode) and import it, as shown in [Example D-1](#get_started_streamz).
+  id: totrans-11
   prefs: []
   type: TYPE_NORMAL
+  zh: 安装 Streamz 很简单。 它可以从 PyPI 获得，并且您可以使用 `pip` 安装它，尽管像所有库一样，您必须在所有工作节点上可用。 安装完 Streamz
+    后，您只需创建一个 Dask 客户端（即使是在本地模式下），然后导入它，如 [示例 D-1](#get_started_streamz) 所示。
 - en: Example D-1\. Getting started with Streamz
+  id: totrans-12
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 D-1\. 开始使用 Streamz
 - en: '[PRE0]'
+  id: totrans-13
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE0]'
 - en: Note
+  id: totrans-14
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 注意
 - en: When there are multiple clients, Streamz uses the most recent Dask client created.
+  id: totrans-15
   prefs: []
   type: TYPE_NORMAL
+  zh: 当存在多个客户端时，Streamz 使用创建的最近的 Dask 客户端。
 - en: Streaming Data Sources and Sinks
+  id: totrans-16
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 流数据源和接收器
 - en: So far in this book, we’ve loaded data from either local collections or distributed
     filesystems. While these can certainly serve as sources for streaming data (with
     some limitations), there are some additional data sources that exist in the streaming
     world. Streaming data sources are distinct, as they do not have a defined end,
     and therefore behave a bit more like a generator than a list. Streaming sinks
     are conceptually similar to consumers of generators.
+  id: totrans-17
   prefs: []
   type: TYPE_NORMAL
+  zh: 到目前为止，在本书中，我们从本地集合或分布式文件系统加载了数据。虽然这些数据源确实可以作为流数据的来源（有一些限制），但在流数据世界中存在一些额外的数据源。流数据源不同于有定义结束的数据源，因此行为更像生成器而不是列表。流接收器在概念上类似于生成器的消费者。
 - en: Note
+  id: totrans-18
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 注意
 - en: Streamz has limited sink (or write destination) support, meaning in many cases
     it is up to you to write your data back out in a streaming fashion with your own
     function.
+  id: totrans-19
   prefs: []
   type: TYPE_NORMAL
+  zh: Streamz 的接收端（或写入目的地）支持有限，这意味着在许多情况下，您需要使用自己的函数以流方式将数据写回。
 - en: Some streaming data sources have the ability to replay or look back at messages
     that have been published (up to a configurable time period), which is especially
     useful for a re-compute–based approach to fault tolerance. Two of the popular
     distributed data sources (and sinks) are Apache Kafka and Apache Pulsar, both
     of which have the ability to look back at previous messages. An example streaming
     system that lacks this ability is RabbitMQ.
+  id: totrans-20
   prefs: []
   type: TYPE_NORMAL
+  zh: 一些流数据源具有重放或回溯已发布消息的能力（可配置的时间段），这对基于重新计算的容错方法尤为有用。两个流行的分布式数据源（和接收器）是 Apache Kafka
+    和 Apache Pulsar，两者都具备回溯查看先前消息的能力。一个没有此能力的示例流系统是 RabbitMQ。
 - en: '[Streamz’s API documentation](https://oreil.ly/LOpPJ) covers which sources
     are supported; for simplicity, we will focus here on Apache Kafka and the local
     iterable source. Streamz does all loading in the head process, and then you must
     scatter the result. Loading streaming data should look familiar, with loading
     a local collection shown in [Example D-2](#load_ex_local) and loading from Kafka
     shown in [Example D-3](#load_ex_kafka).'
+  id: totrans-21
   prefs: []
   type: TYPE_NORMAL
+  zh: '[Streamz API 文档](https://oreil.ly/LOpPJ) 涵盖了支持的数据源；为简便起见，我们这里聚焦于 Apache Kafka
+    和本地可迭代数据源。Streamz 在主进程中进行所有加载，然后您必须分散结果。加载流数据应该看起来很熟悉，加载本地集合的示例见 [示例 D-2](#load_ex_local)，加载
+    Kafka 的示例见 [示例 D-3](#load_ex_kafka)。'
 - en: Example D-2\. Loading a local iterator
+  id: totrans-22
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 D-2\. 加载本地迭代器
 - en: '[PRE1]'
+  id: totrans-23
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE1]'
 - en: Example D-3\. Loading from Kafka
+  id: totrans-24
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 D-3\. 从 Kafka 加载
 - en: '[PRE2]'
+  id: totrans-25
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE2]'
 - en: In both of these examples, Streamz will start reading from the most recent message.
     If you want Streamz to go back to the start of the messages stored, you would
     add [PRE3].
+  id: totrans-26
   prefs: []
   type: TYPE_NORMAL
+  zh: 在这两个示例中，Streamz 将从最近的消息开始读取。如果您希望 Streamz 回到存储消息的起始位置，则需添加 [PRE3]。
 - en: Warning
+  id: totrans-27
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 警告
 - en: Streamz’s reading exclusively on a single-head process is a place you may encounter
     bottlenecks as you scale.
+  id: totrans-28
   prefs: []
   type: TYPE_NORMAL
+  zh: Streamz 在单头进程上进行读取是可能遇到瓶颈的地方，尤其在扩展时。
 - en: As with the rest of this book, we assume that you are using existing data sources.
     If that’s not the case, we encourage you to check out the Apache Kafka or Apache
     Pulsar documentation (along with the Kafka adapter), as well as the cloud offerings
     from Confluent.
+  id: totrans-29
   prefs: []
   type: TYPE_NORMAL
+  zh: 与本书的其余部分一样，我们假设您正在使用现有的数据源。如果情况不是这样，请查阅 Apache Kafka 或 Apache Pulsar 文档（以及 Kafka
+    适配器）以及 Confluent 的云服务。
 - en: Word Count
+  id: totrans-30
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 词频统计
 - en: No streaming section would be complete without word count, but it’s important
     to note that our streaming word count in [Example D-4](#streaming_wordcount_ex)—in
     addition to the restriction with data loading—could not perform the aggregation
     in a distributed fashion.
+  id: totrans-31
   prefs: []
   type: TYPE_NORMAL
+  zh: 没有流部分会完整无缺地涉及到词频统计，但重要的是要注意我们在 [示例 D-4](#streaming_wordcount_ex) 中的流式词频统计——除了数据加载的限制外——无法以分布式方式执行聚合。
 - en: Example D-4\. Streaming word count
+  id: totrans-32
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 D-4\. 流式词频统计
 - en: '[PRE4]'
+  id: totrans-33
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE4]'
 - en: In the preceding example, you can see some of the current limitations of Streamz,
     as well as some familiar concepts (like `map`). If you’re interested in learning
     more, refer to the [Streamz API documentation](https://oreil.ly/VpkEz); note,
     however, that in our experience, some components will randomly not work on non-local
     streams.
+  id: totrans-34
   prefs: []
   type: TYPE_NORMAL
+  zh: 在前述示例中，您可以看到 Streamz 的一些当前限制，以及一些熟悉的概念（如 `map`）。如果您有兴趣了解更多，请参阅 [Streamz API
+    文档](https://oreil.ly/VpkEz)；然而，请注意，根据我们的经验，某些组件在非本地流上可能会随机失效。
 - en: GPU Pipelines on Dask Streaming
+  id: totrans-35
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 在 Dask 流式处理中的 GPU 管道
 - en: If you are working with GPUs, the [cuStreamz project](https://oreil.ly/QCk7O)
     simplifies the integration of cuDF with Streamz. cuStreamz uses a number of custom
     components for performance, like loading data from Kafka into the GPU instead
@@ -184,12 +267,19 @@
     implements a custom version of checkpointing with more flexibility than the default
     Streamz project. The developers behind the project, who are largely employed by
     people hoping to sell you more GPUs, [claim up to an 11x speed-up](https://oreil.ly/6wUpB).
+  id: totrans-36
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果您正在使用 GPU，[cuStreamz 项目](https://oreil.ly/QCk7O) 简化了 cuDF 与 Streamz 的集成。cuStreamz
+    使用了许多自定义组件来提高性能，例如将数据从 Kafka 加载到 GPU 中，而不是先在 Dask DataFrame 中着陆，然后再转换。cuStreamz
+    还实现了一个灵活性比默认 Streamz 项目更高的自定义版本的检查点技术。该项目背后的开发人员大多受雇于希望向您销售更多 GPU 的人，[声称可以实现高达
+    11 倍的加速](https://oreil.ly/6wUpB)。
 - en: Limitations, Challenges, and Workarounds
+  id: totrans-37
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 限制、挑战和解决方法
 - en: Most streaming systems have some form of state checkpointing, allowing streaming
     applications to be restarted from the last checkpoint when the main control program
     fails. Streamz’s checkpointing technique is limited to not losing any unprocessed
@@ -198,13 +288,18 @@
     especially important as the probability of encountering a single point of failure
     over a long enough window is ~100%, and streaming applications are often intended
     to run indefinitely.
+  id: totrans-38
   prefs: []
   type: TYPE_NORMAL
+  zh: 大多数流处理系统都具有某种形式的状态检查点，允许在主控程序失败时从上一个检查点重新启动流应用程序。Streamz 的检查点技术仅限于不丢失任何未处理的记录，但累积状态可能会丢失。如果您的状态随着时间的推移而累积，则需要您自己构建状态检查点/恢复机制。这一点尤为重要，因为在足够长的时间窗口内，遇到单个故障点的概率接近
+    100%，而流应用程序通常打算永久运行。
 - en: This indefinite runtime leads to a number of other challenges. Small memory
     leaks can add up over time, but you can mitigate them by having the worker restart
     periodically.
+  id: totrans-39
   prefs: []
   type: TYPE_NORMAL
+  zh: 这种无限期运行时间导致了许多其他挑战。小内存泄漏会随着时间的推移而累积，但您可以通过定期重新启动工作进程来减轻它们。
 - en: Streaming programs that perform aggregations often have problems with late-arriving
     data. This means that, while you can define your window however you want, you
     may have records that *should* have been in that window but did not arrive in
@@ -212,20 +307,29 @@
     Your choices are to manually track the state inside of your process (and persist
     it somewhere), ignore late-arriving data, or use another stream-processing system
     with support for late-arriving data (including kSQL, Spark, or Flink).
+  id: totrans-40
   prefs: []
   type: TYPE_NORMAL
+  zh: 流式处理程序通常在处理聚合时会遇到晚到达的数据问题。这意味着，虽然您可以根据需要定义窗口，但您可能会遇到本该在窗口内的记录，但由于时间原因未及时到达处理过程。Streamz
+    没有针对晚到达数据的内置解决方案。您的选择是在处理过程中手动跟踪状态（并将其持久化到某处），忽略晚到达的数据，或者使用另一个支持晚到达数据的流处理系统（包括
+    kSQL、Spark 或 Flink）。
 - en: In some streaming applications it is important that messages are processed exactly
     once (e.g., a bank account). Dask is generally not well suited to such situations
     due to re-computing on failure. This similarly applies to Streamz on Dask, where
     the only option is *at-least-once* execution. You can work around this by using
     an external system, such as a database, to keep track of which messages have been
     processed.
+  id: totrans-41
   prefs: []
   type: TYPE_NORMAL
+  zh: 在某些流应用程序中，确保消息仅被处理一次很重要（例如，银行账户）。由于失败时需要重新计算，Dask 通常不太适合这种情况。这同样适用于在 Dask 上的
+    Streamz，其中唯一的选项是 *至少一次* 执行。您可以通过使用外部系统（如数据库）来跟踪已处理的消息来解决此问题。
 - en: Conclusion
+  id: totrans-42
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 结论
 - en: In our opinion, Streamz with Dask is off to an interesting start in support
     of streaming data inside of Dask. Its current limitations make it best suited
     to situations in which there is a small amount of streaming data coming in. That
@@ -235,18 +339,28 @@
     needs, there are many other Python streaming systems available. Some Python streaming
     systems you may want to check out include Ray streaming, Faust, or PySpark. In
     our experience, Apache Beam’s Python API has even more room to grow than Streamz.
+  id: totrans-43
   prefs: []
   type: TYPE_NORMAL
+  zh: 在我们看来，在 Dask 内支持流数据的 Streamz 取得了有趣的开始。它目前的限制使其最适合于流入数据量较小的情况。尽管如此，在许多情况下，流数据量远小于面向批处理数据的量，能够在一个系统中同时处理二者可以避免重复的代码或逻辑。如果
+    Streamz 不能满足您的需求，还有许多其他的 Python 流处理系统可供选择。您可能希望了解的一些 Python 流处理系统包括 Ray 流处理、Faust
+    或 PySpark。根据我们的经验，Apache Beam 的 Python API 比 Streamz 有更大的发展空间。
 - en: ^([1](app04.xhtml#id1091-marker)) Albeit generally with some (hopefully small)
     delay.
+  id: totrans-44
   prefs: []
   type: TYPE_NORMAL
+  zh: ^([1](app04.xhtml#id1091-marker)) 尽管通常会有一些（希望是小的）延迟。
 - en: ^([2](app04.xhtml#id1093-marker)) While these are both “interactive,” the expectations
     of someone going to your website and placing an order versus those of a data scientist
     trying to come up with a new advertising campaign are very different.
+  id: totrans-45
   prefs: []
   type: TYPE_NORMAL
+  zh: ^([2](app04.xhtml#id1093-marker)) 尽管这两者都是“互动的”，但访问您的网站并下订单的人的期望与数据科学家试图制定新广告活动的期望有很大不同。
 - en: ^([3](app04.xhtml#id1095-marker)) The same is true for Spark streaming, but
     Dask’s streaming is even less integrated than Spark’s streaming.
+  id: totrans-46
   prefs: []
   type: TYPE_NORMAL
+  zh: ^([3](app04.xhtml#id1095-marker)) Spark 流处理也是如此，但 Dask 的流处理甚至比 Spark 的流处理集成性更低。
