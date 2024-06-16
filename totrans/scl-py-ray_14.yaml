@@ -1,7 +1,9 @@
 - en: 'Appendix A. Space Beaver Case Study: Actors, Kubernetes, and More'
+  id: totrans-0
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 附录 A. Space Beaver 案例研究：Actors、Kubernetes 等
 - en: The [Space Beaver project](https://oreil.ly/IDSzc) (from Pigs Can Fly Labs)
     uses satellite service from Swarm and Simple Mail Transfer Protocol (SMTP) to
     provide what is politely called value-conscious (aka cheap) off-grid messaging.^([1](app01.html#idm45354760655264))
@@ -9,153 +11,228 @@
     Akka, but then we switched to using Ray. By using Ray with Python instead of Akka
     with Scala, we were able to reuse the object relational mapping (ORM) from the
     website and simplify the deployment.
+  id: totrans-1
   prefs: []
   type: TYPE_NORMAL
+  zh: '[Space Beaver 项目](https://oreil.ly/IDSzc)（来自 Pigs Can Fly Labs）利用 Swarm 和简单邮件传输协议（SMTP）提供被礼貌称为性价比高（即便宜）的离网消息服务。^([1](app01.html#idm45354760655264))
+    Space Beaver 核心架构的初稿使用了 Scala 和 Akka，但后来我们转而使用 Ray。通过使用 Python 的 Ray 而不是 Scala
+    的 Akka，我们能够重用网站的对象关系映射（ORM）并简化部署。'
 - en: While it is possible to deploy Akka applications on Kubernetes, it is (in Holden’s
     opinion) substantially more complicated than accomplishing the same task with
     Ray.^([2](app01.html#idm45354760653232)) In this appendix, we will walk through
     the general design of the Space Beaver backend, the code for the various actors,
     and show how to deploy it (and similar applications).
+  id: totrans-2
   prefs: []
   type: TYPE_NORMAL
+  zh: 虽然在 Kubernetes 上部署 Akka 应用是可能的，但（依据 Holden 的意见）相比使用 Ray 完成相同任务要复杂得多。^([2](app01.html#idm45354760653232))
+    在本附录中，我们将概述 Space Beaver 后端的一般设计，各种 actor 的代码，并展示如何部署它（以及类似的应用）。
 - en: Note
+  id: totrans-3
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 注意
 - en: The code for this case study can be found in the [Pigs Can Fly Labs GitHub repo](https://oreil.ly/cyuw4).
+  id: totrans-4
   prefs: []
   type: TYPE_NORMAL
+  zh: 您可以在 [Pigs Can Fly Labs GitHub 仓库](https://oreil.ly/cyuw4) 找到此案例研究的代码。
 - en: High-Level Design
+  id: totrans-5
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 高级设计
 - en: Space Beaver’s core requirement is to serve as a bridge between email (through
     SMTP), SMS (through Twilio), and the Swarm satellite APIs. Most of these involve
     some amount of state, such as running an SMTP server, but the outbound mail messages
     can be implemented without any state. [Figure A-1](#actor_layout) shows a rough
     outline of the design.
+  id: totrans-6
   prefs: []
   type: TYPE_NORMAL
+  zh: Space Beaver 的核心要求是作为电子邮件（通过 SMTP）、短信（通过 Twilio）和 Swarm 卫星 API 之间的桥梁。其中大部分涉及一定程度的状态，例如运行
+    SMTP 服务器，但出站邮件消息可以在没有任何状态的情况下实现。[图 A-1](#actor_layout) 展示了设计的大致轮廓。
 - en: '![spwr aa01](assets/spwr_aa01.png)'
+  id: totrans-7
   prefs: []
   type: TYPE_IMG
+  zh: '![spwr aa01](assets/spwr_aa01.png)'
 - en: Figure A-1\. Actor layout
+  id: totrans-8
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 图 A-1\. Actor 布局
 - en: Implementation
+  id: totrans-9
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 实施
 - en: Now that you’ve seen a rough design, it’s time to explore how the patterns you’ve
     learned throughout the book are applied to bring this all together.
+  id: totrans-10
   prefs: []
   type: TYPE_NORMAL
+  zh: 现在您已经看到了一个大致的设计，是时候探索您在整本书中学到的模式是如何应用来将所有内容整合在一起的了。
 - en: Outbound Mail Client
+  id: totrans-11
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 出站邮件客户端
 - en: The outbound mail client is the one stateless piece of code, since it establishes
     a connection for each outbound message. Since it’s stateless, we implemented this
     as a regular remote function, which is created for every incoming request. Ray
     can then scale up or down as needed, depending on the amount of incoming requests.
     Being able to scale the number of instances of the remote function containing
     the email client is useful since the client may end up blocking on external hosts.
+  id: totrans-12
   prefs: []
   type: TYPE_NORMAL
+  zh: 出站邮件客户端是唯一一个无状态的代码，因为它为每个出站消息建立连接。由于它是无状态的，我们将其实现为常规的远程函数，每个传入请求创建一个。根据传入请求的数量，Ray
+    可以根据需要扩展或缩减远程函数实例的数量。由于客户端可能在外部主机上阻塞，因此能够扩展包含邮件客户端的远程函数实例的数量非常有用。
 - en: Tip
+  id: totrans-13
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 提示
 - en: Scheduling each remote function invocation requires some overhead. In our case,
     the expected message rate is not that high. If you have a good idea of the desired
     concurrency, you should consider using Ray’s `multiprocessing.Pool` to avoid function
     creation overhead.
+  id: totrans-14
   prefs: []
   type: TYPE_NORMAL
+  zh: 调度每个远程函数调用都需要一些开销。在我们的情况下，预期的消息速率并不高。如果您对所需并发有很好的了解，应考虑使用 Ray 的 `multiprocessing.Pool`
+    来避免函数创建开销。
 - en: However, we want to serialize some settings, like in a settings class, so we
     wrap the outbound mail client function with a special method to pass through a
     self-reference, despite not being an actor, as shown in [Example A-1](#ray_outbound_mail_client).
+  id: totrans-15
   prefs: []
   type: TYPE_NORMAL
+  zh: 但是，我们希望序列化某些设置，比如在设置类中，所以我们用一个特殊的方法包装出站邮件客户端函数，通过自引用传递，尽管它不是一个 actor，如 [示例 A-1](#ray_outbound_mail_client)
+    所示。
 - en: Example A-1\. [Mail client](https://oreil.ly/9zM1N)
+  id: totrans-16
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 A-1\. [邮件客户端](https://oreil.ly/9zM1N)
 - en: '[PRE0]'
+  id: totrans-17
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE0]'
 - en: Another reasonable approach would be to make this stateful and maintain a connection
     across messages.
+  id: totrans-18
   prefs: []
   type: TYPE_NORMAL
+  zh: 另一个合理的方法是使其有状态，并跨消息维持连接。
 - en: Shared Actor Patterns and Utilities
+  id: totrans-19
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 共享的 actor 模式和工具
 - en: The remaining components of our system are stateful, either in the context of
     long-lived network connections or database connections. Since the user actor needs
     to talk to all the other actors (and vice versa), to simplify discovering the
     other actors running in the system, we added a `LazyNamedActorPool`, which combines
     the concept of named actors along with actor pools ([Example A-2](#lazypool)).^([3](app01.html#idm45354760421728))
+  id: totrans-20
   prefs: []
   type: TYPE_NORMAL
+  zh: 系统的其余组件在长期网络连接或数据库连接的上下文中都是有状态的。 由于用户参与者需要与系统中运行的所有其他参与者进行通信（反之亦然），为了简化发现其他运行中参与者的过程，我们添加了一个`LazyNamedActorPool`，它结合了命名参与者和参与者池的概念（[示例 A-2](#lazypool)）。^([3](app01.html#idm45354760421728))
 - en: Example A-2\. [Lazy named actor pool](https://oreil.ly/pNolb)
+  id: totrans-21
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 A-2\. [懒加载命名参与者池](https://oreil.ly/pNolb)
 - en: '[PRE1]'
+  id: totrans-22
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE1]'
 - en: The other shared pattern we use is *graceful shutdown*, where we ask the actors
     to stop processing new messages. Once the actors stop accepting new messages,
     the existing messages in the queue will drain out—either to the satellite network
     or SMTP network as needed. Then the actors can be deleted without having to persist
     and recover the messages the actor was processing. In the mail server, which we
     will look at next, this pattern is implemented as shown in [Example A-3](#prepare_for_shutdown).
+  id: totrans-23
   prefs: []
   type: TYPE_NORMAL
+  zh: 我们使用的另一个共享模式是*优雅关闭*，在此模式下，我们要求参与者停止处理新消息。 一旦参与者停止接受新消息，队列中的现有消息将被排出，根据需要发送到卫星网络或SMTP网络。
+    然后可以删除参与者，而不必持久化和恢复参与者正在处理的消息。 我们将在接下来看到的邮件服务器中实现此模式，如[示例 A-3](#prepare_for_shutdown)所示。
 - en: Example A-3\. [Stop for upgrade](https://oreil.ly/0PAD1)
+  id: totrans-24
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 A-3\. [停止进行升级](https://oreil.ly/0PAD1)
 - en: '[PRE2]'
+  id: totrans-25
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE2]'
 - en: Mail Server Actor
+  id: totrans-26
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 邮件服务器参与者
 - en: The mail server actor is responsible for accepting new inbound messages and
     passing them along to the user actor. This is implemented as an aiosmtpd server
     handler, as shown in [Example A-4](#handle_data).
+  id: totrans-27
   prefs: []
   type: TYPE_NORMAL
+  zh: 邮件服务器参与者负责接受新的入站消息并将其传递给用户参与者。 这是作为aiosmtpd服务器处理程序实现的，如[示例 A-4](#handle_data)所示。
 - en: Example A-4\. [Mail server message handling](https://oreil.ly/0PAD1)
+  id: totrans-28
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 A-4\. [邮件服务器消息处理](https://oreil.ly/0PAD1)
 - en: '[PRE3]'
+  id: totrans-29
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE3]'
 - en: An important part of having a mail server is that external users can make connections
     to the server. For HTTP services, like the inference server, you can use Ray Serve
     to expose your service. However, the mail server uses SMTP, which cannot currently
     be exposed with Ray Serve. So, to allow Kubernetes to route requests to the correct
     hosts, the mail actor tags itself as shown in [Example A-5](#update_label).
+  id: totrans-30
   prefs: []
   type: TYPE_NORMAL
+  zh: 拥有邮件服务器的一个重要部分是外部用户可以连接到服务器。 对于HTTP服务（如推理服务器），您可以使用Ray Serve公开您的服务。 但是，邮件服务器使用SMTP，目前无法使用Ray
+    Serve公开。 因此，为了允许Kubernetes将请求路由到正确的主机，邮件参与者会像[示例 A-5](#update_label)中所示那样标记自身。
 - en: Example A-5\. [Mail server Kubernetes labeling](https://oreil.ly/0PAD1)
+  id: totrans-31
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 A-5\. [邮件服务器Kubernetes标记](https://oreil.ly/0PAD1)
 - en: '[PRE4]'
+  id: totrans-32
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE4]'
 - en: Satellite Actor
+  id: totrans-33
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 卫星参与者
 - en: The *satellite actor* is similar to the mail server actor, except instead of
     accepting inbound requests, it gets new messages by polling, and we also send
     messages through it. Polling is like driving with a six-year-old in the car who
@@ -164,130 +241,200 @@
     polling, as the polling loop runs forever, but you still want to be able to process
     other messages. [Example A-6](#poll_for_msgs) shows the satellite actors’ polling
     implementation.
+  id: totrans-34
   prefs: []
   type: TYPE_NORMAL
+  zh: '*卫星参与者*类似于邮件服务器参与者，但不是接受入站请求，而是通过轮询获取新消息，并且我们也通过它发送消息。 轮询就像在车上开着一个六岁的孩子一样，不停地问：“我们到了吗？”
+    但在我们的情况下，问题是“你有没有新消息？” 在Ray中，异步参与者是实现轮询的最佳选项，因为轮询循环永远运行，但您仍然希望能够处理其他消息。 [示例 A-6](#poll_for_msgs)展示了卫星参与者的轮询实现。'
 - en: Example A-6\. [Satellite actor polling](https://oreil.ly/kqkxU)
+  id: totrans-35
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 A-6\. [卫星参与者轮询](https://oreil.ly/kqkxU)
 - en: '[PRE5]'
+  id: totrans-36
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE5]'
 - en: This polling loop delegates most of the logic to `check_msgs`, as shown in [Example A-7](#check_msgs).
+  id: totrans-37
   prefs: []
   type: TYPE_NORMAL
+  zh: 此轮询循环大部分逻辑委托给`check_msgs`，如[示例 A-7](#check_msgs)所示。
 - en: Example A-7\. [Satellite check for messages](https://oreil.ly/kqkxU)
+  id: totrans-38
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 A-7\. [卫星检查消息](https://oreil.ly/kqkxU)
 - en: '[PRE6]'
+  id: totrans-39
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE6]'
 - en: Another interesting pattern we used in the satellite actor is to expose serializable
     results for testing, but keep the data in the more efficient async representation
     in the normal flow. This pattern is shown in the way messages are decoded in [Example A-8](#process_msgs).
+  id: totrans-40
   prefs: []
   type: TYPE_NORMAL
+  zh: 在卫星参与者中我们使用的另一个有趣模式是在测试中暴露可序列化的结果，但在正常流程中保持数据以更高效的异步表示。 这种模式在消息解码方式中展示，如[示例 A-8](#process_msgs)所示。
 - en: Example A-8\. [Satellite process message](https://oreil.ly/kqkxU)
+  id: totrans-41
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 A-8\. [卫星处理消息](https://oreil.ly/kqkxU)
 - en: '[PRE7]'
+  id: totrans-42
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE7]'
 - en: User Actor
+  id: totrans-43
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 用户演员
 - en: While the other actors are all async, allowing parallelism within the actor,
     the user actors are synchronous since the ORM does not yet handle async execution.
     The user actor code is shown relatively completely in [Example A-9](#user_actor),
     so you can see the shared patterns (which were used in the other actors but skipped
     for brevity).
+  id: totrans-44
   prefs: []
   type: TYPE_NORMAL
+  zh: 虽然其他演员都是异步的，允许在演员内部进行并行处理，但用户演员是同步的，因为 ORM 尚未处理异步执行。用户演员的代码在 [示例 A-9](#user_actor)
+    中展示得相当完整，因此你可以看到共享的模式（其他演员因简洁起见而跳过）。
 - en: Example A-9\. [User actor](https://oreil.ly/oym1M)
+  id: totrans-45
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 A-9\. [用户演员](https://oreil.ly/oym1M)
 - en: '[PRE8]'
+  id: totrans-46
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE8]'
 - en: Note
+  id: totrans-47
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 注释
 - en: Django is a popular Python web development framework that includes many components,
     including the ORM we are using.
+  id: totrans-48
   prefs: []
   type: TYPE_NORMAL
+  zh: Django 是一个流行的 Python Web 开发框架，包括许多组件，包括我们正在使用的 ORM。
 - en: SMS Actor and Serve Implementation
+  id: totrans-49
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: SMS 演员和 Serve 实现
 - en: In addition to the actors for satellite and email gateways, Space Beaver also
     uses Ray Serve to expose `phone-api`, as shown in [Example A-10](#phone_serve).
+  id: totrans-50
   prefs: []
   type: TYPE_NORMAL
+  zh: 除了卫星和电子邮件网关的演员外，Space Beaver 还使用 Ray Serve 来公开 `phone-api`，如 [示例 A-10](#phone_serve)
+    所示。
 - en: Example A-10\. [Using Ray Serve to handle inbound SMS](https://oreil.ly/BkdmL)
+  id: totrans-51
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 A-10\. [使用 Ray Serve 处理入站短信](https://oreil.ly/BkdmL)
 - en: '[PRE9]'
+  id: totrans-52
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE9]'
 - en: Testing
+  id: totrans-53
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 测试
 - en: To facilitate testing, the actor code was broken into a base class and then
     extended into an actor class. This allowed for testing the mail server independently
     from its deployment on Ray, as shown in [Example A-11](#standalone_mail_test).
+  id: totrans-54
   prefs: []
   type: TYPE_NORMAL
+  zh: 为了方便测试，演员代码被分解为一个基类，然后扩展为演员类。这允许独立测试邮件服务器，而不依赖其在 Ray 上的部署，如 [示例 A-11](#standalone_mail_test)
+    中所示。
 - en: Example A-11\. [Standalone mail test](https://oreil.ly/7RwYR)
+  id: totrans-55
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 A-11\. [独立邮件测试](https://oreil.ly/7RwYR)
 - en: '[PRE10]'
+  id: totrans-56
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE10]'
 - en: While these standalone tests can run with less overhead, it’s a good idea to
     have some full-actor tests. You can often speed them up by reusing the Ray context
     across tests (although when it goes wrong, the debugging is painful), as in [Example A-12](#full_mail_test).
+  id: totrans-57
   prefs: []
   type: TYPE_NORMAL
+  zh: 尽管这些独立测试可以减少开销，但最好还是有一些完整的演员测试。你可以通过在测试中重复使用 Ray 上下文来加快速度（尽管当出现问题时，调试是很痛苦的），就像在
+    [示例 A-12](#full_mail_test) 中展示的那样。
 - en: Example A-12\. [Full-actor test](https://oreil.ly/VOvbo)
+  id: totrans-58
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 A-12\. [完整演员测试](https://oreil.ly/VOvbo)
 - en: '[PRE11]'
+  id: totrans-59
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE11]'
 - en: Deployment
+  id: totrans-60
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 部署
 - en: While Ray handles most of the deployment, we need to create a Kubernetes service
     to make our SMTP and SMS services reachable. On our test cluster, we do this by
     exposing a load balancer service, as shown in [Example A-13](#smtp_service).
+  id: totrans-61
   prefs: []
   type: TYPE_NORMAL
+  zh: 尽管 Ray 处理了大部分部署工作，我们仍然需要创建一个 Kubernetes 服务来使我们的 SMTP 和 SMS 服务可访问。在我们的测试集群上，我们通过暴露一个负载均衡器服务来实现，如
+    [示例 A-13](#smtp_service) 所示。
 - en: Example A-13\. [SMTP and SMS services](https://oreil.ly/3pGrx)
+  id: totrans-62
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 A-13\. [SMTP 和 SMS 服务](https://oreil.ly/3pGrx)
 - en: '[PRE12]'
+  id: totrans-63
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE12]'
 - en: As shown, the SMTP and SMS services use different node selectors to route the
     requests to the correct pods.
+  id: totrans-64
   prefs: []
   type: TYPE_NORMAL
+  zh: 如图所示，SMTP 和 SMS 服务使用不同的节点选择器将请求路由到正确的 pod。
 - en: Conclusion
+  id: totrans-65
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 结论
 - en: The Ray port of the Space Beaver messaging backend substantially reduces deployment
     and packaging complexity while increasing code reuse. Some of this comes from
     the broad Python ecosystem (popular frontend tools and backend tools), but much
@@ -296,23 +443,36 @@
     that up to the scheduler. Of course, Akka carries many benefits, like the powerful
     JVM ecosystem, but hopefully, this case study has shown you some interesting ways
     you can use Ray.
+  id: totrans-66
   prefs: []
   type: TYPE_NORMAL
+  zh: Space Beaver 消息后端的 Ray 移植大大减少了部署和打包的复杂性，同时增加了代码复用。部分原因来自于广泛的 Python 生态系统（流行的前端工具和后端工具），但其余部分来自于
+    Ray 的无服务器特性。与之相对应的 Akka 系统需要用户在调度演员时考虑意图，而使用 Ray，我们可以把这些交给调度器。当然，Akka 带来了许多好处，比如强大的
+    JVM 生态系统，但希望这个案例研究已经展示了你可以如何有趣地使用 Ray。
 - en: ^([1](app01.html#idm45354760655264-marker)) Holden Karau is the managing partner
     of Pigs Can Fly Labs, and while she really hopes you will buy the off-the-grid
     messaging device, she realizes the intersection of people reading programming
     books and people needing low-cost open source satellite email messaging is pretty
     small. Also, in practice, [Garmin inReach Mini2](https://oreil.ly/M7DEs) or Apple
     are probably better for many consumer use cases.
+  id: totrans-67
   prefs: []
   type: TYPE_NORMAL
+  zh: ^([1](app01.html#idm45354760655264-marker)) Holden Karau 是 Pigs Can Fly Labs
+    的管理合伙人，虽然她真的希望你会购买这款离线消息设备，但她意识到阅读编程书籍的人群和需要低成本开源卫星电子邮件消息的人群之间的交集相当小。实际上，对于许多消费者使用案例来说，[Garmin
+    inReach Mini2](https://oreil.ly/M7DEs) 或者 Apple 可能更好。
 - en: ^([2](app01.html#idm45354760653232-marker)) In Akka on Kubernetes, the user
     is responsible for scheduling the actors on separate containers manually and restarting
     actors, whereas Ray can handle this for us.
+  id: totrans-68
   prefs: []
   type: TYPE_NORMAL
+  zh: ^([2](app01.html#idm45354760653232-marker)) 在 Akka on Kubernetes 中，用户需要手动将 actors
+    调度到单独的容器上并重新启动 actors，而 Ray 可以为我们处理这些。
 - en: ^([3](app01.html#idm45354760421728-marker)) An alternate solution is to have
     the main or launching program call the actors with the references as they are
     created.
+  id: totrans-69
   prefs: []
   type: TYPE_NORMAL
+  zh: ^([3](app01.html#idm45354760421728-marker)) 另一种解决方案是让主程序或启动程序在创建 actors 时通过引用来调用它们。
