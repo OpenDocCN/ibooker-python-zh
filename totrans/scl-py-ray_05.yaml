@@ -1,331 +1,493 @@
 - en: Chapter 4\. Remote Actors
+  id: totrans-0
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 第四章。远程演员
 - en: In the previous chapter, you learned about Ray remote functions, which are useful
     for the parallel execution of stateless functions. But what if you need to maintain
     a state between invocations? Examples of such situations span from a simple counter
     to a neural network during training to a simulator environment.
+  id: totrans-1
   prefs: []
   type: TYPE_NORMAL
+  zh: 在前一章中，您了解了 Ray 远程函数，这对于并行执行无状态函数非常有用。但是如果您需要在调用之间维护状态怎么办？这些情况的例子包括从简单计数器到训练中的神经网络到模拟环境。
 - en: One option for maintaining state in these situations is to return the state
     along with the result and pass it to the next call. Although technically this
     will work, this is not the best solution, because of the large amount of data
     that has to be passed around (especially as the size of the state starts to grow).
     Ray uses actors, which we will cover in this chapter, to manage state.
+  id: totrans-2
   prefs: []
   type: TYPE_NORMAL
+  zh: 在这些情况下，维护状态的一种选项是将状态与结果一起返回并传递给下一次调用。尽管从技术上讲这是可行的，但由于需要传递的数据量较大（特别是在状态大小开始增长时），这并不是最佳解决方案。Ray
+    使用演员来管理状态，我们将在本章中介绍。
 - en: Note
+  id: totrans-3
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 注意
 - en: Much like Ray’s remote functions, all Ray actors are remote actors, even when
     running on the same machine.
+  id: totrans-4
   prefs: []
   type: TYPE_NORMAL
+  zh: 就像 Ray 的远程函数一样，所有 Ray 演员都是远程演员，即使在同一台机器上运行时也是如此。
 - en: In a nutshell, an *actor* is a computer process with an address (handle). This
     means that an actor can also store things in memory, private to the actor process.
     Before delving into the details of implementing and scaling Ray actors, let’s
     take a look at the concepts behind them. Actors come from the actor model design
     pattern. Understanding the actor model is key to effectively managing state and
     concurrency.
+  id: totrans-5
   prefs: []
   type: TYPE_NORMAL
+  zh: 简而言之，*演员*是一个具有地址（句柄）的计算机进程。这意味着演员也可以将东西存储在内存中，私有于演员进程。在深入研究实现和扩展 Ray 演员的详细信息之前，让我们先看看它们背后的概念。演员来自演员模型设计模式。理解演员模型对于有效管理状态和并发至关重要。
 - en: Understanding the Actor Model
+  id: totrans-6
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 理解演员模型
 - en: The [actor model](https://oreil.ly/aTwGY) was introduced by Carl Hewitt in 1973
     to deal with concurrent computation. The heart of this conceptual model is an
     actor, a universal primitive of concurrent computation with its state.
+  id: totrans-7
   prefs: []
   type: TYPE_NORMAL
+  zh: '[演员模型](https://oreil.ly/aTwGY)由 Carl Hewitt 在 1973 年引入，用于处理并发计算。这个概念模型的核心是演员，这是并发计算的通用原语，具有自己的状态。'
 - en: 'An actor has a simple job:'
+  id: totrans-8
   prefs: []
   type: TYPE_NORMAL
+  zh: 一个演员的简单工作是：
 - en: Store data
+  id: totrans-9
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 存储数据
 - en: Receive messages from other actors
+  id: totrans-10
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 接收其他演员的消息
 - en: Pass messages to other actors
+  id: totrans-11
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '[消息传递给其他演员](https://oreil.ly/aTwGY)'
 - en: Create additional child actors
+  id: totrans-12
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 创建额外的子演员
 - en: The data that an actor stores is private to the actor and isn’t visible from
     outside; it can be accessed and modified only by the actor itself. Changing the
     actor’s state requires sending messages to the actor that will modify the state.
     (Compare this to using method calls in object-oriented programming.)
+  id: totrans-13
   prefs: []
   type: TYPE_NORMAL
+  zh: 演员存储的数据是私有的，并且在外部看不到；只有演员本身才能访问和修改它。改变演员的状态需要向将修改状态的演员发送消息。（与面向对象编程中使用方法调用相比较。）
 - en: To ensure an actor’s state consistency, actors process one request at a time.
     All actor method invocations are globally serialized for a given actor. To improve
     throughput, people often create a pool of actors (assuming they can shard or replicate
     the actor’s state).
+  id: totrans-14
   prefs: []
   type: TYPE_NORMAL
+  zh: 为了确保演员的状态一致性，演员一次只处理一个请求。给定演员的所有演员方法调用都是全局串行化的。为了提高吞吐量，人们经常创建演员池（假设他们可以分片或复制演员的状态）。
 - en: 'The actor model is a good fit for many distributed system scenarios. Here are
     some typical use cases where the actor model can be advantageous:'
+  id: totrans-15
   prefs: []
   type: TYPE_NORMAL
+  zh: 演员模型非常适合许多分布式系统场景。以下是演员模型可以带来优势的一些典型用例：
 - en: You need to deal with a large distributed state that is hard to synchronize
     between invocations.
+  id: totrans-16
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 你需要处理一个大型分布式状态，这在调用之间很难同步。
 - en: You want to work with single-threaded objects that do not require significant
     interaction from external components.
+  id: totrans-17
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 您希望使用不需要来自外部组件显著交互的单线程对象工作。
 - en: In both situations, you would implement the standalone parts of the work inside
     an actor. You can put each piece of independent state inside its own actor, and
     then any changes to the state come in through the actor. Most actor system implementations
     avoid concurrency issues by using only single-threaded actors.
+  id: totrans-18
   prefs: []
   type: TYPE_NORMAL
+  zh: 在这两种情况下，您将在一个演员内部实现工作的独立部分。您可以将每个独立状态的片段放入其自己的演员中，然后通过演员进行状态的任何更改。大多数演员系统实现通过仅使用单线程演员来避免并发问题。
 - en: Now that you know the general principles of the actor model, let’s take a closer
     look at Ray’s remote actors.
+  id: totrans-19
   prefs: []
   type: TYPE_NORMAL
+  zh: 现在您了解了演员模型的一般原则，让我们更详细地看看 Ray 的远程演员。
 - en: Creating a Basic Ray Remote Actor
+  id: totrans-20
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 创建一个基本的 Ray 远程演员
 - en: Ray implements remote actors as stateful workers. When you create a new remote
     actor, Ray creates a new worker and schedules the actor’s methods on that worker.
+  id: totrans-21
   prefs: []
   type: TYPE_NORMAL
+  zh: Ray 将远程演员实现为有状态的工作者。创建新的远程演员时，Ray 会创建一个新的工作者，并在该工作者上安排演员的方法。
 - en: A common example of an actor is a bank account. Let’s take a look at how to
     implement an account by using Ray remote actors. Creating a Ray remote actor is
     as simple as decorating a Python class with the `@ray.remote` decorator ([Example 4-1](#simple_remote_actor_creation)).
+  id: totrans-22
   prefs: []
   type: TYPE_NORMAL
+  zh: 演员的一个常见示例是银行账户。让我们看看如何使用 Ray 远程演员来实现一个账户。通过使用 `@ray.remote` 装饰器简单地装饰一个 Python
+    类即可创建一个 Ray 远程演员（示例 4-1）。
 - en: Example 4-1\. [Implementing a Ray remote actor](https://oreil.ly/Dpskz)
+  id: totrans-23
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 4-1\. [实现一个 Ray 远程演员](https://oreil.ly/Dpskz)
 - en: '[PRE0]'
+  id: totrans-24
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE0]'
 - en: 'The `Account` actor class itself is fairly simple and has four methods:'
+  id: totrans-25
   prefs: []
   type: TYPE_NORMAL
+  zh: '`Account` 演员类本身非常简单，只有四种方法：'
 - en: The constructor
+  id: totrans-26
   prefs: []
   type: TYPE_NORMAL
+  zh: 构造函数
 - en: Creates an account based on the starting and minimum balance. It also makes
     sure that the current balance is larger than the minimal one and throws an exception
     otherwise.
+  id: totrans-27
   prefs: []
   type: TYPE_NORMAL
+  zh: 基于起始和最低余额创建一个账户。它还确保当前余额大于最小值，并在否则情况下抛出异常。
 - en: '`balance`'
+  id: totrans-28
   prefs: []
   type: TYPE_NORMAL
+  zh: '`balance`'
 - en: Returns the current balance of the account. Because an actor’s state is private
     to the actor, access to it is available only through the actor’s method.
+  id: totrans-29
   prefs: []
   type: TYPE_NORMAL
+  zh: 返回账户的当前余额。因为演员的状态对演员是私有的，因此只能通过演员的方法访问它。
 - en: '`deposit`'
+  id: totrans-30
   prefs: []
   type: TYPE_NORMAL
+  zh: '`deposit`'
 - en: Deposits an amount to the account and returns a new balance.
+  id: totrans-31
   prefs: []
   type: TYPE_NORMAL
+  zh: 存款到账户并返回新的余额。
 - en: '`withdraw`'
+  id: totrans-32
   prefs: []
   type: TYPE_NORMAL
+  zh: '`withdraw`'
 - en: Withdraws an amount from the account and returns a new balance. It also ensures
     that the remaining balance is greater than the predefined minimum balance and
     throws an exception otherwise.
+  id: totrans-33
   prefs: []
   type: TYPE_NORMAL
+  zh: 从账户中提取一定金额并返回新的余额。它还确保剩余余额大于预定义的最低余额，否则会抛出异常。
 - en: Now that you have defined the class, you need to use `.remote` to create an
     instance of this actor ([Example 4-2](#make_actor)).
+  id: totrans-34
   prefs: []
   type: TYPE_NORMAL
+  zh: 现在您已经定义了类，您需要使用 `.remote` 来创建此演员的实例（示例 4-2）。
 - en: Example 4-2\. [Creating an instance of your Ray remote actor](https://oreil.ly/Dpskz)
+  id: totrans-35
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 4-2\. [创建您的 Ray 远程演员实例](https://oreil.ly/Dpskz)
 - en: '[PRE1]'
+  id: totrans-36
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE1]'
 - en: Here, `account_actor` represents an actor handle. These handles play an important
     role in the actor’s lifecycle. Actor processes are terminated automatically when
     the initial actor handle goes out of scope in Python (note that in this case,
     the actor’s state is lost).
+  id: totrans-37
   prefs: []
   type: TYPE_NORMAL
+  zh: 在这里，`account_actor` 表示一个演员句柄。这些句柄在演员生命周期中起着重要作用。在 Python 中，当初始演员句柄超出范围时，演员进程会自动终止（请注意，在这种情况下，演员的状态会丢失）。
 - en: Tip
+  id: totrans-38
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 提示
 - en: You can create multiple distinct actors from the same class. Each will have
     its own independent state.
+  id: totrans-39
   prefs: []
   type: TYPE_NORMAL
+  zh: 您可以从同一类创建多个不同的演员。每个演员将有自己独立的状态。
 - en: As with an `ObjectRef`, you can pass an actor handle as a parameter to another
     actor or Ray remote function or Python code.
+  id: totrans-40
   prefs: []
   type: TYPE_NORMAL
+  zh: 与 `ObjectRef` 一样，您可以将演员句柄作为参数传递给另一个演员或 Ray 远程函数或 Python 代码。
 - en: Note that [Example 4-1](#simple_remote_actor_creation) uses the `@ray.remote`
     annotation to define an ordinary Python class as a Ray remote actor. Alternatively,
     instead of using an annotation, you can use [Example 4-3](#make_actor_2) to convert
     a Python class into a remote actor.
+  id: totrans-41
   prefs: []
   type: TYPE_NORMAL
+  zh: 请注意，[示例 4-1](#simple_remote_actor_creation) 使用 `@ray.remote` 注解将普通的 Python 类定义为
+    Ray 远程演员。或者，您可以使用 [示例 4-3](#make_actor_2) 将 Python 类转换为远程演员，而不是使用注解。
 - en: Example 4-3\. [Creating an instance of a Ray remote actor without the decorator](https://oreil.ly/Dpskz)
+  id: totrans-42
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 4-3\. [创建一个 Ray 远程演员实例而不使用装饰器](https://oreil.ly/Dpskz)
 - en: '[PRE2]'
+  id: totrans-43
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE2]'
 - en: Once you have a remote actor in place, you can invoke it by using [Example 4-4](#invoke_actor).
+  id: totrans-44
   prefs: []
   type: TYPE_NORMAL
+  zh: 一旦您放置了一个远程演员，您可以通过使用 [示例 4-4](#invoke_actor) 调用它。
 - en: Example 4-4\. [Invoking a remote actor](https://oreil.ly/Dpskz)
+  id: totrans-45
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 4-4\. [调用远程演员](https://oreil.ly/Dpskz)
 - en: '[PRE3]'
+  id: totrans-46
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE3]'
 - en: Tip
+  id: totrans-47
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 提示
 - en: 'It’s important to handle exceptions, which in the example can occur in both
     the the deposit and withdrawal method’s code. To handle the exceptions, you should
     augment [Example 4-4](#invoke_actor) with `try`/`except` clauses:'
+  id: totrans-48
   prefs: []
   type: TYPE_NORMAL
+  zh: 处理异常很重要，在示例中，存款和取款方法的代码都可能出现异常。为了处理这些异常，您应该使用 `try`/`except` 语句扩展 [示例 4-4](#invoke_actor)：
 - en: '[PRE4]'
+  id: totrans-49
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE4]'
 - en: This ensures that the code will intercept all the exceptions thrown by the actor’s
     code and implement all the necessary actions.
+  id: totrans-50
   prefs: []
   type: TYPE_NORMAL
+  zh: 这确保代码将拦截演员代码引发的所有异常并执行所有必要的操作。
 - en: You can also create named actors by using [Example 4-5](#make_named_actor).
+  id: totrans-51
   prefs: []
   type: TYPE_NORMAL
+  zh: 您还可以通过使用 [示例 4-5](#make_named_actor) 创建具有命名的演员。
 - en: Example 4-5\. [Creating a named actor](https://oreil.ly/Dpskz)
+  id: totrans-52
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 4-5\. [创建一个命名演员](https://oreil.ly/Dpskz)
 - en: '[PRE5]'
+  id: totrans-53
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE5]'
 - en: 'Once the actor has a name, you can use it to obtain the actor’s handle from
     any place in the code:'
+  id: totrans-54
   prefs: []
   type: TYPE_NORMAL
+  zh: 一旦 actor 有了名称，你就可以在代码的任何地方使用它来获取 actor 的句柄：
 - en: '[PRE6]'
+  id: totrans-55
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE6]'
 - en: As defined previously, the default actor’s lifecycle is linked to the actor’s
     handle being in scope.
+  id: totrans-56
   prefs: []
   type: TYPE_NORMAL
+  zh: 如前所述，默认 actor 的生命周期与 actor 的句柄处于作用域相关联。
 - en: An actor’s lifetime can be decoupled from its handle being in scope, allowing
     an actor to persist even after the driver process exits. You can create a detached
     actor by specifying the lifetime parameter as `detached` ([Example 4-6](#make_detached_named_actor)).
+  id: totrans-57
   prefs: []
   type: TYPE_NORMAL
+  zh: actor 的生命周期可以与其句柄处于作用域无关联，允许 actor 在驱动程序进程退出后仍然存在。你可以通过指定生命周期参数为 `detached`
+    来创建一个脱离的 actor ([示例 4-6](#make_detached_named_actor))。
 - en: Example 4-6\. [Making a detached actor](https://oreil.ly/Dpskz)
+  id: totrans-58
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 4-6\. [创建一个脱离的 actor](https://oreil.ly/Dpskz)
 - en: '[PRE7]'
+  id: totrans-59
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE7]'
 - en: In theory, you can make an actor detached without specifying its name, but since
     `ray.get_actor` operates by name, detached actors make the most sense with a name.
     You should name your detached actors so you can access them, even after the actor’s
     handle is out of scope. The detached actor itself can own any other tasks and
     objects.
+  id: totrans-60
   prefs: []
   type: TYPE_NORMAL
+  zh: 理论上，你可以使一个 actor 脱离而不指定其名称，但由于 `ray.get_actor` 操作是按名称进行的，脱离的 actors 最好带有名称。你应该给你的脱离
+    actors 命名，这样你就可以在 actor 的句柄超出作用域后访问它们。脱离的 actor 本身可以拥有任何其他任务和对象。
 - en: In addition, you can manually delete actors from inside an actor, using `ray.actor.exit_actor`,
     or by using an actor’s handle `ray.kill(account_actor)`. This can be useful if
     you know that you do not need specific actors anymore and want to reclaim the
     resources.
+  id: totrans-61
   prefs: []
   type: TYPE_NORMAL
+  zh: 另外，你可以在一个 actor 内部手动删除 actors，使用 `ray.actor.exit_actor`，或者通过一个 actor 的句柄 `ray.kill(account_actor)`。如果你知道不再需要特定的
+    actors 并且想要回收资源，这将会很有用。
 - en: 'As shown here, creating a basic Ray actor and managing its lifecycle is fairly
     easy, but what happens if the Ray node on which the actor is running goes down
     for some reason?^([1](ch04.html#idm45354785265712)) The `@ray.remote` annotation
     allows you to specify two [parameters](https://oreil.ly/VAHBm) that control behavior
     in this case:'
+  id: totrans-62
   prefs: []
   type: TYPE_NORMAL
+  zh: 正如这里所示，创建一个基本的 Ray actor 并管理其生命周期是相当容易的，但是如果运行 actor 的 Ray 节点由于某种原因宕机会发生什么呢？^([1](ch04.html#idm45354785265712))
+    `@ray.remote` 注解允许你指定两个 [参数](https://oreil.ly/VAHBm) 来控制这种情况下的行为：
 - en: '`max_restarts`'
+  id: totrans-63
   prefs: []
   type: TYPE_NORMAL
+  zh: '`max_restarts`'
 - en: Specify the maximum number of times that the actor should be restarted when
     it dies unexpectedly. The minimum valid value is `0` (default), which indicates
     that the actor doesn’t need to be restarted. A value of `-1` indicates that an
     actor should be restarted indefinitely.
+  id: totrans-64
   prefs: []
   type: TYPE_NORMAL
+  zh: 指定 actor 异常死亡时应重新启动的最大次数。最小有效值为 `0`（默认），表示 actor 不需要重新启动。值 `-1` 表示 actor 应该无限重新启动。
 - en: '`max_task_retries`'
+  id: totrans-65
   prefs: []
   type: TYPE_NORMAL
+  zh: '`max_task_retries`'
 - en: Specifies the number of times to retry an actor’s task if the task fails because
     of a system error. If set to `-1`, the system will retry the failed task until
     the task succeeds, or the actor has reached its `max_restarts` limit. If set to
     `n > 0`, the system will retry the failed task up to *n* times, after which the
     task will throw a `RayActorError` exception upon [`ray.get`](https://oreil.ly/li5RX).
+  id: totrans-66
   prefs: []
   type: TYPE_NORMAL
+  zh: 指定 actor 任务因系统错误而失败时重试任务的次数。如果设置为 `-1`，系统将重试失败的任务，直到任务成功，或者 actor 达到其 `max_restarts`
+    限制为止。如果设置为 `n > 0`，系统将重试失败的任务多达 *n* 次，之后任务将在 [`ray.get`](https://oreil.ly/li5RX)
+    上抛出 `RayActorError` 异常。
 - en: As further explained in the next chapter and in the [Ray fault-tolerance documentation](https://oreil.ly/S64hX),
     when an actor is restarted, Ray will re-create its state by rerunning its constructor.
     Therefore, if a state was changed during the actor’s execution, it will be lost.
     To preserve such a state, an actor has to implement its custom persistence.
+  id: totrans-67
   prefs: []
   type: TYPE_NORMAL
+  zh: 正如在下一章和 [Ray 容错文档](https://oreil.ly/S64hX) 中进一步解释的那样，当一个 actor 被重新启动时，Ray 将通过重新运行其构造函数来重新创建其状态。因此，如果在
+    actor 执行过程中更改了状态，它将丢失。要保留这样的状态，actor 必须实现其自定义持久性。
 - en: In our example case, the actor’s state is lost on failure since we haven’t used
     actor persistence. This might be OK for some use cases but is not acceptable for
     others—​see also the [Ray documentation on design patterns](https://oreil.ly/tezP2).
     In the next section, you will learn how to programmatically implement custom actor
     persistence.
+  id: totrans-68
   prefs: []
   type: TYPE_NORMAL
+  zh: 在我们的示例案例中，由于我们没有使用 actor 持久性，actor 的状态在失败时会丢失。这对于某些用例可能是可以接受的，但对于其他用例来说是不可接受的—​参见
+    [Ray 设计模式文档](https://oreil.ly/tezP2)。在下一节中，你将学习如何以编程方式实现自定义 actor 持久性。
 - en: Implementing the Actor’s Persistence
+  id: totrans-69
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 实现 Actor 的持久性
 - en: In this implementation, the state is saved as a whole, which works well enough
     if the size of the state is relatively small and the state changes are relatively
     rare. Also, to keep our example simple, we use local disk persistence. In reality,
     for a distributed Ray case, you should consider using Network File System (NFS),
     Amazon Simple Storage Service (S3), or a database to enable access to the actor’s
     data from any node in the Ray cluster.
+  id: totrans-70
   prefs: []
   type: TYPE_NORMAL
+  zh: 在这个实现中，状态作为一个整体保存，如果状态的大小相对较小且状态更改相对较少，则这种方式足够好。此外，为了保持我们的示例简单，我们使用本地磁盘持久化。实际情况下，对于分布式
+    Ray 案例，您应考虑使用网络文件系统（NFS）、Amazon 简单存储服务（S3）或数据库来实现对演员数据的访问，使其能够从 Ray 集群中的任何节点访问。
 - en: A persistent `Account` actor is presented in [Example 4-7](#persistent_actor).^([2](ch04.html#idm45354785245664))
+  id: totrans-71
   prefs: []
   type: TYPE_NORMAL
+  zh: 在[示例 4-7](#persistent_actor)中展示了一个持久化的 `Account` 演员。^([2](ch04.html#idm45354785245664))
 - en: Example 4-7\. [Defining a persistent actor, using filesystem persistence](https://oreil.ly/qHSfR)
+  id: totrans-72
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 4-7\. [定义一个持久化演员，使用文件系统持久化](https://oreil.ly/qHSfR)
 - en: '[PRE8]'
+  id: totrans-73
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE8]'
 - en: 'If we compare this implementation with the original in [Example 4-1](#simple_remote_actor_creation),
     we will notice several important changes:'
+  id: totrans-74
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果我们将此实现与[示例 4-1](#simple_remote_actor_creation)中的原始实现进行比较，我们将注意到几个重要的变化：
 - en: 'Here the constructor has two additional parameters: `account_key` and `basedir`.
     The account key is a unique identifier for the account that is also used as the
     name of the persistence file. The `basedir` parameter indicates a base directory
@@ -333,9 +495,12 @@
     check whether a persistent state for this account is saved, and if there is one,
     we ignore the passed-in balance and minimum balance and restore them from the
     persistence state.'
+  id: totrans-75
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 这里的构造函数有两个额外的参数：`account_key` 和 `basedir`。账户密钥是账户的唯一标识符，也用作持久化文件的名称。`basedir`
+    参数指示用于存储持久化文件的基本目录。当调用构造函数时，我们首先检查是否保存了此账户的持久状态，如果有，则忽略传入的余额和最低余额，并从持久状态中恢复它们。
 - en: 'Two additional methods are added to the class: `store_state` and `restore_state`.
     The `store_states` is a method that stores an actor state into a file. State information
     is represented as a dictionary with keys as names of the state elements and values
@@ -347,122 +512,174 @@
     method reads a binary string from the file and uses Ray’s implementation of cloud
     pickling to convert it to the dictionary. Then it uses the content of the dictionary
     to populate the state.'
+  id: totrans-76
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 在类中添加了两个额外的方法：`store_state` 和 `restore_state`。`store_state` 方法将演员状态存储到文件中。状态信息表示为一个字典，字典的键是状态元素的名称，值是状态元素的值。我们使用
+    Ray 的云串行化实现将此字典转换为字节字符串，然后将该字节字符串写入由账户密钥和基础目录定义的文件中。([第 5 章](ch05.html#ch05)详细讨论了云串行化。)`restore_state`
+    方法从由账户密钥和基础目录定义的文件中恢复状态。该方法从文件中读取一个二进制字符串，并使用 Ray 的云串行化实现将其转换为字典。然后，它使用字典的内容填充状态。
 - en: Finally, both `deposit` and `withdraw` methods, which are changing the state,
     use the `store_state` method to update persistence.
+  id: totrans-77
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 最后，`deposit` 和 `withdraw` 方法都会更改状态，使用 `store_state` 方法更新持久化。
 - en: The implementation shown in [Example 4-7](#persistent_actor) works fine, but
     our account actor implementation now contains too much persistence-specific code
     and is tightly coupled to file persistence. A better solution is to separate persistence-specific
     code into a separate class.
+  id: totrans-78
   prefs: []
   type: TYPE_NORMAL
+  zh: 在[示例 4-7](#persistent_actor)中展示的实现工作正常，但我们的账户演员实现现在包含太多与持久化相关的代码，并且与文件持久化紧密耦合。一个更好的解决方案是将持久化特定的代码分离到一个单独的类中。
 - en: We start by creating an abstract class defining methods that have to be implemented
     by any persistence class ([Example 4-8](#persistent_actor_class_base)).
+  id: totrans-79
   prefs: []
   type: TYPE_NORMAL
+  zh: 我们首先创建一个抽象类，定义了必须由任何持久化类实现的方法（[示例 4-8](#persistent_actor_class_base)）。
 - en: Example 4-8\. [Defining a base persistence class](https://oreil.ly/sI7Me)
+  id: totrans-80
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 4-8\. [定义一个基础持久化类](https://oreil.ly/sI7Me)
 - en: '[PRE9]'
+  id: totrans-81
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE9]'
 - en: This class defines all the methods that have to be implemented by a concrete
     persistence implementation. With this in place, a file persistence class implementing
     base persistence can be defined as shown in [Example 4-9](#persistent_actor_class_file).
+  id: totrans-82
   prefs: []
   type: TYPE_NORMAL
+  zh: 此类定义了必须由具体持久化实现实现的所有方法。有了这个基础，可以定义一个实现基础持久化的文件持久化类，如[示例 4-9](#persistent_actor_class_file)所示。
 - en: Example 4-9\. [Defining a file persistence class](https://oreil.ly/sI7Me)
+  id: totrans-83
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 4-9\. [定义文件持久化类](https://oreil.ly/sI7Me)
 - en: '[PRE10]'
+  id: totrans-84
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE10]'
 - en: This implementation factors out most of the persistence-specific code from our
     original implementation in [Example 4-7](#persistent_actor). Now it is possible
     to simplify and generalize an account implementation; see [Example 4-10](#persistent_actor_class_actor).
+  id: totrans-85
   prefs: []
   type: TYPE_NORMAL
+  zh: 此实现从我们最初的实现中分离出大部分与持久化相关的代码，该实现位于[示例 4-7](#persistent_actor)中。现在可以简化和概括账户实现；参见[示例
+    4-10](#persistent_actor_class_actor)。
 - en: Example 4-10\. [Implementing a persistent actor with pluggable persistence](https://oreil.ly/sI7Me)
+  id: totrans-86
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 4-10\. [实现具有可插拔持久性的持久化actor](https://oreil.ly/sI7Me)
 - en: '[PRE11]'
+  id: totrans-87
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE11]'
 - en: Only the code changes from our original persistent actor implementation ([Example 4-7](#persistent_actor))
     are shown here. Note that the constructor is now taking the `Base​Per⁠sis⁠tence`
     class, which allows for easily changing the persistence implementation without
     changing the actor’s code. Additionally, the `restore_state` and `savestate` methods
     are generalized to move all the persistence-specific code to the persistence class.
+  id: totrans-88
   prefs: []
   type: TYPE_NORMAL
+  zh: 从我们最初的持久化actor实现（[示例 4-7](#persistent_actor)）中，只展示了代码的变化。请注意，构造函数现在使用`Base​Per⁠sis⁠tence`类，这使得可以轻松地更改持久化实现而不更改actor的代码。另外，`restore_state`和`savestate`方法被概括为将所有与持久化相关的代码移到持久化类中。
 - en: This implementation is flexible enough to support different persistence implementations,
     but if a persistence implementation requires permanent connections to a persistence
     source (for example, a database connection), it can become unscalable by simultaneously
     maintaining too many connections. In this case, we can implement persistence as
     an [additional actor](https://oreil.ly/gz7wp). But this requires scaling of this
     actor. Let’s take a look at the options that Ray provides for scaling actors.
+  id: totrans-89
   prefs: []
   type: TYPE_NORMAL
+  zh: 此实现足够灵活，支持不同的持久化实现，但是，如果持久化实现需要与持久化源（例如，数据库连接）建立永久连接，同时维护太多连接可能导致不可扩展。在这种情况下，我们可以将持久化实现为[附加actor](https://oreil.ly/gz7wp)。但这需要扩展此actor。让我们看看Ray为扩展actor提供的选项。
 - en: Scaling Ray Remote Actors
+  id: totrans-90
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 缩放Ray远程Actor
 - en: The original actor model described earlier in this chapter typically assumes
     that actors are lightweight (e.g., contain a single piece of state) and do not
     require scaling or parallelization. In Ray and similar systems (including Akka),
     actors are often used for coarser-grained implementations and can require scaling.^([3](ch04.html#idm45354778437024))
+  id: totrans-91
   prefs: []
   type: TYPE_NORMAL
+  zh: 本章前面描述的原始actor模型通常假定actor是轻量级的（例如，包含单个状态片段）并且不需要扩展或并行化。在Ray和类似系统（包括Akka）中，actor通常用于更粗粒度的实现，并且可能需要扩展。^([3](ch04.html#idm45354778437024))
 - en: As with Ray remote functions, you can scale actors both *horizontally* (across
     processes/machines) with pools, or *vertically* (with more resources). [“Resources
     / Vertical Scaling”](ch05.html#ray_resources) covers how to request more resources,
     but for now, let’s focus on horizontal scaling.
+  id: totrans-92
   prefs: []
   type: TYPE_NORMAL
+  zh: 与Ray远程函数一样，您可以使用池横向（跨进程/机器）或纵向（使用更多资源）扩展actor。["资源/纵向扩展"](ch05.html#ray_resources)介绍了如何请求更多资源，但现在，让我们专注于横向扩展。
 - en: You can add more processes for horizontal scaling with Ray’s actor pool, provided
     by the `ray.util` module. This class is similar to a multiprocessing pool and
     lets you schedule your tasks over a fixed pool of actors.
+  id: totrans-93
   prefs: []
   type: TYPE_NORMAL
+  zh: 您可以使用Ray的actor池为横向扩展添加更多进程，该池由`ray.util`模块提供。该类类似于多进程池，并允许您在一组固定的actor上安排任务。
 - en: The actor pool effectively uses a fixed set of actors as a single entity and
     manages which actor in the pool gets the next request. Note that actors in the
     pool are still individual actors and their state is not merged. So this scaling
     option works only when an actor’s state is created in the constructor and does
     not change during the actor’s execution.
+  id: totrans-94
   prefs: []
   type: TYPE_NORMAL
+  zh: actor池有效地将一组固定的actor作为单个实体使用，并管理池中的下一个请求由哪个actor处理。请注意，池中的actor仍然是各自独立的actor，并且它们的状态没有合并。因此，此缩放选项仅在actor的状态在构造函数中创建且在actor执行期间不更改时有效。
 - en: Let’s take a look at how to use an actor’s pool to improve the scalability of
     our account class by adding an [actor’s pool](https://oreil.ly/hSXsd) in [Example 4-11](#persistent_actor_class_pool).
+  id: totrans-95
   prefs: []
   type: TYPE_NORMAL
+  zh: 让我们看看如何通过在 [Example 4-11](https://oreil.ly/UsjXG) 中添加一个 [actor’s pool](https://oreil.ly/hSXsd)
+    来提高账户类的可扩展性。
 - en: Example 4-11\. [Using an actor’s pool for implementing persistence](https://oreil.ly/UsjXG)
+  id: totrans-96
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 4-11\. [使用actor的池实现持久性](https://oreil.ly/UsjXG)
 - en: '[PRE12]'
+  id: totrans-97
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE12]'
 - en: Only the code changes from our original implementation are shown here. The code
     starts by creating a pool of three identical file persistence actors, and then
     this pool is passed to an account implementation.
+  id: totrans-98
   prefs: []
   type: TYPE_NORMAL
+  zh: 这里仅展示了我们原始实现的代码更改。代码从创建三个相同文件持久性actor的池开始，然后将此池传递给账户实现。
 - en: 'The syntax of a pool-based execution is a lambda function that takes two parameters:
     an actor reference and a value to be submitted to the function. The limitation
     here is that the value is a single object. One of the solutions for functions
     with multiple parameters is to use a tuple that can contain an arbitrary number
     of components. The function itself is defined as a remote function on the required
     actor’s method.'
+  id: totrans-99
   prefs: []
   type: TYPE_NORMAL
+  zh: 基于池的执行语法是一个接受两个参数的lambda函数：一个是actor引用，一个是要提交给函数的值。这里的限制是值是一个单一对象。对于具有多个参数的函数的解决方案之一是使用可以包含任意数量组件的元组。函数本身被定义为所需actor方法上的远程函数。
 - en: An execution on the pool is asynchronous (it routes requests to one of the remote
     actors internally). This allows faster execution of the `store_state` method,
     which does not need the results from data storage. Here implementation is not
@@ -474,13 +691,18 @@
     a queue of execution results (in the same order as the requests). Whenever we
     need to get a result from the pool, we therefore must first clear out the pool
     results queue to ensure that we get the right result.
+  id: totrans-100
   prefs: []
   type: TYPE_NORMAL
+  zh: 在池中执行是异步的（它将请求路由到一个远程的actor）。这允许更快地执行 `store_state` 方法，它不需要来自数据存储的结果。在这里，实现不等待结果的状态存储完成；它只是开始执行。另一方面，`restore_state`
+    方法需要池调用的结果来进行后续操作。池的实现内部管理等待执行结果就绪的过程，并通过 `get_next` 函数公开这一功能（请注意，这是一个阻塞调用）。池的实现管理一个执行结果队列（按照请求的顺序）。因此，每当我们需要从池中获取结果时，我们必须首先清空池结果队列，以确保获取正确的结果。
 - en: 'In addition to the multiprocessing-based scaling provided by the actor’s pool,
     Ray supports scaling of the actor’s execution through concurrency. Ray offers
     two types of concurrency within an actor: threading and async execution.'
+  id: totrans-101
   prefs: []
   type: TYPE_NORMAL
+  zh: 除了由actor的池提供的基于多处理的扩展之外，Ray还通过并发支持actor的执行扩展。Ray在actor内部提供了两种并发类型：线程和异步执行。
 - en: When using concurrency inside actors, keep in mind that Python’s [global interpreter
     lock (GIL)](https://oreil.ly/l7Ytt) will allow only one thread of Python code
     running at once. Pure Python will not provide true parallelism. On another hand,
@@ -488,8 +710,10 @@
     release the GIL when calling into C/C++ functions. By overlapping the time waiting
     for I/O or working in native libraries, both threading and async actor execution
     can achieve some parallelism.
+  id: totrans-102
   prefs: []
   type: TYPE_NORMAL
+  zh: 在使用actors内部的并发时，请记住Python的 [全局解释器锁（GIL）](https://oreil.ly/l7Ytt) 一次只允许运行一个Python代码线程。纯Python将不提供真正的并行性。另一方面，如果调用NumPy、Cython、TensorFlow或PyTorch代码，这些库在调用C/C++函数时会释放GIL。通过重叠等待I/O时间或在本地库中工作，线程和异步actor执行都可以实现一定的并行性。
 - en: 'The [asyncio library](https://oreil.ly/PXo8G) can be thought of as cooperative
     multitasking: your code or library needs to explicitly signal that it is waiting
     on a result, and Python can go ahead and execute another task by explicitly switching
@@ -498,15 +722,21 @@
     asyncio tends to have lower overhead than multithreaded execution and can be a
     little easier to reason about. Ray actors, but not remote functions, integrate
     with asyncio, allowing you to write asynchronous actor methods.'
+  id: totrans-103
   prefs: []
   type: TYPE_NORMAL
+  zh: '[异步io库](https://oreil.ly/PXo8G)可以被看作是协同多任务：你的代码或库需要明确地信号表示正在等待结果，Python 可以继续执行另一个任务，通过明确切换执行上下文。asyncio
+    通过在事件循环中运行单一进程，并在任务 yield/await 时改变执行哪个任务来工作。与多线程执行相比，asyncio 的开销较低，且更容易理解。Ray
+    actors 与 asyncio 集成，允许你编写异步actor方法，但不支持远程函数。'
 - en: You should use threaded execution when your code spends a lot of time blocking
     but not yielding control by calling `await`. Threads are managed by the operating
     system deciding when to run which thread. Using threaded execution can involve
     fewer code changes, as you do not need to explicitly indicate where your code
     is yielding. This can also make threaded execution more difficult to reason about.
+  id: totrans-104
   prefs: []
   type: TYPE_NORMAL
+  zh: 当你的代码大部分时间阻塞但不通过调用 `await` 放弃控制时，应使用线程执行。线程由操作系统决定何时运行哪个线程。使用线程执行可能涉及较少的代码更改，因为不需要明确指示代码何时放弃控制。这也可能使线程执行更难理解。
 - en: You need to be careful and selectively use locks when accessing or modifying
     objects with both threads and asyncio. In both approaches, your objects share
     the same memory. By using locks, you ensure that only one thread or task can access
@@ -514,8 +744,10 @@
     or threads are waiting on a lock). As a result, an actor’s concurrency is mostly
     applicable for use cases when a state is populated in a constructor and never
     changes.
+  id: totrans-105
   prefs: []
   type: TYPE_NORMAL
+  zh: 当使用线程和asyncio访问或修改对象时，需要小心并有选择地使用锁。在两种方法中，对象共享同一内存。通过使用锁，确保只有一个线程或任务可以访问特定内存。锁有一些开销（随着更多进程或线程等待锁而增加）。因此，actor的并发性大多适用于在构造函数中填充状态并且不会更改状态的用例。
 - en: To create an actor that uses asyncio, you need to define at least one async
     method. In this case, Ray will create an asyncio event loop for executing the
     actor’s methods. Submitting tasks to these actors is the same from the caller’s
@@ -525,89 +757,137 @@
     thread. (Note that using blocking `ray.get` or `ray.wait` calls inside an async
     actor method is not allowed, because they will block the execution of the event
     loop.)
+  id: totrans-106
   prefs: []
   type: TYPE_NORMAL
+  zh: 要创建使用asyncio的actor，需要至少定义一个async方法。在这种情况下，Ray 将为执行actor的方法创建一个asyncio事件循环。从调用者的角度来看，提交任务到这些actors与提交任务到常规actor相同。唯一的区别是，当任务在actor上运行时，它被发布到后台线程或线程池中运行的asyncio事件循环，而不是直接在主线程上运行。（请注意，不允许在异步actor方法中使用阻塞的
+    `ray.get` 或 `ray.wait` 调用，因为它们会阻塞事件循环的执行。）
 - en: '[Example 4-12](#simple_async_actor) presents an example of a simple async actor.'
+  id: totrans-107
   prefs: []
   type: TYPE_NORMAL
+  zh: '[示例 4-12](#simple_async_actor) 展示了一个简单的异步actor示例。'
 - en: Example 4-12\. [Creating a simple async actor](https://oreil.ly/q3WFs)
+  id: totrans-108
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 4-12\. [创建一个简单的异步actor](https://oreil.ly/q3WFs)
 - en: '[PRE13]'
+  id: totrans-109
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE13]'
 - en: 'Because the method `computation` is defined as `async`, Ray will create an
     async actor. Note that unlike ordinary `async` methods, which require `await`
     to invoke them, using Ray async actors does not require any special invocation
     semantics. Additionally, Ray allows you to specify the max concurrency for the
     async actor’s execution during the actor’s creation:'
+  id: totrans-110
   prefs: []
   type: TYPE_NORMAL
+  zh: 因为方法 `computation` 被定义为 `async`，Ray 将创建一个异步actor。请注意，与普通的 `async` 方法不同，后者需要使用
+    `await` 调用，使用 Ray 异步actors 不需要任何特殊的调用语义。此外，Ray 允许在actor创建时指定异步actor执行的最大并发性：
 - en: '[PRE14]'
+  id: totrans-111
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE14]'
 - en: To create a threaded actor, you need to specify `max_concurrency` during actor
     creation ([Example 4-13](#simple-threaded-actor)).
+  id: totrans-112
   prefs: []
   type: TYPE_NORMAL
+  zh: 要创建一个线程actor，需要在actor创建时指定 `max_concurrency` （[示例 4-13](#simple-threaded-actor)）。
 - en: Example 4-13\. [Creating a simple threaded actor](https://oreil.ly/EjTM4)
+  id: totrans-113
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 4-13\. [创建一个简单的线程actor](https://oreil.ly/EjTM4)
 - en: '[PRE15]'
+  id: totrans-114
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE15]'
 - en: Tip
+  id: totrans-115
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 提示
 - en: Because both async and threaded actors are use `max_concurrency`, the type of
     actor created might be a little confusing. The thing to remember is that if `max_concurrency`
     is used, the actor can be either async or threaded. If at least one of the actor’s
     methods is async, the actor is async; otherwise, it is a threaded one.
+  id: totrans-116
   prefs: []
   type: TYPE_NORMAL
+  zh: 由于异步和线程化 actor 都使用 `max_concurrency`，所以创建的 actor 类型可能会有些混淆。需要记住的是，如果使用了 `max_concurrency`，actor
+    可以是异步的或者线程化的。如果 actor 的至少一个方法是异步的，那么 actor 就是异步的；否则，它就是线程化的。
 - en: So, which scaling approach should we use for our implementation? [“Multiprocessing
     vs. Threading vs. AsyncIO in Python”](https://oreil.ly/UF26H) by Lei Mao provides
     a good summary of features for various approaches ([Table 4-1](#table-4-1)).
+  id: totrans-117
   prefs: []
   type: TYPE_NORMAL
+  zh: 那么，我们应该使用哪种扩展方法来实现我们的应用程序？[“Python 中的多进程 vs. 多线程 vs. AsyncIO”](https://oreil.ly/UF26H)
+    由 Lei Mao 提供了各种方法特性的良好总结（参见 [表 4-1](#table-4-1)）。
 - en: Table 4-1\. Comparing scaling approaches for actors
+  id: totrans-118
   prefs: []
   type: TYPE_NORMAL
+  zh: 表 4-1\. 比较 actor 的扩展方法
 - en: '| Scaling approach | Feature | Usage criteria |'
+  id: totrans-119
   prefs: []
   type: TYPE_TB
+  zh: '| 扩展方法 | 特性 | 使用条件 |'
 - en: '| --- | --- | --- |'
+  id: totrans-120
   prefs: []
   type: TYPE_TB
+  zh: '| --- | --- | --- |'
 - en: '| Actor pool | Multiple processes, high CPU utilization | CPU bound |'
+  id: totrans-121
   prefs: []
   type: TYPE_TB
+  zh: '| Actor 池 | 多进程，高 CPU 利用率 | CPU 绑定 |'
 - en: '| Async actor | Single process, single thread, cooperative multitasking, tasks
     cooperatively decide on switching | Slow I/O bound |'
+  id: totrans-122
   prefs: []
   type: TYPE_TB
+  zh: '| 异步 actor | 单进程，单线程，协同多任务处理，任务协同决定切换 | 慢 I/O 绑定 |'
 - en: '| Threaded actor | Single process, multiple threads, preemptive multitasking,
     OS decides on task switching |'
+  id: totrans-123
   prefs: []
   type: TYPE_TB
+  zh: '| 线程化 actor | 单进程，多线程，抢占式多任务处理，由操作系统决定任务切换 |'
 - en: Fast I/O bound and nonasync libraries you do not control
+  id: totrans-124
   prefs: []
   type: TYPE_NORMAL
+  zh: 快速 I/O 绑定和非异步库您无法控制
 - en: '|'
+  id: totrans-125
   prefs: []
   type: TYPE_NORMAL
+  zh: '|'
 - en: Ray Remote Actors Best Practices
+  id: totrans-126
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: Ray 远程 actor 最佳实践
 - en: Because Ray remote actors are effectively remote functions, all the Ray remote
     best practices described in the previous chapter are applicable. In addition,
     Ray has some actor-specific best practices.
+  id: totrans-127
   prefs: []
   type: TYPE_NORMAL
+  zh: 因为 Ray 远程 actor 实际上就是远程函数，因此前一章描述的所有 Ray 远程最佳实践同样适用。此外，Ray 还有一些特定于 actor 的最佳实践。
 - en: As mentioned before, Ray offers support for actors’ fault tolerance. Specifically
     for actors, you can specify `max_restarts` to automatically enable restarting
     for Ray actors. When your actor or the node hosting that actor crashes, the actor
@@ -615,15 +895,22 @@
     to restore application-level states in your actor. Consider actor persistence
     approaches, described in this chapter to ensure restoration of execution-level
     states as well.
+  id: totrans-128
   prefs: []
   type: TYPE_NORMAL
+  zh: 正如之前提到的，Ray 支持 actor 的容错。特别是对于 actor，您可以指定 `max_restarts` 来自动启用 Ray actor 的重启。当您的
+    actor 或托管该 actor 的节点崩溃时，actor 将自动重建。然而，这并不提供方法来恢复 actor 中的应用程序级状态。考虑到这一点，可以采用本章描述的
+    actor 持久化方法来确保执行级状态的恢复。
 - en: If your applications have global variables that you have to change, do not change
     them in remote functions. Instead, use actors to encapsulate them and access them
     through the actor’s methods. This is because remote functions are running in different
     processes and do not share the same address space. As a result, these changes
     are not reflected across Ray driver and remote functions.
+  id: totrans-129
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果您的应用程序有全局变量需要更改，请不要在远程函数中更改它们。相反，使用 actor 封装它们，并通过 actor 的方法访问它们。这是因为远程函数在不同的进程中运行，并且不共享相同的地址空间。因此，这些更改不会在
+    Ray 驱动程序和远程函数之间反映出来。
 - en: One of the common application use cases is the execution of the same remote
     function many times for different datasets. Using the remote functions directly
     can cause delays because of the creation of new processes for function. This approach
@@ -633,12 +920,17 @@
     execution. As the pool is maintaining its requests queue, the programming model
     for this option is identical to starting independent remote functions but provides
     a better-controlled execution environment.
+  id: totrans-130
   prefs: []
   type: TYPE_NORMAL
+  zh: 一个常见的应用场景是为不同的数据集多次执行同一个远程函数。直接使用远程函数可能会因为创建新进程而导致延迟。这种方法也可能会因为大量进程而使 Ray 集群不堪重负。一个更为可控的选项是使用
+    actor 池。在这种情况下，池提供了一组受控的工作进程，这些工作进程可立即可用（无需进程创建延迟）进行执行。由于池在维护其请求队列，因此这种选项的编程模型与启动独立远程函数完全相同，但提供了更好的控制执行环境。
 - en: Conclusion
+  id: totrans-131
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 结论
 - en: In this chapter, you learned how to use Ray remote actors to implement stateful
     execution in Ray. You learned about the actor model and how to implement Ray remote
     actors. Note that Ray internally heavily relies on using actors—for example, for
@@ -646,32 +938,51 @@
     and microservices implementation (see [Chapter 7](ch07.html#ch07)). It is also
     widely used for ML implementations; see, for example, use of actors for implementing
     a [parameter server](https://oreil.ly/q33OW).
+  id: totrans-132
   prefs: []
   type: TYPE_NORMAL
+  zh: 在本章中，你学习了如何使用 Ray 远程 Actor 在 Ray 中实现有状态执行。你学习了 Actor 模型以及如何实现 Ray 远程 Actor。请注意，Ray
+    在内部大量依赖 Actor，例如用于[多节点同步](https://oreil.ly/vYdTi)，流处理（参见[第 6 章](ch06.html#ch06)）以及微服务实现（参见[第
+    7 章](ch07.html#ch07)）。它还被广泛用于机器学习实现，例如用于实现[参数服务器](https://oreil.ly/q33OW)的 Actor。
 - en: You also learned how to improve an actor’s reliability by implementing an actor’s
     persistence and saw a simple example of persistence implementation.
+  id: totrans-133
   prefs: []
   type: TYPE_NORMAL
+  zh: 你还学习了如何通过实现 Actor 的持久化来提高 Actor 的可靠性，并看到了一个简单的持久化实现示例。
 - en: Finally, you learned about the options that Ray provides for scaling actors,
     their implementation, and trade-offs.
+  id: totrans-134
   prefs: []
   type: TYPE_NORMAL
+  zh: 最后，你了解了 Ray 提供的用于扩展 Actor、它们的实现以及权衡的选项。
 - en: In the next chapter, we will discuss additional Ray design details.
+  id: totrans-135
   prefs: []
   type: TYPE_NORMAL
+  zh: 在下一章中，我们将讨论更多 Ray 的设计细节。
 - en: ^([1](ch04.html#idm45354785265712-marker)) Python exceptions are not considered
     system errors and will not trigger restarts. Instead, the exception will be saved
     as the result of the call, and the actor will continue to run as normal.
+  id: totrans-136
   prefs: []
   type: TYPE_NORMAL
+  zh: ^([1](ch04.html#idm45354785265712-marker)) Python 异常并不被视为系统错误，不会触发重启。相反，异常会作为调用的结果保存，并且
+    Actor 将继续正常运行。
 - en: ^([2](ch04.html#idm45354785245664-marker)) In this implementation, we are using
     filesystem persistence, but you can use the same approach with other types of
     persistence, such as S3 or databases.
+  id: totrans-137
   prefs: []
   type: TYPE_NORMAL
+  zh: ^([2](ch04.html#idm45354785245664-marker)) 在这个实现中，我们使用文件系统持久化，但你也可以使用其他类型的持久化，比如
+    S3 或数据库。
 - en: ^([3](ch04.html#idm45354778437024-marker)) A *coarse-grained* actor is a single
     actor that may contain multiple pieces of state. In contrast, in a fine-grained
     approach, each piece of state would be represented as a separate actor. This is
     similar to the concept of [coarse-grained locking](https://oreil.ly/WwBrd).
+  id: totrans-138
   prefs: []
   type: TYPE_NORMAL
+  zh: ^([3](ch04.html#idm45354778437024-marker)) *粗粒度* Actor 是一个单一 Actor，可能包含多个状态片段。相比之下，细粒度方法中，每个状态片段都将被表示为一个单独的
+    Actor。这类似于[粗粒度锁定](https://oreil.ly/WwBrd)的概念。

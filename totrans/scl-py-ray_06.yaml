@@ -1,7 +1,9 @@
 - en: Chapter 5\. Ray Design Details
+  id: totrans-0
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 第 5 章 光线设计细节
 - en: Now that you’ve created and worked with remote functions and actors, it’s time
     to learn what’s happening behind the scenes. In this chapter, you will learn about
     important distributed system concepts, like fault tolerance, Ray’s resource management,
@@ -9,134 +11,190 @@
     most important when using Ray in a distributed fashion, but even local users benefit.
     Having a solid grasp of the way Ray works will help you decide how and when to
     use it.
+  id: totrans-1
   prefs: []
   type: TYPE_NORMAL
+  zh: 现在你已经创建并使用了远程函数和演员，是时候了解幕后发生了什么了。在本章中，你将了解重要的分布式系统概念，如容错性、Ray 的资源管理以及加速远程函数和演员的方法。当在分布式环境中使用
+    Ray 时，这些细节尤为重要，但即使是本地用户也会受益。对 Ray 工作原理的扎实理解将帮助你决定如何以及何时使用它。
 - en: Fault Tolerance
+  id: totrans-2
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 容错性
 - en: '*Fault tolerance* refers to how a system will handle failures of everything
     from user code to the framework itself or the machines it runs on. Ray has a different
     fault tolerance mechanism tailored for each system. Like many systems, Ray cannot
     recover from the head node failing.^([1](ch05.html#idm45354777621488))'
+  id: totrans-3
   prefs: []
   type: TYPE_NORMAL
+  zh: '*容错性*是指系统如何处理从用户代码到框架本身或其运行的机器的所有失败。Ray 为每个系统定制了不同的容错机制。与许多系统一样，Ray 无法从主节点故障中恢复。^([1](ch05.html#idm45354777621488))'
 - en: Warning
+  id: totrans-4
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 警告
 - en: Some nonrecoverable errors exist in Ray, which you cannot (at present) configure
     away. If the head node, GCS, or connection between your application and the head
     node fails, your application will fail and cannot be recovered by Ray. If you
     require fault tolerance for these situations, you will have to roll your own high
     availability, likely using ZooKeeper or similar lower-level tools.
+  id: totrans-5
   prefs: []
   type: TYPE_NORMAL
+  zh: Ray 中存在一些不可恢复的错误，目前你无法配置它们。如果主节点、GCS 或应用与主节点之间的连接失败，你的应用程序将失败，并且无法被 Ray 恢复。如果你需要这些情况的容错性，你将不得不自行编写高可用性，很可能使用
+    ZooKeeper 或类似的低级工具。
 - en: Overall, Ray’s [architecture](https://oreil.ly/eHV9H) (see [Figure 5-1](#overall-ray-architecture))
     consists of an application layer and a system layer, both of which can handle
     failures.
+  id: totrans-6
   prefs: []
   type: TYPE_NORMAL
+  zh: 总的来说，Ray 的 [架构](https://oreil.ly/eHV9H)（见 [图 5-1](#overall-ray-architecture)）包括一个应用层和一个系统层，两者都可以处理失败。
 - en: '![spwr 0501](assets/spwr_0501.png)'
+  id: totrans-7
   prefs: []
   type: TYPE_IMG
+  zh: '![spwr 0501](assets/spwr_0501.png)'
 - en: Figure 5-1\. Overall Ray architecture
+  id: totrans-8
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 图 5-1。总体 Ray 架构
 - en: 'The *system layer* consists of three major components: a GCS, a distributed
     scheduler, and a distributed object store. Except for the GCS, all components
     are horizontally scalable and fault-tolerant.'
+  id: totrans-9
   prefs: []
   type: TYPE_NORMAL
+  zh: '*系统层*由三个主要组件组成：一个 GCS，一个分布式调度器和一个分布式对象存储。除了 GCS 外，所有组件都是水平可扩展和容错的。'
 - en: At the heart of Ray’s architecture is the GCS that maintains the entire control
     state of the system. Internally, the GCS is a key/value store with pub/sub functionality.^([2](ch05.html#idm45354777611152))
     At present, the GCS is a single point of failure and runs on the head node.
+  id: totrans-10
   prefs: []
   type: TYPE_NORMAL
+  zh: Ray 架构的核心是维护系统的整个控制状态的 GCS。在内部，GCS 是一个具有发布/订阅功能的键/值存储。^([2](ch05.html#idm45354777611152))
+    目前，GCS 是一个单点故障，并且运行在主节点上。
 - en: Using GCS, which centrally maintains Ray’s state, significantly simplifies overall
     architecture by enabling the rest of the system layer components to be stateless.
     This design is fundamental for fault tolerance (i.e., on failure, components simply
     restart and read the lineage from the GCS) and makes it easy to scale the distributed
     object store and scheduler independently, as all components share the needed state
     via the GCS.
+  id: totrans-11
   prefs: []
   type: TYPE_NORMAL
+  zh: 使用集中维护 Ray 状态的 GCS 显着简化了整体架构，使得系统层的其他组件可以成为无状态的。这种设计对容错性（即在故障时，组件简单地重新启动并从 GCS
+    中读取血统）至关重要，并且使得可以独立扩展分布式对象存储和调度器变得容易，因为所有组件都通过 GCS 共享所需的状态。
 - en: Since remote functions do not contain any persistent state, recovering from
     their failure is relatively simple. Ray will try again until it succeeds or reaches
     a maximum number of retries. As seen in the previous chapter, you can control
     the number of retries through the `max_retries` parameter in the `@ray.remote`
     annotation. To try out and better understand Ray’s fault tolerance, write a flaky
     remote function that fails a certain percentage of the time, as shown in [Example 5-1](#ex_flaky_ray).
+  id: totrans-12
   prefs: []
   type: TYPE_NORMAL
+  zh: 由于远程函数不包含任何持久状态，因此从它们的故障中恢复相对简单。Ray 将尝试再次执行，直到成功或达到最大重试次数。正如前一章所示，你可以通过`@ray.remote`注解中的`max_retries`参数来控制重试次数。为了尝试并更好地理解
+    Ray 的容错性，请编写一个有一定百分比失败率的不稳定远程函数，如 [示例 5-1](#ex_flaky_ray) 所示。
 - en: Example 5-1\. [Auto retry remote function](https://oreil.ly/ytqOu)
+  id: totrans-13
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例5-1\. [自动重试远程函数](https://oreil.ly/ytqOu)
 - en: '[PRE0]'
+  id: totrans-14
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE0]'
 - en: If your flaky function fails, you will see `WARNING worker.py:1215 -- A worker
     died or was killed while executing a task by an unexpected system error.` output
     to stderr. You’ll still get back the correct value when you execute `ray.get`,
     demonstrating Ray’s fault tolerance.
+  id: totrans-15
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果您的不稳定函数失败，您将在标准错误输出看到`WARNING worker.py:1215 -- A worker died or was killed
+    while executing a task by an unexpected system error.`的输出。当您执行`ray.get`时，您仍将得到正确的返回值，展示了Ray的容错能力。
 - en: Tip
+  id: totrans-16
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 提示
 - en: Alternatively, to see fault tolerance in action, if you’re running a distributed
     Ray cluster, you can find the node running your remote function by returning the
     hostname and then shut down the node while running a request.
+  id: totrans-17
   prefs: []
   type: TYPE_NORMAL
+  zh: 或者，为了查看容错机制的实际效果，如果您正在运行分布式Ray集群，您可以通过返回主机名并在运行请求时关闭节点来找到运行远程函数的节点。
 - en: 'Remote actors are a complicated case for fault tolerance as they contain state
     within them. This is why in [Chapter 4](ch04.html#ch04) you explored options for
     persisting and recovering that state. Actors can experience failure at any stage:
     setup, message processing, or between messages.'
+  id: totrans-18
   prefs: []
   type: TYPE_NORMAL
+  zh: 对于远程actor而言，由于它们内部包含状态，因此容错是一个复杂的情况。这就是为什么在[第四章](ch04.html#ch04)中，您探讨了持久化和恢复该状态的选项。Actor在任何阶段都可能经历故障：设置、消息处理或消息之间。
 - en: Unlike for remote functions, if an actor fails while processing a message, Ray
     does not automatically retry it. This is true even if you have set `max_restarts`.
     Ray will restart your actor for processing the next message. On error, you will
     get back a `RayActorError` exception.
+  id: totrans-19
   prefs: []
   type: TYPE_NORMAL
+  zh: 与远程函数不同，如果actor在处理消息时失败，Ray不会自动重试。即使您设置了`max_restarts`，也是如此。Ray将重新启动您的actor以处理下一个消息。发生错误时，您将收到一个`RayActorError`异常。
 - en: Tip
+  id: totrans-20
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 提示
 - en: Ray actors are lazily initialized, so failure during the init stage is the same
     as failing on the first message.
+  id: totrans-21
   prefs: []
   type: TYPE_NORMAL
+  zh: Ray的actor是惰性初始化的，因此在初始化阶段失败与在第一个消息上失败是相同的。
 - en: When an actor fails between messages, Ray automatically attempts to recover
     the actor the next time it is called, up to `max_retries` times. If you’ve written
     your state recovery code well, failures between messages are generally invisible
     besides slightly slower processing times. If you don’t have state recovery, each
     restart will reset the actor to the initial values.
+  id: totrans-22
   prefs: []
   type: TYPE_NORMAL
+  zh: 当actor在消息之间失败时，Ray会自动尝试在下次调用时恢复actor，最多重试`max_retries`次。如果您编写了良好的状态恢复代码，除了稍微慢一些的处理时间外，消息之间的故障通常是不可见的。如果没有状态恢复，每次重新启动都会将actor重置为初始值。
 - en: If your application fails, nearly all of the resources your application was
     using will eventually be garbage collected. The one exception is detached resources,
     such as detached actors or detached placement groups. Ray will restart these as
     configured beyond the life of your current program, provided the cluster does
     not fail. This can prevent your cluster from scaling down, as Ray will not release
     the resources.
+  id: totrans-23
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果您的应用程序失败，几乎所有使用的资源最终都将被垃圾回收。唯一的例外是已分离资源，如已分离的actor或已分离的放置组。Ray将根据配置继续重新启动这些资源，超出当前程序生命周期，只要集群不会失败。这可以防止您的集群缩减规模，因为Ray不会释放资源。
 - en: Ray does not automatically attempt to re-create lost objects after they are
     first stored. You can configure Ray to try to re-create lost objects when accessed.
     In the next section, you’ll learn more about Ray objects and how to configure
     that resiliency.
+  id: totrans-24
   prefs: []
   type: TYPE_NORMAL
+  zh: 当首次存储后，Ray不会自动尝试重新创建丢失的对象。当访问时，您可以配置Ray尝试重新创建丢失的对象。在下一节中，您将更多了解Ray对象以及如何配置这种弹性。
 - en: Ray Objects
+  id: totrans-25
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: Ray对象
 - en: '*Ray objects* can contain anything serializable (covered in the next section),
     including references to other Ray objects, called `ObjectRef`s. An `ObjectRef`
     is essentially a unique ID that refers to a remote object and is conceptually
@@ -144,120 +202,175 @@
     large parameters of actors and remote functions. You can manually create objects
     by calling `ray.put`, which will return an immediately ready `ObjectRef`—for example,
     `o = ray.put(1)`.'
+  id: totrans-26
   prefs: []
   type: TYPE_NORMAL
+  zh: '*Ray对象*可以包含任何可序列化的内容（在下一节中介绍），包括对其他Ray对象的引用，称为`ObjectRef`。`ObjectRef`本质上是一个唯一的ID，指向远程对象，概念上类似于futures。Ray对象会自动为任务结果和actor及远程函数的大参数创建。您可以通过调用`ray.put`手动创建对象，它将返回一个立即准备就绪的`ObjectRef`，例如`o
+    = ray.put(1)`。'
 - en: Tip
+  id: totrans-27
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 提示
 - en: In general, small objects are initially stored in their owner’s in-process store,
     while Ray stores large objects on the worker that generates them. This allows
     Ray to balance each object’s memory footprint and resolution time.
+  id: totrans-28
   prefs: []
   type: TYPE_NORMAL
+  zh: 通常情况下，小对象最初存储在其所有者的进程存储中，而 Ray 将大对象存储在生成它们的工作节点上。这使得 Ray 能够平衡每个对象的内存占用和解析时间。
 - en: The owner of an object is the worker that created the initial `ObjectRef`, by
     submitting the creating task or calling `ray.put`. The owner manages the lifetime
     of the object through reference counting.
+  id: totrans-29
   prefs: []
   type: TYPE_NORMAL
+  zh: 对象的所有者是创建初始 `ObjectRef` 的工作节点，通过提交创建任务或调用 `ray.put` 来管理对象的生命周期。所有者通过引用计数管理对象的生命周期。
 - en: Tip
+  id: totrans-30
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 提示
 - en: Reference counting makes it especially important when defining objects to set
     them to `None` when you are done with them or make sure they go out of scope.
     Ray’s reference counting is susceptible to circular references, where objects
     refer to each other. Printing the objects stored in the cluster by running `ray
     memory --group-by STACK_TRACE` can be a good way to find objects Ray cannot garbage
     collect.
+  id: totrans-31
   prefs: []
   type: TYPE_NORMAL
+  zh: 引用计数在定义对象时特别重要，当你完成使用对象时应将其设置为 `None`，或确保它们超出作用域。Ray 的引用计数容易受到循环引用的影响，即对象相互引用。通过运行
+    `ray memory --group-by STACK_TRACE` 打印存储在集群中的对象是查找 Ray 无法垃圾回收的对象的好方法。
 - en: Ray objects are immutable; they cannot be modified. It’s important to note that
     if you change an object you’ve read from Ray (e.g., with `ray.get`) or stored
     in Ray (e.g., with `ray.put`), that change won’t be reflected in the object store.
     See [Example 5-2](#ex_ray_immuteable).
+  id: totrans-32
   prefs: []
   type: TYPE_NORMAL
+  zh: Ray 对象是不可变的；它们不能被修改。需要注意的是，如果你改变了从 Ray 读取的对象（例如，使用 `ray.get`），或者存储在 Ray 中的对象（例如，使用
+    `ray.put`），这些改变不会反映在对象存储中。参见 [示例 5-2](#ex_ray_immuteable)。
 - en: Example 5-2\. [Immutable Ray objects](https://oreil.ly/ytqOu)
+  id: totrans-33
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 5-2\. [不可变的 Ray 对象](https://oreil.ly/ytqOu)
 - en: '[PRE1]'
+  id: totrans-34
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE1]'
 - en: When you run this code, you can see that while you can mutate a value, the change
     won’t propagate to the object store.
+  id: totrans-35
   prefs: []
   type: TYPE_NORMAL
+  zh: 当你运行此代码时，你会发现虽然可以改变一个值，但这种改变不会传播到对象存储中。
 - en: If a parameter or return value is large and used more than once, or medium-sized
     and used frequently, storing it explicitly as an object can be worthwhile. You
     can then use the `ObjectRef` in place of the regular parameter, and Ray will automatically
     translate the `ObjectRef` into a Python type for you, as shown in [Example 5-3](#ex_use_ray_put).
+  id: totrans-36
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果一个参数或返回值很大并且被多次使用，或者中等大小但频繁使用，将其显式存储为对象可能是值得的。然后，你可以使用 `ObjectRef` 替换常规参数，Ray
+    将自动将 `ObjectRef` 转换为 Python 类型，如 [示例 5-3](#ex_use_ray_put) 所示。
 - en: Example 5-3\. [Using `ray.put`](https://oreil.ly/ytqOu)
+  id: totrans-37
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 5-3\. [使用 `ray.put`](https://oreil.ly/ytqOu)
 - en: '[PRE2]'
+  id: totrans-38
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE2]'
 - en: When another node needs an object, it asks the owner who has any copies of the
     object and then fetches and creates a local copy of that object. Therefore, many
     copies of the same object can exist in object stores on different nodes. Ray does
     not proactively replicate objects, so it is also possible that Ray may have only
     one copy of an object.
+  id: totrans-39
   prefs: []
   type: TYPE_NORMAL
+  zh: 当另一个节点需要一个对象时，它会询问所有者是否有该对象的任何副本，然后获取并在本地创建该对象的副本。因此，同一对象的多个副本可以存在于不同节点的对象存储中。Ray
+    不会主动复制对象，因此也可能 Ray 只有一个对象的副本。
 - en: By default, Ray will raise an `ObjectLostError` when you attempt to get a lost
     object. You can enable recomputing by providing `enable_object_reconstruction=True`
     to `ray.init` or adding `--enable-object-reconstruction` to `ray start`. This
     recomputation, which uses information in the GCS, will happen only when the object
     is needed (reconstruction is lazy on resolution).
+  id: totrans-40
   prefs: []
   type: TYPE_NORMAL
+  zh: 默认情况下，当尝试获取一个丢失的对象时，Ray 将引发 `ObjectLostError`。你可以通过向 `ray.init` 提供 `enable_object_reconstruction=True`
+    或在 `ray start` 中添加 `--enable-object-reconstruction` 来启用重构。这种重构仅在需要对象时（重构是按需解析的）使用
+    GCS 中的信息。
 - en: We can lose an object in two ways. Since the owner is responsible for reference
     counting, if the owner is lost, the object is lost, regardless of whether other
     copies of the object exist. If no copies of an object remain (e.g., all the nodes
     storing it die), Ray also loses the object. (This case is distinct because the
     object may be stored only on nodes different from the owner.)
+  id: totrans-41
   prefs: []
   type: TYPE_NORMAL
+  zh: 我们可以通过两种方式丢失一个对象。由于所有者负责引用计数，如果所有者丢失，对象也会丢失，无论是否存在对象的其他副本。如果没有对象的副本留下（例如，存储它的所有节点都死了），Ray
+    也会丢失对象。（这种情况是不同的，因为对象可能仅存储在与所有者不同的节点上。）
 - en: Tip
+  id: totrans-42
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 提示
 - en: Ray will follow the `max_retries` limit discussed previously during reconstruction.
+  id: totrans-43
   prefs: []
   type: TYPE_NORMAL
+  zh: Ray 在重构期间会遵循先前讨论的 `max_retries` 限制。
 - en: Ray’s object store uses reference-counting garbage collection to clean up objects
     that your program doesn’t need anymore.^([3](ch05.html#idm45354777330896)) The
     object store keeps track of both direct and indirect references.^([4](ch05.html#idm45354777330208))
+  id: totrans-44
   prefs: []
   type: TYPE_NORMAL
+  zh: Ray的对象存储使用引用计数垃圾回收来清理程序不再需要的对象。^([3](ch05.html#idm45354777330896)) 对象存储跟踪直接和间接引用。^([4](ch05.html#idm45354777330208))
 - en: Even with garbage collection, an object store can fill up with objects. When
     an object store fills up, Ray will first execute garbage collection, removing
     objects with no references. If memory pressure remains, the object store will
     attempt to spill to disk. *Spilling to disk* copies objects from memory to disk
     and is called `spilling` since it happens when memory usage overflows.
+  id: totrans-45
   prefs: []
   type: TYPE_NORMAL
+  zh: 即使有垃圾回收，对象存储也可能被对象填满。当对象存储填满时，Ray会首先执行垃圾回收，删除没有引用的对象。如果内存压力仍然存在，对象存储将尝试溢出到磁盘。*溢出到磁盘*
+    将对象从内存复制到磁盘，称为`spilling`，因为它发生在内存使用溢出时。
 - en: Note
+  id: totrans-46
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 注意
 - en: Earlier versions of Ray had the capability to evict objects per actor by setting
     an `object_store_memory` limit.
+  id: totrans-47
   prefs: []
   type: TYPE_NORMAL
+  zh: 早期版本的Ray具有通过设置`object_store_memory`限制来按actor逐个删除对象的功能。
 - en: You might want to fine-tune the object store settings. Depending on your use
     case, you may need more or less memory for the object store. You configure the
     object store through the `_system_config` settings. Two important configuration
     options include the minimum aggregate size to spill to disk, `min_spilling_size`,
     and total memory allocated to the object store, `object_store_memory_mb`. You
     can set these when calling `ray.init`, as shown in [Example 5-4](#ray_obj_store_config).
+  id: totrans-48
   prefs: []
   type: TYPE_NORMAL
+  zh: 您可能希望微调对象存储设置。根据您的用例，您可能需要更多或更少的对象存储内存。您可以通过`_system_config`设置来配置对象存储。两个重要的配置选项包括溢出到磁盘的最小聚合大小`min_spilling_size`和分配给对象存储的总内存`object_store_memory_mb`。您可以在调用`ray.init`时设置这些选项，如示例5-4所示。
 - en: If you have a mixture of fast and slow disks—​for example, solid-state drive
     (SSD), hard disk drive (HDD), and network—​you should consider using the faster
     storage for spilled objects. Unlike the rest of the storage configs, you configure
@@ -266,44 +379,61 @@
     stored under `_system_config`. This is a bit counterintuitive, but if your machine
     had fast temporary storage at */tmp/fast*, you would configure Ray to use it as
     in [Example 5-4](#ray_obj_store_config).
+  id: totrans-49
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果您有快慢不一的磁盘——例如固态驱动器（SSD）、硬盘驱动器（HDD）和网络——您应该考虑使用更快的存储来存储溢出的对象。与其余存储配置不同，您可以使用嵌套的JavaScript
+    Object Notation（JSON）块配置溢出对象存储位置。与对象存储设置的其他部分一样，`object_spilling_config`存储在`_system_config`下。这有点反直觉，但如果您的机器在*/tmp/fast*上有快速临时存储，您可以像示例5-4中那样配置Ray来使用它。
 - en: Example 5-4\. [Ray object store configuration](https://oreil.ly/ytqOu)
+  id: totrans-50
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 5-4\. [Ray对象存储配置](https://oreil.ly/ytqOu)
 - en: '[PRE3]'
+  id: totrans-51
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE3]'
 - en: Frameworks like Ray use serialization to pass both data and functions among
     workers. Before Ray can transfer an object into the object store, it must serialize
     the object.
+  id: totrans-52
   prefs: []
   type: TYPE_NORMAL
+  zh: 类似Ray的框架使用序列化在worker之间传递数据和函数。在Ray能够将对象传输到对象存储之前，必须对对象进行序列化。
 - en: Serialization/Pickling
+  id: totrans-53
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 序列化/Pickling
 - en: Ray, and systems like it, depend on serialization to be able to store and move
     data (and functions) among processes. (These processes can be on the same or different
     nodes.) Not all objects are serializable, and as a result, cannot move among workers.
     In addition to the object store and IPC, fault tolerance depends on serialization,
     so the same restrictions apply.
+  id: totrans-54
   prefs: []
   type: TYPE_NORMAL
+  zh: Ray及其类似系统依赖于序列化来存储和移动数据（和函数）在进程之间。不是所有对象都可序列化，因此不能在worker之间移动。除了对象存储和IPC之外，容错性依赖于序列化，因此相同的限制适用。
 - en: There are many kinds of serialization, from multilanguage data-only tools like
     JSON and Arrow to Python’s internal pickle. Serializing with pickle is called
     *pickling*. Pickling can handle a wider range of types than JSON, but can be used
     only between Python processes. Pickling does not work for all objects—​in most
     cases, there is no good way to serialize (like a network connection), and in other
     cases, this is because no one has had the time to implement one.
+  id: totrans-55
   prefs: []
   type: TYPE_NORMAL
+  zh: 有许多种类的序列化，从多语言数据工具如JSON和Arrow到Python的内部pickle。使用pickle进行序列化称为*pickling*。Pickling可以处理比JSON更广泛的类型，但只能在Python进程之间使用。Pickling并不适用于所有对象——在大多数情况下，没有好的方法来序列化（如网络连接），在其他情况下，是因为没有人有时间去实现它。
 - en: In addition to communicating among processes, Ray also has a shared in-memory
     object store. This object store allows multiple processes on the same computer
     to share objects.
+  id: totrans-56
   prefs: []
   type: TYPE_NORMAL
+  zh: 除了进程间通信外，Ray 还具有共享内存对象存储。该对象存储允许同一台计算机上的多个进程共享对象。
 - en: Ray uses a few serialization techniques, depending on the use case. With some
     exceptions, Ray’s Python libraries generally use a fork of cloudpickle, an improved
     pickle. For datasets, Ray tries to use Arrow and will fall back to cloudpickle
@@ -311,27 +441,41 @@
     Fast Serialization and MessagePack. Internally, Ray uses Google Protocol Buffers
     between workers. As a Ray Python developer, you will benefit the most from an
     in-depth understanding of the cloudpickle and Arrow serialization tools.
+  id: totrans-57
   prefs: []
   type: TYPE_NORMAL
+  zh: Ray 根据用例使用几种序列化技术。除了一些例外情况外，Ray 的 Python 库通常使用 cloudpickle 的分支，这是一种改进的 pickle。对于数据集，Ray
+    会尝试使用 Arrow，并在 Arrow 不适用时回退到 cloudpickle。Ray 的 Java 库使用各种序列化程序，包括 Fast Serialization
+    和 MessagePack。在内部，Ray 在工作节点之间使用 Google Protocol Buffers。作为 Ray Python 开发人员，您将从深入理解
+    cloudpickle 和 Arrow 序列化工具中获益最多。
 - en: cloudpickle
+  id: totrans-58
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: cloudpickle
 - en: The cloudpickle tool serializes the functions, actors, and most of the data
     in Ray. Most nondistributed Python code doesn’t depend on serializing functions.
     However, cluster computing often does require serializing functions. The cloudpickle
     project is designed for cluster computing and can serialize and deserialize more
     functions than Python’s built-in pickle.
+  id: totrans-59
   prefs: []
   type: TYPE_NORMAL
+  zh: cloudpickle 工具序列化 Ray 中的函数、执行器和大部分数据。大多数非分布式 Python 代码不依赖于序列化函数。然而，集群计算通常需要序列化函数。cloudpickle
+    项目专为集群计算设计，可以序列化和反序列化比 Python 内置的 pickle 更多的函数。
 - en: Tip
+  id: totrans-60
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 提示
 - en: If you are uncertain why some data is not serializable, you can either try looking
     at the stack traces or use the Ray function `ray.util.inspect_serializability`.
+  id: totrans-61
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果您不确定某些数据为何不可序列化，可以尝试查看堆栈跟踪或使用 Ray 函数 `ray.util.inspect_serializability`。
 - en: When pickling classes, cloudpickle still uses the same extension mechanisms
     (`get​ne⁠wargs`, `getstate`, `setstate`, etc.) as pickling. You can write a custom
     serializer if you have a class with nonserializable components, such as a database
@@ -339,86 +483,129 @@
     you can instead serialize the information required to create a similar object.
     [Example 5-5](#custom_serializer) takes this approach by serializing a class containing
     a thread pool.
+  id: totrans-62
   prefs: []
   type: TYPE_NORMAL
+  zh: 在对类进行 pickle 处理时，cloudpickle 仍然使用与 pickle 相同的扩展机制（`get​ne⁠wargs`、`getstate`、`setstate`
+    等）。如果您的类具有非可序列化组件（如数据库连接），您可以编写自定义序列化程序。尽管这不允许您序列化诸如数据库连接之类的内容，但您可以序列化创建类似对象所需的信息。[示例
+    5-5](#custom_serializer) 采用此方法序列化包含线程池的类。
 - en: Example 5-5\. [Custom serializer](https://oreil.ly/ytqOu)
+  id: totrans-63
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 5-5\. [自定义序列化程序](https://oreil.ly/ytqOu)
 - en: '[PRE4]'
+  id: totrans-64
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE4]'
 - en: Alternatively, Ray allows you to register serializers for classes. This approach
     allows you to change the serialization of classes that are not your own, as shown
     in [Example 5-6](#custom_serializer_not_own_class).
+  id: totrans-65
   prefs: []
   type: TYPE_NORMAL
+  zh: 或者，Ray 允许您为类注册序列化程序。这种方法允许您更改不是您自己的类的序列化方式，如 [示例 5-6](#custom_serializer_not_own_class)
+    所示。
 - en: Example 5-6\. [Custom serializer, external class](https://oreil.ly/ytqOu)
+  id: totrans-66
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 5-6\. [自定义序列化程序，外部类](https://oreil.ly/ytqOu)
 - en: '[PRE5]'
+  id: totrans-67
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE5]'
 - en: Otherwise, you would need to subclass and extend the classes, which can make
     your code difficult to read when working with external libraries.
+  id: totrans-68
   prefs: []
   type: TYPE_NORMAL
+  zh: 否则，您需要对类进行子类化和扩展，这在使用外部库时可能会使您的代码难以阅读。
 - en: Note
+  id: totrans-69
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 注意
 - en: cloudpickle requires that the version of Python loading and the version of Python
     reading are exactly the same. This requirement carries forward and means that
     all of Ray’s workers must have the same Python version.
+  id: totrans-70
   prefs: []
   type: TYPE_NORMAL
+  zh: cloudpickle 要求加载和读取 Python 的版本完全相同。这一要求持续存在，这意味着所有 Ray 的工作节点必须具有相同的 Python 版本。
 - en: Apache Arrow
+  id: totrans-71
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: Apache Arrow
 - en: As mentioned before, Ray uses Apache Arrow to serialize datasets when possible.
     Ray DataFrames can have types that are not supported by Arrow. Under the hood,
     Ray performs schema inference or translation when loading data into datasets.
     If Arrow cannot represent a type, Ray serializes the dataset by using lists via
     cloudpickle.
+  id: totrans-72
   prefs: []
   type: TYPE_NORMAL
+  zh: 正如前面提到的，Ray 在可能时使用 Apache Arrow 序列化数据集。Ray 数据帧可以具有 Apache Arrow 不支持的类型。在底层，Ray
+    在加载数据到数据集时执行模式推断或转换。如果 Arrow 无法表示某一类型，则 Ray 将通过 cloudpickle 使用列表序列化数据集。
 - en: Arrow works with many data processing and ML tools, including pandas, PySpark,
     TensorFlow, and Dask. Arrow is a columnar format with a strongly typed schema.
     It is generally more space-efficient than pickling, and it can be used not only
     between different versions of Python but also between programming languages—​for
     example, Rust, C, Java, Python, and Compute Unified Device Architecture (CUDA).
+  id: totrans-73
   prefs: []
   type: TYPE_NORMAL
+  zh: Arrow 可与许多数据处理和 ML 工具一起使用，包括 pandas、PySpark、TensorFlow 和 Dask。Arrow 是一种列式格式，具有强类型模式。它通常比
+    pickle 更节省空间，并且不仅可以在不同版本的 Python 之间使用，还可以在不同编程语言之间使用，例如 Rust、C、Java、Python 和 Compute
+    Unified Device Architecture (CUDA)。
 - en: Note
+  id: totrans-74
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 注意
 - en: Not all tools using Arrow support all the same data types. For example, Arrow
     supports nested columns, which pandas does not.
+  id: totrans-75
   prefs: []
   type: TYPE_NORMAL
+  zh: 并非所有使用 Arrow 的工具都支持相同的数据类型。例如，Arrow 支持嵌套列，而 pandas 不支持。
 - en: Resources / Vertical Scaling
+  id: totrans-76
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 资源 / 垂直扩展
 - en: By default, Ray assumes that all functions and actors have the same resource
     requirements (e.g., one CPU). For actors or functions with different resource
     requirements, you can specify the resources needed. The scheduler will attempt
     to find a node that has these resources available, and if there are none, the
     autoscaler, covered next, will attempt to allocate a node that meets those requirements.
+  id: totrans-77
   prefs: []
   type: TYPE_NORMAL
+  zh: 默认情况下，Ray 假设所有函数和 actors 具有相同的资源要求（例如，一个 CPU）。对于具有不同资源要求的 actors 或 functions，您可以指定所需的资源。调度程序将尝试找到具有这些可用资源的节点，如果没有，则下一个将尝试分配符合这些要求的节点的自动缩放程序将会运行。
 - en: The `ray.remote` decorator takes `num_cpus`, `num_gpus`, and `memory` as parameters
     to indicate the amount of resources an actor or remote function will consume.
     The defaults are one CPU and zero GPUs.
+  id: totrans-78
   prefs: []
   type: TYPE_NORMAL
+  zh: '`ray.remote` 装饰器将 `num_cpus`、`num_gpus` 和 `memory` 作为参数，用于指示 actor 或远程函数将消耗的资源量。默认值为一个
+    CPU 和零个 GPU。'
 - en: Tip
+  id: totrans-79
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 提示
 - en: When no CPU requirements are specified, the resource allocation behavior is
     different for remote functions and actors. For remote functions, one CPU is required
     for both allocation and running. Alternatively, for actors, if no CPU resources
@@ -427,27 +614,41 @@
     can run on any nonzero-CPU node. On the other hand, if resources are specified
     explicitly, they are required for both scheduling and running. We recommend always
     explicitly specifying CPU resource requirements and not relying on defaults.
+  id: totrans-80
   prefs: []
   type: TYPE_NORMAL
+  zh: 当未指定 CPU 要求时，远程函数和 actors 的资源分配行为不同。对于远程函数，分配和运行都需要一个 CPU。另外，对于 actors，如果未指定
+    CPU 资源，则 Ray 在调度时使用一个 CPU，运行时使用零个 CPU。这意味着该 actor 无法被调度到零 CPU 节点上，但可以在任何非零 CPU
+    节点上运行无限数量。另一方面，如果显式指定了资源，则分配和运行都需要这些资源。我们建议始终显式指定 CPU 资源要求，不要依赖默认值。
 - en: To override the default resource value, specify required resources in the `@ray.remote`
     annotation. For example, using the annotation `@ray.remote(num_cpus=4, num_gpus=2)`
     will request four CPUs and two GPUs for function execution.
+  id: totrans-81
   prefs: []
   type: TYPE_NORMAL
+  zh: 要覆盖默认资源值，请在 `@ray.remote` 注释中指定所需的资源。例如，使用注释 `@ray.remote(num_cpus=4, num_gpus=2)`
+    将请求四个 CPU 和两个 GPU 用于函数执行。
 - en: Tip
+  id: totrans-82
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 提示
 - en: Most resource requests in Ray are *soft*, which means that Ray does not enforce
     or guarantee the limits, but does its best to try to meet them.
+  id: totrans-83
   prefs: []
   type: TYPE_NORMAL
+  zh: Ray 中的大多数资源请求是 *软* 的，这意味着 Ray 不强制执行或保证限制，但会尽力尝试满足它们。
 - en: If you know the amount of memory a task or actor requires, you can specify it
     in the resource requirements of its `ray.remote` annotation to enable memory-aware
     scheduling.^([5](ch05.html#idm45354776874752)) For example, `@ray.remote(memory=500
     * 1024 * 1024)` will request 500 MiB of memory for this task.
+  id: totrans-84
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果您知道任务或 actor 需要的内存量，可以在其 `ray.remote` 注释的资源要求中指定它以启用内存感知调度。^([5](ch05.html#idm45354776874752))
+    例如，`@ray.remote(memory=500 * 1024 * 1024)` 将为该任务请求 500 MiB 的内存。
 - en: 'Ray can also keep track of and assign custom resources by using the same mechanism
     as memory and CPU resources. When the worker process is starting, it needs to
     know all of the resources that are present. For manually launched workers, you
@@ -455,17 +656,25 @@
     mixed architecture cluster, you might want to add `--resources=\{"x86": "1"}`
     to the x86 nodes and `--resources\{"arm64":"1"}` to the ARM nodes. See [Appendix B](app02.html#appB)
     to configure resources with your deployment mechanism.'
+  id: totrans-85
   prefs: []
   type: TYPE_NORMAL
+  zh: 'Ray 还可以通过与内存和 CPU 资源相同的机制来跟踪和分配自定义资源。在工作器进程启动时，需要知道所有存在的资源。对于手动启动的工作器，您可以使用
+    `--resources` 参数指定自定义资源。例如，在混合架构集群上，您可能希望在 x86 节点上添加 `--resources={"x86": "1"}`，在
+    ARM 节点上添加 `--resources={"arm64":"1"}`。参见 [附录 B](app02.html#appB) 了解如何使用部署机制配置资源。'
 - en: Tip
+  id: totrans-86
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 提示
 - en: These resources don’t need to be limited to hardware. If you have certain libraries
     or datasets available on only some nodes because of licensing, you can use the
     same technique.
+  id: totrans-87
   prefs: []
   type: TYPE_NORMAL
+  zh: 这些资源不必局限于硬件。如果由于许可问题某些节点上只有某些库或数据集可用，您可以使用相同的技术。
 - en: So far we’ve focused on horizontal scaling, but you can also use Ray to get
     more resources for each process. Scaling by using machines with more resources
     is known as *vertical scaling*. You can request different amounts of memory, CPU
@@ -473,298 +682,434 @@
     supports only machines of the same size, but as covered in [Appendix B](app02.html#appB),
     you can create multiple node types. If you create node or container types of different
     sizes, these can be used for vertical scaling.
+  id: totrans-88
   prefs: []
   type: TYPE_NORMAL
+  zh: 到目前为止，我们关注的是水平扩展，但您也可以使用 Ray 为每个进程获取更多资源。使用具有更多资源的机器进行扩展称为*垂直扩展*。您可以向 Ray 请求不同数量的内存、CPU
+    核心甚至 GPU 来执行任务和角色。默认的 Ray 配置仅支持相同大小的机器，但如 [附录 B](app02.html#appB) 所述，您可以创建多个节点类型。如果您创建了不同大小的节点或容器类型，可以用于垂直扩展。
 - en: Autoscaler
+  id: totrans-89
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 自动缩放器
 - en: 'One of the important components of Ray is the *autoscaler*, which is responsible
     for managing workers. More specifically, the autoscaler is responsible for the
     following three functions:'
+  id: totrans-90
   prefs: []
   type: TYPE_NORMAL
+  zh: Ray 的一个重要组成部分是*自动缩放器*，负责管理工作器。更具体地说，自动缩放器负责以下三个功能：
 - en: Launching new workers (based on demand)
+  id: totrans-91
   prefs: []
   type: TYPE_NORMAL
+  zh: 根据需求启动新的工作器
 - en: Includes uploading user-defined files or directories and running init/setup/start
     commands on the started worker
+  id: totrans-92
   prefs: []
   type: TYPE_NORMAL
+  zh: 包括上传用户定义的文件或目录，并在已启动的工作器上运行初始化/设置/启动命令。
 - en: Terminating worker nodes
+  id: totrans-93
   prefs: []
   type: TYPE_NORMAL
+  zh: 终止工作节点
 - en: Occurs if the node is idle, the node is failing to start up / initialize, or
     the node configuration changed
+  id: totrans-94
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果节点空闲、节点无法启动/初始化或节点配置发生更改，则会发生此情况。
 - en: Restarting workers
+  id: totrans-95
   prefs: []
   type: TYPE_NORMAL
+  zh: 重启工作器
 - en: Occurs if the Raylet running a worker crashes or the worker’s setup / startup
     / file mount changes
+  id: totrans-96
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果 Raylet 运行的工作器崩溃或工作器的设置/启动/文件挂载发生变化，则会发生此情况。
 - en: 'The autoscaler creates new nodes in response to the following events:'
+  id: totrans-97
   prefs: []
   type: TYPE_NORMAL
+  zh: 自动缩放器会响应以下事件创建新节点：
 - en: Cluster creation with the `min-nodes` configuration
+  id: totrans-98
   prefs: []
   type: TYPE_NORMAL
+  zh: 使用 `min-nodes` 配置创建集群
 - en: In this case, the autoscaler creates the required number of nodes.
+  id: totrans-99
   prefs: []
   type: TYPE_NORMAL
+  zh: 在这种情况下，自动缩放器会创建所需数量的节点。
 - en: Resource demands
+  id: totrans-100
   prefs: []
   type: TYPE_NORMAL
+  zh: 资源需求
 - en: For remote functions with resource requirements, the autoscaler checks whether
     a cluster can satisfy additional resource requirements and, if not, creates one
     or more new worker nodes.
+  id: totrans-101
   prefs: []
   type: TYPE_NORMAL
+  zh: 对于具有资源需求的远程函数，自动缩放器会检查集群是否能够满足额外的资源需求，如果不能，则创建一个或多个新的工作节点。
 - en: Placement groups
+  id: totrans-102
   prefs: []
   type: TYPE_NORMAL
+  zh: 放置组
 - en: Similar to resource demand, for new placement groups, the autoscaler checks
     whether the cluster has enough resources and, if not, creates new worker node(s).
+  id: totrans-103
   prefs: []
   type: TYPE_NORMAL
+  zh: 类似于资源需求，对于新的放置组，自动缩放器会检查集群是否有足够的资源，如果不够，则创建新的工作节点。
 - en: '[An SDK `request_resources` function call](https://oreil.ly/S9wHA)'
+  id: totrans-104
   prefs: []
   type: TYPE_NORMAL
+  zh: '[一个 SDK `request_resources` 函数调用](https://oreil.ly/S9wHA)'
 - en: This is similar to the cluster creation request, but these resources are never
     released for the life of the cluster.
+  id: totrans-105
   prefs: []
   type: TYPE_NORMAL
+  zh: 这类似于集群创建请求，但这些资源在集群的整个生命周期中永不释放。
 - en: Ray’s autoscaler works with different node/computer types, which can map to
     different physical instance types (e.g., different AWS node types) or accelerators
     (e.g., GPUs).
+  id: totrans-106
   prefs: []
   type: TYPE_NORMAL
+  zh: Ray 的自动缩放器可与不同类型的节点/计算机配合工作，这些节点可以映射到不同的物理实例类型（例如不同的 AWS 节点类型）或加速器（例如 GPU）。
 - en: For more information on the autoscaler, refer to the video [“A Glimpse into
     the Ray Autoscaler”](https://oreil.ly/CB5Gl) by Ameer Haj Ali. For more information
     on creating worker nodes for different platforms, refer to Ray’s [cloud VM documentation](https://oreil.ly/u7h4m).
+  id: totrans-107
   prefs: []
   type: TYPE_NORMAL
+  zh: 若要了解有关自动扩展器的更多信息，请参考阿米尔·哈吉·阿里的视频 [“瞥见 Ray 自动扩展器”](https://oreil.ly/CB5Gl)。有关在不同平台上创建工作节点的更多信息，请参阅
+    Ray 的 [云 VM 文档](https://oreil.ly/u7h4m)。
 - en: 'Placement Groups: Organizing Your Tasks and Actors'
+  id: totrans-108
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 放置组：组织您的任务和执行器
 - en: Ray applications use *placement groups* to organize tasks as well as preallocate
     resources. Organizing tasks is sometimes important for reusing resources and increased
     data locality.
+  id: totrans-109
   prefs: []
   type: TYPE_NORMAL
+  zh: Ray 应用程序使用*放置组*来组织任务以及预分配资源。有时为了重用资源和增加数据局部性，组织任务是很重要的。
 - en: Tip
+  id: totrans-110
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 提示
 - en: Ray uses node-based data storage, so running multiple functions with large data
     exchanges on the same node leads to data locality and thus can often improve overall
     execution performance.
+  id: totrans-111
   prefs: []
   type: TYPE_NORMAL
+  zh: Ray 使用基于节点的数据存储，因此在同一节点上运行多个涉及大数据交换的函数会导致数据局部性，从而通常可以提高整体执行性能。
 - en: '*Data locality* can reduce the amount of data to be transferred, and is based
     on the idea that it’s often faster to serialize a function than your data.^([6](ch05.html#idm45354776812096))
     On the flip side, data locality can also be used to minimize impact of hardware
     failure by ensuring that work is spread across many computers. Preallocating resources
     can speed up your work by allowing the autoscaler to request multiple machines
     before they are needed.'
+  id: totrans-112
   prefs: []
   type: TYPE_NORMAL
+  zh: '*数据局部性*可以减少需要传输的数据量，其基于这样的思想：序列化一个函数通常比序列化数据快得多。^([6](ch05.html#idm45354776812096))
+    另一方面，数据局部性还可以用来通过确保工作分布在许多计算机上来最小化硬件故障的影响。通过允许自动扩展器在需要之前请求多台机器来预分配资源，可以加快工作速度。'
 - en: When you start a remote function or actor, Ray may need to start an additional
     node to meet the resource needs, which delays the function/actor creation. If
     you try to create several large functions/actors in a series, Ray creates the
     workers sequentially, which slows down your job even more. You can force parallel
     allocation with Ray’s placement groups, which often reduces resources’ waiting
     time.
+  id: totrans-113
   prefs: []
   type: TYPE_NORMAL
+  zh: 当您启动远程函数或执行器时，Ray 可能需要启动额外的节点来满足资源需求，这会延迟函数/执行器的创建。如果您尝试连续创建几个大函数/执行器，Ray 会按顺序创建工作节点，从而进一步减慢您的作业。您可以使用
+    Ray 的放置组来强制并行分配，通常可以减少资源的等待时间。
 - en: Tip
+  id: totrans-114
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 提示
 - en: Ray creates placement groups atomically, so if you have a minimum number of
     resources required before your task can run, you can also use placement groups
     for this effect. Note, though, that placement groups can experience partial restarts.
+  id: totrans-115
   prefs: []
   type: TYPE_NORMAL
+  zh: Ray 会原子地创建放置组，因此如果您的任务运行之前需要最低数量的资源，您也可以使用放置组来实现此效果。请注意，放置组可能会经历部分重新启动。
 - en: 'You can use placement groups for a few purposes:'
+  id: totrans-116
   prefs: []
   type: TYPE_NORMAL
+  zh: 您可以使用放置组来达到几个目的：
 - en: Preallocating resources
+  id: totrans-117
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 预分配资源
 - en: '[Gang scheduling](https://oreil.ly/d6wxR), to ensure that all tasks and actors
     will be scheduled and start at the same time'
+  id: totrans-118
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '[团体调度](https://oreil.ly/d6wxR)，以确保所有任务和执行器将在同一时间被调度并启动'
 - en: 'Organizing your tasks and actors inside your cluster to support either of the
     following strategies:'
+  id: totrans-119
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 在集群内部组织你的任务和执行器，以支持以下任一策略：
 - en: Maximizing data locality
+  id: totrans-120
   prefs:
   - PREF_IND
   type: TYPE_NORMAL
+  zh: 最大化数据局部性
 - en: Ensuring the placement of all your tasks and actors close to your data to avoid
     object-transfer overhead
+  id: totrans-121
   prefs:
   - PREF_IND
   type: TYPE_NORMAL
+  zh: 确保将所有任务和执行器的放置尽可能靠近数据，以避免对象传输开销
 - en: Load balancing
+  id: totrans-122
   prefs:
   - PREF_IND
   type: TYPE_NORMAL
+  zh: 负载平衡
 - en: Improving application availability by placing your actors or tasks into different
     physical machines as much as possible
+  id: totrans-123
   prefs:
   - PREF_IND
   type: TYPE_NORMAL
+  zh: 通过尽可能将你的执行器或任务放置在不同的物理机器上来提高应用程序的可用性
 - en: Placement groups consist of the desired resources for each worker as well as
     the placement strategy.
+  id: totrans-124
   prefs: []
   type: TYPE_NORMAL
+  zh: 放置组由每个工作节点的期望资源以及放置策略组成。
 - en: Since a placement group can span multiple workers, you must specify the desired
     resources (or resource bundle) for each worker. Each group of resources for a
     worker is known as a *resource bundle* and must be able to fit inside a single
     machine. Otherwise, the autoscaler will be unable to create the node types, and
     the placement group will never be scheduled.
+  id: totrans-125
   prefs: []
   type: TYPE_NORMAL
+  zh: 由于一个放置组可以跨多个工作节点，因此您必须为每个工作节点指定所需的资源（或资源捆绑包）。每个工作节点的资源组称为*资源捆绑包*，并且必须能够适应单台机器。否则，自动扩展器将无法创建节点类型，并且放置组将永远不会被调度。
 - en: Placement groups are collections of resource bundles, where a resource bundle
     is a collection of resources (CPU, GPU, etc.). You define the resource bundles
     with the same arguments. Each resource bundle must fit on a single machine.
+  id: totrans-126
   prefs: []
   type: TYPE_NORMAL
+  zh: 放置组是资源包的集合，其中资源包是资源（CPU、GPU等）的集合。您使用相同的参数定义资源包。每个资源包必须适合单台机器。
 - en: 'You control the way Ray schedules your resource group by setting placement
     strategies. Your placement strategy can either try to reduce the number of nodes
     (improving locality) or spread the work out more (improving reliability and load
     balancing). You have a few variations on these core strategies to choose from:'
+  id: totrans-127
   prefs: []
   type: TYPE_NORMAL
+  zh: 通过设置放置策略，您可以控制Ray调度资源组的方式。您的放置策略可以试图减少节点数量（提高局部性）或更加分散工作（提高可靠性和负载平衡）。您可以选择几种核心策略的变体：
 - en: '`STRICT_PACK`'
+  id: totrans-128
   prefs: []
   type: TYPE_NORMAL
+  zh: '`STRICT_PACK`'
 - en: All bundles must be placed into a single node on the cluster.
+  id: totrans-129
   prefs: []
   type: TYPE_NORMAL
+  zh: 所有资源包必须放置在集群的单个节点上。
 - en: '`PACK`'
+  id: totrans-130
   prefs: []
   type: TYPE_NORMAL
+  zh: '`PACK`'
 - en: All provided bundles are packed onto a single node on a best effort basis. If
     strict packing is not feasible, bundles can be placed onto other nodes. This is
     the default placement group strategy.
+  id: totrans-131
   prefs: []
   type: TYPE_NORMAL
+  zh: 所有提供的资源包都尽可能打包到单个节点上。如果严格打包不可行，则资源包可以放置到其他节点上。这是默认的放置组策略。
 - en: '`STRICT_SPREAD`'
+  id: totrans-132
   prefs: []
   type: TYPE_NORMAL
+  zh: '`STRICT_SPREAD`'
 - en: Each bundle must be scheduled in a separate node.
+  id: totrans-133
   prefs: []
   type: TYPE_NORMAL
+  zh: 每个资源包必须安排在单独的节点上。
 - en: '`SPREAD`'
+  id: totrans-134
   prefs: []
   type: TYPE_NORMAL
+  zh: '`SPREAD`'
 - en: Each bundle will be spread onto separate nodes on a best effort basis. If strict
     spreading is not feasible, some bundles can be collocated on nodes.
+  id: totrans-135
   prefs: []
   type: TYPE_NORMAL
+  zh: 每个资源包将尽最大努力分散到不同的节点上。如果严格分散不可行，则某些资源包可以在节点上合并。
 - en: Tip
+  id: totrans-136
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 提示
 - en: Multiple remote functions or actors can be in the same resource bundle. Any
     functions or actors using the same bundle will always be on the same node.
+  id: totrans-137
   prefs: []
   type: TYPE_NORMAL
+  zh: 多个远程函数或者角色可以位于同一个资源包中。使用同一个资源包的任何函数或角色将始终位于同一节点上。
 - en: 'The lifecycle of placement groups has the following stages:'
+  id: totrans-138
   prefs: []
   type: TYPE_NORMAL
+  zh: 放置组的生命周期具有以下阶段：
 - en: Creation
+  id: totrans-139
   prefs: []
   type: TYPE_NORMAL
+  zh: 创建
 - en: The placement group creation request is sent to the GCS, which calculates how
     to distribute the bundles and sends resource reservation requests to all the nodes.
     Ray guarantees that placement groups are placed *atomically*.
+  id: totrans-140
   prefs: []
   type: TYPE_NORMAL
+  zh: 放置组创建请求发送到GCS，GCS计算如何分发资源包，并发送资源预留请求给所有节点。Ray保证放置组的原子性放置。
 - en: Allocation
+  id: totrans-141
   prefs: []
   type: TYPE_NORMAL
+  zh: 分配
 - en: Placement groups are pending creation. If existing Ray nodes can satisfy resource
     requirements for a given strategy, placement groups are allocated and success
     is returned. Otherwise, the result depends on whether Ray is able to add nodes.
     If the autoscaler is not present or the node limit is reached, placement group
     allocation fails and the error is returned. Otherwise, the autoscaler scales the
     cluster to ensure that pending groups can be allocated.
+  id: totrans-142
   prefs: []
   type: TYPE_NORMAL
+  zh: 放置组正在等待创建。如果现有的Ray节点能够满足给定策略的资源需求，则分配放置组并返回成功。否则，结果取决于Ray是否能够添加节点。如果自动扩展器不存在或节点限制已达到，则放置组分配失败并返回错误。否则，自动扩展器会扩展集群，以确保可以分配待处理组。
 - en: Node’s failure
+  id: totrans-143
   prefs: []
   type: TYPE_NORMAL
+  zh: 节点故障
 - en: When worker nodes that contain some bundles of a placement group die, all the
     bundles will be rescheduled on different nodes by GCS.^([7](ch05.html#idm45354776784176))
     The placement group creation *atomicity* applies only to initial placement creation.
     Once a placement group is created, it can become partial because of node failures.
+  id: totrans-144
   prefs: []
   type: TYPE_NORMAL
+  zh: 当包含某个放置组某些资源包的工作节点失败时，GCS将在不同节点上重新调度所有资源包。^([7](ch05.html#idm45354776784176))
+    放置组的原子性仅适用于初始放置创建。一旦放置组创建完成，由于节点故障可能变得部分。
 - en: Cleanup
+  id: totrans-145
   prefs: []
   type: TYPE_NORMAL
+  zh: 清理
 - en: Ray automatically removes placement groups when the job that created the placement
     group is finished. If you’d like to keep the placement group alive regardless
     of the job that created it, you should specify `lifetime="detached"` during placement
     group creation. You can also explicitly free a placement group at any time by
     calling `remove_placement_group`.
+  id: totrans-146
   prefs: []
   type: TYPE_NORMAL
+  zh: 当创建放置组的作业完成时，Ray会自动删除放置组。如果希望无论创建它的作业如何，保持放置组的活跃性，您应在放置组创建期间指定`lifetime="detached"`。您还可以随时通过调用`remove_placement_group`显式释放放置组。
 - en: To make a placement group, you will need a few extra imports, shown in [Example 5-7](#placement_group_imports).
     If you are working with Ray in local mode, seeing the effect of placement groups
     is harder because there is only one node. You can still create CPU-only bundles
     together into a placement group. Once you’ve created the placement group, you
     can use `options` to run a function or actor in a specific bundle, as shown in
     [Example 5-8](#placement_group).
+  id: totrans-147
   prefs: []
   type: TYPE_NORMAL
 - en: Example 5-7\. [Placement group imports](https://oreil.ly/ytqOu)
+  id: totrans-148
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
 - en: '[PRE6]'
+  id: totrans-149
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE6]'
 - en: Example 5-8\. [CPU-only placement group](https://oreil.ly/ytqOu)
+  id: totrans-150
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
 - en: '[PRE7]'
+  id: totrans-151
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE7]'
 - en: If you are running Ray on a cluster, you can create a more complex resource
     group. If you have some GPU nodes in your cluster, you can create more complex
     placement groups. When we run [Example 5-9](#mixed_placement_group) on our test
     cluster, the autoscaler allocates a node with a GPU. Once you’re finished with
     your placement group, you can delete it with `remove_placement_group(pg)`.
+  id: totrans-152
   prefs: []
   type: TYPE_NORMAL
 - en: Example 5-9\. [Mixed CPU and GPU placement group](https://oreil.ly/Wxxdo)
+  id: totrans-153
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
 - en: '[PRE8]'
+  id: totrans-154
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE8]'
 - en: You can assign placement group names. You can achieve this by specifying a parameter
     `name="desired_name"` at the point of placement group creation. This allows you
     to retrieve and use the placement group from any job in the Ray cluster by name
     rather than passing a placement group handle.
+  id: totrans-155
   prefs: []
   type: TYPE_NORMAL
 - en: Namespaces
+  id: totrans-156
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
@@ -774,19 +1119,24 @@
     among your Ray applications, you’ll need to put both of your programs in the same
     namespace. When constructing your Ray context with `ray.init`, just add the `namespace`
     named parameter—​for example, `ray.init(namespace="timbit")`.
+  id: totrans-157
   prefs: []
   type: TYPE_NORMAL
 - en: Note
+  id: totrans-158
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
 - en: Namespaces are not intended to provide security isolation.
+  id: totrans-159
   prefs: []
   type: TYPE_NORMAL
 - en: You can get the current namespace by calling `ray.get_runtime_context().namespace`.
+  id: totrans-160
   prefs: []
   type: TYPE_NORMAL
 - en: Managing Dependencies with Runtime Environments
+  id: totrans-161
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
@@ -794,6 +1144,7 @@
     Ray supports managing dependencies with both Conda and Virtualenv. Ray dynamically
     creates these virtual environments inside your larger container as needed and
     launches workers using the matching environment.
+  id: totrans-162
   prefs: []
   type: TYPE_NORMAL
 - en: The fastest way to add a few packages to your runtime context is by specifying
@@ -801,188 +1152,279 @@
     web-crawler example from [Chapter 2](ch02.html#ch02), where you used the Beautiful
     Soup library, you can ensure that this package is available in a distributed environment
     by creating an execution context with it, as shown in [Example 5-10](#pip_pkg_list).
+  id: totrans-163
   prefs: []
   type: TYPE_NORMAL
 - en: Example 5-10\. [pip package list](https://oreil.ly/ytqOu)
+  id: totrans-164
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
 - en: '[PRE9]'
+  id: totrans-165
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE9]'
 - en: This works well for a few dependencies, but if you have a *requirements.txt*
     file like Holden’s [print-the-world project](https://oreil.ly/xBDkK), you can
     also just point this to your local *requirements.txt*, as shown in [Example 5-11](#pip_pkg_reqs).
+  id: totrans-166
   prefs: []
   type: TYPE_NORMAL
+  zh: 这对少数依赖项非常有效，但是如果你有像 Holden 的 [print-the-world 项目](https://oreil.ly/xBDkK) 中的
+    *requirements.txt* 文件，也可以直接指向你本地的 *requirements.txt*，就像 [示例 5-11](#pip_pkg_reqs)
+    中所示。
 - en: Example 5-11\. [pip package requirements file](https://oreil.ly/ytqOu)
+  id: totrans-167
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 5-11\. [pip 包需求文件](https://oreil.ly/ytqOu)
 - en: '[PRE10]'
+  id: totrans-168
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE10]'
 - en: Tip
+  id: totrans-169
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 提示
 - en: If you have an even more complex setup using Conda, you can make a runtime context
     by passing the path to your Conda environment file or package list with `conda=`
     instead of `pip=`.
+  id: totrans-170
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果使用 Conda 进行更复杂的设置，可以通过使用 `conda=` 而不是 `pip=` 将 Conda 环境文件或包列表的路径传递给运行时上下文。
 - en: Once you’ve created a runtime context, you can specify it either globally when
     creating your Ray client, as in [Example 5-12](#runtime_env_init), or inside the
     `ray.remote` decorator, as in [Example 5-13](#ex_local_ctx).
+  id: totrans-171
   prefs: []
   type: TYPE_NORMAL
+  zh: 创建了运行时上下文后，可以在创建 Ray 客户端时全局指定它，例如 [示例 5-12](#runtime_env_init)，或者在 `ray.remote`
+    装饰器内部指定，例如 [示例 5-13](#ex_local_ctx)。
 - en: Example 5-12\. [Using a runtime environment for an entire program](https://oreil.ly/ytqOu)
+  id: totrans-172
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 5-12\. [使用整个程序的运行时环境](https://oreil.ly/ytqOu)
 - en: '[PRE11]'
+  id: totrans-173
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE11]'
 - en: Example 5-13\. [Using a runtime environment for a specific function](https://oreil.ly/ytqOu)
+  id: totrans-174
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 5-13\. [为特定函数使用运行时环境](https://oreil.ly/ytqOu)
 - en: '[PRE12]'
+  id: totrans-175
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE12]'
 - en: Warning
+  id: totrans-176
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 警告
 - en: Not all dependencies are well suited to the dynamically created execution context.
     Anything involving large native code compilation without a preexisting wheel takes
     too long (e.g., TensorFlow on ARM).
+  id: totrans-177
   prefs: []
   type: TYPE_NORMAL
+  zh: 并非所有的依赖都适合动态创建的执行上下文。涉及大型原生代码编译且没有预先存在的 wheel 的任何内容都太耗时（例如 ARM 上的 TensorFlow）。
 - en: Adding certain packages to a runtime execution context can result in a slower
     start and scale-up. Think of, for example, how long it takes to install TensorFlow
     without a wheel. If Ray had to do that each time it started another worker, this
     would be much slower. You can solve this by creating Conda environments in your
     cluster or container. We discuss how to do this in [Appendix B](app02.html#appB).
+  id: totrans-178
   prefs: []
   type: TYPE_NORMAL
+  zh: 将某些包添加到运行时执行上下文可能导致启动和扩展速度较慢。例如，想想在没有 wheel 的情况下安装 TensorFlow 要花多长时间。如果 Ray
+    每次启动另一个工作节点都要做这件事，那速度会慢很多。你可以通过在集群或容器中创建 Conda 环境来解决这个问题。我们在 [附录 B](app02.html#appB)
+    中讨论了如何做到这一点。
 - en: Deploying Ray Applications with the Ray Job API
+  id: totrans-179
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 使用 Ray 作业 API 部署 Ray 应用程序
 - en: 'In addition to connecting your job to an existing cluster with `ray.init`,
     Ray offers a job API. The job API provides a lightweight mechanism to submit jobs
     without having to worry about library mismatches and avoids the issue of flaky
     networks between the remote cluster and the head node. The three main methods
     of the job API that you will use do the following:'
+  id: totrans-180
   prefs: []
   type: TYPE_NORMAL
+  zh: 除了通过 `ray.init` 将作业连接到现有集群外，Ray 还提供了作业 API。作业 API 提供了一种轻量级机制来提交作业，无需担心库不匹配的问题，也避免了远程集群与头节点之间不稳定网络的问题。你将使用作业
+    API 的三种主要方法来完成以下任务：
 - en: Submit a new job to the cluster, returning a job ID
+  id: totrans-181
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 提交一个新的作业到集群，返回作业 ID
 - en: Get a job’s status based on the execution ID, which returns the status of the
     submitted job
+  id: totrans-182
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 根据执行 ID 获取作业状态，返回提交作业的状态
 - en: Obtain the execution logs based on a job for an execution ID
+  id: totrans-183
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 根据执行 ID 获取作业的执行日志
 - en: 'A job request consists of the following:'
+  id: totrans-184
   prefs: []
   type: TYPE_NORMAL
+  zh: 作业请求包括以下内容：
 - en: A directory containing a collection of files and configurations that defines
     an application
+  id: totrans-185
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 一个包含文件和配置集合的目录，用于定义一个应用程序。
 - en: An entrypoint for the execution
+  id: totrans-186
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 执行的入口点
 - en: A runtime environment consisting of any needed files, Python libraries, and
     environment variables
+  id: totrans-187
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 由所需文件、Python 库和环境变量组成的运行时环境
 - en: '[Example 5-14](#ex-job-submission) shows you how to run your code on a Ray
     cluster with the job API. This is the Ray code that we want to submit to the cluster.'
+  id: totrans-188
   prefs: []
   type: TYPE_NORMAL
+  zh: '[示例 5-14](#ex-job-submission) 展示了如何使用作业 API 在 Ray 集群上运行你的代码。这是我们想要提交到集群的 Ray
+    代码。'
 - en: Example 5-14\. [Job submission](https://oreil.ly/qptxx)
+  id: totrans-189
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 5-14\. [作业提交](https://oreil.ly/qptxx)
 - en: '[PRE13]'
+  id: totrans-190
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE13]'
 - en: 'In addition to the Ray code itself, this example shows several other things:'
+  id: totrans-191
   prefs: []
   type: TYPE_NORMAL
+  zh: 除了 Ray 代码本身，此示例还展示了其他几个内容：
 - en: Getting variables that can be used during job submission
+  id: totrans-192
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 获取在作业提交期间可用的变量
 - en: Accessing environment variables that can be set during job submission
+  id: totrans-193
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 访问可以在作业提交期间设置的环境变量
 - en: Getting versions of libraries that are installed during job submission
+  id: totrans-194
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 获取在作业提交期间安装的库的版本
 - en: 'With this in place, you can now submit your job to the Ray cluster [as follows](https://oreil.ly/LMiEB):'
+  id: totrans-195
   prefs: []
   type: TYPE_NORMAL
+  zh: 有了这些准备，您现在可以按以下方式将作业提交到Ray集群[如下](https://oreil.ly/LMiEB)：
 - en: '[PRE14]'
+  id: totrans-196
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE14]'
 - en: Conclusion
+  id: totrans-197
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 结论
 - en: In this chapter, you’ve gained a deeper understanding of the way Ray works.
     Your knowledge of serialization will help you understand which work to distribute
     and which to keep in the same process. You now know your options and how to choose
     the right scaling technique. You have a few techniques for managing Python dependencies,
     even conflicting ones, on your Ray cluster. You are well set up to learn about
     the higher-level building blocks covered in the next part of the book.
+  id: totrans-198
   prefs: []
   type: TYPE_NORMAL
+  zh: 通过本章，您深入了解了Ray的工作方式。您对序列化的了解将有助于理解哪些工作需要分发，哪些需要保留在同一进程中。现在您了解了选择正确扩展技术的选项。您还掌握了一些管理Python依赖项的技巧，甚至是冲突的依赖项，在Ray集群上。您已经准备好了解本书下一部分涵盖的更高级构建块。
 - en: ^([1](ch05.html#idm45354777621488-marker)) Some distributed systems can survive
     failure of head nodes; systems such as Apache ZooKeeper and algorithms like Paxos
     or Raft use multiple computers to monitor and restart jobs with a voting system.
     If you need to handle head node failure, you can write your own recovery logic,
     but this is complicated to do right. Instead, a system like Spark, which has integrated
     job restarts, may be a better option.
+  id: totrans-199
   prefs: []
   type: TYPE_NORMAL
+  zh: ^([1](ch05.html#idm45354777621488-marker)) 一些分布式系统可以在头节点故障时继续运行；诸如Apache ZooKeeper和像Paxos或Raft这样的算法使用多台计算机监控并重新启动作业，采用投票系统。如果需要处理头节点故障，您可以编写自己的恢复逻辑，但这样做是复杂的。相反，像Spark这样具有集成作业重启功能的系统可能是更好的选择。
 - en: ^([2](ch05.html#idm45354777611152-marker)) Pub/sub systems allow processes to
     subscribe to updates by categories.
+  id: totrans-200
   prefs: []
   type: TYPE_NORMAL
+  zh: ^([2](ch05.html#idm45354777611152-marker)) 发布/订阅系统允许进程按类别订阅更新。
 - en: ^([3](ch05.html#idm45354777330896-marker)) This process uses the same algorithm
     as Python.
+  id: totrans-201
   prefs: []
   type: TYPE_NORMAL
+  zh: ^([3](ch05.html#idm45354777330896-marker)) 此过程使用与Python相同的算法。
 - en: ^([4](ch05.html#idm45354777330208-marker)) This has the same cycle problem as
     Python.
+  id: totrans-202
   prefs: []
   type: TYPE_NORMAL
+  zh: ^([4](ch05.html#idm45354777330208-marker)) 这与Python的循环问题相同。
 - en: ^([5](ch05.html#idm45354776874752-marker)) Specifying a memory requirement does
     *not* impose any limits on memory usage. The requirements are used for admission
     control during scheduling only (similar to the way CPU scheduling works in Ray).
     It is up to the task itself to not use more memory than it requested.
+  id: totrans-203
   prefs: []
   type: TYPE_NORMAL
+  zh: ^([5](ch05.html#idm45354776874752-marker)) 指定内存需求并*不*对内存使用施加任何限制。这些需求仅用于调度时的准入控制（类似于Ray中的CPU调度方式）。任务本身应该避免超出请求的内存限制。
 - en: ^([6](ch05.html#idm45354776812096-marker)) Systems before Ray, like Apache Spark
     and Hadoop, take advantage of data locality.
+  id: totrans-204
   prefs: []
   type: TYPE_NORMAL
+  zh: ^([6](ch05.html#idm45354776812096-marker)) Ray之前的系统，如Apache Spark和Hadoop，利用数据本地性。
 - en: ^([7](ch05.html#idm45354776784176-marker)) Ray’s head node is a single point
     of failure, so if it fails, the whole cluster will fail, as mentioned in [“Fault
     Tolerance”](#fault_tolerance).
+  id: totrans-205
   prefs: []
   type: TYPE_NORMAL
+  zh: ^([7](ch05.html#idm45354776784176-marker)) Ray的头节点是单点故障，因此如果它失败，整个集群将失败，如“容错性”中所述。
