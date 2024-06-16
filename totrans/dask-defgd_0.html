@@ -1,0 +1,469 @@
+<html><head></head><body><div id="sbo-rt-content"><section data-type="chapter" epub:type="chapter" data-pdf-bookmark="Chapter 1. Understanding the Architecture of Dask DataFrames"><div class="chapter" id="understanding_the_architecture_of_dask_dataframes">
+<h1><span class="label">Chapter 1. </span>Understanding the Architecture of Dask DataFrames</h1>
+<aside data-type="sidebar" epub:type="sidebar"><div class="sidebar" id="idm46565119058656"><h5>A Note for Early Release Readers</h5>
+<p>With Early Release ebooks, you get books in their earliest form—the author’s raw and unedited content as they write—so you can take advantage of these technologies long before the official release of these titles.</p>
+
+<p>This will be the 3rd chapter of the final book. </p>
+
+<p>If you have comments about how we might improve the content and/or examples in this book, or if you notice missing material within this chapter, please reach out to the author at ccollins@oreilly.com.</p>
+</div></aside>
+<p>Dask DataFrames allow you to scale your pandas workflows. Dask DataFrames overcome two key limitations of pandas:</p>
+
+<ul>
+	<li>
+	<p>pandas cannot run on datasets larger than memory</p>
+	</li>
+	<li>
+	<p>pandas only uses one core when running analyses, which can be slow</p>
+	</li>
+</ul>
+
+<p>Dask DataFrames are designed to overcome these pandas limitations. They can be run on datasets that are larger than memory and use all cores by default for fast execution. Here are the key Dask DataFrame architecture components that allow for Dask to overcome the limitation of pandas:</p>
+
+<ul>
+	<li>
+	<p>Partitioning data</p>
+	</li>
+	<li>
+	<p>Lazy execution</p>
+	</li>
+	<li>
+	<p>Not loading all data into memory at once</p>
+	</li>
+</ul>
+
+<p>Let’s take a look at the pandas architecture first, so we can better understand how it’s related to Dask DataFrames.</p>
+
+<p>You’ll need to build some new mental models about distributed processing to fully leverage the power of Dask DataFrames. Luckily for pandas programmers, Dask was intentionally designed to have similar syntax. pandas programmers just need to learn the key differences when working with distributed computing systems to make the Dask transition easily.</p>
+
+<section data-type="sect1" data-pdf-bookmark="pandas Architecture"><div class="sect1" id="pandas_architecture">
+<h1>pandas Architecture</h1>
+
+<p>pandas DataFrames are in widespread use today partly because they are easy to use, powerful, and efficient. We don’t dig into them deeply in this book, but will quickly review some of their key characteristics. First, they contain rows and values with an index.</p>
+
+<p>Let’s create a pandas DataFrame with <code>name</code> and <code>balance</code> columns to illustrate:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+import pandas as pd
+df = pd.DataFrame({"name": ["li", "sue", "john", "carlos"], "balance": [10, 20, 30, 40]})</pre>
+</div>
+
+<p>This DataFrame has 4 rows of data, as illustrated in <a data-type="xref" href="#fig_1_pandas_dataframe_with_four_rows_of_data">Figure 1-1</a>.</p>
+
+<figure><div id="fig_1_pandas_dataframe_with_four_rows_of_data" class="figure"><img alt="pandas DataFrame with four rows of data" src="Images/understanding_the_architecture_of_dask_dataframes_803261_01.png" width="588" height="384"/>
+<h6><span class="label">Figure 1-1. </span>pandas DataFrame with four rows of data</h6>
+</div></figure>
+
+<p>The DataFrame in <a data-type="xref" href="#fig_2_pandas_dataframe_has_an_index">Figure 1-2</a> also has an index.</p>
+
+<figure><div id="fig_2_pandas_dataframe_has_an_index" class="figure"><img alt="pandas DataFrame has an index" src="Images/understanding_the_architecture_of_dask_dataframes_803261_02.png" width="556" height="360"/>
+<h6><span class="label">Figure 1-2. </span>pandas DataFrame has an index</h6>
+</div></figure>
+
+<p>pandas makes it easy to run analytical queries on the data. It can also be leveraged to build complex models and is a great option for small datasets, but does not work well for larger datasets. Let’s look at why pandas doesn’t work well for bigger datasets.</p>
+</div></section>
+
+<section data-type="sect1" data-pdf-bookmark="pandas Limitations"><div class="sect1" id="pandas_limitations">
+<h1>pandas Limitations</h1>
+
+<p>pandas has two key limitations:</p>
+
+<ul>
+	<li>
+	<p>Its DataFrames are limited by the amount of computer memory</p>
+	</li>
+	<li>
+	<p>Its computations only use a single core, which is slow for large datasets</p>
+	</li>
+</ul>
+
+<p>pandas DataFrames are loaded into the memory of a single computer. The amount of data that can be stored in the RAM of a single computer is limited to the size of the computer’s RAM. A computer with 8 GB of memory can only hold 8 GB of data in memory. In practice, pandas requires the memory to be much larger than the dataset size. A 2 GB dataset may require 8 GB of memory for example (the exact memory requirement depends on the operations performed and pandas version). <a data-type="xref" href="#fig_3_dataset_sizes_pandas_can_handle_on_a_computer_with">Figure 1-3</a> illustrates the types of datasets pandas can handle on a computer with 16 GB of RAM.</p>
+
+<figure><div id="fig_3_dataset_sizes_pandas_can_handle_on_a_computer_with" class="figure"><img alt="Dataset sizes pandas can handle on a computer with 16 GB of RAM" src="Images/understanding_the_architecture_of_dask_dataframes_803261_03.png" width="1774" height="1122"/>
+<h6><span class="label">Figure 1-3. </span>Dataset sizes pandas can handle on a computer with 16 GB of RAM</h6>
+</div></figure>
+
+<p>Furthermore, pandas does not support parallelism. This means that even if you have multiple cores in your CPU, with pandas you are always limited to using only one of the CPU cores at a time. And that means you are regularly leaving much of your hardware potential untapped (see FIgure 3-4).</p>
+
+<figure><div id="fig_4_pandas_only_uses_a_single_core_and_don_t_leverage" class="figure"><img alt="pandas only uses a single core and don t leverage all available computation power" src="Images/understanding_the_architecture_of_dask_dataframes_803261_04.png" width="918" height="504"/>
+<h6><span class="label">Figure 1-4. </span>pandas only uses a single core and don’t leverage all available computation power</h6>
+</div></figure>
+
+<p>Let’s turn our attention to Dask and see how it’s architected to overcome the scaling and performance limitations of pandas.</p>
+</div></section>
+
+<section data-type="sect1" data-pdf-bookmark="How Dask DataFrames Differ from pandas"><div class="sect1" id="how_dask_dataframes_differ_from_pandas">
+<h1>How Dask DataFrames Differ from pandas</h1>
+
+<p>Dask DataFrames have the same logical structure as pandas DataFrames, and share a lot of the same internals, but have a couple of important architectural differences. As you can see in <a data-type="xref" href="#fig_5_each_partition_in_a_dask_dataframe_is_a_pandas_dat">Figure 1-5</a>, pandas stores all data in a single DataFrame, whereas Dask splits up the dataset into a bunch of little pandas DataFrames.</p>
+
+<figure><div id="fig_5_each_partition_in_a_dask_dataframe_is_a_pandas_dat" class="figure"><img alt="Each partition in a Dask DataFrame is a pandas DataFrame" src="Images/understanding_the_architecture_of_dask_dataframes_803261_05.png" width="1122" height="834"/>
+<h6><span class="label">Figure 1-5. </span>Each partition in a Dask DataFrame is a pandas DataFrame</h6>
+</div></figure>
+
+<p>Suppose you have a pandas DataFrame with the following contents:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+	col1	col2
+0	a	1
+1	b	2
+2	c	3
+3	d	4</pre>
+</div>
+
+<p>This pandas DataFrame can be converted to a Dask DataFrame, which will split up the data into a bunch of smaller partitions. Each partition in a Dask DataFrame is a pandas DataFrame. A Dask DataFrame consists of a bunch of smaller pandas DataFrames.</p>
+
+<p>Similar to a pandas DataFrame, a Dask DataFrame also has columns, values, and an index. Notice that Dask splits up the pandas DataFrame by rows.</p>
+
+<p>Dask DataFrames coordinate many pandas DataFrames in parallel. They arrange many pandas dataframes split along the index.</p>
+
+<p>Dask DataFrames don’t have to be in memory at once because the values are now split into many different pieces. <a data-type="xref" href="#fig_6_dataset_sizes_that_dask_dataframes_can_handle">Figure 1-6</a> shows how Dask DataFrames can load the pieces one at a time, allowing us to compute on datasets that are larger than memory.</p>
+
+<figure><div id="fig_6_dataset_sizes_that_dask_dataframes_can_handle" class="figure"><img alt="Dataset sizes that Dask DataFrames can handle" src="Images/understanding_the_architecture_of_dask_dataframes_803261_06.png" width="1328" height="616"/>
+<h6><span class="label">Figure 1-6. </span>Dataset sizes that Dask DataFrames can handle</h6>
+</div></figure>
+
+<p>Dask DataFrames can also be processed in parallel because the data is split into pieces, which often leads to faster processing. <a data-type="xref" href="#fig_7_dask_dataframes_run_computations_with_all_availabl">Figure 1-7</a> shows how each Dask DataFrame partition (which is just a pandas DataFrame) can be processed on a separate CPU core.</p>
+
+<figure><div id="fig_7_dask_dataframes_run_computations_with_all_availabl" class="figure"><img alt="Dask DataFrames run computations with all available cores" src="Images/understanding_the_architecture_of_dask_dataframes_803261_07.png" width="952" height="734"/>
+<h6><span class="label">Figure 1-7. </span>Dask DataFrames run computations with all available cores</h6>
+</div></figure>
+
+<p>However, because not all the data is in memory at once, some operations are slower or more complicated. For example, operations like sorting a DataFrame or finding a median value can be more difficult. See Chapter 4 for more information and best practices.</p>
+</div></section>
+
+<section data-type="sect1" data-pdf-bookmark="Example illustrating Dask DataFrame Architectural Components"><div class="sect1" id="example_illustrating_dask_dataframe_architectural">
+<h1>Example illustrating Dask DataFrame Architectural Components</h1>
+
+<p>Let’s illustrate the architectural concepts discussed in the previous section with a simple code example. We’ll create a pandas DataFrame and then convert it to a Dask DataFrame to highlight the differences.</p>
+
+<p>Here’s the code to create a pandas DataFrame with <code>col1</code> and <code>col2</code> columns:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+import pandas as pd
+df = pd.DataFrame({"col1": ["a", "b", "c", "d"], "col2": [1, 2, 3, 4]})
+	col1	col2
+0	a	1
+1	b	2
+2	c	3
+3	d	4</pre>
+</div>
+
+<p>Now convert the pandas DataFrame into a Dask DataFrame (<code>ddf</code>) with two partitions.</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+import dask.dataframe as dd
+ddf = dd.from_pandas(df, npartitions=2)</pre>
+</div>
+
+<p>The data in the Dask DataFrame is split into two partitions because we set <code>npartitions=2</code> when creating the Dask DataFrame.</p>
+
+<p>Dask intentionally splits up data into different partitions, so it can run computations on the partitions in parallel. Dask’s speed and scalability hinge on its ability to break up computations into smaller chunks and run them using all the computational cores available on a machine.</p>
+
+<p><a data-type="xref" href="#fig_8_pandas_dataframe_is_split_into_dask_dataframe_part">Figure 1-8</a> illustrates how the Dask DataFrame is split into two partitions, each of which is a pandas DataFrame:</p>
+
+<figure><div id="fig_8_pandas_dataframe_is_split_into_dask_dataframe_part" class="figure"><img alt="pandas DataFrame is split into Dask DataFrame partitions" src="Images/understanding_the_architecture_of_dask_dataframes_803261_08.png" width="856" height="460"/>
+<h6><span class="label">Figure 1-8. </span>pandas DataFrame is split into Dask DataFrame partitions</h6>
+</div></figure>
+
+<p>Dask’s architecuture of splitting up the data also allows for computations to be lazily executed.</p>
+</div></section>
+
+<section data-type="sect1" data-pdf-bookmark="Lazy Execution"><div class="sect1" id="lazy_execution">
+<h1>Lazy Execution</h1>
+
+<p>Dask DataFrames use <em>lazy</em> execution, whereas pandas uses <em>eager</em> execution. Dask will put off running computations till the last minute in contrast with pandas, which executes computations immediately. This allows Dask to do two things pandas can’t do:</p>
+
+<ol>
+	<li>
+	<p>Process datasets that are larger than memory</p>
+	</li>
+	<li>
+	<p>Collect as much data as possible about the computation you want to run and then optimize the computation for maximum performance.</p>
+	</li>
+</ol>
+
+<p>Let’s create a pandas DataFrame and run a filtering operation to demonstrate that it runs computations immediately (eager execution). Then let’s run the same filtering operation on a Dask DataFrame to observe the lazy execution:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+import pandas as pd
+df = pd.DataFrame({"letter": ["a", "b", "c", "d"], "number": [10, 20, 30, 40]})</pre>
+</div>
+
+<p>Filter the pandas DataFrame to only include the rows with a <code>number</code> value greater than 25.</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+df[df.number &gt; 25]
+	letter  number
+2	c	  30
+3	d	  40</pre>
+</div>
+
+<p>pandas immediately executes the computation and returns the result.</p>
+
+<p>Let’s convert the pandas DataFrame to a Dask DataFrame with two partitions:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+import dask.dataframe as dd
+ddf = dd.from_pandas(df, npartitions=2)</pre>
+</div>
+
+<p>Now let’s run the same filtering operation on the Dask DataFrame and see that no actual results are returned:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+ddf[ddf.number &gt; 25]</pre>
+</div>
+
+<p>Here’s what’s output:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+Dask DataFrame Structure:
+               letter   number
+npartitions=2  
+            0  object   int64
+            2     ...     ...
+            3     ...     ...
+Dask Name: loc-series, 8 tasks</pre>
+</div>
+
+<p>Dask doesn’t run the filtering operation computations unless you explicitly ask for results. In this case, you’ve just asked Dask to filter and haven’t asked for results to be returned, and that’s why the resulting Dask DataFrame doesn’t contain data yet. pandas users find Dask’s lazy execution strange at first, and it takes them a while to get used to explicitly requesting results (rather than eagerly receiving results).</p>
+
+<p>In this case, you can get results by calling the <code>compute()</code> method which tells Dask to execute the filtering operation and collect the results in a pandas DataFrame:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+ddf[ddf.number &gt; 25].compute()
+	letter  number
+2	c	  30
+3	d	  40</pre>
+</div>
+
+<p>Let’s turn our attention to another key architectural difference between Dask DataFrames and pandas.</p>
+</div></section>
+
+<section data-type="sect1" data-pdf-bookmark="Dask DataFrame Divisions"><div class="sect1" id="dask_dataframe_divisions">
+<h1>Dask DataFrame Divisions</h1>
+
+<p>The pandas index is key to many performant operations like time series operations, efficient joins, finding specific values quickly, and so on. Dask DataFrames don’t store the entire pandas index in memory, but they do track index ranges for each partition, called <em>divisions</em>.</p>
+
+<p><a data-type="xref" href="#fig_9_dask_dataframe_that_s_partitioned_by_month">Figure 1-9</a> shows an example of a Dask DataFrame that’s partitioned by month and divisions that are stored in the Dask DataFrame. Dask divisions track the starting index value of each partition as well as the ending index value of the last partition.</p>
+
+<figure><div id="fig_9_dask_dataframe_that_s_partitioned_by_month" class="figure"><img alt="Dask DataFrame that s partitioned by month" src="Images/understanding_the_architecture_of_dask_dataframes_803261_09.png" width="1100" height="936"/>
+<h6><span class="label">Figure 1-9. </span>Dask DataFrame that’s partitioned by month</h6>
+</div></figure>
+
+<p>Divisions are key to Dask DataFrames in much the same way that the pandas index is critical to pandas DataFrames. Chapter 4 will show you how good tracking of index/division information can lead to greatly improved performance.</p>
+
+<p><a data-type="xref" href="#fig_10_dask_dataframe_with_divisions_by_partition">Figure 1-10</a> looks at the same Dask DataFrame from earlier and explore the DataFrame divisions in more detail.</p>
+
+<figure><div id="fig_10_dask_dataframe_with_divisions_by_partition" class="figure"><img alt="Dask DataFrame with divisions by partition" src="Images/understanding_the_architecture_of_dask_dataframes_803261_10.png" width="722" height="452"/>
+<h6><span class="label">Figure 1-10. </span>Dask DataFrame with divisions by partition</h6>
+</div></figure>
+
+<p>Notice that the first partition contains rows with index 0 and index 1, and the second partition contains rows with index 2 and index 3.</p>
+
+<p>You can access the <code>known_divisions</code> property to figure out if Dask is aware of the partition bounds for a given DataFrame. <code>ddf.known_divisions</code> will return <code>True</code> in this example because Dask knows the partition bounds.</p>
+
+<p>The <code>divisions</code> property will tell you the exact division bounds for your DataFrame:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+ddf.divisions # (0, 2, 3)</pre>
+</div>
+
+<p>Here’s how to interpret the <code>(0, 2, 3)</code> tuple that’s returned:</p>
+
+<ul>
+	<li>
+	<p>The first partition contains index values that span from zero to two (not inclusive upper boundary)</p>
+	</li>
+	<li>
+	<p>The second partition contains index values that span from two to three (inclusive upper boundary)</p>
+	</li>
+</ul>
+
+<p>Suppose you ask Dask to fetch you the row with index 3. Dask doesn’t need to scan over all the partitions to find the value. It knows that the row with index 3 is in the second partition from the <code>divisions</code> metadata, so it can narrow the search for index 3 to a single partition. This is a significant performance optimization, especially when there are thousands of partitions.</p>
+
+<div data-type="note" epub:type="note"><h6>Note</h6>
+<p>[TIP] Knowing how to properly set the index and manage divisions is necessary when optimizing Dask DataFrame performance.</p>
+</div>
+
+<aside data-type="sidebar" epub:type="sidebar"><div class="sidebar" id="idm46565118947760">
+<h5>Dask DataFrames Don’t Load All Data into Memory by Default</h5>
+
+<p>When you read data from a file into a pandas DataFrame, pandas will save all of the data in memory. This is fine for small datasets, but is a liability for larger datasets. Suppose you have a computer with 8 GB of RAM and would like to join two DataFrames, one which is 1 GB and another that’s 0.25 GB. Those datasets easily fit in memory, so pandas will be able to easily store both DataFrames in memory and execute the computations.</p>
+
+<p>pandas requirement to store all data in RAM becomes a problem when data sizes grow. Suppose you’d like to join one dataset that’s 5 GB with another that’s 4 GB using pandas. pandas isn’t able to store 9 GB of data on a computer that only has 8 GB of RAM, so it’ll error out and won’t be able to perform this operation.</p>
+
+<p>Dask does not store all the data in memory by default, so you can use Dask to process datasets that are bigger than the available memory. Let’s look at a real example that demonstrates how Dask can run a query on a dataset that’s bigger than the available RAM while pandas cannot.</p>
+</div></aside>
+</div></section>
+
+<section data-type="sect1" data-pdf-bookmark="pandas vs. Dask DataFrame on Larger than RAM Datasets"><div class="sect1" id="pandas_vs_dask_dataframe_on_larger_than_ram_datas">
+<h1>pandas vs. Dask DataFrame on Larger than RAM Datasets</h1>
+
+<p>This section creates a larger than RAM dataset and demonstrates how pandas cannot run queries on this data, but Dask can query the data.</p>
+
+<p>Let’s use Dask to create 1,095 Snappy compressed Parquet files of data (58.2 GB) on your local machine in the <em>~/data/timeseries/20-years/parquet/</em> directory:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+import os
+import dask
+home = os.path.expanduser("~")
+ddf_20y = dask.datasets.timeseries(
+    start="2000-01-01",
+    end="2020-12-31",
+    freq="1s",
+    partition_freq="7d",
+    seed=42,
+)
+ddf_20y.to_parquet(
+    f"{home}/data/timeseries/20-years/parquet/",
+    compression="snappy",
+    engine="pyarrow",
+)</pre>
+</div>
+
+<p>Here are the files that are output to disk:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+data/timeseries/20-years/parquet/
+  part.0.parquet
+  part.1.parquet
+  …
+  part.1095.parquet</pre>
+</div>
+
+<p>Here’s what the data looks like:</p>
+
+<table>
+	<tbody>
+		<tr>
+			<td>timestamp</td>
+			<td>id</td>
+			<td>name</td>
+			<td>x</td>
+			<td>y</td>
+		</tr>
+		<tr>
+			<td>2000-01-01 00:00:00</td>
+			<td>1008</td>
+			<td>Dan</td>
+			<td>-0.259374</td>
+			<td>-0.118314</td>
+		</tr>
+		<tr>
+			<td>2000-01-01 00:00:01</td>
+			<td>987</td>
+			<td>Patricia</td>
+			<td>0.069601</td>
+			<td>0.755351</td>
+		</tr>
+		<tr>
+			<td>2000-01-01 00:00:02</td>
+			<td>980</td>
+			<td>Zelda</td>
+			<td>-0.281843</td>
+			<td>-0.510507</td>
+		</tr>
+		<tr>
+			<td>2000-01-01 00:00:03</td>
+			<td>1020</td>
+			<td>Ursula</td>
+			<td>-0.569904</td>
+			<td>0.523132</td>
+		</tr>
+		<tr>
+			<td>2000-01-01 00:00:04</td>
+			<td>967</td>
+			<td>Michael</td>
+			<td>-0.251460</td>
+			<td>0.810930</td>
+		</tr>
+	</tbody>
+</table>
+
+<p>There is one row of data per second for 20 years, so the entire dataset contains 662 million rows.</p>
+
+<p>Let’s calculate the mean value of the <code>id</code> column for one of the data files with pandas:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+path = f"{home}/data/timeseries/20-years/parquet/part.0.parquet"
+df = pd.read_parquet(path)
+df["id"].mean() # 999.96</pre>
+</div>
+
+<p>pandas works great when analyzing a single data file. Now let’s try to run the same computation on all the data files with pandas:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+import glob
+path = f"{home}/data/timeseries/20-years/parquet"
+all_files = glob.glob(path + "/*.parquet")
+df = pd.concat((pd.read_parquet(f) for f in all_files))</pre>
+</div>
+
+<p>Whoops! This errors out with an out of memory exception. Most personal computers don’t have even nearly enough memory to hold a 58.2 GB dataset. This pandas computation will fill up all the computer’s RAM and then error out.</p>
+
+<p>Let’s run this same computation with Dask:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+ddf = dd.read_parquet(f"{home}/data/timeseries/20-years/parquet", engine="pyarrow")
+ddf["id"].mean().compute()# returns 1000.00</pre>
+</div>
+
+<p>This computation takes 8 seconds to execute on a computer with 8 GB of RAM and four cores. A computer with more cores would be able to execute the Dask computation with more parallelism and run even faster.</p>
+
+<p>As this example demonstrates, Dask makes it easy to scale up a localhost workflow to run on all the cores of a machine. Dask doesn’t load all of the data into memory at once and can run queries in a streaming manner. This allows Dask to perform analytical queries on datasets that are bigger than memory.</p>
+
+<p>This example shows how Dask can scale a localhost computation, but that’s not the only type of scaling that Dask allows for.</p>
+</div></section>
+
+<section data-type="sect1" data-pdf-bookmark="Scaling Up vs Scaling Out"><div class="sect1" id="scaling_up_vs_scaling_out">
+<h1>Scaling Up vs Scaling Out</h1>
+
+<p>Dask DataFrame can scale pandas computations in two different ways:</p>
+
+<ul>
+	<li>
+	<p><em>Scale up:</em> Use all the cores of a computer rather than one core like pandas</p>
+	</li>
+	<li>
+	<p><em>Scale out:</em> Execute queries on multiple computers (called a cluster) rather than on a single computer</p>
+	</li>
+</ul>
+
+<p>As previously discussed, pandas workflows only use a single core of a single machine. So pandas will only use one core, even if 8 or 96 are available. Dask scales up single machine workflows by running computations with all the cores, in parallel. So if Dask is run on a machine with 96 cores, it will split up the work and leverage all the available hardware to process the computation.</p>
+
+<p>The Dask DataFrame architecture is what allows for this parallelism. On a 96-core machine, Dask can split up the data into 96 partitions, and process each partition at the same time.</p>
+
+<p>Dask can also scale out a computation to run on multiple machines. Suppose you have a cluster of 3 computers, each with 24 cores. Dask can split up the data on multiple different machines and run the computations on all of the 72 available cores in the cluster.</p>
+
+<p>Scaling up is scaling a workflow from using a single core to all the cores of a given machine. Scaling out is scaling a workflow to run on multiple computers in a cluster. Dask allows you to scale up or scale out, both of which are useful in different scenarios.</p>
+</div></section>
+
+<section data-type="sect1" data-pdf-bookmark="Summary"><div class="sect1" id="summary_id3dmCZk">
+<h1>Summary</h1>
+
+<p>This chapter explained how Dask DataFrames are architected to overcome the scaling and big data performance issues of pandas. A good foundational understanding of Dask DataFrames will help you harness their power effectively.</p>
+
+<p>Dask DataFrames add additional overhead, so they’re not always faster than pandas. For small datasets, loading data into memory and running computations is fast and pandas performs quite well. Dask gains a performance advantage as dataset sizes grow and more powerful machines are used. The larger the data and the more cores a computer has, the more parallelism helps.</p>
+
+<p>Dask is obviously the better option when the dataset is bigger than memory. pandas cannot work with datasets that are bigger than memory. Dask can run queries on datasets much larger than memory, as illustrated in our example.</p>
+
+<p>Chapter 4 continues by digging more into Dask DataFrames. Chapter 4 will show you more important operations you can perform to manipulate your data. You’re in a great place to understand the different types of Dask DataFrame operations now that you’re familiar with how Dask DataFrames are architected.</p>
+</div></section>
+</div></section></div></body></html>

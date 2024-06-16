@@ -1,0 +1,2554 @@
+<html><head></head><body><div id="sbo-rt-content"><section data-type="chapter" epub:type="chapter" data-pdf-bookmark="Chapter 2. How to Work with Dask DataFrames"><div class="chapter" id="how_to_work_with_dask_dataframes">
+<h1><span class="label">Chapter 2. </span>How to Work with Dask DataFrames</h1>
+
+<aside data-type="sidebar" epub:type="sidebar"><div class="sidebar" id="idm46565118854912">
+<h5>A Note for Early Release Readers</h5>
+
+<p>With Early Release ebooks, you get books in their earliest form—the author’s raw and unedited content as they write—so you can take advantage of these technologies long before the official release of these titles.</p>
+
+<p>This will be the 4th chapter of the final book.</p>
+
+<p>If you have comments about how we might improve the content and/or examples in this book, or if you notice missing material within this chapter, please reach out to the author at ccollins@oreilly.com.</p>
+</div></aside>
+
+<p>In the previous chapter, we explained the architecture of Dask DataFrames and how they’re built on pandas DataFrames. We saw how pandas cannot scale to larger-than-memory datasets and how Dask overcomes this scaling limitation. Now it’s time to dive into the specific tactics we’ll need to master when working with Dask DataFrames.</p>
+
+<p>In this chapter, we will apply the lessons we’ve learned to process large tabular datasets with Dask. We will walk through hands-on code examples to read, inspect, process, and write large datasets using Dask DataFrames. By working through these examples we will learn the Dask DataFrame API in depth and build understanding that will enable us to implement best practices when using Dask in real-world projects. It’s a sort of ‘behind the scenes’ deep-dive into the end-to-end example Dask DataFrame we worked through in Chapter 2.</p>
+
+<p>An important lesson to carry with us from the previous chapter is that pandas only uses one core to process computations while Dask can speed up query execution time with parallel processing on multiple cores. Using Dask therefore means entering the world of <em>parallel computing</em>.</p>
+
+<p>This means that even though much of the Dask DataFrame API syntax may appear familiar to pandas users, there are important underlying architectural differences to be aware of. The previous chapter explains those differences at a conceptual level. This chapter proceeds from there to dive into the hands-on application of the Dask API. It will explain how to leverage the power of parallel computing in practice.</p>
+
+<p>As we proceed through this chapter, remember that:</p>
+
+<ul>
+	<li>
+	<p>Dask DataFrames consist of <strong>multiple partitions</strong>, each of which is a pandas DataFrame.</p>
+	</li>
+	<li>
+	<p>These partitions are <strong>processed in parallel</strong> by multiple cores at once.</p>
+	</li>
+	<li>
+	<p>Dask uses <strong>lazy evaluation</strong> to optimize large-scale computations for parallel computation.</p>
+	</li>
+</ul>
+
+<p>These fundamental concepts will be important to understand how to optimally leverage the Dask DataFrame API functions.</p>
+
+<section data-type="sect1" data-pdf-bookmark="Reading Data into a Dask DataFrame"><div class="sect1" id="reading_data_into_a_dask_dataframe">
+<h1>Reading Data into a Dask DataFrame</h1>
+
+<p>Imagine that you’re working for a company that processes large-scale time series datasets for its customers. You are working on the Data Analysis team and have just received a copy of the file <code>0000.csv</code> from your colleague Azeem with the request to analyze patterns in the data. This sample file contains 1 week worth of data and is only 90 MB large, which means you can use pandas to analyze this subset just fine:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+import pandas as pd
+df = pd.read_csv("0000.csv")</pre>
+</div>
+
+<p>Once the file has been loaded into a DataFrame, you can use pandas to analyze the data it contains. For example, use the head() method to see the first few rows of data in the DataFrame:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; df.head()
+                       id     name         x         y
+timestamp
+1990-01-01 00:00:00  1066    Edith -0.789146  0.742478
+1990-01-01 00:00:01   988   Yvonne  0.520779 -0.301681
+1990-01-01 00:00:02  1022      Dan  0.523654 -0.438432
+1990-01-01 00:00:03   944      Bob -0.768837  0.537302
+1990-01-01 00:00:04   942   Hannah  0.990359  0.477812
+...                   ...      ...       ...       ...
+1990-01-03 23:59:55   927    Jerry -0.116351  0.456426
+1990-01-03 23:59:56  1002    Laura -0.870446  0.962673
+1990-01-03 23:59:57  1005  Michael -0.481907  0.015189
+1990-01-03 23:59:58   975   Ingrid -0.468270  0.406451
+1990-01-03 23:59:59  1059      Ray -0.739538  0.798155</pre>
+</div>
+
+<p>Or calculate the number of records with positive values for a certain column:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; len(df[df.x &gt; 0])
+	
+302316</pre>
+</div>
+
+<p>Now that you’ve confirmed you can run analyses on the data, Azeem asks you to crunch the data for the first 6 months of the year. He has downloaded the data from the server as a single CSV which is about 2.4GB in size. You may still be able to process this with pandas, but it’s pushing your machine to its limits and your analyses are running slow. This is a problem because Azeem has a deadline coming up and needs the results fast.</p>
+
+<p>Fortunately, Dask can chop this single large 2.4GB file into smaller chunks and process these chunks in parallel. While pandas would have to process all the data on a single core, Dask can spread the computation out over all the cores in your machine. This will be much faster.</p>
+
+<section data-type="sect2" data-pdf-bookmark="Read a single file into a Dask DataFrame"><div class="sect2" id="read_a_single_file_into_a_dask_dataframe">
+<h2>Read a single file into a Dask DataFrame</h2>
+
+<p>You can read a single CSV file like Azeem’s 2.4GB <code>6M.csv</code> into a Dask DataFrame using the following syntax:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+import dask.dataframe as dd
+ddf = dd.read_csv("6M.csv")</pre>
+</div>
+
+<div data-type="note" epub:type="note"><h6>Note</h6>
+<p>[NOTE] Note: we use <code>ddf</code> to refer to <strong>D</strong>ask <strong>D</strong>ata<strong>F</strong>rames and the conventional <code>df</code> to refer to pandas DataFrames.</p>
+</div>
+
+<p>Dask will read the data in this large single CSV file into a Dask DataFrame. A Dask DataFrame is always subdivided into appropriately sized ‘chunks’ called <strong>partitions</strong>. By cutting up the data into these conveniently smaller chunks, Dask DataFrame can distribute computations over multiple cores. This is what allows Dask to scale to much larger datasets than pandas. See the Working with Partitioned Data section for more details.</p>
+
+<figure><div id="fig_1_fig_4_1_dask_reads_a_csv_file_into_a_partitioned" class="figure"><img alt="Fig 4 1. Dask reads a CSV file into a partitioned DataFrame." src="Images/how_to_work_with_dask_dataframes_343327_01.png" width="1460" height="806"/>
+<h6><span class="label">Figure 2-1. </span>Dask reads a CSV file into a partitioned DataFrame.</h6>
+</div></figure>
+
+<p>Once your 2.4GB CSV file is loaded in, you can use Dask DataFrame to analyze the data it contains. This will look and feel much the same as it did with pandas, except you are no longer limited by the memory capacities of your machine and are able to run analyses on millions rather than thousands of rows. And perhaps most importantly, you are able to do so <em>before</em> Azeem’s important deadline.</p>
+</div></section>
+
+<section data-type="sect2" data-pdf-bookmark="Read multiple files into a Dask DataFrame"><div class="sect2" id="read_multiple_files_into_a_dask_dataframe">
+<h2>Read multiple files into a Dask DataFrame</h2>
+
+<p>After seeing you crunch the <code>6M.csv</code> file with the data for Q1 and Q2 successfully, Azeem is starting to see the power of Dask. He’s now asked you to take a look at <em><strong>all the data</strong></em> he has available. That’s twenty years’ worth of time series data, totalling almost 60GB, scattered across 1,095 separate CSV files. This would have been an impossible task with pandas, but Dask has opened up a whole new world of possibilities for you here.</p>
+
+<p>You ask Azeem to point you to the directory that contains the rest of the data, which looks like this:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+$  ls
+0000.csv
+0001.csv
+0002.csv
+…
+1094.csv</pre>
+</div>
+
+<p>Dask DataFrame let’s you use * as a glob string to read all of these separate CSV files into a Dask DataFrame at once:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+ddf = dd.read_csv("*.csv")</pre>
+</div>
+
+<figure><div id="fig_2_fig_4_2_dask_reads_multiple_csv_files_into_a_part" class="figure"><img alt="Fig 4 2. Dask reads multiple CSV files into a partitioned DataFrame." src="Images/how_to_work_with_dask_dataframes_343327_02.png" width="1688" height="918"/>
+<h6><span class="label">Figure 2-2. </span>Dask reads multiple CSV files into a partitioned DataFrame.</h6>
+</div></figure>
+
+<p>Just like we saw above with the single CSV file, Dask will read the data across all of these separate CSV files into a single Dask DataFrame. The DataFrame will be divided into appropriately sized ‘chunks’ called <strong>partitions</strong>. Let’s look more closely at how to work with Dask partitions.</p>
+</div></section>
+
+<section data-type="sect2" data-pdf-bookmark="Working with partitioned data"><div class="sect2" id="working_with_partitioned_data">
+<h2>Working with partitioned data</h2>
+
+<p>Dask intentionally and automatically splits up the data so operations can be performed on partitions of the data in parallel. This is done regardless of the original file format. It’s important to understand how you can influence the partitioning of your data in order to choose a partitioning strategy that will deliver optimal performance for your dataset.</p>
+
+<p>You can run <code>ddf.partitions</code> to see how many partitions the data is divided amongst.</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt; ddf.partitions
+1095</pre>
+</div>
+</div></section>
+
+<section data-type="sect2" data-pdf-bookmark="Setting Partition Size"><div class="sect2" id="setting_partition_size">
+<h2>Setting Partition Size</h2>
+
+<p>By default, Dask will split the data into a certain number of partitions by calculating the optimal <code>blocksize</code>, which is based on the available memory and number of cores on the machine. This means the number of partitions for the same dataset may vary when working on different machines. Dask will ensure that the partitions are small enough to be processed quickly but not so small as to create unnecessary overhead. The maximum <code>blocksize</code> that Dask will calculate by default is 64 MB.</p>
+
+<p>Dask splits up the data from the CSV files into one partition per file.</p>
+
+<figure><div id="fig_3_fig_4_2_dask_reads_a_single_large_csv_file_into_m" class="figure"><img alt="Fig 4 2. Dask reads a single large CSV file into multiple partitions." src="Images/how_to_work_with_dask_dataframes_343327_03.png" width="2048" height="1143"/>
+<h6><span class="label">Figure 2-3. </span>Dask reads a single large CSV file into multiple partitions.</h6>
+</div></figure>
+
+<p>You can manually set the number of partitions that the DataFrame contains using the <code>blocksize</code> parameter. You can tweak the partition size for optimal performance.</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; ddf = dd.read_csv("*.csv", blocksize="16MB")
+&gt;&gt;&gt; ddf.npartitions
+2190</pre>
+</div>
+
+<p>This dataset will be read into a Dask DataFrame with 2190 partitions when the blocksize is set to 16 MB. The number of partitions goes up when the blocksize decreases.</p>
+
+<figure><div id="fig_4_fig_4_3_the_number_of_partitions_increases_as_the" class="figure"><img alt="Fig 4 3. The number of partitions increases as the partitions become smaller." src="Images/how_to_work_with_dask_dataframes_343327_04.png" width="1460" height="1036"/>
+<h6><span class="label">Figure 2-4. </span>The number of partitions increases as the partitions become smaller.</h6>
+</div></figure>
+
+<div data-type="note" epub:type="note"><h6>Note</h6>
+<p>[TIP] As a rule of thumb, we recommend working with partition sizes of 100MB or less. This will ensure that the partitions are small enough to avoid bottlenecks but not so small that they start to incur unnecessary overhead.</p>
+</div>
+</div></section>
+
+<section data-type="sect2" data-pdf-bookmark="Inspecting Data Types"><div class="sect2" id="inspecting_data_types">
+<h2>Inspecting Data Types</h2>
+
+<p>After successfully reading the 1,095 CSV files into a single Dask DataFrame, you’re now curious to know if the data for the single <code>0000.csv</code> file that was analyzed with pandas contains the same data types as the other 1,094 files in the folder. Remember that <code>df</code> is a pandas DataFrame containing the 93MB sample data and <code>ddf</code> is a Dask DataFrame containing 58 GB of data.</p>
+
+<p>You can inspect the data types with pandas using the <code>dtypes</code> method:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+	&gt;&gt; df.dtypes
+timestamp     	object
+id            	int64
+name         	object
+x            	float64
+y            	float64
+dtype: object</pre>
+</div>
+
+<p>pandas scans all the data to get the data types. This is fine for a 93MB file that easily fits into local memory. However, when working with Dask DataFrames we want to avoid reading all the data into memory. Loading all the CSV files into memory to get the data types will cause a <code>MemoryError</code>.</p>
+
+<p>Instead, Dask<em> infers</em> the column data types (provided they are not explicitly set by the user). It does so by reading the first <em>n</em> rows of the DataFrame into memory and using the contents to infer the data types for the rest of the rows. <em>n</em> here is determined by the value of either the <code>sample</code> or <code>sample_rows</code> arguments to <code>read_csv</code><code>. </code><code>sample</code> defines the number of bytes to read, <code>sample_rows</code> defines the number of rows to read.</p>
+
+<p>Let’s inspect the data types of our Dask DataFrame:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+ddf = dd.read_csv("*.csv")
+ddf.dtypes
+timestamp     	object
+id             	int64
+name         	object
+x            	float64
+y            	float64
+dtype: object</pre>
+</div>
+
+<div data-type="note" epub:type="note"><h6>Note</h6>
+<p>[CAUTION] You should be aware that inferring data types based on a sample of the rows is error-prone. Dask may incorrectly infer data types based on a sample of the rows which will cause downstream computations to error out.</p>
+
+<p>For example, the first 1000 rows of a column <code>id</code> may contain only integers and the 1001th row a string. If Dask is reading only the first 1000 rows, the dtype for <code>id</code> will be inferred as <code>int64</code>. This will lead to errors downstream when trying to run operations meant for integers on the column, since it contains at least one string. The correct dtype for this column should be <code>object</code>.</p>
+</div>
+
+<p>You can avoid data type inference by explicitly specifying dtypes when reading CSV files.</p>
+
+<p>Let’s manually set the name column to be a string, which is more efficient than object type columns:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; ddf = dd.read_csv(
+    "*.csv",
+    dtype={
+        "name": "string[pyarrow]",
+    },
+)
+&gt;&gt;&gt; ddf.dtypes
+timestamp     object
+id             int64
+name          string
+x            float64
+y            float64
+dtype: object</pre>
+</div>
+
+<p>Dask will infer the data types for the columns that you don’t manually specify. If you specify the data types for all the columns, then Dask won’t do any data type inference.</p>
+</div></section>
+
+<section data-type="sect2" data-pdf-bookmark="Reading Remote Data from the Cloud"><div class="sect2" id="reading_remote_data_from_the_cloud">
+<h2>Reading Remote Data from the Cloud</h2>
+
+<p>After showcasing the power of Dask to your Team Lead using the entire CSV dataset, you’ve now been tasked with running analyses on all the data in production. Now it turns out that Azeem had actually downloaded the CSV files from the company’s S3 bucket. That won’t fly when running these crucial analyses in production and also happens to be against the company’s data management best practices. You’ve been tasked with redoing the analysis without downloading the data locally.</p>
+
+<p>Dask readers make it easy to read data that’s stored in remote object data stores, like AWS S3.</p>
+
+<p>Here’s how to read a CSV file that’s stored in a public S3 bucket to your local machine:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+ddf = dd.read_csv(
+    "s3://coiled-datasets/timeseries/20-years/csv/*.part"    
+)</pre>
+</div>
+
+<div data-type="note" epub:type="note"><h6>Note</h6>
+<p>[TIP] Dask DataFrame readers expose a <code>storage_options</code> keyword that allows you to pass additional configurations to the remote data store, such as credentials for reading from private buckets or whether to use a SSL-encrypted connection. This can be helpful when working with private buckets or when your IT department has particular security policies in place.</p>
+</div>
+
+<p>Because of Dask’s lazy evaluation, running the command above will complete quickly. But for subsequent operations, remember that the data will actually need to be downloaded from the remote cloud storage to your local machine where the computations are running. This is called ‘moving data to compute’ and is generally inefficient.</p>
+
+<p>Because of this, it’s usually best to run computations on remote data using cloud computing.</p>
+
+<p>Here’s how to spin up a Dask cluster with Coiled and run these computations in the cloud. You will need a Coiled account to spin up these resources. If you’ve purchased this book, you get XXX free Coiled credits. Go to LINK to sign up for your personal Coiled account.</p>
+
+<p>We’ll import Dask and Coiled:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+import coiled
+import dask</pre>
+</div>
+
+<p>And then launch a Dask cluster with 5 workers:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+cluster = coiled.Cluster(
+    name="demo-cluster", 
+    n_workers=5
+)</pre>
+</div>
+
+<p>Finally, we’ll connect our local Dask client to the remote cluster:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+client = dask.distributed.Client(cluster)</pre>
+</div>
+
+<p>All subsequent Dask computations will now be executed in the cloud, instead of on your local machine.</p>
+</div></section>
+</div></section>
+
+<section data-type="sect1" data-pdf-bookmark="Processing Data with Dask DataFrames"><div class="sect1" id="processing_data_with_dask_dataframes">
+<h1>Processing Data with Dask DataFrames</h1>
+
+<p>In the previous section we saw how to load data from various sources and file formats into a Dask DataFrame and highlighted considerations regarding partitioning and data type inference. You’ve now got your CSV data loaded into your Dask DataFrame and are ready to dig into the data.</p>
+
+<p>Dask is intentionally designed to seamlessly scale existing popular PyData libraries like NumPy, scikit-learn and pandas. This means that processing data with Dask DataFrames will look and feel much like it would in pandas.</p>
+
+<p>For example, the code below demonstrates how you can use Dask DataFrames to filter rows, compute reductions and perform groupby aggregations:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+# filter rows
+ddf[ddf.x &gt; 0]
+# compute max
+ddf.x.max()
+# perform groupby aggregation
+ddf.groupby(“id”).x.mean()</pre>
+</div>
+
+<p>However, there are a few cases where Dask operations require additional considerations, mainly because we are now operating in a parallel computing environment. The following section digs into those particular cases.</p>
+
+<section data-type="sect2" data-pdf-bookmark="Converting to Parquet files"><div class="sect2" id="converting_to_parquet_files">
+<h2>Converting to Parquet files</h2>
+
+<p>Azeem heard that Parquet files are faster and more efficient to query than CSV files. He’s not sure about the performance benefits offered quite yet, but figures out how to make the conversion relatively easily with the help of a coworker:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+ddf.to_parquet("s3://coiled-datasets/timeseries/20-years/parquet", engine=”pyarrow”)</pre>
+</div>
+
+<p>See the Benefits of Parquet section for more details.</p>
+
+<p>Let’s take a look at the various ways Azeem can query and manipulate the data in the 20-years Parquet dataset.</p>
+</div></section>
+
+<section data-type="sect2" data-pdf-bookmark="Materializing results in memory with compute"><div class="sect2" id="materializing_results_in_memory_with_compute">
+<h2>Materializing results in memory with compute</h2>
+
+<p>You can convert a Dask DataFrame to a pandas DataFrame with <code>compute()</code>. When the dataset is small, it’s fine to convert to a pandas DataFrame. In general, you don’t want to convert Dask DataFrames to pandas DataFrames because then you lose all the parallelism and lazy execution benefits of Dask.</p>
+
+<p>We saw earlier in the Chapter that Dask DataFrames are composed of a collection of underlying pandas DataFrames (partitions). Calling <code>compute()</code> concatenates all the Dask DataFrame partitions into a single Pandas DataFrame.</p>
+
+<p>When the Dask DataFrame contains data that’s split across multiple nodes in a cluster, then <code>compute()</code> may run slowly. It can also cause out of memory errors if the data isn’t small enough to fit in the memory of a single machine.</p>
+
+<p>Dask was created to solve the memory issues of using pandas on a single machine. When you run <code>compute()</code>, you’ll face all the normal memory limitations of pandas.</p>
+
+<p>Let’s look at some examples and see when it’s best to use compute() in your analyses.</p>
+
+<section data-type="sect3" data-pdf-bookmark="Small DataFrame example"><div class="sect3" id="small_dataframe_example">
+<h3>Small DataFrame example</h3>
+
+<p><code>compute()</code> converts a Dask DataFrame to a pandas DataFrame. Let’s demonstrate with a small example.</p>
+
+<p>Create a two column Dask DataFrame and then convert it to a pandas DataFrame:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; import dask.dataframe as dd
+&gt;&gt;&gt; import pandas as pd
+&gt;&gt;&gt; df = pd.DataFrame({
+"col1": ["a", "b", "c", "d"], 
+"col2": [1, 2, 3, 4]
+    })
+&gt;&gt;&gt; ddf = dd.from_pandas(df, npartitions=2)
+&gt;&gt;&gt; ddf.compute()
+  col1  col2
+0    a     1
+1    b     2
+2    c     3
+3    d     4</pre>
+</div>
+
+<p>Verify that <code>compute()</code> returns a pandas DataFrame:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; type(ddf.compute())
+pandas.core.frame.DataFrame</pre>
+</div>
+
+<p>Dask DataFrames are composed of many underlying pandas DataFrames, each of which is called a partition. It’s no problem calling <code>compute()</code> when the data is small enough to get collected in a single pandas DataFrame, but this will break down whenever the data is too big to fit in the memory of a single machine.</p>
+
+<p>Let’s run <code>compute()</code> on a large DataFrame in a cloud cluster environment and take a look at the error message.</p>
+</div></section>
+
+<section data-type="sect3" data-pdf-bookmark="Large DataFrame example"><div class="sect3" id="large_dataframe_example">
+<h3>Large DataFrame example</h3>
+
+<p>Create a 5 node Dask cluster and read in a 662 million row dataset into a Dask DataFrame:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+cluster = coiled.Cluster(name="demo-cluster", n_workers=5)
+client = dask.distributed.Client(cluster)
+ddf = dd.read_parquet(
+    "s3://coiled-datasets/timeseries/20-years/parquet",
+    storage_options={"anon": True, "use_ssl": True},
+    engine="pyarrow",
+)</pre>
+</div>
+
+<p>Perform a filtering operation on the Dask DataFrame and then collect the result into a single pandas DataFrame with <code>compute()</code>:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+res = ddf.loc[ddf["id"] &gt; 1150]
+res.compute()</pre>
+</div>
+
+<p>This works because <code>res</code> only has 1,103 rows of data. It’s easy to collect such a small dataset into a single pandas DataFrame.</p>
+
+<p><code>ddf.compute()</code> will error out if we try to collect the entire 663 million row dataset into a pandas DataFrame.</p>
+
+<p>Azeem’s dataset has 58 GB of data, which is too large for a single machine.</p>
+</div></section>
+
+<section data-type="sect3" data-pdf-bookmark="Compute intuition"><div class="sect3" id="compute_intuition">
+<h3>Compute intuition</h3>
+
+<p>Here’s a diagram that visually demonstrates how compute() works, to give you some additional intuition.</p>
+
+<p>Suppose you have a 3-node cluster with 4 partitions. You run a compute() operation to collect all of the data in a single Pandas DataFrame.</p>
+
+<figure><div id="fig_5_fig_4_4_calling_compute_may_create_memory_error" class="figure"><img alt="Fig 4 4. Calling compute   may create memory errors." src="Images/how_to_work_with_dask_dataframes_343327_05.png" width="1588" height="576"/>
+<h6><span class="label">Figure 2-5. </span>Calling compute() may create memory errors.</h6>
+</div></figure>
+
+<p>This diagram clearly illustrates why the compute() operation can cause out of memory exceptions. Data that fits when it’s split across multiple machines in a cluster won’t necessarily fit in a single pandas DataFrame on only one machine.</p>
+</div></section>
+
+<section data-type="sect3" data-pdf-bookmark="Minimizing compute() calls"><div class="sect3" id="minimizing_compute_calls">
+<h3>Minimizing compute() calls</h3>
+
+<p>compute() can be an expensive operation, so you want to minimize compute() calls whenever possible.</p>
+
+<p>The following code snippet runs compute() twice and takes 63 seconds to run on a 5 node Dask cluster.</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+%%time
+id_min = ddf.id.min().compute()
+id_max = ddf.id.max().compute()
+CPU times: user 442 ms, sys: 31.4 ms, total: 473 ms
+Wall time: 1min 20s</pre>
+</div>
+
+<p>We can refactor this code to only run compute() once and it’ll run in 33 seconds.</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+%%time
+id_min, id_max = dask.compute(ddf.id.min(), ddf.id.max())
+CPU times: user 222 ms, sys: 19.1 ms, total: 241 ms
+Wall time: 35.5 s</pre>
+</div>
+
+<p>Fewer compute() calls will always run faster than more compute() invocations because Dask can optimize computations with shared tasks.</p>
+</div></section>
+
+<section data-type="sect3" data-pdf-bookmark="When to call compute()"><div class="sect3" id="when_to_call_compute">
+<h3>When to call compute()</h3>
+
+<p>You can call compute() if you’ve performed a large filtering operation or another operation that decreases the size of the overall dataset. If your data comfortably fits in memory, you don’t need to use Dask. Just stick with pandas if your data is small enough.</p>
+
+<p>You will also call compute() when you’d like to force Dask to execute the computations and return a result. Dask executes computations lazily by default. It’ll avoid running expensive computations until you run a method like compute() that forces computations to be executed.</p>
+</div></section>
+</div></section>
+
+<section data-type="sect2" data-pdf-bookmark="Materializing results in memory with persist()"><div class="sect2" id="materializing_results_in_memory_with_persist">
+<h2>Materializing results in memory with persist()</h2>
+
+<p>Instead of calling compute(), you can store Dask DataFrames in memory with persist(). This will store the contents of the Dask DataFrame in cluster memory which will make downstream queries that depend on the persisted data faster. This is great when you perform some expensive computations and want to save the results in memory so they’re not rerun multiple times.</p>
+
+<div data-type="note" epub:type="note"><h6>Note</h6>
+<p>[CAUTION] Be careful with using persist() when working locally. Calling persist() will load the results of a computation into memory, since you are not operating with a cluster to give you additional resources, this may mean that persist() creates memory errors. Using persist() is most beneficial when working with a remote cluster.</p>
+</div>
+
+<div data-type="note" epub:type="note"><h6>Note</h6>
+<p>[NOTE] Note that persist() commands do not block. This means that you can continue running other commands immediately afterwards and the persist() computation will run in the background.</p>
+</div>
+
+<p>Many Dask users erroneously assume that Dask DataFrames are persisted in memory by default, which isn’t true. Dask runs computations in memory. It doesn’t store data in memory unless you explicitly call <code>persist()</code>.</p>
+
+<p>Let’s start with examples of persist() on small DataFrames and then move to examples on larger DataFrames so you can see some realistic performance benchmarks.</p>
+
+<section data-type="sect3" data-pdf-bookmark="Simple example"><div class="sect3" id="simple_example">
+<h3>Simple example</h3>
+
+<p>Let’s create a small Dask DataFrame to demonstrate how persist() works:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; import dask.dataframe as dd
+&gt;&gt;&gt; import pandas as pd
+&gt;&gt;&gt; df = pd.DataFrame({
+        "col1": ["a", "b", "c", "d"], 
+   "col2": [1, 2, 3, 4]
+    })
+&gt;&gt;&gt; ddf = dd.from_pandas(df, npartitions=2)
+&gt;&gt;&gt; persisted_ddf = ddf.persist()
+&gt;&gt;&gt; len(persisted_ddf)
+4</pre>
+</div>
+
+<p>The persisted_ddf is saved in memory when <code>persist()</code> is called. Subsequent queries that run off of <code>persisted_ddf</code> will execute more quickly than if you hadn’t called persist().</p>
+
+<p>Let’s run <code>persist()</code> on a larger DataFrame to see some real computation runtimes.</p>
+</div></section>
+
+<section data-type="sect3" data-pdf-bookmark="Example on big dataset"><div class="sect3" id="example_on_big_dataset">
+<h3>Example on big dataset</h3>
+
+<p>Let’s run some queries on a dataset that’s not persisted to get some baseline query runtimes. Then let’s persist the dataset, run the same queries, and quantify the performance gains from persisting the dataset.</p>
+
+<p>These queries are run on Azeem’s 20 year Parquet timeseries dataset.</p>
+
+<p>Here’s the code that creates a computation cluster, reads in a DataFrame, and then creates a filtered DataFrame.</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+import coiled
+import dask
+import dask.dataframe as dd
+cluster = coiled.Cluster(name="powers", n_workers=5) 
+ 
+client = dask.distributed.Client(cluster)
+ddf = dd.read_parquet(
+    "s3://coiled-datasets/timeseries/20-years/parquet",
+    storage_options={"anon": True, "use_ssl": True},
+    engine="pyarrow",
+)</pre>
+</div>
+
+<p>Let’s time a couple of analytical queries.</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; res = ddf.loc[ddf["id"] &gt; 1150]
+&gt;&gt;&gt; len(res)
+87 seconds
+&gt;&gt;&gt; res.name.nunique().compute()
+62 seconds</pre>
+</div>
+
+<p>Let’s persist the dataset to cluster memory and then run the same queries to see how long they take to execute.</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; persisted_res = res.persist()
+&gt;&gt;&gt; len(persisted_res)
+2 seconds
+&gt;&gt;&gt; persisted_res.name.nunique().compute()
+2 seconds</pre>
+</div>
+
+<p>The queries took over a minute to run before the data was persisted, but only takes 2 seconds to run on the persisted dataset.</p>
+
+<p>Of course it takes some time to persist the data. Let’s look at why this particular example gave us great results when persisting.</p>
+
+<div data-type="note" epub:type="note"><h6>Note</h6>
+<p>[NOTE] Great opportunity to persist</p>
+
+<p>Persisting helps sometimes and causes problems other times. Let’s look at high level patterns when it’ll usually help and when it’ll usually cause problems.</p>
+
+<p>Our example uses the following pattern:</p>
+
+<ul>
+	<li>
+	<p>Start with a large dataset</p>
+	</li>
+	<li>
+	<p>Filter it down to a much smaller datasets (that’s much smaller than the memory of the cluster)</p>
+	</li>
+	<li>
+	<p>Run analytical queries on the filtered dataset</p>
+	</li>
+</ul>
+
+<p>You can expect good results from persist() with this set of circumstances.</p>
+
+<p>Here’s a different pattern that won’t usually give such a good result.</p>
+
+<ul>
+	<li>
+	<p>Read in a large dataset that’s bigger than memory</p>
+	</li>
+	<li>
+	<p>Persist the entire dataset</p>
+	</li>
+	<li>
+	<p>Run a single analytical operation</p>
+	</li>
+</ul>
+
+<p>In this case, the cost of running the persist operation will be greater than the benefits of having a single query run a little bit faster. Persisting doesn’t always help.</p>
+</div>
+</div></section>
+
+<section data-type="sect3" data-pdf-bookmark="Writing to disk vs persisting in memory"><div class="sect3" id="writing_to_disk_vs_persisting_in_memory">
+<h3>Writing to disk vs persisting in memory</h3>
+
+<p>We can also “persist” results by writing to disk rather than saving the data in memory.</p>
+
+<p>Let’s persist the filtered dataset in S3 and run the analytical queries to quantify time savings.</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; res.repartition(2).to_parquet(
+        "s3://coiled-datasets/tmp/matt/disk-persist", 
+        engine="pyarrow"
+    )
+&gt;&gt;&gt;&gt; df = dd.read_parquet(
+        "s3://coiled-datasets/tmp/matt/disk-persist",
+        storage_options={"anon": True, "use_ssl": True},
+        engine="pyarrow",
+    )
+&gt;&gt;&gt; len(df) 
+0.4 seconds
+&gt;&gt;&gt; df.name.nunique().compute()
+0.3 seconds</pre>
+</div>
+
+<p>The filtered dataset that was written to disk can be queried with subsecond response times.</p>
+
+<p>Writing temporary files to disk isn’t always ideal because then you have stale files sitting around that need to get cleaned up later.</p>
+</div></section>
+
+<section data-type="sect3" data-pdf-bookmark="Repartitioning and persisting"><div class="sect3" id="repartitioning_and_persisting">
+<h3>Repartitioning and persisting</h3>
+
+<p>We can also repartition before persisting, which will make our analytical queries in this example run even faster.</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; res2 = res.repartition(2)
+&gt;&gt;&gt; persisted_res2 = res2.persist()
+&gt;&gt;&gt; len(persisted_res2)
+0.3 seconds
+&gt;&gt;&gt; persisted_res2.name.nunique().compute()
+0.3 seconds</pre>
+</div>
+
+<p>The filtered dataset is tiny and doesn’t need a lot of partitions. That’s why repartitioning drops query times from around 2 seconds to 0.3 seconds in this example.</p>
+
+<aside data-type="sidebar" epub:type="sidebar"><div class="sidebar" id="idm46565118657808">
+<h5>Compute vs Persist</h5>
+
+<p>Compute and persist are both ways to materialize results in memory.</p>
+
+<p>Compute materializes results in a pandas DataFrame and persist materializes the results in a Dask DataFrame.</p>
+
+<p>Compute only works for datasets that fit in the memory of a single machine. Larger results can be persisted because the data can be spread in the memory of multiple computers in a cluster.</p>
+</div></aside>
+</div></section>
+
+<section data-type="sect3" data-pdf-bookmark="Persist summary"><div class="sect3" id="persist_summary">
+<h3>Persist summary</h3>
+
+<p>Persist is a powerful optimization technique to have in your Dask toolkit.</p>
+
+<p>It’s especially useful when you’ve performed some expensive operations that reduce the dataset size and subsequent operations benefit from having the computations stored.</p>
+
+<p>Some new Dask programmers can misuse persist() and slow down analyses by persisting too often or trying to persist massive datasets. It helps sometimes, but it can cause analyses to run slower when used incorrectly.</p>
+
+<p>Persisting will generally speed up analyses when one or more items in this set of facts are true:</p>
+
+<ul>
+	<li>
+	<p>You’ve performed expensive computations that have reduced the dataset size</p>
+	</li>
+	<li>
+	<p>The reduced dataset comfortably fits in memory</p>
+	</li>
+	<li>
+	<p>You want to run multiple queries on the reduced dataset</p>
+	</li>
+</ul>
+</div></section>
+</div></section>
+
+<section data-type="sect2" data-pdf-bookmark="Repartitioning Dask DataFrames"><div class="sect2" id="repartitioning_dask_dataframes">
+<h2>Repartitioning Dask DataFrames</h2>
+
+<p>This section explains how to redistribute data among partitions in a Dask DataFrame with repartitioning. Analyses run slower when data is unevenly distributed across partitions, and repartitioning can smooth out the data and provide significant performance boost.</p>
+
+<p>Dask DataFrames consist of partitions, each of which is a pandas DataFrame. Dask performance will suffer if there are lots of partitions that are too small or some partitions that are too big. Repartitioning a Dask DataFrame solves the issue of “partition imbalance”.</p>
+
+<p>Let’s start with some simple examples to get you familiar with the repartition() syntax.</p>
+
+<section data-type="sect3" data-pdf-bookmark="Simple examples"><div class="sect3" id="simple_examples">
+<h3>Simple examples</h3>
+
+<p>Let’s create a Dask DataFrame with six rows of data organized in three partitions:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+import pandas as pd
+import dask.dataframe as dd
+df = pd.DataFrame({
+    "nums":[1, 2, 3, 4, 5, 6], 
+    "letters":["a", "b", "c", "d", "e", "f"]
+})
+ddf = dd.from_pandas(df, npartitions=3)</pre>
+</div>
+
+<p>Print the content of each DataFrame partition:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt;&gt; for i in range(ddf.npartitions):
+        print(ddf.partitions[i].compute())
+  nums letters
+0     1       a
+1     2       b
+   nums letters
+2     3       c
+3     4       d
+   nums letters
+4     5       e
+5     6       f</pre>
+</div>
+
+<p>Repartition the DataFrame into two partitions:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; ddf2 = ddf.repartition(2)
+&gt;&gt;&gt; for i in range(ddf2.npartitions):
+        print(ddf2.partitions[i].compute())
+  nums letters
+0     1       a
+1     2       b
+   nums letters
+2     3       c
+3     4       d
+4     5       e
+5     6       f</pre>
+</div>
+
+<p>repartition(2) causes Dask to combine partition 1 and partition 2 into a single partition. Dask’s repartition algorithm is smart to coalesce existing partitions and avoid full data shuffles.</p>
+
+<p>You can also increase the number of partitions with repartition. Repartition the DataFrame into 5 partitions:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; ddf5 = ddf.repartition(5)
+&gt;&gt;&gt; for i in range(ddf5.npartitions):
+        print(ddf5.partitions[i].compute())
+  nums letters
+0     1       a
+   nums letters
+1     2       b
+   nums letters
+2     3       c
+   nums letters
+3     4       d
+   nums letters
+4     5       e
+5     6       f</pre>
+</div>
+
+<p>In practice, it’s easier to repartition by specifying a target size for each partition (e.g. 100 MB per partition). You want Dask to do the hard work of figuring out the optimal number of partitions for your dataset. Here’s the syntax for repartitioning into 100MB partitions:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+ddf.repartition(partition_size="100MB")</pre>
+</div>
+</div></section>
+
+<section data-type="sect3" data-pdf-bookmark="When to repartition"><div class="sect3" id="when_to_repartition">
+<h3>When to repartition</h3>
+
+<p>Of course, repartitioning isn’t free and takes time. The cost of performing a full data shuffle can outweigh the benefits of subsequent query performance.</p>
+
+<p>You shouldn’t always repartition whenever a dataset is imbalanced. Repartitioning should be approached on a case-by-case basis and only performed when the benefits outweigh the costs.</p>
+</div></section>
+
+<section data-type="sect3" data-pdf-bookmark="Common causes of partition imbalance"><div class="sect3" id="common_causes_of_partition_imbalance">
+<h3>Common causes of partition imbalance</h3>
+
+<p>Filtering is a common cause of DataFrame partition imbalance.</p>
+
+<p>Suppose you have a DataFrame with a first_name column and the following data:</p>
+
+<ul>
+	<li>
+	<p>Partition 0: Everyone has a first_name “Allie”</p>
+	</li>
+	<li>
+	<p>Partition 1: Everyone has first_name “Matt”</p>
+	</li>
+	<li>
+	<p>Partition 2: Everyone has first_name “Sam”</p>
+	</li>
+</ul>
+
+<p>If you filter for all the rows with first_name equal to “Allie”, then Partition 1 and Partition 2 will be empty. Empty partitions cause inefficient Dask execution. It’s often wise to repartition after filtering.</p>
+</div></section>
+</div></section>
+
+<section data-type="sect2" data-pdf-bookmark="Filtering Dask DataFrames"><div class="sect2" id="filtering_dask_dataframes">
+<h2>Filtering Dask DataFrames</h2>
+
+<p>This section explains how to filter Dask DataFrames based on the DataFrame index and on column values using loc().</p>
+
+<p>Filtering Dask DataFrames can cause data to be unbalanced across partitions which isn’t desirable from a performance perspective. This section illustrates how filtering can cause the “empty partition problem” and how to eliminate empty partitions with the repartitioning techniques we learned in the previous section.</p>
+
+<section data-type="sect3" data-pdf-bookmark="Index filtering"><div class="sect3" id="index_filtering">
+<h3>Index filtering</h3>
+
+<p>Dask DataFrames consist of multiple partitions, each of which is a pandas DataFrame. Each pandas DataFrame has an index. Dask allows you to filter multiple pandas DataFrames on their index in parallel, which is quite fast.</p>
+
+<p>Let’s create a Dask DataFrame with 6 rows of data organized in two partitions:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+import pandas as pd
+import dask.dataframe as dd
+df = pd.DataFrame({
+"nums":[1, 2, 3, 4, 5, 6], 
+"letters":["a", "b", "c", "d", "e", "f"]
+})
+ddf = dd.from_pandas(df, npartitions=2)</pre>
+</div>
+
+<p>Let’s visualize the data in each partition:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; for i in range(ddf.npartitions):
+        print(ddf.partitions[i].compute())
+  nums letters
+0     1       a
+1     2       b
+2     3       c
+   nums letters
+3     4       d
+4     5       e
+5     6       f</pre>
+</div>
+
+<p>Dask automatically added an integer index column to our data.</p>
+
+<p>Grab rows 2 and 5 from the DataFrame:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; ddf.loc[[2, 5]].compute()
+  nums letters
+2     3       c
+5     6       f</pre>
+</div>
+
+<p>Grab rows 3, 4, and 5 from the DataFrame:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; ddf.loc[3:5].compute()
+  nums letters
+3     4       d
+4     5       e
+5     6       f</pre>
+</div>
+
+<p>Let’s learn more about how Dask tracks information about divisions in sorted DataFrames to perform <code>loc</code> filtering efficiently.</p>
+</div></section>
+
+<section data-type="sect3" data-pdf-bookmark="Divisions refresher"><div class="sect3" id="divisions_refresher">
+<h3>Divisions refresher</h3>
+
+<p>We’ve already discussed Dask DataFrame divisions in the architecture chapter, but we’re going to do a full refresher here because they’re so critical when working with the Dask DataFrames index.</p>
+
+<p>Dask is aware of the starting and ending index value for each partition in the DataFrame and stores this division’s metadata to perform quick filtering.</p>
+
+<p>You can verify that Dask is aware of the divisions for this particular DataFrame by running <code>ddf.known_divisions</code> and seeing it returns <code>True</code>. Dask isn’t always aware of the DataFrame divisions.</p>
+
+<p>Print all the divisions of the DataFrame:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; ddf.divisions
+(0, 3, 5)</pre>
+</div>
+
+<p>Take a look at the values in each partition of the DataFrame to better understand this divisions output.</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; for i in range(ddf.npartitions):
+        print(ddf.partitions[i].compute())
+  nums letters
+0     1       a
+1     2       b
+2     3       c
+   nums letters
+3     4       d
+4     5       e
+5     6       f</pre>
+</div>
+
+<p>The first division is from 0-3, and the second division is from 3-5. This means the first division contains rows 0 to 2, and the last division contains rows 3 to 5.</p>
+
+<p>Dask’s division awareness in this example lets it know exactly what partitions it needs to fetch from when filtering.</p>
+</div></section>
+
+<section data-type="sect3" data-pdf-bookmark="Column value filtering"><div class="sect3" id="column_value_filtering">
+<h3>Column value filtering</h3>
+
+<p>You won’t always be able to filter based on index values. Sometimes you need to filter based on actual column values.</p>
+
+<p>Fetch all rows in the DataFrame where <code>nums</code> is even:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; ddf.loc[ddf["nums"] % 2 == 0].compute()
+  nums letters
+1     2       b
+3     4       d
+5     6       f</pre>
+</div>
+
+<p>Find all rows where <code>nums</code> is even, and <code>letters</code> contains either <code>b</code> or <code>f</code>:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; ddf.loc[(ddf["nums"] % 2 == 0) &amp; (ddf["letters"].isin(["b", "f"]))].compute()
+  nums letters
+1     2       b
+5     6       f</pre>
+</div>
+
+<p>Dask makes it easy to apply multiple logic conditions when filtering.</p>
+</div></section>
+
+<section data-type="sect3" data-pdf-bookmark="Empty partition problem"><div class="sect3" id="empty_partition_problem">
+<h3>Empty partition problem</h3>
+
+<p>Let’s read Azeem’s 662 million rows Parquet dataset into a Dask DataFrame and perform a filtering operation to illustrate the empty partition problem.</p>
+
+<p>Read in the data and create the Dask DataFrame:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+ddf = dd.read_parquet(
+    "s3://coiled-datasets/timeseries/20-years/parquet",
+    storage_options={"anon": True, 'use_ssl': True}
+)</pre>
+</div>
+
+<p><code>ddf.npartitions</code> shows that the DataFrame has 1,095 partitions:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; ddf.npartitions
+1095</pre>
+</div>
+
+<p>Here’s how to filter the DataFrame to only include rows with an id greater than 1150:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+res = ddf.loc[ddf["id"] &gt; 1150]</pre>
+</div>
+
+<p>Run <code>len(res)</code> to see that the DataFrame only has 1,103 rows after this filtering operation:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; len(res)
+1103</pre>
+</div>
+
+<p>This was a big filter, and only a small fraction of the original 662 million rows remain.</p>
+
+<p>We can run <code>res.npartitions</code> to see that the DataFrame still has 1,095 partitions. The filtering operation didn’t change the number of partitions:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; res.npartitions
+1095</pre>
+</div>
+
+<p>Run <code>res.map_partitions(len).compute()</code> to visually inspect how many rows of data are in each partition:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; res.map_partitions(len).compute()
+0       0
+1       1
+2       0
+3       0
+4       2
+       ..
+1090    0
+1091    2
+1092    0
+1093    0
+1094    0
+Length: 1095, dtype: int64</pre>
+</div>
+
+<p>A lot of the partitions are empty and others only have a few rows of data.</p>
+
+<p>Dask often works best with partition sizes of at least 100MB. Let’s repartition our data to two partitions and persist it in memory:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+res2 = res.repartition(2).persist()</pre>
+</div>
+
+<p>Subsequent operations on res2 will be really fast because the data is stored in memory. <code>len(res)</code> takes 57 seconds whereas <code>len(res2)</code> only takes 0.3 seconds.</p>
+
+<p>The filtered dataset is so small in this example that you could even convert it to a pandas DataFrame with <code>res3 = res.compute()</code>. It only takes 0.000011 seconds to execute <code>len(res3)</code>.</p>
+
+<div data-type="note" epub:type="note"><h6>Note</h6>
+<p>[TIP] You don’t have to filter datasets at the computation engine level. You can also filter at the database level and only send a fraction of the data to the computation engine.</p>
+</div>
+</div></section>
+
+<section data-type="sect3" data-pdf-bookmark="Query pushdown"><div class="sect3" id="query_pushdown">
+<h3>Query pushdown</h3>
+
+<p>Query pushdown is when you perform data operations before sending the data to the Dask cluster. Part of the work is “pushed down” to the database level.</p>
+
+<p>Here’s the high level process for filtering with a Dask cluster:</p>
+
+<ul>
+	<li>
+	<p>Read all the data from disk into the cluster</p>
+	</li>
+	<li>
+	<p>Perform the filtering operation</p>
+	</li>
+	<li>
+	<p>Repartition the filtered DataFrame</p>
+	</li>
+	<li>
+	<p>Possibly write the result to disk (ETL style workflow) or persist in memory</p>
+	</li>
+</ul>
+
+<p>Organizations often need to optimize data storage and leverage query pushdown in a manner that’s optimized for their query patterns and latency needs.</p>
+</div></section>
+
+<section data-type="sect3" data-pdf-bookmark="Best practices"><div class="sect3" id="best_practices">
+<h3>Best practices</h3>
+
+<p>Dask makes it easy to filter DataFrames, but you need to be cognizant of the implications of big filters.</p>
+
+<p>After filtering a lot of data, you should consider repartitioning and persisting the data in memory.</p>
+
+<p>You should also consider filtering at the database level and bypassing cluster filtering altogether. Lots of Dask analyses run slower than they should because a large filtering operation was performed, and the analyst is running operations on a DataFrame with tons of empty partitions.</p>
+</div></section>
+</div></section>
+
+<section data-type="sect2" data-pdf-bookmark="Setting the Index"><div class="sect2" id="setting_the_index">
+<h2>Setting the Index</h2>
+
+<p>Indexes are used by normal pandas DataFrames, Dask DataFrames, and many databases in general. Indexes let you efficiently find rows that have a certain value, without having to scan each row.</p>
+
+<p>In plain pandas, it means that after a <code>set_index("col")</code>, <code>df.loc["foo"]</code> is faster than <code>df</code>[<code>df.col</code><code> == "foo"</code>] was before. The loc() uses an efficient data structure that only has to check a couple rows to figure out where “foo” is. Whereas <code>df[df.col == "foo"]</code> has to scan every single row to see which ones match.</p>
+
+<p>The thing is, computers are very, very fast at scanning memory, so when you’re running pandas computations on one machine, index optimizations aren’t as important. But scanning memory across many distributed machines is not fast. So index optimizations that you don’t notice much with pandas makes an enormous difference with Dask.</p>
+
+<section data-type="sect3" data-pdf-bookmark="Dask DataFrames Divisions"><div class="sect3" id="dask_dataframes_divisions">
+<h3>Dask DataFrames Divisions</h3>
+
+<p>Remember that a Dask DataFrame is composed of many pandas DataFrames, potentially living on different machines, each one of which we call a partition. Each of these partitions is a pandas DataFrame that has its own index.</p>
+
+<figure class="width-50"><div id="fig_6_fig_4_5_figure_title_needed" class="figure"><img alt="Fig 4 5. Figure title needed." src="Images/how_to_work_with_dask_dataframes_343327_06.png" width="426" height="808"/>
+<h6><span class="label">Figure 2-6. </span>Figure title needed.</h6>
+</div></figure>
+
+<p>Dask DataFrame has its own version of an index for the distributed DataFrame as a whole, called <code>divisions</code>. The <code>divisions</code> are like an index for the indexes—it tracks the index bounds for each partition, so you can easily tell which partition contains a given value (just like pandas’s index tracks which row will contain a given value).</p>
+
+<figure class="width-50"><div id="fig_7_fig_4_6_figure_title_needed" class="figure"><img alt="Fig 4 6. Figure title needed." src="Images/how_to_work_with_dask_dataframes_343327_07.png" width="704" height="974"/>
+<h6><span class="label">Figure 2-7. </span>Figure title needed.</h6>
+</div></figure>
+
+<p>When there are millions of rows spread across hundreds of machines, it’s too much to track every single row. We just want to get in the right ballpark—which machine will hold this value?—and then tell that machine to go find the row itself.</p>
+
+<p>So <code>divisions</code> is just a simple list giving the lower and upper bounds of values that each partition contains. Using this, Dask does a quick binary search locally to figure out which partition contains a given value.</p>
+
+<p>Just like with a pandas index, having known divisions lets us change a search that would scan every row (<code>df</code><code>[df.col == "foo"]</code>) to one that quickly goes straight to the right place (<code>df.loc</code><code>["foo"]</code>).</p>
+</div></section>
+
+<section data-type="sect3" data-pdf-bookmark="How to Set the Index"><div class="sect3" id="how_to_set_the_index">
+<h3>How to Set the Index</h3>
+
+<p>You can set the index of a Dask DataFrame using the <code>set_index()</code> method:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+ddf2 = ddf.set_index("id")</pre>
+</div>
+
+<p>Notice that <code>ddf.set_index("id")</code> does not specify divisions, so Dask needs to go figure them out. To do this, it has to load and compute all of <code>ddf</code> immediately to look at the distribution of its values. Then, when you later call <code>.compute</code><code>()</code>, it’ll load and compute <code>ddf</code> a second time. This is slow in general, and particularly bad if the DataFrame already has lots of operations applied to it—all those operations also have to run twice.</p>
+
+<p>Instead, when divisions are passed, Dask doesn’t need to compute the whole DataFrame to figure them out, which is obviously a lot faster. To pick good divisions, you must use your knowledge of the dataset. What range of values is there for the column? What sort of general distribution do they follow—a normal bell curve, a continuous distribution? Are there known outliers?</p>
+
+<p>Another strategy is to let Dask compute the divisions once, then copy-paste them to reuse later:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+dask_computed_divisions = ddf3.set_index("id").divisions
+unique_divisions =  list(dict.fromkeys(list(dask_computed_divisions)))
+print(repr(unique_divisions))
+# ^ copy this and reuse</pre>
+</div>
+
+<p>This is especially helpful if you’ll be rerunning a script or notebook on the same (or similar) data many times. However, you shouldn’t set divisions if the data you’re processing is very unpredictable. In that case, it’s better to spend the extra time and let Dask re-compute good divisions each time.</p>
+</div></section>
+
+<section data-type="sect3" data-pdf-bookmark="When to Set the Index"><div class="sect3" id="when_to_set_the_index">
+<h3>When to Set the Index</h3>
+
+<p>Since <code>set_index()</code> is an expensive operation, you should only run the computation when it’ll help subsequent computations run faster.</p>
+
+<p>Here are the main operations that’ll run faster when an index is set:</p>
+
+<ul>
+	<li>
+	<p>Filtering on the index</p>
+	</li>
+	<li>
+	<p>Joining on the index</p>
+	</li>
+	<li>
+	<p>Groupby on the index</p>
+	</li>
+	<li>
+	<p>Sophisticated custom code in map_partitions (advanced use case)</p>
+	</li>
+</ul>
+
+<p>By all means, set indexes whenever it’ll make your analysis faster. Just don’t run these expensive computations unnecessarily.</p>
+
+<p>For example, you shouldn’t always <code>set_index()</code> before you <code>.</code><code>loc</code>. If you just need to pull a value out once, it’s not worth the cost of a whole shuffle. But if you need to pull lots of values out, then it is. Same with a merge: if you’re just merging a DataFrame to another, don’t <code>set_index()</code> first (the merge will do this internally anyway). But if you’re merging the same DataFrame multiple times, then the <code>set_index()</code> is worth it.</p>
+
+<p>As a rule of thumb, you should <code>set_index()</code> if you’ll do a merge, <code>groupby(df.index)</code>, or <code>.loc</code> on the re-indexed DataFrame more than once. You may also want to re-index your data before writing it to storage in a partitioned format like Parquet. That way, when you read the data later, it’s already partitioned the way you want, and you don’t have to re-index it every time.</p>
+</div></section>
+</div></section>
+
+<section data-type="sect2" data-pdf-bookmark="Joining Dask DataFrames"><div class="sect2" id="joining_dask_dataframes">
+<h2>Joining Dask DataFrames</h2>
+
+<p>In this section we’ll look at how to merge Dask DataFrames and discuss important considerations when making large joins. We’ll learn how to join a large Dask DataFrame to a small pandas DataFrame, how to join two large Dask DataFrames and how to structure our joins for optimal performance.</p>
+
+<section data-type="sect3" data-pdf-bookmark="Join a Dask DataFrame to a pandas DataFrame"><div class="sect3" id="join_a_dask_dataframe_to_a_pandas_dataframe">
+<h3>Join a Dask DataFrame to a pandas DataFrame</h3>
+
+<p>We can join a Dask DataFrame to a small pandas DataFrame by using the</p>
+
+<p><code>dask.dataframe.merge()</code>method, similar to the pandas api. Below we execute a left join on our Dask DataFrame <code>ddf</code> with a small pandas DataFrame <code>df</code> that contains a boolean value for every name in the dataset:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; # load in small pandas dataframe
+&gt;&gt;&gt; df = pd.read_csv("small_df.csv", index_col=0)
+&gt;&gt;&gt; # merge dask dataframe to pandas dataframe
+&gt;&gt;&gt; join = ddf.merge(
+        df,
+        how="left", 
+        on=["name"]
+    )
+&gt;&gt;&gt; # materialize first 5 results
+&gt;&gt;&gt; join.head()</pre>
+</div>
+
+<figure><div id="fig_8_fig_4_7_figure_title_needed" class="figure"><img alt="Fig 4 7. Figure title needed." src="Images/how_to_work_with_dask_dataframes_343327_08.png" width="800" height="418"/>
+<h6><span class="label">Figure 2-8. </span>Figure title needed.</h6>
+</div></figure>
+
+<p>If you’re working with a small Dask DataFrame instead of a pandas DataFrame, you have two options. You can convert it into a pandas DataFrame using compute(). This will load the DataFrame into memory. Alternatively, if you can’t or don’t want to load it into your single machine memory, you can turn the small Dask DataFrame into a single partition by using the repartition() method instead. These two operations are programmatically equivalent which means there’s no meaningful difference in performance between them. See the Compute and Repartitioning sections respectively for more details.</p>
+
+<figure><div id="fig_9_fig_4_8_figure_title_needed" class="figure"><img alt="Fig 4 8. Figure title needed." src="Images/how_to_work_with_dask_dataframes_343327_09.png" width="1040" height="1044"/>
+<h6><span class="label">Figure 2-9. </span>Figure title needed.</h6>
+</div></figure>
+</div></section>
+
+<section data-type="sect3" data-pdf-bookmark="Joining two Dask DataFrames"><div class="sect3" id="joining_two_dask_dataframes">
+<h3>Joining two Dask DataFrames</h3>
+
+<p>To join two large Dask DataFrames, you can use the exact same syntax. In this case we are specifying the <code>left_index</code> and <code>right_index</code> keywords to tell Dask to use the indices of the two DataFrames as the columns to join on. This will join the data based on the timestamp column:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; large_join = ddf.merge(
+        ddf_2, 
+        how="left", 
+        left_index=True, 
+        right_index=True
+    )
+&gt;&gt;&gt; # materialize first 5 results
+&gt;&gt;&gt; large_join.head()</pre>
+</div>
+
+<figure><div id="fig_10_fig_4_9_figure_title_needed" class="figure"><img alt="Fig 4 9. Figure title needed." src="Images/how_to_work_with_dask_dataframes_343327_10.png" width="1508" height="514"/>
+<h6><span class="label">Figure 2-10. </span>Figure title needed.</h6>
+</div></figure>
+
+<p>However, merging two large Dask DataFrames requires careful consideration of your data structure and the final result you’re interested in. Joins are expensive operations, especially in a distributed computing context. Understanding both your data and your desired end result can help you set up your computations efficiently to optimize performance. The most important consideration is whether and how to set your DataFrame’s index before executing the join.</p>
+</div></section>
+
+<section data-type="sect3" data-pdf-bookmark="Considerations when joining Dask DataFrames"><div class="sect3" id="considerations_when_joining_dask_dataframes">
+<h3>Considerations when joining Dask DataFrames</h3>
+
+<p>Joining two DataFrames can be either very expensive or very cheap depending on the situation. It is cheap in the following cases:</p>
+
+<ul>
+	<li>
+	<p>Joining a Dask DataFrame with a Pandas DataFrame</p>
+	</li>
+	<li>
+	<p>Joining a Dask DataFrame with another Dask DataFrame of a single partition</p>
+	</li>
+	<li>
+	<p>Joining Dask DataFrames along their indexes</p>
+	</li>
+</ul>
+
+<p>As explained earlier in the book, Dask DataFrames are divided into partitions, where each single partition is a pandas DataFrame. Dask can track how the data is partitioned (i.e. where one partition starts and the next begins) using a DataFrame’s divisions. If a Dask DataFrame’s divisions are known, then Dask knows the minimum value of every partition’s index and the maximum value of the last partition’s index. This enables Dask to take efficient shortcuts when looking up specific values. Instead of searching the entire dataset, it can find out which partition the value is in by looking at the divisions and then limit its search to only that specific partition. This is called a sorted join.</p>
+
+<p>If divisions are not known, then Dask will need to move all of your data around so that rows with matching values in the joining columns end up in the same partition. This is called an unsorted join and it’s an extremely memory-intensive process, especially if your machine runs out of memory and Dask will have to read and write data to disk instead. This is a situation you want to avoid.</p>
+
+<p>If you are planning to run repeated joins against a large Dask DataFrame, it’s best to sort the Dask DataFrame using the <code>set_index()</code> method first to improve performance. See Section 2.5 above for more on the <code>set_index()</code>method and <code>divisions</code>.</p>
+
+<p>It’s good practice to write sorted DataFrames to the Apache Parquet file format in order to preserve the index. See the Working with Parquet Section for more on the benefits of working with this data format.</p>
+</div></section>
+</div></section>
+
+<section data-type="sect2" data-pdf-bookmark="Mapping Custom Functions"><div class="sect2" id="mapping_custom_functions">
+<h2>Mapping Custom Functions</h2>
+
+<p>This section provides a quick refresher of how we can run custom functions on pandas DataFrames and then demonstrates how we can parallelize these operations on Dask DataFrames. Dask makes it easy to apply custom functions on each of the underlying pandas DataFrames it contains.</p>
+
+<section data-type="sect3" data-pdf-bookmark="pandas apply refresher"><div class="sect3" id="pandas_apply_refresher">
+<h3>pandas apply refresher</h3>
+
+<p>pandas apply lets you apply a function to each row in a pandas DataFrame. Let’s create a function that’ll look at all the columns, find the max value, find the min value, and compute the difference for each row in the pandas DataFrame.</p>
+
+<p>Start by creating a pandas DataFrame with three columns and three rows of data:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+df = pd.DataFrame({"a": [23, 2, 8], "b": [99, 6, 1], "c": [1, 2, 3]})</pre>
+</div>
+
+<p>Here are the contents of the DataFrame:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; df
+       
+   a   b   c 
+0  23  99  1
+1  2   6   2
+2  8   1   3</pre>
+</div>
+
+<p>Define a <code>minmax</code> function that will take the difference between the max value and the min value and then use the pandas <code>apply()</code> method to run this function on each row in the DataFrame:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+def minmax(x):
+    return x.max() - x.min()</pre>
+</div>
+
+<p>Here’s the result:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; df.apply(minmax, axis=1)
+0  98
+1  4
+2  7
+dtype: int64</pre>
+</div>
+
+<p>The pandas apply() function returns the result as a Series object.</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt; type(df.apply(minmax, axis=1))
+pandas.core.series.Series</pre>
+</div>
+
+<p>Let’s look at how to parallelize this function with Dask.</p>
+</div></section>
+
+<section data-type="sect3" data-pdf-bookmark="Parallelizing pandas apply with map_partitions"><div class="sect3" id="parallelizing_pandas_apply_with_map_partitions">
+<h3>Parallelizing pandas apply with map_partitions</h3>
+
+<p>Convert the pandas DataFrame to a Dask DataFrame with two partitions:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+ddf = dd.from_pandas(df, npartitions=2)</pre>
+</div>
+
+<p>Create a minmax2 function that wraps the original minmax function and use map_partitions() to run it on each partition in a Dask DataFrame.</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+def minmax2(df):
+    return df.apply(minmax, axis=1)</pre>
+</div>
+
+<p>Map the function across all partitions in the Dask DataFrame:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; ddf.map_partitions(minmax2, meta=(None, "int64")).compute()
+0  98
+1  4
+2  7
+dtype: int64</pre>
+</div>
+
+<p>map_partitions() runs the pandas apply() operation on all the partitions in parallel, so map_partitions() is a great way to parallelize a pandas apply() operation and make it run faster.</p>
+
+<div data-type="note" epub:type="note"><h6>Note</h6>
+<p>[CAUTION] In the toy examples, the Dask version may not run faster than the pandas version because the data is so small and the Dask scheduler incurs minimal overhead. Remember that Dask is meant for large datasets where the benefits of parallel computing (processing speed) outweigh the costs (overhead of)</p>
+</div>
+</div></section>
+
+<section data-type="sect3" data-pdf-bookmark="Calculating memory usage of a DataFrame with map_partitions"><div class="sect3" id="calculating_memory_usage_of_a_dataframe_with_map_p">
+<h3>Calculating memory usage of a DataFrame with map_partitions</h3>
+
+<p>Let’s look at two approaches for calculating the memory for each partition of a 662 million row dataset. You don’t need to actually use this approach to compute the memory usage of a DataFrame because Dask has a built-in memory_usage() method that’s more convenient. Nonetheless, this example is a good way to demonstrate the power of the map_partitions() method:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; ddf = dd.read_parquet(
+        "s3://coiled-datasets/timeseries/20-years/parquet",
+        storage_options={"anon": True, 'use_ssl': True}
+    )
+&gt;&gt;&gt; ddf.map_partitions(lambda x: x.memory_usage(deep=True).sum()).compute()
+0       57061027
+1       57060857
+2       57059768
+3       57059342
+4       57060737
+          ...   
+1090    57059834
+1091    57061111
+1092    57061001
+1093    57058404
+1094    57061989
+Length: 1095, dtype: int64</pre>
+</div>
+
+<p>This computation takes 124 seconds on a 5-node cluster.</p>
+
+<p>Dask has a <code>sizeof()</code> function that estimates the size of each partition and runs faster.</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; ddf.map_partitions(lambda x: dask.sizeof.sizeof(x)).compute()
+0       56822960
+1       57125360
+2       56822960
+3       57246320
+4       57306800
+          ...   
+1090    56974160
+1091    57004400
+1092    57337040
+1093    56822960
+1094    57004400
+Length: 1095, dtype: int64</pre>
+</div>
+
+<p>This takes 92 seconds to run, which is 21% faster than <code>memory_usage()</code> on the same dataset.</p>
+
+<p>The <code>sizeof()</code> results are an approximation, but they’re pretty close as you can see.</p>
+</div></section>
+</div></section>
+
+<section data-type="sect2" data-pdf-bookmark="groupby aggregations"><div class="sect2" id="groupby_aggregations">
+<h2>groupby aggregations</h2>
+
+<p>This section explains how to perform groupby() aggregations with Dask DataFrames.</p>
+
+<p>You’ll learn how to perform groupby() operations with one and many columns. You’ll also learn how to compute aggregations like sum, mean, and count.</p>
+
+<p>After you learn the basic syntax, we’ll discuss the best practices when performing groupby() operations.</p>
+
+<section data-type="sect3" data-pdf-bookmark="Dask DataFrame groupby sum"><div class="sect3" id="dask_dataframe_groupby_sum">
+<h3>Dask DataFrame groupby sum</h3>
+
+<p>Let’s read a sample dataset from S3 into a Dask DataFrame to perform some sample groupby computations. We will use Coiled to launch a Dask computation cluster with 5 nodes.</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+import coiled
+import dask
+import dask.dataframe as dd
+cluster = coiled.Cluster(name="demo-cluster", n_workers=5)
+client = dask.distributed.Client(cluster)
+ddf = dd.read_parquet(
+    "s3://coiled-datasets/h2o/G1_1e7_1e2_0_0/parquet",
+    storage_options={"anon": True, "use_ssl": True},
+    engine="pyarrow",
+)</pre>
+</div>
+
+<p>Let’s groupby the values in the <code>id</code> column and then sum the values in the x column.</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; ddf.groupby("id").x.sum().compute()
+id
+858	-8.741694
+862	 4.377649
+863	-0.858438
+866	-0.332073
+869	-27.662715
+	...</pre>
+</div>
+
+<p>You can also use an alternative syntax and get the same result.</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+ddf.groupby("id").agg({"x": "sum"}).compute()</pre>
+</div>
+
+<p>agg takes a more complex code path in Dask, so you should generally stick with the simple syntax unless you need to perform multiple aggregations.</p>
+
+<p>Dask DataFrame groupby for a single column is pretty straightforward. Let’s look at how to groupby with multiple columns.</p>
+</div></section>
+
+<section data-type="sect3" data-pdf-bookmark="Dask DataFrame groupby multiple columns"><div class="sect3" id="dask_dataframe_groupby_multiple_columns">
+<h3>Dask DataFrame groupby multiple columns</h3>
+
+<p>Here’s how to group by the <code>id</code> and <code>name</code> columns and then sum the values in x:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; ddf.groupby(["id", "name"]).x.sum().compute()
+id	name
+858	Xavier    -0.459693
+862	Frank      0.409465
+	Ingrid     1.067823
+863	Bob        0.048593
+866	Norbert   -0.051115
+                  ...</pre>
+</div>
+
+<p>You can pass a list to the Dask groupby method to group by multiple columns.</p>
+
+<p>Now let’s look at how to perform multiple aggregations after grouping.</p>
+</div></section>
+
+<section data-type="sect3" data-pdf-bookmark="Dask groupby multiple aggregations"><div class="sect3" id="dask_groupby_multiple_aggregations">
+<h3>Dask groupby multiple aggregations</h3>
+
+<p>Here’s how to group by <code>id</code> and compute the sum of x and the mean of <code>y</code>:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; ddf.groupby("id").agg({"x": "sum", "y": "mean"}).compute()</pre>
+</div>
+
+<figure><div id="fig_11_fig_4_10_figure_title_needed" class="figure"><img alt="Fig 4 10. Figure title needed." src="Images/how_to_work_with_dask_dataframes_343327_11.png" width="476" height="528"/>
+<h6><span class="label">Figure 2-11. </span>Figure title needed.</h6>
+</div></figure>
+
+<p>You can pass a dictionary to the <code>agg</code> method to perform different types of aggregations.</p>
+
+<p>Let’s turn our attention to how Dask implements groupby computations. Specifically, let’s look at how Dask changes the number of partitions in the DataFrame when a groupby operation is performed. This is important because you need to manually set the number of partitions properly when the aggregated DataFrame is large.</p>
+</div></section>
+
+<section data-type="sect3" data-pdf-bookmark="How Dask groupby impacts npartitions"><div class="sect3" id="how_dask_groupby_impacts_npartitions">
+<h3>How Dask groupby impacts npartitions</h3>
+
+<p>Dask doesn’t know the contents of your DataFrame ahead of time. So it can’t know how many groups the groupby operation will produce. By default, it assumes you’ll have relatively few groups, so the number of rows is reduced so significantly that the result will fit comfortably in a single partition.</p>
+
+<p>However, when your data has many groups, you’ll need to tell Dask to split the results into multiple partitions in order to not overwhelm one unlucky worker.</p>
+
+<p>Dask DataFrame groupby will return a DataFrame with a single partition by default. Let’s look at a DataFrame, confirm it has multiple partitions, run a groupby operation, and then observe how the resulting DataFrame only has a single partition.</p>
+
+<p>The DataFrame that we’ve been querying has 1,095 partitions:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt; ddf.npartitions
+1095</pre>
+</div>
+
+<p>Now let’s run a groupby operation on the DataFrame and see how many partitions are in the result.</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; res = ddf.groupby("id").x.sum()
+&gt;&gt;&gt; res.npartitions
+1</pre>
+</div>
+
+<p>Dask will output groupby results to a single partition Dask DataFrame by default. A single partition DataFrame is all that’s needed in most cases. <code>groupby</code> operations usually reduce the number of rows in a DataFrame significantly so they can be held in a single partition DataFrame.</p>
+
+<p>You can set the <code>split_out</code> argument to return a DataFrame with multiple partitions if the result of the groupby operation is too large for a single partition Dask DataFrame:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; res2 = ddf.groupby("id").x.sum(split_out=2)
+&gt;&gt;&gt; res2.npartitions
+2</pre>
+</div>
+
+<p>In this example, <code>split_out</code> was set to two, so the groupby operation results in a DataFrame with two partitions. <strong>The onus is on you to properly set the </strong><strong><code>split_out</code></strong><strong> size when the resulting </strong><strong>DataFrame</strong><strong> is large.</strong></p>
+</div></section>
+
+<section data-type="sect3" data-pdf-bookmark="Performance considerations"><div class="sect3" id="performance_considerations">
+<h3>Performance considerations</h3>
+
+<p>Dask DataFrames are divided into many partitions, each of which is a pandas DataFrame. Dask performs groupby operations by running groupby on each of the individual pandas DataFrames and then aggregating all the results. The Dask DataFrame parallel execution of groupby on multiple subsets of the data makes it more scalable than pandas and often quicker too.</p>
+</div></section>
+</div></section>
+
+<section data-type="sect2" data-pdf-bookmark="Memory usage"><div class="sect2" id="memory_usage">
+<h2>Memory usage</h2>
+
+<p>This section shows you how to compute the memory usage of a Dask DataFrame and how to develop a partitioning strategy based on the distribution of your data.</p>
+
+<p>Dask DataFrames distribute data in partitions, so computations can be run in parallel. Each partition in a Dask DataFrame is a pandas DataFrame. This section explains how to measure the amount of data in each Dask partition. Intelligently distributing the data across partitions is important for performance.</p>
+
+<p>There aren’t hard-and-fast rules on optimal partition sizes. It depends on the computing power of the nodes in your cluster and the analysis you’re running.</p>
+
+<p>A general rule of thumb is to target 100 MB of data per memory partition in a cluster. This section shows you how to measure the distribution of data in your cluster so you know when and if you need to repartition.</p>
+
+<p>Here’s what you’ll learn in this section:</p>
+
+<ol>
+	<li>
+	<p>Calculation memory usage of a small Dask DataFrame</p>
+	</li>
+	<li>
+	<p>Memory usage of a large Dask DataFrame</p>
+	</li>
+	<li>
+	<p>Filtering can cause partition imbalances</p>
+	</li>
+	<li>
+	<p>Assessing when a Dask DataFrame’s memory usage is unevenly distributed</p>
+	</li>
+	<li>
+	<p>Fixing imbalances with repartitioning</p>
+	</li>
+	<li>
+	<p>Other ways to compute memory usage by partition</p>
+	</li>
+</ol>
+
+<section data-type="sect3" data-pdf-bookmark="Memory usage of small Dask DataFrames"><div class="sect3" id="memory_usage_of_small_dask_dataframes">
+<h3>Memory usage of small Dask DataFrames</h3>
+
+<p>Create a small Dask DataFrame with two partitions:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+import pandas as pd
+from dask import dataframe as dd 
+df = pd.DataFrame({
+    "nums": [1, 2, 3, 4, 5, 6], 
+    "letters": ["a", "b", "c", "d", "e", "f"]
+})
+ddf = dd.from_pandas(df, npartitions=2)</pre>
+</div>
+
+<p>Print the data in each of the partitions:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; for i in range(ddf.npartitions):
+        print(ddf.partitions[i].compute())
+  nums letters
+0     1       a
+1     2       b
+2     3       c
+   nums letters
+3     4       d
+4     5       e
+5     6       f</pre>
+</div>
+
+<p>Use the pandas <code>memory_usage</code> method to print the bytes of memory used in each column of the first partition:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; ddf.partitions[0].memory_usage(deep=True).compute()
+Index      128
+letters    174
+nums        24
+dtype: int64</pre>
+</div>
+
+<p>Print the total memory used by each partition in the DataFrame with the Dask <code>memory_usage_per_partition</code> method:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; ddf.memory_usage_per_partition(deep=True).compute()
+0    326
+1    330
+dtype: int64</pre>
+</div>
+
+<p>Both of these partitions are tiny because the entire DataFrame only contains six rows of data.</p>
+
+<p>If deep is set to False then the memory usage of the object columns is not counted:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; ddf.memory_usage_per_partition(deep=False).compute()
+0    176
+1    180
+dtype: int64</pre>
+</div>
+
+<p>Calculating the memory usage of object columns is slow, so you can set <code>deep</code> to <code>False</code> and make the computation run faster. We care about how much memory all the columns are using, so our examples use <code>deep=True</code>.</p>
+</div></section>
+
+<section data-type="sect3" data-pdf-bookmark="Memory usage of large Dask DataFrame"><div class="sect3" id="memory_usage_of_large_dask_dataframe">
+<h3>Memory usage of large Dask DataFrame</h3>
+
+<p>Let’s calculate the memory for each partition of the dataset.</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; ddf = dd.read_parquet(
+        "s3://coiled-datasets/timeseries/20-years/parquet",
+        storage_options={"anon": True, 'use_ssl': True}
+    )
+&gt;&gt;&gt; ddf.memory_usage_per_partition(deep=True).compute()
+0       57061027
+1       57060857
+2       57059768
+3       57059342
+4       57060737
+          ...   
+1090    57059834
+1091    57061111
+1092    57061001
+1093    57058404
+1094    57061989
+Length: 1095, dtype: int64</pre>
+</div>
+
+<p>The DataFrame has 1,095 partitions and each partition has 57 MB of data.</p>
+
+<p>The data is evenly balanced across each partition in the DataFrame. There aren’t lots of tiny, empty, or huge partitions. You probably don’t need to repartition this DataFrame because all the memory partitions are reasonably sized and the data is evenly distributed.</p>
+</div></section>
+</div></section>
+
+<section data-type="sect2" data-pdf-bookmark="Tips on managing memory"><div class="sect2" id="tips_on_managing_memory">
+<h2>Tips on managing memory</h2>
+
+<p>Let’s see how Azeem can reduce the memory usage of the large Parquet DataFrame, so his analysis doesn’t consume as many resources and runs more efficiently.</p>
+
+<p>Azeem can limit the amount of memory his analysis takes by sending less data to the cluster or by using data types that are more memory efficient.</p>
+
+<p>Let’s take a look at how much memory Azeem’s Parquet dataset uses in memory:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; from dask.utils import format_bytes
+&gt;&gt;&gt; format_bytes(ddf.memory_usage(deep=True).sum().compute()) 
+‘58.19 GiB'</pre>
+</div>
+
+<p>The dataset takes 58 GB in memory. Let’s see how much memory it takes, by column:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; ddf.memory_usage(deep=True).compute().apply(format_bytes)
+Index    4.93 GiB
+id       4.93 GiB
+name    38.45 GiB
+x        4.93 GiB
+y        4.93 GiB
+dtype: object</pre>
+</div>
+
+<p>The name column is by far the most memory-greedy, requiring more memory than all the other columns combined. Let’s take a look at the data types for this DataFrame to see why <code>name</code> is taking so much memory:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; ddf.dtypes
+id      int64
+name   object
+x     float64
+y     float64
+dtype: object</pre>
+</div>
+
+<p><code>name</code> is an object column, which isn’t surprising because object columns are notoriously memory hungry. Let’s change the <code>name</code> column to a different type and see if that helps.</p>
+
+<section data-type="sect3" data-pdf-bookmark="String types"><div class="sect3" id="string_types">
+<h3>String types</h3>
+
+<p>Let’s change the name column to be a string and see how that impacts memory usage of the DataFrame:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; ddf.name = ddf.name.astype("string[pyarrow]")
+&gt;&gt;&gt; ddf.memory_usage(deep=True).compute().apply(format_bytes)
+Index    4.93 GiB
+id       4.93 GiB
+name     5.76 GiB
+x        4.93 GiB
+y        4.93 GiB
+dtype: object</pre>
+</div>
+
+<p>The name column only takes 5.76 GiB in memory now. It used to take 38.45 GiB. That’s a significant 6.7x memory reduction. Avoid object columns whenever possible as they are very memory inefficient.</p>
+</div></section>
+
+<section data-type="sect3" data-pdf-bookmark="Smaller numeric types"><div class="sect3" id="smaller_numeric_types">
+<h3>Smaller numeric types</h3>
+
+<p>You can also use smaller numeric types for columns that don’t require 64 bits. Let’s look at the values in the id column and see if it really needs to be typed as an int64.</p>
+
+<p>Here’s how to compute the min and max values in the id column:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; dd.compute(ddf.id.min(), ddf.id.max())
+815, 119</pre>
+</div>
+
+<p>We don’t need int64s for holding such small values. Let’s switch to int16 and quantify memory savings:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; ddf.id = ddf.id.astype("int16")
+&gt;&gt;&gt; ddf.memory_usage(deep=True).compute().apply(format_bytes)
+Index    4.93 GiB
+id       1.23 GiB
+name    38.45 GiB
+x        4.93 GiB
+y        4.93 GiB
+dtype: object</pre>
+</div>
+
+<p>The id column used to take 4.93 GiB and now only takes 1.23 GiB. That’s 4 times smaller, which isn’t surprising because 16 bit numbers are four times smaller than 64 bit numbers.</p>
+
+<p>We’ve seen how column types can reduce the memory requirements of a DataFrame. Now let’s look at how loading less data to the cluster also can reduce memory requirements.</p>
+</div></section>
+
+<section data-type="sect3" data-pdf-bookmark="Column pruning"><div class="sect3" id="column_pruning">
+<h3>Column pruning</h3>
+
+<p>Suppose you need to run a query that only requires the x column and won’t use the data in the other columns.</p>
+
+<p>You don’t need to read all the data into the cluster, you can just read the x column with column pruning:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; ddf = dd.read_parquet(
+        "s3://coiled-datasets/timeseries/20-years/parquet",
+        storage_options={"anon": True, "use_ssl": True},
+        engine="pyarrow",
+        columns=["x"],
+    )
+&gt;&gt;&gt; format_bytes(ddf.memory_usage(deep=True).sum().compute())
+9.87 GiB</pre>
+</div>
+
+<p>This DataFrame only contains the x column and the index:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; ddf.memory_usage(deep=True).compute().apply(format_bytes)
+Index    4.93 GiB
+x        4.93 GiB
+dtype: object</pre>
+</div>
+
+<p>Only storing a fraction of the columns obviously makes the overall memory footprint much lower.</p>
+</div></section>
+
+<section data-type="sect3" data-pdf-bookmark="Predicate pushdown filters"><div class="sect3" id="predicate_pushdown_filters">
+<h3>Predicate pushdown filters</h3>
+
+<p>Parquet files also let you skip entire row groups for some queries which also limits the amount of data that’s sent to the computation cluster.</p>
+
+<p>Here’s how to read the data and only include row groups that contain at least one value with an id greater than 1170:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+ddf = dd.read_parquet(
+    "s3://coiled-datasets/timeseries/20-years/parquet",
+    storage_options={"anon": True, "use_ssl": True},
+    engine="pyarrow",
+    filters=[[('id', '&gt;', 1170)]],
+)</pre>
+</div>
+
+<p>There isn’t much data with an id greater than 1170 for this dataset, so this predicate pushdown filter greatly reduces the size of the data in memory:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; format_bytes(ddf.memory_usage(deep=True).sum().compute())
+'5.99 kiB'</pre>
+</div>
+
+<p>The more row groups that are excluded by the predicate pushdown filters, the smaller the DataFrame in memory.</p>
+</div></section>
+</div></section>
+
+<section data-type="sect2" data-pdf-bookmark="Converting to number columns with to_numeric"><div class="sect2" id="converting_to_number_columns_with_to_numeric">
+<h2>Converting to number columns with to_numeric</h2>
+
+<p>This section explains how to convert Dask DataFrame object columns to floating point columns with <code>to_numeric()</code> and why it’s more flexible than <code>astype()</code> in certain situations. This design pattern is especially useful when you’re working with data in text based file formats like CSV. You’ll often have to read in numeric columns stored in CSV files as object columns because of messy data and then convert the numeric columns to floating point values to null out the bad data. You can’t perform numerical operations on columns that are typed as objects. You can use the tactics outlined in this section for data munging in an extract, transform, &amp; load (ETL) pipeline.</p>
+
+<p>Cleaning data is often the first step of a data project. Luckily Dask has great helper methods like <code>to_numeric</code> that make it easy to clean the data and properly type the columns in your DataFrames.</p>
+
+<section data-type="sect3" data-pdf-bookmark="Converting object column with to_numeric"><div class="sect3" id="converting_object_column_with_to_numeric">
+<h3>Converting object column with to_numeric</h3>
+
+<p>Let’s look at a simple example with a DataFrame that contains an invalid string value in a column that should only contain numbers. Let’s start by creating a DataFrame with <code>nums</code> and <code>letters</code> columns:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+import dask.dataframe as dd
+import pandas as pd
+df = pd.DataFrame({
+"nums": [1, 2.8, 3, 4, "hi", 6], 
+"letters": ["a", "b", "c", "d", "e", "f"]
+})
+ddf = dd.from_pandas(df, npartitions=2)</pre>
+</div>
+
+<p>Now let’s print the contents of the DataFrame so it’s easy to visualize:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; print(ddf.compute())
+ nums letters
+0    1       a
+1  2.8       b
+2    3       c
+3    4       d
+4   hi       e
+5    6       f</pre>
+</div>
+
+<p>Notice that row 4 in the nums column has the value “hi”. That’s a string value that Python cannot convert into a numerical value.</p>
+
+<p>Let’s look at the data types of the columns and see that Dask is treating both <code>nums</code> and <code>letters</code> as object type columns:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; ddf.dtypes
+nums       object
+letters    object</pre>
+</div>
+
+<p>Let’s convert the <code>nums</code> column to be a number column with <code>to_numeric</code>:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; ddf["nums"] = dd.to_numeric(ddf["nums"], errors="coerce")
+&gt;&gt;&gt; ddf.dtypes
+nums        int64
+letters    object
+&gt;&gt;&gt; print(ddf.compute())
+  nums letters
+0   1.0       a
+1   2.8       b
+2   3.0       c
+3   4.0       d
+4   NaN       e
+5   6.0       f</pre>
+</div>
+
+<p>Dask has conveniently nulled out the “hi” value in row 4 to be NaN. Nulling out values that cannot be easily converted to numerical values is often what you’ll want. Alternatively, you can set <code>errors=“raise”</code> to raise an error when a value can’t be cast to numeric dtype.</p>
+</div></section>
+
+<section data-type="sect3" data-pdf-bookmark="Limitations of astype"><div class="sect3" id="limitations_of_astype">
+<h3>Limitations of astype</h3>
+
+<p>Many beginning Dask users tend to use the <code>astype</code> method to convert object columns to numeric columns. This has important limitations.</p>
+
+<p>Let’s create another DataFrame to see when <code>astype</code> can be used to convert from object columns to numeric columns and when it falls short:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; df2 = pd.DataFrame({
+        "n1": ["bye", 2.8, 3], 
+        "n2": ["7.7", "8", 9.2]
+})
+&gt;&gt;&gt; ddf2 = dd.from_pandas(df, npartitions=2)
+&gt;&gt;&gt; print(ddf2.compute())
+   n1    n2
+0  bye  7.7
+1  2.8    8
+2    3  9.2</pre>
+</div>
+
+<p>You can run <code>ddf2.dtypes</code> to see that both <code>n1</code> and <code>n2</code> are object columns:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; ddf2.dtypes
+n1    object
+n2    object</pre>
+</div>
+
+<p><code>n2</code> is an object type column because it contains string and float values.</p>
+
+<p>Let’s convert <code>n2</code> to be a <code>float64</code> column using <code>astype</code>:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; ddf2["n2"] = ddf2["n2"].astype("float64")
+&gt;&gt;&gt; ddf2.dtypes
+n1     object
+n2    float64
+dtype: object
+&gt;&gt;&gt; print(ddf2.compute())
+   n1   n2
+0  bye  7.7
+1  2.8  8.0
+2    3  9.2</pre>
+</div>
+
+<p><code>astype</code> can convert <code>n2</code> to be a float column without issue.</p>
+
+<p>Now let’s try to convert <code>n1</code> to be a float column with <code>astype</code>:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; ddf2["n1"] = ddf2["n1"].astype("float64")
+&gt;&gt;&gt; print(ddf2.compute())</pre>
+</div>
+
+<p>This errors out with the following error message:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+ValueError: could not convert string to float: 'bye'</pre>
+</div>
+
+<p><code>astype</code> raises errors when columns contain string values that cannot be converted to numbers. It doesn’t coerce string values to <code>NaN</code>.</p>
+
+<p><code>to_numeric</code> also has the same default behavior and this code will error out as well:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; ddf2["n1"] = dd.to_numeric(ddf["n1"])
+&gt;&gt;&gt; print(ddf2.compute())
+
+“ValueError: Unable to parse string "bye" at position 0”.</pre>
+</div>
+
+<p>You need to set errors="coerce” to successfully invoke <code>to_numeric</code>:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; ddf2["n1"] = dd.to_numeric(ddf["n1"], errors="coerce")
+&gt;&gt;&gt; print(ddf2.compute())
+   n1   n2
+0  NaN  7.7
+1  2.8  8.0
+2  3.0  9.2</pre>
+</div>
+</div></section>
+
+<section data-type="sect3" data-pdf-bookmark="Best practices for numeric columns"><div class="sect3" id="best_practices_for_numeric_columns">
+<h3>Best practices for numeric columns</h3>
+
+<p>Dask makes it easy to convert object columns into number columns with <code>to_numeric</code>.</p>
+
+<p><code>to_numeric</code> is customizable with different error behavior when values cannot be converted to numbers. You can coerce these values to <code>NaN</code>, raise an error, or ignore these values. Choose the behavior that works best for your application.</p>
+
+<p>It’s good practice to make sure all your numeric columns are properly typed before performing your analysis, so you don’t get weird downstream bugs.</p>
+</div></section>
+</div></section>
+
+<section data-type="sect2" data-pdf-bookmark="Vertically union Dask DataFrames"><div class="sect2" id="vertically_union_dask_dataframes">
+<h2>Vertically union Dask DataFrames</h2>
+
+<p>This section teaches you how to union Dask DataFrames vertically with <code>concat</code> and the important related technical details. Vertical concatenation combines DataFrames like the SQL UNION operator combines tables which is common when joining datasets for reporting and machine learning. It’s useful whenever you have two tables with identical schemas that you’d like to combine into a single DataFrame.</p>
+
+<p>The tactics outlined in this section will help you combine two DataFrame with the same, or similar, schemas into a single DataFrame. It’s a useful design pattern to have in your toolkit.</p>
+
+<p>Here’s how this section on vertical concatenations is organized:</p>
+
+<ul>
+	<li>
+	<p>Concatenating DataFrames with identical schemas / dtypes</p>
+	</li>
+	<li>
+	<p>Interleaving partitions to maintain divisions integrity</p>
+	</li>
+	<li>
+	<p>Concatenating DataFrames with different schemas</p>
+	</li>
+	<li>
+	<p>Concatenating large DataFrames</p>
+	</li>
+</ul>
+
+<section data-type="sect3" data-pdf-bookmark="Concatenate DataFrames with identical schemas"><div class="sect3" id="concatenate_dataframes_with_identical_schemas">
+<h3>Concatenate DataFrames with identical schemas</h3>
+
+<p>Create two Dask DataFrames with identical schemas:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+import dask.dataframe as dd
+import pandas as pd
+df = pd.DataFrame({
+    "nums": [1, 2, 3, 4, 5, 6], 
+    "letters": ["a", "b", "c", "d", "e", "f"]
+})
+ddf1 = dd.from_pandas(df, npartitions=2)
+df = pd.DataFrame({"nums": [88, 99], "letters": ["xx", "yy"]})
+ddf2 = dd.from_pandas(df, npartitions=1)</pre>
+</div>
+
+<p>Now concatenate both the DataFrames into a single DataFrame:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+ddf3 = dd.concat([ddf1, ddf2])</pre>
+</div>
+
+<p>Print the contents of <code>ddf3</code> to verify it contains all the rows from <code>ddf1</code> and <code>ddf2</code>:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; print(ddf3.compute())
+  nums letters
+0     1       a
+1     2       b
+2     3       c
+3     4       d
+4     5       e
+5     6       f
+0    88      xx
+1    99      yy</pre>
+</div>
+
+<p><code>ddf1</code> has two partitions and <code>ddf2</code> has one partition. <code>ddf1</code> and <code>ddf2</code> are combined to <code>ddf3</code>, which has three total partitions:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; ddf3.npartitions
+3</pre>
+</div>
+
+<p>Dask can use information on divisions to speed up certain queries. The creation of <code>ddf3</code> above wiped out information about DataFrame divisions. Let’s see how we can interleave partitions when concatenating DataFrames to avoid losing divisions data.</p>
+</div></section>
+
+<section data-type="sect3" data-pdf-bookmark="Interleaving partitions"><div class="sect3" id="interleaving_partitions">
+<h3>Interleaving partitions</h3>
+
+<p>Let’s revisit our example with a focus on DataFrame divisions to illustrate how <code>concat</code> wipes out the DataFrame divisions by default.</p>
+
+<p>Recreate the <code>ddf1</code> DataFrame and look at its divisions:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; df = pd.DataFrame({
+        "nums": [1, 2, 3, 4, 5, 6], 
+        "letters": ["a", "b", "c", "d", "e", "f"]
+})
+ddf1 = dd.from_pandas(df, npartitions=2)
+&gt;&gt;&gt; ddf1.divisions
+(0, 3, 5)</pre>
+</div>
+
+<p>Here’s how to interpret this divisions output:</p>
+
+<ul>
+	<li>
+	<p>The first partition has index values between 0 and 2</p>
+	</li>
+	<li>
+	<p>The second partitions has index values between 3 and 5</p>
+	</li>
+</ul>
+
+<p>Let’s print every partition of the DataFrame to visualize the actual data and reason about the division’s values:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; def print_partitions(ddf):
+        for i in range(ddf.npartitions):
+            print(ddf.partitions[i].compute())
+&gt;&gt;&gt; print_partitions(ddf1)
+  nums letters
+0     1       a
+1     2       b
+2     3       c
+   nums letters
+3     4       d
+4     5       e
+5     6       f</pre>
+</div>
+
+<p>Let’s recreate <code>ddf2</code> and view its divisions too:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; df = pd.DataFrame({"nums": [88, 99], "letters": ["xx", "yy"]})
+&gt;&gt;&gt; ddf2 = dd.from_pandas(df, npartitions=1)
+&gt;&gt;&gt; ddf2.divisions
+(0, 1)</pre>
+</div>
+
+<p><code>ddf2</code> has a single partition with index values between zero and one:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; print_partitions(ddf2)
+   nums letters
+0    88      xx
+1    99      yy</pre>
+</div>
+
+<p>Let’s concatenate the DataFrames and see what happens with the divisions:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; ddf3 = dd.concat([ddf1, ddf2])
+&gt;&gt;&gt; ddf3.divisions
+(None, None, None, None)</pre>
+</div>
+
+<p>Dask has lost all information about divisions for <code>ddf3</code> and won’t be able to use divisions related optimizations for subsequent computations.</p>
+
+<p>You can set <code>interleave_partitions</code> to <code>True</code> when concatenating DataFrames to avoid losing information about divisions:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; ddf3_interleave = dd.concat([ddf1, ddf2], interleave_partitions=True)
+&gt;&gt;&gt; ddf3_interleave.divisions
+(0, 1, 3, 5)</pre>
+</div>
+
+<p>Take a look at how the data is distributed across partitions in <code>ddf3_interleave</code>:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; print_partitions(ddf3_interleave)
+  nums letters
+0     1       a
+0    88      xx
+   nums letters
+1     2       b
+2     3       c
+1    99      yy
+   nums letters
+3     4       d
+4     5       e
+5     6       f</pre>
+</div>
+
+<p>Dask can optimize certain computations when divisions exist. Set <code>interleave_partitions</code> to <code>True</code> if you’d like to take advantage of these optimizations after concatenating DataFrames.</p>
+</div></section>
+
+<section data-type="sect3" data-pdf-bookmark="Concatenating DataFrames with different schemas"><div class="sect3" id="concatenating_dataframes_with_different_schemas">
+<h3>Concatenating DataFrames with different schemas</h3>
+
+<p>You can also concatenate DataFrames with different schemas. Let’s create two DataFrames with different schemas, concatenate them, and see how Dask behaves.</p>
+
+<p>Start by creating the two DataFrames:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+df = pd.DataFrame(
+    {
+        "animal": ["cat", "dolphin", "shark", "starfish"],
+        "is_mammal": [True, True, False, False],
+    }
+)
+ddf1 = dd.from_pandas(df, npartitions=2)
+df = pd.DataFrame({"animal": ["hippo", "lion"], "likes_water": [True, False]})
+ddf2 = dd.from_pandas(df, npartitions=1)</pre>
+</div>
+
+<p>Concatenate the DataFrames and print the result:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; ddf3 = dd.concat([ddf1, ddf2])
+&gt;&gt;&gt; print(ddf3.compute())
+    animal is_mammal likes_water
+0       cat      True         NaN
+1   dolphin      True         NaN
+2     shark     False         NaN
+3  starfish     False         NaN
+0     hippo       NaN        True
+1      lion       NaN       False</pre>
+</div>
+
+<p>Dask fills in the missing values with <code>NaN</code> to make the concatenation possible.</p>
+</div></section>
+
+<section data-type="sect3" data-pdf-bookmark="Concatenating large DataFrames"><div class="sect3" id="concatenating_large_dataframes">
+<h3>Concatenating large DataFrames</h3>
+
+<p>Lets create a Dask cluster and concatenate the 20-year DataFrame with a DataFrame that contains 311 million row of timeseries data from January 1, 1990 till December 31, 1999. This section demonstrates that <code>concat</code> can scale to multi-node workflows.</p>
+
+<p>Create a 5-node Coiled cluster and read in a Parquet dataset into a DataFrame:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+import coiled
+import dask
+cluster = coiled.Cluster(name="concat-cluster", n_workers=5)
+client = dask.distributed.Client(cluster)
+ddf1990s = dd.read_parquet(
+    "s3://coiled-datasets/timeseries/7d/parquet/1990s",
+    storage_options={"anon": True, "use_ssl": True},
+    engine="pyarrow"
+)</pre>
+</div>
+
+<p>Run <code>ddf1990s.head()</code> to visually inspect the contents of the DataFrame:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; ddf1990s.head()</pre>
+</div>
+
+<figure><div id="fig_12_fig_4_11_figure_title_needed" class="figure"><img alt="Fig 4 11. Figure title needed." src="Images/how_to_work_with_dask_dataframes_343327_12.png" width="970" height="492"/>
+<h6><span class="label">Figure 2-12. </span>Figure title needed.</h6>
+</div></figure>
+
+<p>Let’s run some analytical queries on <code>ddf1990s</code> to better understand the data it contains:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; len(ddf1990s)
+311,449,600
+&gt;&gt;&gt; ddf1990s.npartitions
+552</pre>
+</div>
+
+<p>Now let’s look at our original Parquet dataset with data from January 1, 2000 till December 31, 2020:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; len(ddf)
+661,449,600
+&gt;&gt;&gt; ddf.npartitions
+1050</pre>
+</div>
+
+<p>Concatenate the two DataFrames and inspect the contents of the resulting DataFrame:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; ddf = dd.concat([ddf1990s, ddf])
+&gt;&gt;&gt; len(ddf)
+972,899,200
+ 
+&gt;&gt;&gt; ddf.npartitions
+1602
+&gt;&gt;&gt; ddf.divisions
+(Timestamp('1990-01-01 00:00:00'),
+ Timestamp('1990-01-08 00:00:00'),
+ Timestamp('1990-01-15 00:00:00'),
+ …
+ Timestamp('2020-12-17 00:00:00'),
+ Timestamp('2020-12-24 00:00:00'),
+ Timestamp('2020-12-30 23:59:59'))</pre>
+</div>
+
+<p>These DataFrames were concatenated without <code>interleave_partitions=True</code> and the divisions metadata was not lost like we saw earlier.</p>
+
+<p>The DataFrames in this example don’t have any overlapping divisions, so you don’t need to set <code>interleave_partitions=True</code>.</p>
+</div></section>
+</div></section>
+</div></section>
+
+<section data-type="sect1" data-pdf-bookmark="Writing Data with Dask DataFrames"><div class="sect1" id="writing_data_with_dask_dataframes">
+<h1>Writing Data with Dask DataFrames</h1>
+
+<p>You’ve completed all your analyses and want to store the results sitting in your Dask DataFrames.You can write the contents of Dask DataFrames to CSV files, Parquet files, HDF files, SQL tables and convert them into other Dask collections like Dask Bags, Dask Arrays and Dask Delayed. In this chapter we will cover the first 2 options (CSV and Parquet). See the Dask documentation for more information on the other options.</p>
+
+<div data-type="note" epub:type="note"><h6>Note</h6>
+<p>[NOTE] Depending on the analysis you are running, your results may at this point be small enough to fit into local memory. For example if you’ve run groupby aggregations on your dataset. In this case, you should stop using Dask and switch back to normal pandas by calling <code>results.compute()</code>.</p>
+</div>
+
+<p>There are a lot of different keyword arguments to the <code>to_csv</code> and <code>to_parquet</code> functions, more than we’re going to cover here. However there are a few essential kwargs you should know about and we’re going to cover them below: options for file compression, writing to multiple vs single files, and partitioning on specific columns.</p>
+
+<p>Let’s start with the basics.</p>
+
+<p>You can write a Dask DataFrame out to a CSV or Parquet file using the <code>to_csv</code> and <code>to_parquet</code> method, respectively:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+ddf.to_parquet(“filename.parquet”)
+ddf.to_csv(“filename.csv”)</pre>
+</div>
+
+<p>Dask DataFrames can be written to a variety of different sources and file formats. We’ll talk about working with different file formats in more detail in Chapter 7.</p>
+
+<section data-type="sect2" data-pdf-bookmark="File Compression"><div class="sect2" id="file_compression">
+<h2>File Compression</h2>
+
+<p>Both the to_csv and to_parquet writers have multiple options for file compression. The to_csv writer allows the following compression options: gzip, bz2 and xz.</p>
+
+<p>The to_parquer writer defaults to ‘snappy’. It also accepts other Parquet compression options like gzip, and blosc. You can also pass a dictionary to this keyword argument to map columns to compressors, for example: <code>{"name": "gzip", "values": "snappy"}</code>. We recommend using the default “snappy” compressor.</p>
+</div></section>
+
+<section data-type="sect2" data-pdf-bookmark="to_csv: single_file"><div class="sect2" id="to_csv_single_file">
+<h2>to_csv: single_file</h2>
+
+<p>Dask DataFrames consist of multiple partitions. By default, writing a Dask DataFrame to CSV will write each partition to a separate CSV file.</p>
+
+<p>Let’s illustrate. We’ll start by creating a partitioned Dask DataFrame:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; df = pd.DataFrame({
+            "nums": [1, 2, 3, 4, 5, 6], 
+            "letters": ["a", "b", "c", "d", "e", "f"]
+    })
+&gt;&gt;&gt; ddf = dd.from_pandas(df, npartitions=2)
+&gt;&gt;&gt; ddf.npartitions
+2</pre>
+</div>
+
+<p>Let’s inspect the contents of the first partition:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; ddf.partitions[0].compute()
+     nums   letters
+0    1      a
+1    2      b
+2    3      c</pre>
+</div>
+
+<p>Now let’s write the whole Dask DataFrame out to CSV with default settings:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+ddf.to_csv("data.csv")</pre>
+</div>
+
+<p>Now switch to a terminal, <code>cd</code> into the data.csv folder and <code>ls</code> the contents:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; $ cd data.csv
+&gt;&gt;&gt; $ ls
+0.part	1.part</pre>
+</div>
+
+<p>We clearly see two partial CSV files here. To confirm, let’s load in just the 0.part file and inspect the contents:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; ddf_1 = dd.read_csv('data.csv/0.part')
+&gt;&gt;&gt; ddf_1.compute()
+     0: unnamed   nums   letters
+0    0            1      a
+1    1            2      b
+2    2            3      c</pre>
+</div>
+
+<p>As expected, the content matches that of the first partition of our original Dask DataFrame ddf <strong>except</strong> for the fact that Dask seems to have duplicated the Index column. This happens because, just like in pandas, to_csv writes the index as a separate column by default. You can change this setting by setting the index keyword to False, just like you would in pandas:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; ddf.to_csv("data.csv", index=False)
+&gt;&gt;&gt; ddf_1 = dd.read_csv('data.csv/0.part')
+&gt;&gt;&gt; ddf_1.compute()
+     nums   letters
+0    1      a
+1    2      b
+2    3      c</pre>
+</div>
+
+<div data-type="note" epub:type="note"><h6>Note</h6>
+<p>[NOTE] The dask.dataframe.to_csv writer, just like the dask.dataframe.read_csv reader, accepts many of the same keyword arguments as their pandas equivalents.</p>
+</div>
+
+<p>Fortunately, Dask makes it easy for you to read multiple CSV files located in a single directory into a Dask DataFrame, using the * character as a glob string:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; ddf = dd.read_csv('data.csv/*')
+&gt;&gt;&gt; ddf.compute()
+     nums   letters
+0    1      a
+1    2      b
+2    3      c
+0    4      d
+1    5      e
+2    6      f</pre>
+</div>
+
+<p>Having your data scattered over multiple CSV files may seem impractical at first, especially if you’re used to working with CSV files in pandas. But remember that you’re likely using Dask because either your dataset is too large to fit into memory or you want to enjoy the benefits of parallelism – or both! Having the CSV file split up into smaller parts means Dask can process the file in parallel and maximize performance.</p>
+
+<p>If, however, you want to write your data out to a single CSV file, you can change the default setting by setting <code>single_file</code> to <code>True</code><code>:</code></p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+ddf.to_csv(
+"single_file.csv", 
+index=False, 
+single_file=True
+)</pre>
+</div>
+
+<div data-type="note" epub:type="note"><h6>Note</h6>
+<p>[CAUTION] The to_csv writer clobbers existing files in the event of a name conflict. Be careful whenever you’re writing to a folder with existing data, especially if you’re using the default file names.</p>
+</div>
+</div></section>
+
+<section data-type="sect2" data-pdf-bookmark="to_parquet: engine"><div class="sect2" id="to_parquet_engine">
+<h2>to_parquet: engine</h2>
+
+<p>The engine keyword can be used to choose which Parquet library to use for writing Dask DataFrames to Parquet. We strongly recommend using the pyarrow engine, which will be the default starting from</p>
+</div></section>
+
+<section data-type="sect2" data-pdf-bookmark="to_parquet: partition_on"><div class="sect2" id="to_parquet_partition_on">
+<h2>to_parquet: partition_on</h2>
+
+<p>Dask DataFrame’s to_parquet writer allows you to partition the resulting Parquet files according to the values of a particular column.</p>
+
+<p>Let’s illustrate with an example. We’ll Create a Dask DataFrame with letter and number columns and write it out to disk, partitioning on the letter column:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+df = pd.DataFrame({
+"letter": ["a", "b", "c", "a", "a", "d"], 
+"number": [1, 2, 3, 4, 5, 6]
+})
+ddf = dd.from_pandas(df, npartitions=3)
+ddf.to_parquet(
+"output/partition_on", 
+partition_on="letter"
+)</pre>
+</div>
+
+<p>Here are the files that are written to disk:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+output/partition_on
+  letter=a/
+    part.0.parquet
+    part.1.parquet
+    part.2.parquet
+  letter=b/
+    part.0.parquet
+  letter=c/
+    part.1.parquet
+  letter=d/
+    part.2.parquet</pre>
+</div>
+
+<p>Organizing the data in this directory structure lets you easily skip files for certain read operations. For example, if you only want the data where the letter equals a, then you can look in the tmp/partition/1/letter=a directory and skip the other Parquet files.</p>
+
+<p>The letter column is referred to as the partition key in this example.</p>
+
+<p>Here’s how to read the data in the letter=a disk partition:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+&gt;&gt;&gt; ddf = dd.read_parquet(
+       "tmp/partition/1", 
+       engine="pyarrow", 
+       filters=[("letter", "==", "a")]
+    )
+&gt;&gt;&gt; print(ddf.compute())
+  number letter
+0       1      a
+3       4      a
+4       5      a</pre>
+</div>
+
+<p>Dask is smart enough to apply the partition filtering based on the filters argument. Dask only reads the data from output/partition_on/letters=a into the DataFrame and skips all the files in other partitions.</p>
+
+<div data-type="note" epub:type="note"><h6>Note</h6>
+<p>[CAUTION] Disk partitioning improves performance for queries that filter on the partition key. It usually hurts query performance for queries that don’t filter on the partition key.</p>
+</div>
+
+<p>Example query that runs faster on disk partitioned lake:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+ddf = dd.read_parquet(
+   "output/partition_on", 
+   engine="pyarrow", 
+   filters=[("letter", "==", "a")]
+)</pre>
+</div>
+
+<p>Example query that runs slower on disk partitioned lake:</p>
+
+<div data-type="example">
+<pre data-type="programlisting">
+ddf = dd.read_parquet(
+    "output/partition_on", 
+    engine="pyarrow"
+)
+ddf.loc[ddf["number"] == 2]</pre>
+</div>
+
+<p>The performance drag from querying a partitioned lake without filtering on the partition key depends on the underlying filesystem. Unix-like filesystems are good at performing file listing operations on nested directories. So you might not notice much of a performance drag on your local machine.</p>
+
+<p>Cloud-based object stores, like AWS S3, are not Unix-like filesystems. They store data as key value pairs and are slow when listing nested files with a wildcard character (a.k.a. globbing).</p>
+
+<p>You need to carefully consider your organization’s query patterns when evaluating the costs/benefits of disk partitioning. If you are always filtering on the partition key, then a partitioned lake is typically best. Disk partitioning might not be worth it if you only filter on the partitioned key sometimes.</p>
+</div></section>
+
+<section data-type="sect2" data-pdf-bookmark="Other Keywords"><div class="sect2" id="other_keywords">
+<h2>Other Keywords</h2>
+
+<p>You are now familiar with the most important keyword arguments to the to_csv and to_parquer writers. These tools will help you write your Dask DataFrames to the two most popular tabular file formats effectively and with maximum performance.</p>
+
+<p>See the Dask documentation for more information on the other keyword arguments. See Chapter 7 for more details on working with other file formats.</p>
+</div></section>
+</div></section>
+
+<section data-type="sect1" data-pdf-bookmark="Summary"><div class="sect1" id="summary_idVVr5Rr">
+<h1>Summary</h1>
+
+<p>This chapter concludes the Dask DataFrame section of this book. To recap, in Chapter 2 we worked through a real-world end-to-end example to illustrate how Dask DataFrames help you process massive amounts of tabular data to gain valuable insights. Chapter 3 took a step back to explain the architecture of Dask DataFrame and how it transcends the scalability limitations of pandas. Finally, this chapter has given you in-depth tools and a collection of best practices for processing tabular data with Dask. You could think of this final chapter as the definitive guide for working with Dask DataFrames, presented to you by the team that has spent years building, maintaining and optimizing Dask. Taken together, these three chapters contain everything you need to take the Dask DataFrame car off the beaten track and forge your own trails forward.</p>
+
+<p>In this chapter, you learned:</p>
+
+<ul>
+	<li>
+	<p>How to read data into Dask DataFrames from various sources and file formats</p>
+	</li>
+	<li>
+	<p>How to execute common data-processing operations with Dask DataFrames, including groupby aggregations, joins, converting data types, and mapping custom Python functions over your data.</p>
+	</li>
+	<li>
+	<p>How to optimize your data structure for maximum performance by setting the index, repartitioning, and managing memory usage.</p>
+	</li>
+	<li>
+	<p>How to write your processed data out to CSV and Parquet.</p>
+	</li>
+</ul>
+
+<p>The next two chapters will cover working with array data using Dask Array. Chapter 5 will work through a real-world end-to-end example, and Chapter 6 will combine an explanation of the Dask Array architecture with our definitive collection of best practices.</p>
+</div></section>
+</div></section></div></body></html>
