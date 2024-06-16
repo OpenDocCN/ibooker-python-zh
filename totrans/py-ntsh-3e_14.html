@@ -1,0 +1,378 @@
+<html><head></head><body>
+<div id="sbo-rt-content"><section data-nutshell-tab="Customizing Execution" data-pdf-bookmark="Chapter 14. Customizing Execution" data-type="chapter" epub:type="chapter"><div class="chapter" id="customizing_execution">
+<h1><span class="label">Chapter 14. </span>Customizing Execution</h1>
+<p>Python exposes, supports, and documents many of its internal mechanisms. This may help you understand Python at an advanced level, and lets you hook your own code into such Python mechanisms, controlling them to some extent. For example, <a data-type="xref" href="ch07.xhtml#python_built_ins">“Python built-ins”</a> covers the way Python arranges for built-ins to be visible. This chapter covers some other advanced Python techniques, including site customization, termination functions, dynamic execution, handling internal types, and garbage collection. We’ll look at other issues related to controlling execution using multiple threads and processes in <a data-type="xref" href="ch15.xhtml#concurrency_threads_and_processes">Chapter 15</a>; <a data-type="xref" href="ch17.xhtml#testingcomma_debuggingcomma_and_optimiz">Chapter 17</a> covers issues specific to testing, debugging, and profiling.</p>
+<section data-pdf-bookmark="Per-Site Customization" data-type="sect1"><div class="sect1" id="per_site_customization">
+<h1>Per-Site Customization</h1>
+<p>Python<a contenteditable="false" data-primary="execution, customizing" data-secondary="per-site customization" data-type="indexterm" id="idm44924507667120"/><a contenteditable="false" data-primary="site customization" data-type="indexterm" id="idm44924507665328"/><a contenteditable="false" data-primary="per-site customization" data-type="indexterm" id="idm44924507664224"/> provides a specific “hook” to let each site customize some aspects of Python’s behavior at the start of each run. Python loads the<a contenteditable="false" data-primary="site module" data-type="indexterm" id="idm44924507662832"/><a contenteditable="false" data-primary="standard library modules" data-secondary="site" data-type="indexterm" id="idm44924507661728"/> standard module <span class="code">site</span> just before the main script. If Python is run with the option <span class="code"><strong>-S</strong></span>, it does not load <span class="code">site</span>. <span class="code"><strong>-S</strong></span> allows faster startup but saddles the main script with initialization chores. <span class="code">site</span>’s tasks are, chiefly, to put <span class="code">sys.path</span> in standard form (absolute paths, no duplicates), including as directed by environment variables, by virtual environments, and by each <em>.pth</em> file found in a directory in <span class="code">sys.path</span>.</p>
+<p>Secondarily, if the session starting is an<a contenteditable="false" data-primary="interactive sessions" data-type="indexterm" id="idm44924507654016"/> interactive one, <span class="code">site</span> adds several handy built-ins (such as <span class="code">exit</span>, <span class="code">copyright</span>, etc.) and, if <span class="code">readline</span> is enabled, configure autocompletion as the function of the Tab key.</p>
+<p>In any normal Python installation, the installation process sets everything up to ensure that <span class="code">site</span>’s work is sufficient to let Python programs and interactive sessions run “normally,” i.e., as they would on any other system with that version of Python installed. In exceptional cases, if as a system administrator (or in an equivalent role, such as a user who has installed Python in their home directory for their sole use) you think you absolutely need to do some customization, perform it in a new file called<a contenteditable="false" data-primary="sitecustomize.py" data-type="indexterm" id="idm44924507648736"/> <em>sitecustomize.py</em> (create it in the same directory where <em>site.py</em> lives).</p>
+<div data-type="warning" epub:type="warning">
+<h1>Avoid Modifying site.py</h1>
+<p>We<a contenteditable="false" data-primary="site.py" data-type="indexterm" id="idm44924507645088"/> strongly recommend that you do <em>not</em> alter the <em>site.py</em> file that performs the base customization. Doing so might cause Python to behave differently on your system than elsewhere. In any case, the <em>site.py</em> file will be overwritten each and every time you update your Python installation, and your modifications will be lost.</p>
+</div>
+<p>In the rare cases where <em>sitecustomize.py</em> is present, what it typically does is add yet more dictionaries to <span class="code">sys.path</span>—the best way to perform this task is for <em>sitecustomize.py</em> to <span class="code"><strong>import</strong></span> <span class="code">site</span> and then to call <span class="code">site.addsitedir(<em>path_to_a_dir</em>)</span>.</p>
+</div></section>
+<section data-pdf-bookmark="Termination Functions" data-type="sect1"><div class="sect1" id="termination_functions">
+<h1>Termination Functions</h1>
+<p>The<a contenteditable="false" data-primary="atexit module" data-type="indexterm" id="idm44924507635392"/><a contenteditable="false" data-primary="execution, customizing" data-secondary="termination functions" data-type="indexterm" id="idm44924507633872"/><a contenteditable="false" data-primary="termination functions" data-see="atexit module" data-type="indexterm" id="idm44924507632496"/><a contenteditable="false" data-primary="standard library modules" data-secondary="atexit" data-type="indexterm" id="idm44924507631120"/> <span class="code">atexit</span> module lets you register termination functions (i.e., functions to be called at program termination, in LIFO order). Termination functions are similar to cleanup handlers established by <span class="code"><strong>try</strong></span><span class="code">/</span><span class="code"><strong>finally</strong></span> or <span class="code"><strong>with</strong></span>. However, termination functions are globally registered and get called at the end of the whole program, while cleanup handlers are established lexically and get called at the end of a specific <span class="code"><strong>try</strong></span> clause or <span class="code"><strong>with</strong></span> statement. Termination functions and cleanup handlers are called whether the program terminates normally or abnormally, but not when the program ends by calling <span class="code">os._exit</span> (so you normally call <span class="code">sys.exit</span> instead). The <span class="code">atexit</span> module supplies a function called <span class="code">register</span> that takes as arguments <span class="code"><em>func</em></span>, <span class="code"><em>*args</em></span>, and <span class="code"><em>*kwds</em></span> and ensures that <span class="code"><em>func</em></span><span class="code">(*<em>args</em>, **<em>kwds</em>)</span> is called at program termination time.</p>
+</div></section>
+<section data-pdf-bookmark="Dynamic Execution and exec" data-type="sect1"><div class="sect1" id="dynamic_execution_and_exec">
+<h1>Dynamic Execution and exec</h1>
+<p>Python’s <span class="code">exec</span> built-in function<a contenteditable="false" data-primary="execution, customizing" data-secondary="dynamic execution and exec function" data-type="indexterm" id="ECdyn14"/><a contenteditable="false" data-primary="dynamic execution" data-type="indexterm" id="dynexec14"/><a contenteditable="false" data-primary="exec (built-in function)" data-type="indexterm" id="execf14"/> can execute code that you read, generate, or otherwise obtain during a program’s run. <span class="code">exec</span> dynamically executes a statement or a suite of statements. It has the following syntax:</p>
+<pre data-code-language="python" data-type="programlisting">
+<code class="n">exec</code><code class="p">(</code><em><code class="n">code</code></em><code class="p">,</code><code> </code><em><code class="nb">globals</code></em><code class="o">=</code><strong><code class="kc">None</code></strong><code class="p">,</code><code> </code><em><code class="nb">locals</code></em><code class="o">=</code><strong><code class="kc">None</code></strong><code class="p">,</code><code> </code><code class="o">/</code><code class="p">)</code></pre>
+<p><span class="code"><em>code</em></span> can be a <span class="code">str</span>, <span class="code">bytes</span>, <span class="code">bytearray</span>, or code object. <span class="code"><em>globals</em></span> is a <span class="code">dict</span>, and <span class="code"><em>locals</em></span> can be any mapping.</p>
+<p>If you pass both <span class="code"><em>globals</em></span> and <span class="code"><em>locals</em></span>, they are the global and local namespaces in which <span class="code"><em>code</em></span> runs. If you pass only <span class="code"><em>globals</em></span>, <span class="code">exec</span> uses <span class="code"><em>globals</em></span> as both namespaces. If you pass neither, <span class="code"><em>code</em></span> runs in the current scope.</p>
+<div data-type="warning" epub:type="warning">
+<h1>Never Run exec in the Current Scope</h1>
+<p>Running <span class="code">exec</span> in the current scope is a particularly bad idea: it can bind, rebind, or unbind any global name. To keep things under control, use <span class="code">exec</span>, if at all, only with specific, explicit dictionaries.</p>
+</div>
+<section data-pdf-bookmark="Avoiding exec" data-type="sect2"><div class="sect2" id="avoiding_exec">
+<h2>Avoiding exec</h2>
+<p>A frequently asked question about Python is “How do I set a variable whose name I just read or built?” Literally, for a<a contenteditable="false" data-primary="global variables" data-type="indexterm" id="idm44924507553440"/> <em>global</em> variable, <span class="code">exec</span> allows this, but it’s a very bad idea to use <span class="code">exec</span> for this purpose. For example, if the name of the variable is in <span class="code"><em>varname</em></span>, you might think to use:</p>
+<pre data-code-language="python" data-type="programlisting">
+<code class="n">exec</code><code class="p">(</code><em><code class="n">varname</code></em><code> </code><code class="o">+</code><code> </code><code class="s1">'</code><code class="s1"> = 23</code><code class="s1">'</code><code class="p">)</code></pre>
+<p><em>Don’t do this</em>. An <span class="code">exec</span> like this in the current scope makes you lose control of your namespace, leading to bugs that are extremely hard to find and making your program unfathomably difficult to understand. Keep the “variables” that you need to set with dynamically found names not as actual variables, but as entries in a dictionary (say, <span class="code"><em>mydict</em></span>). You might then consider using:</p>
+<pre data-code-language="python" data-type="programlisting">
+<code class="n">exec</code><code class="p">(</code><em><code class="n">varname</code></em><code class="o">+</code><code class="s1">'</code><code class="s1">=23</code><code class="s1">'</code><code class="p">,</code><code> </code><em><code class="n">mydict</code></em><code class="p">)</code><code> </code><em><code class="c1"># Still a bad idea</code></em></pre>
+<p>While this is not quite as terrible as the previous example, it is still a bad idea. Keeping such “variables” as dictionary entries means that you don’t have any need to use <span class="code">exec</span> to set them! Just code:</p>
+<pre data-code-language="python" data-type="programlisting">
+<code class="n">mydict</code><code class="p">[</code><code class="n">varname</code><code class="p">]</code> <code class="o">=</code> <code class="mi">23</code></pre>
+<p>This way, your program is clearer, direct, elegant, and faster. There <em>are</em> some valid uses of <span class="code">exec</span>, but they are extremely rare: just use explicit dictionaries instead.</p>
+<div data-type="tip">
+<h1>Strive to Avoid exec</h1>
+<p>Use <span class="code">exec</span> only when it’s really indispensable, which is <em>extremely</em> rare. Most often, it’s best to avoid <span class="code">exec</span> and choose more specific, well-controlled mechanisms: <span class="code">exec</span> weakens your control of your code’s namespace, can damage your program’s performance, and exposes you to numerous hard-to-find bugs and huge security risks.</p>
+</div>
+</div></section>
+<section data-pdf-bookmark="Expressions" data-type="sect2"><div class="sect2" id="expressions">
+<h2>Expressions</h2>
+<p><span class="code">exec</span> can<a contenteditable="false" data-primary="expressions and operators" data-secondary="obtaining expression values" data-type="indexterm" id="idm44924507468240"/> execute an expression, because any expression is also a valid statement (called an<a contenteditable="false" data-primary="expression statements" data-type="indexterm" id="idm44924507466768"/> <em>expression statement</em>). However, Python ignores the value returned by an expression statement. To evaluate an expression and obtain the expression’s value, use the built-in<a contenteditable="false" data-primary="eval (built-in function)" data-type="indexterm" id="evalfunc14"/> function <span class="code">eval</span>, covered in <a data-type="xref" href="ch08.xhtml#pythonapostrophes_core_built_in_functio">Table 8-2</a>. (Note, however, that just about all of the same security risk caveats for <span class="code">exec</span> also apply to <span class="code">eval</span>.)</p>
+</div></section>
+<section data-pdf-bookmark="compile and Code Objects" data-type="sect2"><div class="sect2" id="compile_and_code_objects">
+<h2>compile and Code Objects</h2>
+<p>To make a code object to use with <span class="code">exec</span>, call the built-in function<a contenteditable="false" data-primary="compile (built-in function)" data-type="indexterm" id="idm44924507438160"/><a contenteditable="false" data-primary="code objects" data-type="indexterm" id="idm44924507437088"/> <span class="code">compile</span> with the last argument set to <span class="code">'exec'</span> (as covered in <a data-type="xref" href="ch08.xhtml#pythonapostrophes_core_built_in_functio">Table 8-2</a>).</p>
+<p>A code object <span class="code"><em>c</em></span> exposes many interesting read-only attributes whose names all start with <span class="code">'co_'</span>, such as those listed in <a data-type="xref" href="#read_only_attributes_of_code_objects">Table 14-1</a>.</p>
+<table class="border" id="read_only_attributes_of_code_objects">
+<caption><span class="label">Table 14-1. </span>Read-only attributes of code objects</caption>
+<tbody>
+<tr>
+<td class="width-15"><span class="code">co_argcount</span></td>
+<td>The number of parameters of the function of which <span class="code"><em>c</em></span> is the code (<span class="code">0</span> when <span class="code"><em>c</em></span> is not the code object of a function, but rather is built directly by <span class="code">compile</span>)</td>
+</tr>
+<tr>
+<td><span class="code">co_code</span></td>
+<td>A <span class="code">bytes</span> object with <span class="code"><em>c</em></span>’s bytecode</td>
+</tr>
+<tr>
+<td><span class="code">co_consts</span></td>
+<td>The tuple of constants used in <span class="code"><em>c</em></span></td>
+</tr>
+<tr>
+<td><span class="code">co_filename</span></td>
+<td>The name of the file <span class="code"><em>c</em></span> was compiled from (the string that is the second argument to <span class="code">compile</span>, when <span class="code"><em>c</em></span> was built that way)</td>
+</tr>
+<tr>
+<td><span class="code">c⁠o⁠_⁠f⁠i⁠r⁠s⁠t​l⁠i⁠n⁠e⁠n⁠o</span></td>
+<td>The initial line number (within the file named by <span class="code">co_filename</span>) of the source code that was compiled to produce <span class="code"><em>c</em></span>, if <span class="code"><em>c</em></span> was built by compiling from a file</td>
+</tr>
+<tr>
+<td><span class="code">co_name</span></td>
+<td>The name of the function of which <span class="code"><em>c</em></span> is the code (<span class="code">'&lt;module&gt;'</span> when <span class="code"><em>c</em></span> is not the code object of a function but rather is built directly by <span class="code">compile</span>)</td>
+</tr>
+<tr>
+<td><span class="code">co_names</span></td>
+<td>The tuple of all identifiers used within <span class="code"><em>c</em></span></td>
+</tr>
+<tr>
+<td><span class="code">co_varnames</span></td>
+<td>The tuple of local variables’ identifiers in <span class="code"><em>c</em></span>, starting with parameter names</td>
+</tr>
+</tbody>
+</table>
+<p>Most of these attributes are useful only for debugging purposes, but some may help with advanced introspection, as exemplified later in this section.</p>
+<p>If you start with a string holding one or more statements, first use <span class="code">compile</span> on the string, then call <span class="code">exec</span> on the resulting code object—that’s a bit better than giving <span class="code">exec</span> the string to compile and execute. This separation lets you check for syntax errors separately from execution-time errors. You can often arrange things so that the string is compiled once and the code object executes repeatedly, which speeds things up. <span class="code">eval</span> can also benefit from such separation. Moreover, the <span class="code">compile</span> step is intrinsically safe (both <span class="code">exec</span> and <span class="code">eval</span> are extremely risky if you execute them on code that you don’t 100% trust), and you may be able to check the code object before it executes, to lessen the risk (though it will never truly be zero).</p>
+<p>As mentioned in <a data-type="xref" href="#read_only_attributes_of_code_objects">Table 14-1</a>, a code object has a read-only attribute <span class="code">co_names</span> that is the tuple of the names used in the code. For example, say that you want the user to enter an expression that contains only literal constants and operators—no function calls or other names. Before evaluating the expression, you can check that the string the user entered satisfies these constraints:</p>
+<pre data-code-language="python" data-type="programlisting">
+<strong><code class="k">def</code></strong><code> </code><code class="nf">safer_eval</code><code class="p">(</code><code class="n">s</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>    </code><code class="n">code</code><code> </code><code class="o">=</code><code> </code><code class="nb">compile</code><code class="p">(</code><code class="n">s</code><code class="p">,</code><code> </code><code class="s1">'</code><code class="s1">&lt;user-entered string&gt;</code><code class="s1">'</code><code class="p">,</code><code> </code><code class="s1">'</code><code class="s1">eval</code><code class="s1">'</code><code class="p">)</code><code>
+</code><code>    </code><strong><code class="k">if</code></strong><code> </code><code class="n">code</code><code class="o">.</code><code class="n">co_names</code><code class="p">:</code><code>
+</code><code>        </code><strong><code class="k">raise</code></strong><code> </code><code class="ne">ValueError</code><code class="p">(</code><code>
+</code><code>            </code><code class="sa">f</code><code class="s1">'</code><code class="s1">Names </code><code class="si">{</code><code class="n">code</code><code class="o">.</code><code class="n">co_names</code><code class="si">!r}</code><code class="s1"> not allowed in expression </code><code class="si">{</code><code class="n">s</code><code class="si">!r}</code><code class="s1">'</code><code class="p">)</code><code>
+</code><code>    </code><strong><code class="k">return</code></strong><code> </code><code class="nb">eval</code><code class="p">(</code><code class="n">code</code><code class="p">)</code></pre>
+<p>This function <span class="code">safer_eval</span> evaluates the expression passed in as argument <span class="code"><em>s</em></span> only when the string is a syntactically valid expression (otherwise, <span class="code">compile</span> raises <span class="code">SyntaxError</span>) and contains no names at all (otherwise, <span class="code">safer_eval</span> explicitly raises <span class="code">ValueError</span>). (This is similar to the standard library function <span class="code">ast.literal_eval</span>, covered in <a data-type="xref" href="ch11.xhtml#standard_input">“Standard Input”</a>, but a bit more powerful, since it does allow the use of operators.)</p>
+<p>Knowing what names the code is about to access may sometimes help you optimize the preparation of the dictionary that you need to pass to <span class="code">exec</span> or <span class="code">eval</span> as the namespace. Since you need to provide values only for those names, you may save work by not preparing other entries. For example, say that your application dynamically accepts code from the user, with the convention that variable names starting with <span class="code">data_</span> refer to files residing in the subdirectory <em>data</em> that user-written code doesn’t need to read explicitly. User-written code may, in turn, compute and leave results in global variables with names starting with <span class="code">result_</span>, which your application writes back as files in the <em>data</em> subdirectory. Thanks to this convention, you may later move the data elsewhere (e.g., to BLOBs in a database instead of files in a subdirectory), and user-written code won’t be affected. Here’s how you might implement these conventions efficiently:</p>
+<pre data-code-language="python" data-type="programlisting">
+<strong><code class="k">def</code></strong><code> </code><code class="nf">exec_with_data</code><code class="p">(</code><code class="n">user_code_string</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>    </code><code class="n">user_code</code><code> </code><code class="o">=</code><code> </code><code class="nb">compile</code><code class="p">(</code><code class="n">user_code_string</code><code class="p">,</code><code> </code><code class="s1">'</code><code class="s1">&lt;user code&gt;</code><code class="s1">'</code><code class="p">,</code><code> </code><code class="s1">'</code><code class="s1">exec</code><code class="s1">'</code><code class="p">)</code><code>
+</code><code>    </code><code class="n">datadict</code><code> </code><code class="o">=</code><code> </code><code class="p">{</code><code class="p">}</code><code>
+</code><code>    </code><strong><code class="k">for</code></strong><code> </code><code class="n">name</code><code> </code><strong><code class="ow">in</code></strong><code> </code><code class="n">user_code</code><code class="o">.</code><code class="n">co_names</code><code class="p">:</code><code>
+</code><code>        </code><strong><code class="k">if</code></strong><code> </code><code class="n">name</code><code class="o">.</code><code class="n">startswith</code><code class="p">(</code><code class="s1">'</code><code class="s1">data_</code><code class="s1">'</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>            </code><strong><code class="k">with</code></strong><code> </code><code class="nb">open</code><code class="p">(</code><code class="sa">f</code><code class="s1">'</code><code class="s1">data/</code><code class="si">{</code><code class="n">name</code><code class="p">[</code><code class="mi">5</code><code class="p">:</code><code class="p">]</code><code class="si">}</code><code class="s1">'</code><code class="p">,</code><code> </code><code class="s1">'</code><code class="s1">rb</code><code class="s1">'</code><code class="p">)</code><code> </code><strong><code class="k">as</code></strong><code> </code><code class="n">datafile</code><code class="p">:</code><code>
+</code><code>                </code><code class="n">datadict</code><code class="p">[</code><code class="n">name</code><code class="p">]</code><code> </code><code class="o">=</code><code> </code><code class="n">datafile</code><code class="o">.</code><code class="n">read</code><code class="p">(</code><code class="p">)</code><code>
+</code><code>        </code><strong><code class="k">elif</code></strong><code> </code><code class="n">name</code><code class="o">.</code><code class="n">startswith</code><code class="p">(</code><code class="s1">'</code><code class="s1">result_</code><code class="s1">'</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>            </code><strong><code class="k">pass</code></strong><code>  </code><em><code class="c1"># user code assigns to variables named `result_...`</code></em><code>
+</code><code>        </code><strong><code class="k">else</code></strong><code class="p">:</code><code>
+</code><code>            </code><strong><code class="k">raise</code></strong><code> </code><code class="ne">ValueError</code><code class="p">(</code><code class="sa">f</code><code class="s1">'</code><code class="s1">invalid variable name </code><code class="si">{</code><code class="n">name</code><code class="si">!r}</code><code class="s1">'</code><code class="p">)</code><code>
+</code><code>    </code><code class="n">exec</code><code class="p">(</code><code class="n">user_code</code><code class="p">,</code><code> </code><code class="n">datadict</code><code class="p">)</code><code>
+</code><code>    </code><strong><code class="k">for</code></strong><code> </code><code class="n">name</code><code> </code><strong><code class="ow">in</code></strong><code> </code><code class="n">datadict</code><code class="p">:</code><code>
+</code><code>        </code><strong><code class="k">if</code></strong><code> </code><code class="n">name</code><code class="o">.</code><code class="n">startswith</code><code class="p">(</code><code class="s1">'</code><code class="s1">result_</code><code class="s1">'</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>            </code><strong><code class="k">with</code></strong><code> </code><code class="nb">open</code><code class="p">(</code><code class="sa">f</code><code class="s1">'</code><code class="s1">data/</code><code class="si">{</code><code class="n">name</code><code class="p">[</code><code class="mi">7</code><code class="p">:</code><code class="p">]</code><code class="si">}</code><code class="s1">'</code><code class="p">,</code><code> </code><code class="s1">'</code><code class="s1">wb</code><code class="s1">'</code><code class="p">)</code><code> </code><strong><code class="k">as</code></strong><code> </code><code class="n">datafile</code><code class="p">:</code><code>
+</code><code>                </code><code class="n">datafile</code><code class="o">.</code><code class="n">write</code><code class="p">(</code><code class="n">datadict</code><code class="p">[</code><code class="n">name</code><code class="p">]</code><code class="p">)</code></pre>
+</div></section>
+<section data-pdf-bookmark="Never exec or eval Untrusted Code" data-type="sect2"><div class="sect2" id="never_exec_or_eval_untrusted_code">
+<h2>Never exec or eval Untrusted Code</h2>
+<p>Some<a contenteditable="false" data-primary="untrusted code (eval, exec)" data-type="indexterm" id="idm44924507111360"/><a contenteditable="false" data-primary="code, untrusted" data-type="indexterm" id="idm44924507110384"/> older versions of Python supplied tools that aimed to ameliorate the risks of using <span class="code">exec</span> and <span class="code">eval</span>, under the heading of<a contenteditable="false" data-primary="restricted execution" data-type="indexterm" id="idm44924507107808"/> “restricted execution,” but those tools were never entirely secure against the ingenuity of able hackers, and recent versions of Python have dropped them to avoid offering the user an unfounded sense of security. If you need to guard against such attacks, take advantage of your operating system’s protection mechanisms: run untrusted code in a separate process, with privileges as restricted as you can possibly make them (study the mechanisms that your OS supplies for the purpose, such as <span class="code">chroot</span>, <span class="code">setuid</span>, and <span class="code">jail</span>; in Windows, you might try the third-party commercial add-on <a href="https://oreil.ly/a4hf4">WinJail</a>, or run untrusted code in a separate, highly constrained virtual machine or container, if you’re an expert on how to securitize containers). To guard against denial of service attacks, have the main process monitor the separate one and terminate the latter if and when resource consumption becomes excessive. Processes are covered in <a data-type="xref" href="ch15.xhtml#running_other_programs">“Running Other Programs”</a>.</p>
+<div data-type="warning" epub:type="warning">
+<h1>exec and eval Are Unsafe with Untrusted Code</h1>
+<p>The function <span class="code">exec_with_data</span> defined in the previous section is not at all safe against untrusted code: if you pass to it, as the argument <span class="code"><em>user_code</em></span>, some string obtained in a way that you cannot <em>entirely</em> trust, there is essentially no limit to the amount of damage it might do. This is unfortunately true of just about any use of <span class="code">exec</span> or <span class="code">eval</span>, except for those rare cases in which you can set extremely strict and fully checkable limits on the code to execute or evaluate, as was the case for the function <span class="code">safer_eval</span>.<a contenteditable="false" data-primary="" data-startref="evalfunc14" data-type="indexterm" id="idm44924507061440"/><a contenteditable="false" data-primary="" data-startref="ECdyn14" data-type="indexterm" id="idm44924507060224"/><a contenteditable="false" data-primary="" data-startref="dynexec14" data-type="indexterm" id="idm44924507059008"/><a contenteditable="false" data-primary="" data-startref="execf14" data-type="indexterm" id="idm44924507057792"/></p>
+</div>
+</div></section>
+</div></section>
+<section data-pdf-bookmark="Internal Types" data-type="sect1"><div class="sect1" id="internal_types">
+<h1>Internal Types</h1>
+<p>Some<a contenteditable="false" data-primary="execution, customizing" data-secondary="internal types" data-type="indexterm" id="idm44924507054704"/><a contenteditable="false" data-primary="internal types" data-type="indexterm" id="idm44924507053488"/> of the internal Python objects described in this section are hard to use, and indeed are not meant for you to use most of the time. Using such objects correctly and to good effect requires some study of your Python implementation’s C sources. Such black magic is rarely needed, except for building general-purpose development tools and similar wizardly tasks. Once you do understand things in depth, Python empowers you to exert control if and when needed. Since Python exposes many kinds of internal objects to your Python code, you can exert that control by coding in Python, even when you need an understanding of C to read Python’s sources and understand what’s going on.</p>
+<section data-pdf-bookmark="Type Objects" data-type="sect2"><div class="sect2" id="type_objects">
+<h2>Type Objects</h2>
+<p>The<a contenteditable="false" data-primary="type objects" data-type="indexterm" id="idm44924507050880"/> built-in type named <span class="code">type</span> acts as a callable factory, returning objects that are types. Type objects don’t have to support any special operations except equality comparison and representation as strings. However, most type objects are callable and return new instances of the type when called. In particular, built-in types such as <span class="code">int</span>, <span class="code">float</span>, <span class="code">list</span>, <span class="code">str</span>, <span class="code">tuple</span>, <span class="code">set</span>, and <span class="code">dict</span> all work this way; specifically, when called without arguments, they return a new empty instance, or, for numbers, one that equals <span class="code">0</span>. The attributes of the <span class="code">types</span> module are the built-in types that don’t have built-in names. Besides being callable to generate instances, type objects are useful because you can inherit from them, as covered in <a data-type="xref" href="ch04.xhtml#classes_and_instances">“Classes and Instances”</a>.</p>
+</div></section>
+<section class="pagebreak-before" data-pdf-bookmark="The Code Object Type" data-type="sect2"><div class="sect2" id="the_code_object_type">
+<h2 class="less_space">The Code Object Type</h2>
+<p>Besides<a contenteditable="false" data-primary="code objects" data-type="indexterm" id="idm44924507039872"/><a contenteditable="false" data-primary="__code__ attribute (function or method object)" data-type="indexterm" id="idm44924507038768"/> using the built-in function <span class="code">compile</span>, you can get a code object via the <span class="code">__code__</span> attribute of a function or method object. (For a discussion of the attributes of code objects, see <a data-type="xref" href="#compile_and_code_objects">“compile and Code Objects”</a>.) Code objects are not callable, but you can rebind the <span class="code">__code__</span> attribute of a function object with the right number of parameters in order to wrap a code object into callable form. For example:</p>
+<pre data-code-language="python" data-type="programlisting">
+<strong><code class="k">def</code></strong><code> </code><code class="nf">g</code><code class="p">(</code><code class="n">x</code><code class="p">)</code><code class="p">:</code><code> </code><code>
+</code><code>    </code><code class="nb">print</code><code class="p">(</code><code class="s1">'</code><code class="s1">g</code><code class="s1">'</code><code class="p">,</code><code> </code><code class="n">x</code><code class="p">)</code><code>
+</code><code class="n">code_object</code><code> </code><code class="o">=</code><code> </code><code class="n">g</code><code class="o">.</code><code class="vm">__code__</code><code>
+</code><strong><code class="k">def</code></strong><code> </code><code class="nf">f</code><code class="p">(</code><code class="n">x</code><code class="p">)</code><code class="p">:</code><code> </code><code>
+</code><strong><code>    </code><code class="k">pass</code></strong><code>
+</code><code class="n">f</code><code class="o">.</code><code class="vm">__code__</code><code> </code><code class="o">=</code><code> </code><code class="n">code_object</code><code>
+</code><code class="n">f</code><code class="p">(</code><code class="mi">23</code><code class="p">)</code><code>     </code><em><code class="c1"># prints: g 23</code></em></pre>
+<p>Code objects that have no parameters can also be used with <span class="code">exec</span> or <span class="code">eval</span>. Directly creating code objects requires many parameters; see Stack Overflow’s <a href="https://oreil.ly/pM3m7">unofficial docs</a> on how to do it (but bear in mind that you’re usually better off calling <span class="code">compile</span> instead).</p>
+</div></section>
+<section data-pdf-bookmark="The Frame Type" data-type="sect2"><div class="sect2" id="the_frame_type">
+<h2>The Frame Type</h2>
+<p>The<a contenteditable="false" data-primary="_getframe function (sys module)" data-type="indexterm" id="idm44924506991584"/> function <span class="code">_getframe</span> in the module <span class="code">sys</span> returns a<a contenteditable="false" data-primary="frame objects" data-type="indexterm" id="idm44924506988528"/> frame object from Python’s call stack. A frame object has attributes giving information about the code executing in the frame and the execution state. The<a contenteditable="false" data-primary="traceback module" data-type="indexterm" id="idm44924506987264"/><a contenteditable="false" data-primary="inspect module" data-type="indexterm" id="idm44924506955232"/><a contenteditable="false" data-primary="standard library modules" data-secondary="inspect" data-type="indexterm" id="idm44924506954256"/><a contenteditable="false" data-primary="standard library modules" data-secondary="traceback" data-type="indexterm" id="idm44924506953040"/> <span class="code">traceback</span> and <span class="code">inspect</span> modules help you access and display such information, particularly when an exception is being handled. <a data-type="xref" href="ch17.xhtml#testingcomma_debuggingcomma_and_optimiz">Chapter 17</a> provides more information about frames and tracebacks, and covers the module <span class="code">inspect</span>, which is the best way to perform such introspection. As the leading underscore in the name <span class="code">_getframe</span> hints, the function is “somewhat private”; it’s meant for use only by tools such as debuggers, which inevitably require deep introspection into Python’s internals.</p>
+</div></section>
+</div></section>
+<section data-pdf-bookmark="Garbage Collection" data-type="sect1"><div class="sect1" id="garbage_collection">
+<h1>Garbage Collection</h1>
+<p>Python’s garbage collection<a contenteditable="false" data-primary="execution, customizing" data-secondary="garbage collection" data-type="indexterm" id="ECgarbage14"/><a contenteditable="false" data-primary="garbage collection" data-type="indexterm" id="gcollect14"/> normally proceeds transparently and automatically, but you can choose to exert some direct control. The general principle is that Python collects each object <span class="code"><em>x</em></span> at some time after <span class="code"><em>x</em></span> becomes unreachable—that is, when no chain of references can reach <span class="code"><em>x</em></span> by starting from a local variable of a function instance that is executing, or from a global variable of a loaded module. Normally, an object <span class="code"><em>x</em></span> becomes unreachable when there are no references at all to <span class="code"><em>x</em></span>. In addition, a group of objects can be unreachable when they reference each other but no global or local variables reference any of them, even indirectly (such<a contenteditable="false" data-primary="mutual reference loops" data-type="indexterm" id="idm44924506938704"/> a situation is known as a <em>mutual reference loop</em>).</p>
+<p>Classic Python keeps with each object <span class="code"><em>x</em></span> a count, known as a<a contenteditable="false" data-primary=" reference counts" data-type="indexterm" id="idm44924506935440"/> <em>reference count</em>, of how many references to <span class="code"><em>x</em></span> are outstanding. When <span class="code"><em>x</em></span>’s reference count drops to <span class="code">0</span>, CPython immediately collects <span class="code"><em>x</em></span>. The<a contenteditable="false" data-primary="getrefcount (sys module)" data-type="indexterm" id="idm44924506930560"/> function <span class="code">getrefcount</span> of the module <span class="code">sys</span> accepts any object and returns its reference count (at least <span class="code">1</span>, since <span class="code">getrefcount</span> itself has a reference to the object it’s examining). Other versions of Python, such as Jython or PyPy, rely on other garbage collection mechanisms supplied by the platform they run on (e.g., the JVM or the LLVM). The modules <span class="code">gc</span> and <span class="code">weakref</span>, therefore, apply only to CPython.</p>
+<p>When Python garbage-collects <span class="code"><em>x</em></span> and there are no references to <span class="code"><em>x</em></span>, Python finalizes <span class="code"><em>x</em></span> (i.e., calls <span class="code"><em>x</em></span><span class="code">.</span><span class="code">__del__</span>) and frees the memory that <span class="code"><em>x</em></span> occupied. If <span class="code"><em>x</em></span> held any references to other objects, Python removes the references, which in turn may make other objects collectable by leaving them unreachable.</p>
+<section data-pdf-bookmark="The gc Module" data-type="sect2"><div class="sect2" id="the_gc_module">
+<h2>The gc Module</h2>
+<p>The<a contenteditable="false" data-primary="gc module" data-type="indexterm" id="gcmod14"/><a contenteditable="false" data-primary="standard library modules" data-secondary="gc" data-type="indexterm" id="SLMgc14"/> <span class="code">gc</span> module exposes the functionality of Python’s garbage collector. <span class="code">gc</span> deals with unreachable objects that are part of mutual reference loops. As mentioned previously, in such a loop, each object in the loop refers to one or more of the others, keeping the reference counts of all the objects positive, but there are no outside references to any of the set of mutually referencing objects. Therefore, the whole group, also known as<a contenteditable="false" data-primary="cyclic garbage loops" data-type="indexterm" id="idm44924506911664"/> <em>cyclic garbage</em>, is unreachable and thus garbage-collectable. Looking for such cyclic garbage loops takes time, which is why the module <span class="code">gc</span> exists: to help you control whether and when your program spends that time. By default, cyclic garbage collection functionality is enabled with some reasonable default parameters: however, by importing the <span class="code">gc</span> module and calling its functions, you may choose to disable the functionality, change its parameters, and/or find out exactly what’s going on in this respect.</p>
+<p><span class="code">gc</span> exposes attributes and functions to help you manage and instrument cyclic garbage collection, including those listed in <a data-type="xref" href="#tabe_onefour_twodot_gc_functions_and_at">Table 14-2</a>. These functions can let you track down memory leaks—objects that are not collected even though there <em>should</em> be no more references to them—by helping you discover what other objects are in fact holding on to references to them. Note that <span class="code">gc</span> implements the architecture known in computer science as <a href="https://oreil.ly/zeGDK">generational garbage collection</a>.</p>
+<table class="border" id="tabe_onefour_twodot_gc_functions_and_at">
+<caption><span class="label">Table 14-2. </span><span class="code">gc</span> functions and attributes</caption>
+<tbody>
+<tr>
+<td><span class="code">callbacks</span></td>
+<td>A <span class="code">list</span> of callbacks that the garbage collector will invoke before and after collection. See <a data-type="xref" href="#instrumenting_garbage_collection">“Instrumenting garbage collection”</a> for further details.</td>
+</tr>
+<tr>
+<td><span class="code">collect</span></td>
+<td><span class="code">collect()</span><br/>
+			Forces<a contenteditable="false" data-primary="collect (gc module)" data-type="indexterm" id="idm44924506896032"/> a full cyclic garbage collection run to happen immediately.</td>
+</tr>
+<tr>
+<td><span class="code">disable</span></td>
+<td><span class="code">disable()</span><br/>
+			Suspends<a contenteditable="false" data-primary="disable (gc module)" data-type="indexterm" id="idm44924506892528"/> automatic, periodic cyclic garbage collection.</td>
+</tr>
+<tr>
+<td><span class="code">enable</span></td>
+<td><span class="code">enable()</span><br/>
+			Reenables<a contenteditable="false" data-primary="enable (gc module)" data-type="indexterm" id="idm44924506888864"/> periodic cyclic garbage collection previously suspended with <span class="code">disable</span>.</td>
+</tr>
+<tr>
+<td><span class="code">freeze</span></td>
+<td><span class="code">freeze()</span><br/>
+			Freezes<a contenteditable="false" data-primary="freeze (gc module)" data-type="indexterm" id="idm44924506884400"/> all objects tracked by <span class="code">gc</span>: moves them to a “permanent generation,” i.e., a set of objects to be ignored in all the future collections.</td>
+</tr>
+<tr>
+<td><span class="code">garbage</span></td>
+<td>A <span class="code">list</span> (but, treat it as read-only) of unreachable but uncollectable objects. This happens when any object in a cyclic garbage loop has a <span class="code">__del__</span> special method, as there may be no demonstrably safe order for Python to finalize such objects.</td>
+</tr>
+<tr>
+<td><span class="code">get_count</span></td>
+<td><span class="code">get_count()</span><br/>
+			Returns the current collection counts as a tuple, <span class="code">(count0, count1, count2)</span>.</td>
+</tr>
+<tr>
+<td><span class="code">get_debug</span></td>
+<td><span class="code">get_debug()</span><br/>
+			Returns an <span class="code">int</span> bit string, the garbage collection debug flags set with <span class="code">set_debug</span>.</td>
+</tr>
+<tr>
+<td><span class="code">get_freeze_count</span></td>
+<td><span class="code">get_freeze_count()</span><br/>
+			Returns the number of objects in the permanent generation.</td>
+</tr>
+<tr>
+<td><span class="code">get_objects</span></td>
+<td><span class="code">get_objects(generation=<strong>None</strong>)</span><br/>
+			Returns a list of objects being tracked by the collector. <span class="version">3.8+</span> If the optional <span class="code">generation</span> argument is not <span class="code"><strong>None</strong></span>, lists only those objects in the selected generation.</td>
+</tr>
+<tr>
+<td><span class="code">get_referents</span></td>
+<td><span class="code">get_referents(<em>*objs</em>)</span><br/>
+			Returns a list of objects, visited by the arguments’ C-level <span class="code">tp_traverse</span> methods, that are referred to by any of the arguments.</td>
+</tr>
+<tr>
+<td><span class="code">get_referrers</span></td>
+<td><span class="code">get_referrers(<em>*objs</em>)</span><br/>
+			Returns a list of all container objects currently tracked by the cyclic garbage collector that refer to any one or more of the arguments.</td>
+</tr>
+<tr>
+<td><span class="code">get_stats</span></td>
+<td><span class="code">get_stats()</span><br/>
+			Returns<a contenteditable="false" data-primary="get_stats (gc module)" data-type="indexterm" id="idm44924506855200"/> a list of three <span class="code">dict</span>s, one per generation, containing counts of the number of collections, the number of objects collected, and the number of uncollectable objects.</td>
+</tr>
+<tr>
+<td><span class="code">get_threshold</span></td>
+<td><span class="code">get_threshold()</span><br/>
+			Returns<a contenteditable="false" data-primary="get_threshold (gc module)" data-type="indexterm" id="idm44924506850656"/> the current collection thresholds as a tuple of the three <span class="code">int</span>s.</td>
+</tr>
+<tr>
+<td><span class="code">isenabled</span></td>
+<td><span class="code">isenabled()</span><br/>
+			Returns<a contenteditable="false" data-primary="isenabled (gc module)" data-type="indexterm" id="idm44924506846128"/> <span class="code"><strong>True</strong></span> when cyclic garbage collection is currently enabled; otherwise returns <span class="code"><strong>False</strong></span><strong>.</strong></td>
+</tr>
+<tr>
+<td><span class="code">is_finalized</span></td>
+<td><span class="code">is_finalized(<em>obj</em>)</span><br/>
+<span class="version">3.9+</span> Returns <span class="code"><strong>True</strong></span> when the garbage collector has finalized <span class="code"><em>obj</em></span>; otherwise, returns <span class="code"><strong>False</strong></span>.</td>
+</tr>
+<tr>
+<td><span class="code">is_tracked</span></td>
+<td><span class="code">is_tracked(<em>obj</em>)</span><br/>
+			Returns <span class="code"><strong>True</strong></span> when <span class="code"><em>obj</em></span> is currently tracked by the garbage collector; otherwise, returns <span class="code"><strong>False</strong></span>.</td>
+</tr>
+<tr>
+<td><span class="code">set_debug</span></td>
+<td><span class="code">set_debug(<em>flags</em>)</span><br/>
+			Sets<a contenteditable="false" data-primary="set_debug (gc module)" data-type="indexterm" id="idm44924506828128"/> flags for debugging behavior during garbage collection. <span class="code"><em>flags</em></span> is an <span class="code">int</span>, interpreted as a bit string, built by ORing (with the bitwise OR operator, <span class="code">|</span>) zero or more constants supplied by the module <span class="code">gc</span>. Each bit enables a specific debugging function:
+			<dl>
+<dt class="plain"><span class="code">DEBUG_COLLECTABLE</span></dt>
+<dd>Prints information on collectable objects found during garbage collection.</dd>
+<dt class="plain"><span class="code">DEBUG_LEAK</span></dt>
+<dd>Combines behavior for <span class="code">DEBUG_COLLECTABLE, DEBUG_UNCOLLECTABLE</span>, and <span class="code">DEBUG_SAVEALL</span>. Together, these are the most common flags used to help you diagnose memory leaks.</dd>
+<dt class="plain"><span class="code">DEBUG_SAVEALL</span></dt>
+<dd>Saves all collectable objects to the list <span class="code">gc.garbage</span> (where uncollectable ones are also always saved) to help you diagnose leaks.</dd>
+<dt class="plain"><span class="code">DEBUG_STATS</span></dt>
+<dd>Prints statistics gathered during garbage collection to help you tune the thresholds.</dd>
+<dt class="plain"><span class="code">DEBUG_UNCOLLECTABLE</span></dt>
+<dd>Prints information on uncollectable objects found during garbage collection.</dd>
+</dl>
+</td>
+</tr>
+<tr>
+<td><span class="code">set_threshold</span></td>
+<td><span class="code">set_threshold(<em>thresh0</em>[</span>, <span class="code"><em>thresh1</em></span><span class="code">[</span>, <span class="code"><em>thresh2</em></span><span class="code">]])</span><br/>
+			Sets<a contenteditable="false" data-primary="set_threshold (gc module)" data-type="indexterm" id="idm44924506807120"/> thresholds that control how often cyclic garbage collection cycles run. A <span class="code"><em>thresh0</em></span> of <span class="code">0</span> disables garbage collection. Garbage collection is an advanced, specialized topic, and the details of the generational garbage collection approach used in Python (and consequently the detailed meanings of these thresholds) are beyond the scope of this book; see the <a href="https://oreil.ly/b3rm6">online docs</a> for details.</td>
+</tr>
+<tr>
+<td><span class="code">unfreeze</span></td>
+<td><span class="code">unfreeze()</span><br/>
+			Unfreezes<a contenteditable="false" data-primary="unfreeze (gc module)" data-type="indexterm" id="idm44924506801296"/> all objects in the permanent generation, moving them all back to the oldest generation.</td>
+</tr>
+</tbody>
+</table>
+<p>When you know there are no cyclic garbage loops in your program, or when you can’t afford the delay of cyclic garbage collection at some crucial time, suspend automatic garbage collection by calling <span class="code">gc.disable()</span>. You can enable collection again later by calling <span class="code">gc.enable()</span>. You can test whether automatic collection is currently enabled by calling <span class="code">gc.isenabled()</span>, which returns <span class="code"><strong>True</strong></span> or <span class="code"><strong>False</strong></span>. To control <em>when</em> time is spent collecting, you can call <span class="code">gc.collect()</span> to force a full cyclic collection run to happen immediately. To wrap some time-critical code:</p>
+<pre data-code-language="python" data-type="programlisting">
+<strong><code class="kn">import</code></strong><code> </code><code class="nn">gc</code><code>
+</code><code class="n">gc_was_enabled</code><code> </code><code class="o">=</code><code> </code><code class="n">gc</code><code class="o">.</code><code class="n">isenabled</code><code class="p">(</code><code class="p">)</code><code>
+</code><strong><code class="k">if</code></strong><code> </code><code class="n">gc_was_enabled</code><code class="p">:</code><code>
+</code><code>    </code><code class="n">gc</code><code class="o">.</code><code class="n">collect</code><code class="p">(</code><code class="p">)</code><code>
+</code><code>    </code><code class="n">gc</code><code class="o">.</code><code class="n">disable</code><code class="p">(</code><code class="p">)</code><code>
+</code><em><code class="c1"># insert some time-critical code here</code></em><code>
+</code><strong><code class="k">if</code></strong><code> </code><code class="n">gc_was_enabled</code><code class="p">:</code><code>
+</code><code>    </code><code class="n">gc</code><code class="o">.</code><code class="n">enable</code><code class="p">(</code><code class="p">)</code></pre>
+<p>You may find this easier to use if implemented as a context manager:</p>
+<pre data-code-language="python" data-type="programlisting">
+<strong><code class="kn">import</code></strong><code> </code><code class="nn">gc</code><code>
+</code><strong><code class="kn">import</code></strong><code> </code><code class="nn">contextlib</code><code>
+</code><code>
+</code><code class="nd">@contextlib</code><code class="o">.</code><code class="n">contextmanager</code><code>
+</code><strong><code class="k">def</code></strong><code> </code><code class="nf">gc_disabled</code><code class="p">(</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>    </code><code class="n">gc_was_enabled</code><code> </code><code class="o">=</code><code> </code><code class="n">gc</code><code class="o">.</code><code class="n">isenabled</code><code class="p">(</code><code class="p">)</code><code>
+</code><code>    </code><strong><code class="k">if</code></strong><code> </code><code class="n">gc_was_enabled</code><code class="p">:</code><code>
+</code><code>        </code><code class="n">gc</code><code class="o">.</code><code class="n">collect</code><code class="p">(</code><code class="p">)</code><code>
+</code><code>        </code><code class="n">gc</code><code class="o">.</code><code class="n">disable</code><code class="p">(</code><code class="p">)</code><code>
+</code><code>    </code><strong><code class="k">try</code></strong><code class="p">:</code><code>
+</code><code>        </code><strong><code class="k">yield</code></strong><code>
+</code><code>    </code><strong><code class="k">finally</code></strong><code class="p">:</code><code>
+</code><code>        </code><strong><code class="k">if</code></strong><code> </code><code class="n">gc_was_enabled</code><code class="p">:</code><code>
+</code><code>            </code><code class="n">gc</code><code class="o">.</code><code class="n">enable</code><code class="p">(</code><code class="p">)</code><code>
+</code><code>
+</code><strong><code class="k">with</code></strong><code> </code><code class="n">gc_disabled</code><code class="p">(</code><code class="p">)</code><code class="p">:</code><code>
+</code><em><code>    </code><code class="c1"># ...insert some time-critical code here...</code></em></pre>
+<p>Other functionality in the module <span class="code">gc</span> is more advanced and rarely used, and can be grouped into two areas. The functions <span class="code">get_threshold</span> and <span class="code">set_threshold</span> and debug flag <span class="code">DEBUG_STATS</span> help you fine-tune garbage collection to optimize your program’s performance. The rest of <span class="code">gc</span>’s functionality can help you diagnose memory leaks in your program. While <span class="code">gc</span> itself can automatically fix many leaks (as long as you avoid defining <span class="code">__del__</span> in your classes, since the existence of <span class="code">__del__</span> can block cyclic garbage collection), your program runs faster if it avoids creating cyclic garbage in the first place.</p>
+<section data-pdf-bookmark="Instrumenting garbage collection" data-type="sect3"><div class="sect3" id="instrumenting_garbage_collection">
+<h3>Instrumenting garbage collection</h3>
+<p><span class="code">gc.callbacks</span> is an initially empty list to which you can add functions <span class="code">f(<em>phase</em>,</span> <span class="code"><em>info</em></span><span class="code">)</span> which Python is to call upon garbage collection. When Python calls each such function, <span class="code"><em>phase</em></span> is <span class="code">'start'</span> or <span class="code">'stop'</span> to mark the beginning or end of a collection, and <span class="code"><em>info</em></span> is a dictionary containing information about the generational collection used by CPython. You can add functions to this list, for example to gather statistics about garbage collection. See the <a href="https://oreil.ly/GjJF-">documentation</a> for more details.<a contenteditable="false" data-primary="" data-startref="SLMgc14" data-type="indexterm" id="idm44924506620256"/></p>
+</div></section>
+</div></section>
+<section data-pdf-bookmark="The weakref Module" data-type="sect2"><div class="sect2" id="the_weakref_module">
+<h2>The weakref Module</h2>
+<p>Careful design<a contenteditable="false" data-primary="weakref module" data-type="indexterm" id="weakrefm14"/><a contenteditable="false" data-primary="standard library modules" data-secondary="weakref" data-type="indexterm" id="idm44924506615760"/> can often avoid<a contenteditable="false" data-primary="reference loops" data-type="indexterm" id="idm44924506614288"/> reference loops. However, at times you need objects to know about each other, and avoiding mutual references would distort and complicate your design. For example, a container has references to its items, yet it can often be useful for an object to know about a container holding it. The result is a reference loop: due to the mutual references, the container and items keep each other alive, even when all other objects forget about them. Weak references solve this problem by allowing objects to reference others without keeping them alive.</p>
+<p>A<a contenteditable="false" data-primary="weak references" data-type="indexterm" id="idm44924506612608"/> <em>weak reference</em> is a special object <span class="code"><em>w</em></span> that refers to some other object <span class="code"><em>x</em></span> without incrementing <span class="code"><em>x</em></span>’s reference count. When <span class="code"><em>x</em></span>’s reference count goes down to <span class="code">0</span>, Python finalizes and collects <span class="code"><em>x</em></span>, then informs <span class="code"><em>w</em></span> of <span class="code"><em>x</em></span>’s demise. Weak reference <span class="code"><em>w</em></span> can now either disappear or get marked as invalid in a controlled way. At any time, a given <span class="code"><em>w</em></span> refers to either the same object <span class="code"><em>x</em></span> as when <span class="code"><em>w</em></span> was created, or to nothing at all; a weak reference is never retargeted. Not all types of objects support being the target <span class="code"><em>x</em></span> of a weak reference <span class="code"><em>w</em></span>, but classes, instances, and functions do.</p>
+<p>The <span class="code">weakref</span> module exposes functions and types to create and manage weak references, detailed in <a data-type="xref" href="#functions_and_classes_of_the_weakref_mo">Table 14-3</a>.</p>
+<table class="border" id="functions_and_classes_of_the_weakref_mo">
+<caption><span class="label">Table 14-3. </span>Functions and classes of the <span class="code">weakref</span> module</caption>
+<tbody>
+<tr>
+<td class="width-15"><span class="code">getweakrefcount</span></td>
+<td><span class="code">getweakrefcount(<em>x</em>)</span><br/>
+			Returns<a contenteditable="false" data-primary="getweakrefcount (weakref module)" data-type="indexterm" id="idm44924506591344"/> <span class="code">len(getweakrefs(<em>x</em>))</span>.</td>
+</tr>
+<tr>
+<td><span class="code">getweakrefs</span></td>
+<td><span class="code">getweakrefs(<em>x</em>)</span><br/>
+			Returns<a contenteditable="false" data-primary="getweakrefs (weakref module)" data-type="indexterm" id="idm44924506586032"/> a list of all weak references and proxies whose target is <span class="code"><em>x</em></span>.</td>
+</tr>
+<tr>
+<td><span class="code">proxy</span></td>
+<td><span class="code">proxy(<em>x</em>[,</span> <span class="code"><em>f</em></span><span class="code">])</span><br/>
+			Returns<a contenteditable="false" data-primary="proxy (weakref module)" data-type="indexterm" id="idm44924506579040"/> a weak proxy <span class="code"><em>p</em></span> of type <span class="code">ProxyType</span> (<span class="code">CallableProxyType</span> when <span class="code"><em>x</em></span> is callable) with <span class="code"><em>x</em></span> as the target. Using <span class="code"><em>p</em></span> is just like using <span class="code"><em>x</em></span>, except that, when you use <span class="code"><em>p</em></span> after <span class="code"><em>x</em></span> has been deleted, Python raises <span class="code">ReferenceError</span>. <span class="code"><em>p</em></span> is never hashable (you cannot use <span class="code"><em>p</em></span> as a dictionary key). When <span class="code"><em>f</em></span> is present, it must be callable with one argument, and is the finalization callback for <span class="code"><em>p</em></span> (i.e., right before finalizing <span class="code"><em>x</em></span>, Python calls <span class="code"><em>f</em></span><span class="code">(<em>p</em>))</span>.) <span class="code"><em>f</em></span> executes right <em>after</em> <span class="code"><em>x</em></span> is no longer reachable from <span class="code"><em>p</em></span>.</td>
+</tr>
+<tr>
+<td><span class="code">ref</span></td>
+<td><span class="code">ref(<em>x</em>[,</span> <span class="code"><em>f</em></span><span class="code">])</span><br/>
+			Returns<a contenteditable="false" data-primary="ref (weakref module)" data-type="indexterm" id="idm44924506556368"/> a weak reference <span class="code"><em>w</em></span> of type <span class="code">ReferenceType</span> with object <span class="code"><em>x</em></span> as the target. <span class="code"><em>w</em></span> is callable without arguments: calling <span class="code"><em>w</em></span><span class="code">()</span> returns <span class="code"><em>x</em></span> when <span class="code"><em>x</em></span> is still alive; otherwise, <span class="code"><em>w</em></span><span class="code">()</span> returns <span class="code">None</span>. <span class="code"><em>w</em></span> is hashable when <span class="code"><em>x</em></span> is hashable. You can compare weak references for equality (<span class="code">==</span>, <span class="code">!=</span>), but not for order (<span class="code">&lt;</span>, <span class="code">&gt;</span>, <span class="code">&lt;=</span>, <span class="code">&gt;=</span>). Two weak references <span class="code"><em>x</em></span> and <span class="code"><em>y</em></span> are equal when their targets are alive and equal, or when <span class="code"><em>x</em></span> is <span class="code"><em>y</em></span>. When <span class="code"><em>f</em></span> is present, it must be callable with one argument and is the finalization callback for <span class="code"><em>w</em></span> (i.e., right before finalizing <span class="code"><em>x</em></span>, Python calls <span class="code"><em>f</em></span><span class="code">(<em>w</em>)</span>). <span class="code"><em>f</em></span> executes right <em>after</em> <span class="code"><em>x</em></span> is no longer reachable from <span class="code"><em>w</em></span>.</td>
+</tr>
+<tr>
+<td><span class="code">W⁠e⁠a⁠k⁠K⁠e⁠y​D⁠i⁠c⁠t⁠i⁠o⁠n⁠a⁠r⁠y</span></td>
+<td><span class="code">class WeakKeyDictionary(adict={})</span><br/>
+			A <a contenteditable="false" data-primary="WeakKeyDictionary (weakref module)" data-type="indexterm" id="idm44924506527840"/><span class="code">WeakKeyDictionary</span> <span class="code"><em>d</em></span> is a mapping weakly referencing its keys. When the reference count of a key <span class="code"><em>k</em></span> in <span class="code"><em>d</em></span> goes to <span class="code">0</span>, item <span class="code"><em>d</em></span><span class="code">[<em>k</em>]</span> disappears. <span class="code">adict</span> is used to initialize the mapping.</td>
+</tr>
+<tr>
+<td><span class="code">WeakSet</span></td>
+<td>class WeakSet(elements=[])<br/>
+			A<a contenteditable="false" data-primary="WeakSet (weakref module)" data-type="indexterm" id="idm44924506517968"/> <span class="code">WeakSet</span> <span class="code"><em>s</em></span> is a set weakly referencing its content elements, initialized from <span class="code">elements</span>. When the reference count of an element <span class="code"><em>e</em></span> in <span class="code"><em>s</em></span> goes to <span class="code">0</span>, <span class="code"><em>e</em></span> disappears from <span class="code"><em>s</em></span>.</td>
+</tr>
+<tr>
+<td><span class="code">W⁠e⁠a⁠k⁠V⁠a⁠l⁠u⁠e​D⁠i⁠c⁠t⁠i⁠o⁠n⁠a⁠r⁠y</span></td>
+<td><span class="code">class WeakValueDictionary(adict={})</span><br/>
+			A<a contenteditable="false" data-primary="WeakValueDictionary (weakref module)" data-type="indexterm" id="idm44924506507840"/> <span class="code">WeakValueDictionary</span> <span class="code"><em>d</em></span> is a mapping weakly referencing its values. When the reference count of a value <span class="code"><em>v</em></span> in <span class="code"><em>d</em></span> goes to <span class="code">0</span>, all items of <span class="code"><em>d</em></span> such that <span class="code"><em>d</em></span><span class="code">[<em>k</em>]</span> <span class="code"><strong>is</strong></span> <span class="code"><em>v</em></span> disappear. <span class="code">adict</span> is used to initialize the mapping.</td>
+</tr>
+</tbody>
+</table>
+<p><span class="code">WeakKeyDictionary</span> lets you noninvasively associate additional data with some hashable objects, with no change to the objects. <span class="code">WeakValueDictionary</span> lets you noninvasively record transient associations between objects, and build caches. In each case, use a weak mapping, rather than a <span class="code">dict</span>, to ensure that an object that is otherwise garbage-collectable is not kept alive just by being used in a mapping. Similarly, a <span class="code">WeakSet</span> provides the same weak containment functionality in place of a normal <span class="code">set</span>.</p>
+<p>A typical example is a class that keeps track of its instances, but does not keep them alive just to keep track of them:</p>
+<pre data-code-language="python" data-type="programlisting">
+<strong><code class="kn">import</code></strong><code> </code><code class="nn">weakref</code><code>
+</code><strong><code class="k">class</code></strong><code> </code><code class="nc">Tracking</code><code class="p">:</code><code>
+</code><code>    </code><code class="n">_instances_dict</code><code> </code><code class="o">=</code><code> </code><code class="n">weakref</code><code class="o">.</code><code class="n">WeakValueDictionary</code><code class="p">(</code><code class="p">)</code><code>
+</code><code>
+</code><code>    </code><code class="k">def</code><code> </code><code class="fm">__init__</code><code class="p">(</code><code class="bp">self</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>        </code><code class="n">Tracking</code><code class="o">.</code><code class="n">_instances_dict</code><code class="p">[</code><code class="nb">id</code><code class="p">(</code><code class="bp">self</code><code class="p">)</code><code class="p">]</code><code> </code><code class="o">=</code><code> </code><code class="bp">self</code><code>
+</code><code>
+</code><code>    </code><code class="nd">@classmethod</code><code>
+</code><code>    </code><code class="k">def</code><code> </code><code class="nf">instances</code><code class="p">(</code><code class="bp">cls</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>        </code><strong><code class="k">return</code></strong><code> </code><code class="bp">cls</code><code class="o">.</code><code class="n">_instances_dict</code><code class="o">.</code><code class="n">values</code><code class="p">(</code><code class="p">)</code></pre>
+<p>When the <span class="code">Tracking</span> instances are hashable, a similar class can be implemented using a <span class="code">WeakSet</span> of the instances, or a <span class="code">WeakKeyDictionary</span> with the instances as keys and <span class="code"><strong>None</strong></span> for<a contenteditable="false" data-primary="" data-startref="gcmod14" data-type="indexterm" id="idm44924506441056"/><a contenteditable="false" data-primary="" data-startref="gcollect14" data-type="indexterm" id="idm44924506439680"/><a contenteditable="false" data-primary="" data-startref="ECgarbage14" data-type="indexterm" id="idm44924506438304"/><a contenteditable="false" data-primary="" data-startref="weakrefm14" data-type="indexterm" id="idm44924506436928"/> the values.</p>
+</div></section>
+</div></section>
+</div></section></div></body></html>

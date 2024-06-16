@@ -1,0 +1,470 @@
+<html><head></head><body>
+<section data-type="chapter" epub:type="chapter" data-pdf-bookmark="Chapter 15. Extensibility" class="preface"><div class="preface" id="extensibility">
+<h1 class="calibre10" id="calibre_pb_0"><span class="calibre">Chapter 15. </span>Extensibility</h1>
+
+
+<p class="author1">This chapter focuses on extensibility. <a data-type="indexterm" data-primary="extensibility" id="ix_extn" class="calibre5"/>Extensibility underpins this part of the book; it’s important to understand this key concept. Once you know how extensibility affects robustness, you’ll start seeing opportunities to apply it throughout your codebase. Extensible systems allow other developers to enhance your codebase with confidence, reducing the chance of errors. Let’s examine how.</p>
+
+
+
+
+
+
+</div></section>
+
+<section data-type="chapter" epub:type="chapter" data-pdf-bookmark="Chapter 15. Extensibility" class="preface">
+<div class="preface" id="extensibility">
+<section data-type="sect1" data-pdf-bookmark="What Is Extensibility?" class="preface"><div class="preface" id="idm45644733251752">
+<h1 class="calibre12" id="calibre_pb_1">What Is Extensibility?</h1>
+
+<p class="author1"><em class="calibre6">Extensibility</em> is the property of systems <a data-type="indexterm" data-primary="extensibility" data-secondary="about" id="ix_extnabt" class="calibre5"/>that allows new functionality to be added without modifying existing parts of your system. Software is not static; it will change. Throughout your codebase’s lifetime, developers will change your software. The <em class="calibre6">soft</em> part of <em class="calibre6">software</em> indicates as much. These changes can be quite large. Think about the times you need to swap out a key piece of your architecture as you scale, or add in new workflows. These changes touch multiple parts of your codebase; simple typechecking won’t catch all errors at this level. After all, you may be redesigning your types completely. The goal of extensible software is to be designed in such a way that you have provided easy extension points for future developers, especially in areas of code that are changed often.</p>
+
+<p class="author1">To illustrate this idea, let’s consider a restaurant chain that wants to implement some sort of notification system to help suppliers respond to demand. A restaurant may have a special, or be out of a certain ingredient, or indicate that some ingredient has gone bad. In each case, the restaurant wants the supplier to automatically be notified that a restock is needed. The supplier has provided a Python library to do the actual notifications.</p>
+
+<p class="author1">The implementation looks like the following:</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre35"><code class="k">def</code> <code class="nf">declare_special</code><code class="calibre17">(</code><code class="n">dish</code><code class="calibre17">:</code> <code class="n">Dish</code><code class="calibre17">,</code> <code class="n">start_date</code><code class="calibre17">:</code> <code class="n">datetime</code><code class="calibre17">.</code><code class="n">datetime</code><code class="calibre17">,</code>
+                    <code class="n">end_time</code><code class="calibre17">:</code> <code class="n">datetime</code><code class="calibre17">.</code><code class="n">datetime</code><code class="calibre17">):</code>
+    <code class="c"># ... snip setup in local system ...</code>
+    <code class="c"># ... snip send notification to the supplier ...</code>
+
+<code class="k">def</code> <code class="nf">order_dish</code><code class="calibre17">(</code><code class="n">dish</code><code class="calibre17">:</code> <code class="n">Dish</code><code class="calibre17">):</code>
+    <code class="c"># ... snip automated preparation</code>
+    <code class="n">out_of_stock_ingredients</code> <code class="calibre17">=</code> <code class="calibre17">{</code><code class="n">ingred</code> <code class="k">for</code> <code class="n">ingred</code> <code class="calibre19">in</code> <code class="n">dish</code>
+                                <code class="k">if</code> <code class="n">out_of_stock</code><code class="calibre17">(</code><code class="n">ingred</code><code class="calibre17">)}</code>
+    <code class="k">if</code> <code class="n">out_of_stock_ingredients</code><code class="calibre17">:</code>
+        <code class="c"># ... snip taking dishes off menu ...</code>
+        <code class="c"># ... snip send notification to the supplier ...</code>
+
+
+<code class="c"># called every 24 hours</code>
+<code class="k">def</code> <code class="nf">check_for_expired_ingredients</code><code class="calibre17">():</code>
+    <code class="n">expired_ingredients</code> <code class="calibre17">=</code> <code class="calibre17">{</code><code class="n">ing</code> <code class="k">for</code> <code class="n">ing</code> <code class="calibre19">in</code> <code class="n">ingredient</code> <code class="calibre19">in</code> <code class="n">get_items_in_stock</code><code class="calibre17">()}:</code>
+    <code class="k">if</code> <code class="n">expired_ingredients</code><code class="calibre17">:</code>
+        <code class="c"># ... snip taking dishes off menu ...</code>
+        <code class="c"># ... snip send notifications to the supplier ...</code></pre>
+
+<p class="author1">This code is pretty straightforward at first glance. Whenever an event of note occurs, the appropriate notification can be sent to the supplier (imagine some dictionary being sent as part of a JSON request).</p>
+
+<p class="author1">Fast forward a few months, and a new work item comes in. Your boss at the restaurant is so pleased with the notification system that they want to expand it. They want notifications to come to their email address. Sounds simple enough, right? You make the <code class="calibre17">declare_special</code> function take an email address as well:</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre35"><code class="k">def</code> <code class="nf">declare_special</code><code class="calibre17">(</code><code class="n">notification</code><code class="calibre17">:</code> <code class="n">NotificationType</code><code class="calibre17">,</code>
+                    <code class="n">start_date</code><code class="calibre17">:</code> <code class="n">datetime</code><code class="calibre17">.</code><code class="n">datetime</code><code class="calibre17">,</code>
+                    <code class="n">end_time</code><code class="calibre17">:</code> <code class="n">datetime</code><code class="calibre17">.</code><code class="n">datetime</code><code class="calibre17">,</code>
+                    <code class="n">email</code><code class="calibre17">:</code> <code class="n">Email</code><code class="calibre17">):</code>
+    <code class="c"># ... snip ...</code></pre>
+
+<p class="author1">This has far-reaching implications, though. A function calling <code class="calibre17">declare_special</code> will also need knowledge of what email to pass down. Thankfully, typecheckers will catch any omission. But what if other use cases start rolling in? You take a look at your backlog and the following tasks are present:</p>
+
+<ul class="printings">
+<li class="calibre9">
+<p class="author1">Notify sales team about specials and items out of stock.</p>
+</li>
+<li class="calibre9">
+<p class="author1">Notify the restaurant’s customers of new specials.</p>
+</li>
+<li class="calibre9">
+<p class="author1">Support different APIs for different suppliers.</p>
+</li>
+<li class="calibre9">
+<p class="author1">Support text message notifications so your boss can get notifications, too.</p>
+</li>
+<li class="calibre9">
+<p class="author1">Create a new notification type: New Menu Item. Marketers and the boss want to know about this, but not the supplier.</p>
+</li>
+</ul>
+
+<p class="author1">As developers implement these features, <code class="calibre17">declare_special</code> gets bigger and bigger. It handles more and more cases, and as the logic gets more complex, the potential for making a mistake grows. What’s worse, any changes to the API (such as adding a list of email addresses or phone numbers for texting) will have repercussions for all the callers. At some point, doing simple things like adding a new email address to the list of marketers touches multiple files in your codebase.<a data-type="indexterm" data-primary="“shotgun surgery”" data-primary-sortas="shotgun" id="idm45644733128472" class="calibre5"/> This is colloquially known as “shotgun surgery”:<sup class="calibre11"><a data-type="noteref" id="idm45644733127304-marker" href="part0020_split_007.html#idm45644733127304" class="calibre5">1</a></sup> where a single change spreads out in a blast pattern, impacting a variety of files. Furthermore, developers are modifying existing code, increasing the chances of a mistake. To top it off, we’ve only covered <code class="calibre17">declare_special</code>, but <code class="calibre17">order_dish</code> and <code class="calibre17">check_for_expired_ingredients</code> need their own custom logic as well. Handling the notification code duplicated everywhere would be quite tedious. Ask yourself if you would enjoy having to look for every notification snippet in the codebase just because a new user wants text notifications.</p>
+
+<p class="author1">This all stems from the code not being very extensible. You start requiring developers to know about all the intricacies of multiple files in order to make their changes.<a data-type="indexterm" data-primary="complexity" data-secondary="necessary and accidental" id="idm45644733123944" class="calibre5"/> It will take significantly more work for a maintainer to implement their features. Recall from <a data-type="xref" href="part0003_split_000.html#intro" class="calibre5">Chapter 1</a> the discussion between accidental complexity and necessary complexity. Necessary complexity is<a data-type="indexterm" data-primary="necessary complexity" id="idm45644733121848" class="calibre5"/> intrinsic to your problem domain; accidental complexity is the complexity you introduce. In this case, the combination of notifications, recipients, and filters is necessary; it is a required functionality of the system.</p>
+
+<p class="author1">However, how you implement the system dictates how much accidental complexity you incur.<a data-type="indexterm" data-primary="accidental complexity" id="idm45644733120312" class="calibre5"/> The way I’ve described is chock full of accidental complexity. Adding any one simple thing is quite a monumental undertaking. Requiring developers to hunt through the codebase to find all the places that need to change is just asking for trouble. Easy changes should be easy to make. Otherwise, extending the system becomes a chore every single time.<a data-type="indexterm" data-primary="extensibility" data-secondary="about" data-startref="ix_extnabt" id="idm45644733119112" class="calibre5"/></p>
+
+
+
+
+
+
+
+
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+</div></section>
+
+<section data-type="chapter" epub:type="chapter" data-pdf-bookmark="Chapter 15. Extensibility" class="preface">
+<div class="preface" id="extensibility">
+<section data-type="sect1" data-pdf-bookmark="What Is Extensibility?" class="preface">
+<div class="preface" id="idm45644733251752">
+<section data-type="sect2" data-pdf-bookmark="The Redesign" class="preface"><div class="preface" id="idm45644733117768">
+<h2 class="calibre34" id="calibre_pb_2">The Redesign</h2>
+
+<p class="author1">Let’s look at<a data-type="indexterm" data-primary="extensibility" data-secondary="redesign of notification system" id="ix_extnred" class="calibre5"/> the <code class="calibre17">declare_special</code> function again:</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre35"><code class="k">def</code> <code class="nf">declare_special</code><code class="calibre17">(</code><code class="n">notification</code><code class="calibre17">:</code> <code class="n">NotificationType</code><code class="calibre17">,</code>
+                    <code class="n">start_date</code><code class="calibre17">:</code> <code class="n">datetime</code><code class="calibre17">.</code><code class="n">datetime</code><code class="calibre17">,</code>
+                    <code class="n">end_time</code><code class="calibre17">:</code> <code class="n">datetime</code><code class="calibre17">.</code><code class="n">datetime</code><code class="calibre17">,</code>
+                    <code class="n">email</code><code class="calibre17">:</code> <code class="n">Email</code><code class="calibre17">):</code>
+    <code class="c"># ... snip ...</code></pre>
+
+<p class="author1">The problem all started with adding email as a parameter to the function. This is what caused a ripple effect that affected other parts of the codebase. It’s not the future developer’s fault; they are often constrained by time, trying to jam their feature into a part of the codebase they are unfamiliar with. They will typically follow the patterns already laid out for them. If you can lay groundwork to lead them in the right direction, you increase the maintainability of your code. If you let the maintainability fester, you start seeing methods like the following:</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre35"><code class="k">def</code> <code class="nf">declare_special</code><code class="calibre17">(</code><code class="n">notification</code><code class="calibre17">:</code> <code class="n">NotificationType</code><code class="calibre17">,</code>
+                    <code class="n">start_date</code><code class="calibre17">:</code> <code class="n">datetime</code><code class="calibre17">.</code><code class="n">datetime</code><code class="calibre17">,</code>
+                    <code class="n">end_time</code><code class="calibre17">:</code> <code class="n">datetime</code><code class="calibre17">.</code><code class="n">datetime</code><code class="calibre17">,</code>
+                    <code class="n">emails</code><code class="calibre17">:</code> <code class="nb">list</code><code class="calibre17">[</code><code class="n">Email</code><code class="calibre17">],</code>
+                    <code class="n">texts</code><code class="calibre17">:</code> <code class="nb">list</code><code class="calibre17">[</code><code class="n">PhoneNumber</code><code class="calibre17">],</code>
+                    <code class="n">send_to_customer</code><code class="calibre17">:</code> <code class="nb">bool</code><code class="calibre17">):</code>
+    <code class="c"># ... snip ...</code></pre>
+
+<p class="author1">The function will grow and grow out of control until it’s a tangled mess of dependencies. If I need to add a customer to a mailing list, why do I need to look at how specials are declared?</p>
+
+<p class="author1">I need to redesign the notification system so that changes are easy to make. First, I’ll look at use cases and think about what needs to be made easy for future developers. (If you’d like additional advice around designing interfaces, revisit <a data-type="xref" href="part0011.html#part_2" class="calibre5">Part II</a>, specifically <a data-type="xref" href="part0015_split_000.html#api" class="calibre5">Chapter 11</a>.) In this specific use case, I want future developers to be able to add three things easily:</p>
+
+<ul class="printings">
+<li class="calibre9">
+<p class="author1">New notification types</p>
+</li>
+<li class="calibre9">
+<p class="author1">New notification methods (such as email, text message, or APIs)</p>
+</li>
+<li class="calibre9">
+<p class="author1">New users to notify</p>
+</li>
+</ul>
+
+<p class="author1">Notification code is littered around the codebase, so I want to make sure that as developers make these changes, they don’t need to engage in any shotgun surgery. Remember, I want the easy things to be easy.</p>
+
+<p class="author1">Now, think about my <em class="calibre6">necessary</em> complexities. <a data-type="indexterm" data-primary="necessary complexity" data-secondary="in notification system" data-secondary-sortas="notification" id="idm45644732952504" class="calibre5"/>In this case, there will be multiple notification methods, multiple notification types, and multiple users needing to be notified. These are three separate complexities; I want to limit the interactions between these. Part of the problem of <code class="calibre17">declare_special</code> is that the combination of concerns it has to account for are daunting. Multiply that complexity by every function needing slightly different notification needs and you have a real nightmare of maintenance on your hand.</p>
+
+<p class="author1">The first thing to do is decouple the intents as best as you can. I’ll start by creating classes for each notification type:</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre35"><code class="nd">@dataclass</code>
+<code class="k">class</code> <code class="nc">NewSpecial</code><code class="calibre17">:</code>
+    <code class="n">dish</code><code class="calibre17">:</code> <code class="n">Dish</code>
+    <code class="n">start_date</code><code class="calibre17">:</code> <code class="n">datetime</code><code class="calibre17">.</code><code class="n">datetime</code>
+    <code class="n">end_date</code><code class="calibre17">:</code> <code class="n">datetime</code><code class="calibre17">.</code><code class="n">datetime</code>
+
+<code class="nd">@dataclass</code>
+<code class="k">class</code> <code class="nc">IngredientsOutOfStock</code><code class="calibre17">:</code>
+    <code class="n">ingredients</code><code class="calibre17">:</code> <code class="n">Set</code><code class="calibre17">[</code><code class="n">Ingredient</code><code class="calibre17">]</code>
+
+<code class="nd">@dataclass</code>
+<code class="k">class</code> <code class="nc">IngredientsExpired</code><code class="calibre17">:</code>
+    <code class="n">ingredients</code><code class="calibre17">:</code> <code class="n">Set</code><code class="calibre17">[</code><code class="n">Ingredient</code><code class="calibre17">]</code>
+
+<code class="nd">@dataclass</code>
+<code class="k">class</code> <code class="nc">NewMenuItem</code><code class="calibre17">:</code>
+    <code class="n">dish</code><code class="calibre17">:</code> <code class="n">Dish</code>
+
+<code class="n">Notification</code> <code class="calibre17">=</code> <code class="n">Union</code><code class="calibre17">[</code><code class="n">NewSpecial</code><code class="calibre17">,</code> <code class="n">IngredientsOutOfStock</code><code class="calibre17">,</code>
+                     <code class="n">IngredientsExpired</code><code class="calibre17">,</code> <code class="n">NewMenuItem</code><code class="calibre17">]</code></pre>
+
+<p class="author1">If I think about how I want <code class="calibre17">declare_special</code> to interact with the codebase, I really only want it to know about this <code class="calibre17">NotificationType</code>. Declaring a special should not require knowing who is signed up for that special and how they will be notified. Ideally, the <code class="calibre17">declare_special</code> (and any other function needing to send notifications) should look something like this:</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre35"><code class="k">def</code> <code class="nf">declare_special</code><code class="calibre17">(</code><code class="n">dish</code><code class="calibre17">:</code> <code class="n">Dish</code><code class="calibre17">,</code> <code class="n">start_date</code><code class="calibre17">:</code> <code class="n">datetime</code><code class="calibre17">.</code><code class="n">datetime</code><code class="calibre17">,</code>
+                    <code class="n">end_time</code><code class="calibre17">:</code> <code class="n">datetime</code><code class="calibre17">.</code><code class="n">datetime</code><code class="calibre17">):</code>
+    <code class="c"># ... snip setup in local system ...</code>
+    <code class="n">send_notification</code><code class="calibre17">(</code><code class="n">NewSpecial</code><code class="calibre17">(</code><code class="n">dish</code><code class="calibre17">,</code> <code class="n">start_date</code><code class="calibre17">,</code> <code class="n">end_date</code><code class="calibre17">))</code></pre>
+
+<p class="author1"><code class="calibre17">send_notification</code> can just be declared like such:</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre35"><code class="k">def</code> <code class="nf">send_notification</code><code class="calibre17">(</code><code class="n">notification</code><code class="calibre17">:</code> <code class="n">Notification</code><code class="calibre17">):</code>
+    <code class="c"># ... snip ...</code></pre>
+
+<p class="author1">This means that if any part of the codebase wants to send a notification, it merely needs to invoke this function. All you need to pass in is a notification type. Adding new notification types is simple; you add a new class, add that class to the <code class="calibre17">Union</code>, and call the <code class="calibre17">send_notification</code> with the new notification type.</p>
+
+<p class="author1">Next, you have to make it easy to add new notification methods. Again, I’ll add new types to represent each notification method:</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre35"><code class="nd">@dataclass</code>
+<code class="k">class</code> <code class="nc">Text</code><code class="calibre17">:</code>
+    <code class="n">phone_number</code><code class="calibre17">:</code> <code class="nb">str</code>
+
+<code class="nd">@dataclass</code>
+<code class="k">class</code> <code class="nc">Email</code><code class="calibre17">:</code>
+    <code class="n">email_address</code><code class="calibre17">:</code> <code class="nb">str</code>
+
+<code class="nd">@dataclass</code>
+<code class="k">class</code> <code class="nc">SupplierAPI</code><code class="calibre17">:</code>
+    <code class="k">pass</code>
+
+<code class="n">NotificationMethod</code> <code class="calibre17">=</code> <code class="n">Union</code><code class="calibre17">[</code><code class="n">Text</code><code class="calibre17">,</code> <code class="n">Email</code><code class="calibre17">,</code> <code class="n">SupplierAPI</code><code class="calibre17">]</code></pre>
+
+<p class="author1">Somewhere in the codebase, I need to actually send a different notification type per method. I can create a few helper functions to handle that functionality:</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre35"><code class="k">def</code> <code class="nf">notify</code><code class="calibre17">(</code><code class="n">notification_method</code><code class="calibre17">:</code> <code class="n">NotificationMethod</code><code class="calibre17">,</code> <code class="n">notification</code><code class="calibre17">:</code> <code class="n">Notification</code><code class="calibre17">):</code>
+    <code class="k">if</code> <code class="nb">isinstance</code><code class="calibre17">(</code><code class="n">notification_method</code><code class="calibre17">,</code> <code class="n">Text</code><code class="calibre17">):</code>
+        <code class="n">send_text</code><code class="calibre17">(</code><code class="n">notification_method</code><code class="calibre17">,</code> <code class="n">notification</code><code class="calibre17">)</code>
+    <code class="k">elif</code> <code class="nb">isinstance</code><code class="calibre17">(</code><code class="n">notification_method</code><code class="calibre17">,</code> <code class="n">Email</code><code class="calibre17">):</code>
+        <code class="n">send_email</code><code class="calibre17">(</code><code class="n">notification_method</code><code class="calibre17">,</code> <code class="n">notification</code><code class="calibre17">)</code>
+    <code class="k">elif</code> <code class="nb">isinstance</code><code class="calibre17">(</code><code class="n">notification_method</code><code class="calibre17">,</code> <code class="n">SupplierAPI</code><code class="calibre17">):</code>
+        <code class="n">send_to_supplier</code><code class="calibre17">(</code><code class="n">notification</code><code class="calibre17">)</code>
+    <code class="k">else</code><code class="calibre17">:</code>
+        <code class="k">raise</code> <code class="ne">ValueError</code><code class="calibre17">(</code><code class="s">"Unsupported Notification Method"</code><code class="calibre17">)</code>
+
+<code class="k">def</code> <code class="nf">send_text</code><code class="calibre17">(</code><code class="n">text</code><code class="calibre17">:</code> <code class="n">Text</code><code class="calibre17">,</code> <code class="n">notification</code><code class="calibre17">:</code> <code class="n">Notification</code><code class="calibre17">):</code>
+    <code class="k">if</code> <code class="nb">isinstance</code><code class="calibre17">(</code><code class="n">notification</code><code class="calibre17">,</code> <code class="n">NewSpecial</code><code class="calibre17">):</code>
+        <code class="c"># ... snip send text ...</code>
+        <code class="k">pass</code>
+    <code class="k">elif</code> <code class="nb">isinstance</code><code class="calibre17">(</code><code class="n">notification</code><code class="calibre17">,</code> <code class="n">IngredientsOutOfStock</code><code class="calibre17">):</code>
+        <code class="c"># ... snip send text ...</code>
+        <code class="k">pass</code>
+    <code class="k">elif</code> <code class="nb">isinstance</code><code class="calibre17">(</code><code class="n">notification</code><code class="calibre17">,</code> <code class="n">IngredientsExpired</code><code class="calibre17">):</code>
+        <code class="c"># ... snip send text ...</code>
+        <code class="k">pass</code>
+    <code class="k">elif</code> <code class="nb">isinstance</code><code class="calibre17">(</code><code class="n">notification</code><code class="calibre17">,</code> <code class="n">NewMenuItem</code><code class="calibre17">):</code>
+        <code class="c"># .. snip send text ...</code>
+        <code class="k">pass</code>
+    <code class="k">raise</code> <code class="ne">NotImplementedError</code><code class="calibre17">(</code><code class="s">"Unsupported Notification Method"</code><code class="calibre17">)</code>
+
+<code class="k">def</code> <code class="nf">send_email</code><code class="calibre17">(</code><code class="n">email</code><code class="calibre17">:</code> <code class="n">Email</code><code class="calibre17">,</code> <code class="n">notification</code><code class="calibre17">:</code> <code class="n">Notification</code><code class="calibre17">):</code>
+    <code class="c"># .. similar to send_text ...</code>
+
+
+<code class="k">def</code> <code class="nf">send_to_supplier</code><code class="calibre17">(</code><code class="n">notification</code><code class="calibre17">:</code> <code class="n">Notification</code><code class="calibre17">):</code>
+    <code class="c"># .. similar to send_text</code></pre>
+
+<p class="author1">Now, adding a new notification method is straightforward as well. I add a new type, add it to the union, add an <code class="calibre17">if</code> statement in <code class="calibre17">notify</code>, and write a corresponding method to handle all different notification types.</p>
+
+<p class="author1">It may seem unwieldy to handle all the notification types in each <code class="calibre17">send_<em class="calibre6">*</em></code> method, but this is necessary complexity; there is different functionality per method/type combo due to different messages, different information, and different formats. If the sheer amount of code did grow, you could make a dynamic lookup dictionary (so that adding a new key-value would be all that’s needed for adding a notification method), but in these cases you will trade off early error detection with typechecking for more readability.</p>
+
+<p class="author1">Now I have easy ways to add a new notification method or type. I just have to tie it all together so that it’s easy to add new users. To do that, I will write a function to get the list of users needing to be notified:</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre35"><code class="n">users_to_notify</code><code class="calibre17">:</code> <code class="n">Dict</code><code class="calibre17">[</code><code class="nb">type</code><code class="calibre17">,</code> <code class="n">List</code><code class="calibre17">[</code><code class="n">NotificationMethod</code><code class="calibre17">]]</code> <code class="calibre17">=</code> <code class="calibre17">{</code>
+    <code class="n">NewSpecial</code><code class="calibre17">:</code> <code class="calibre17">[</code><code class="n">SupplierAPI</code><code class="calibre17">(),</code> <code class="n">Email</code><code class="calibre17">(</code><code class="s">"boss@company.org"</code><code class="calibre17">),</code>
+                 <code class="n">Email</code><code class="calibre17">(</code><code class="s">"marketing@company.org"</code><code class="calibre17">),</code> <code class="n">Text</code><code class="calibre17">(</code><code class="s">"555-2345"</code><code class="calibre17">)],</code>
+    <code class="n">IngredientsOutOfStock</code><code class="calibre17">:</code> <code class="calibre17">[</code><code class="n">SupplierAPI</code><code class="calibre17">(),</code> <code class="n">Email</code><code class="calibre17">(</code><code class="s">"boss@company.org"</code><code class="calibre17">)],</code>
+    <code class="n">IngredientsExpired</code><code class="calibre17">:</code> <code class="calibre17">[</code><code class="n">SupplierAPI</code><code class="calibre17">(),</code> <code class="n">Email</code><code class="calibre17">(</code><code class="s">"boss@company.org"</code><code class="calibre17">)],</code>
+    <code class="n">NewMenuItem</code><code class="calibre17">:</code> <code class="calibre17">[</code><code class="n">Email</code><code class="calibre17">(</code><code class="s">"boss@company.org"</code><code class="calibre17">),</code> <code class="n">Email</code><code class="calibre17">(</code><code class="s">"marketing@company.org"</code><code class="calibre17">)]</code>
+<code class="calibre17">}</code></pre>
+
+<p class="author1">In practice, this data could be coming from a config file or some other declarative source, but for the brevity needed for a book example, it will do. To add new users, I just add a new entry to this dictionary. Adding new notification methods or notification types for a user is just as easy.  The code for users to notify is much easier to <span class="calibre">handle</span>.</p>
+
+<p class="author1">To put it all together, I’ll implement <code class="calibre17">send_notification</code> using all of these concepts:</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre35"><code class="k">def</code> <code class="nf">send_notification</code><code class="calibre17">(</code><code class="n">notification</code><code class="calibre17">:</code> <code class="n">Notification</code><code class="calibre17">):</code>
+    <code class="k">try</code><code class="calibre17">:</code>
+        <code class="n">users</code> <code class="calibre17">=</code> <code class="n">users_to_notify</code><code class="calibre17">[</code><code class="nb">type</code><code class="calibre17">(</code><code class="n">notification</code><code class="calibre17">)]</code>
+    <code class="k">except</code> <code class="ne">KeyError</code><code class="calibre17">:</code>
+        <code class="k">raise</code> <code class="ne">ValueError</code><code class="calibre17">(</code><code class="s">"Unsupported Notification Method"</code><code class="calibre17">)</code>
+    <code class="k">for</code> <code class="n">notification_method</code> <code class="calibre19">in</code> <code class="n">users</code><code class="calibre17">:</code>
+        <code class="n">notify</code><code class="calibre17">(</code><code class="n">notification_method</code><code class="calibre17">,</code> <code class="n">notification</code><code class="calibre17">)</code></pre>
+
+<p class="author1">That’s it! All of this code for notifications can live in one file, and the rest of the codebase only needs to know one function—<code class="calibre17">send_notification</code>—to interact with the notification system. This becomes much easier to test once there’s no need to interact with any other part of the codebase. Furthermore, this code is extensible; developers can easily add new notification types, methods, or users without trawling through the codebase for all the myriad invocations. You want to make it easy to add new functionality to your codebase while minimizing modifications to existing code. This is known as the Open-Closed Principle.<a data-type="indexterm" data-primary="extensibility" data-secondary="redesign of notification system" data-startref="ix_extnred" id="idm45644732428264" class="calibre5"/><a data-type="indexterm" data-primary="Open-Closed Principle (OCP)" id="ix_OCP" class="calibre5"/><a data-type="indexterm" data-primary="extensibility" data-secondary="Open-Closed Principle" id="ix_extnOCP" class="calibre5"/></p>
+</div></section>
+
+
+
+
+
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+</div></section>
+
+<section data-type="chapter" epub:type="chapter" data-pdf-bookmark="Chapter 15. Extensibility" class="preface">
+<div class="preface" id="extensibility">
+<section data-type="sect1" data-pdf-bookmark="Open-Closed Principle" class="preface"><div class="preface" id="idm45644733251160">
+<h1 class="calibre12" id="calibre_pb_3">Open-Closed Principle</h1>
+
+<p class="author1">The <em class="calibre6">Open-Closed Principle</em> (OCP) states that code should be open for extension and closed for modification.<sup class="calibre11"><a data-type="noteref" id="idm45644732423576-marker" href="part0020_split_007.html#idm45644732423576" class="calibre5">2</a></sup> This is the heart of extensibility. Our redesign in the previous section tried to uphold this principle. Rather than requiring new functionality to touch multiple parts of the codebase, it instead required adding new types or functions. Even when existing functions changed, all I did was add a new conditional check instead of modifying an existing check.</p>
+
+<p class="author1">It may seem like all I’ve done is aim for code reuse, but the OCP goes a step further. Yes, I’ve deduplicated the notification code, but more importantly, I’ve made it easier for developers to manage the complexity. Ask yourself which you prefer: implementing a feature by examining call stacks and not being sure if you found every place that needs to be changed, or one file that is easy to modify and doesn’t require extensive changes. I know what I’d pick.</p>
+
+<p class="author1">You’ve already been exposed to the OCP in this book. Duck typing (in <a data-type="xref" href="part0005_split_000.html#types" class="calibre5">Chapter 2</a>), subtyping (in <a data-type="xref" href="part0016_split_000.html#subtyping" class="calibre5">Chapter 12</a>), and protocols (in <a data-type="xref" href="part0017_split_000.html#protocols" class="calibre5">Chapter 13</a>) are all mechanisms that can help with the OCP.<a data-type="indexterm" data-primary="duck typing" data-secondary="helping with Open-Closed Principle" id="idm45644732344488" class="calibre5"/><a data-type="indexterm" data-primary="protocols" data-secondary="helping with Open-Closed Principle" id="idm45644732343528" class="calibre5"/><a data-type="indexterm" data-primary="subtyping" data-secondary="helping with Open-Closed Principle" id="idm45644732342568" class="calibre5"/> The common thread among all these mechanisms is that they allow you to program in a generic fashion. You no longer need to handle every special case directly where the functionality is used. Instead, you provide extension points for other developers to utilize, allowing them to inject their own functionality without modifying your code.</p>
+
+<p class="author1">The OCP is the heart of extensibility. Keeping your code extensible will improve robustness. Developers can implement functionality with confidence; there is one place to make the change, and the rest of the codebase is all geared up to support the change. Less cognitive overhead and less code to change will lead to fewer errors.</p>
+
+
+
+
+
+
+
+
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+</div></section>
+
+<section data-type="chapter" epub:type="chapter" data-pdf-bookmark="Chapter 15. Extensibility" class="preface">
+<div class="preface" id="extensibility">
+<section data-type="sect1" data-pdf-bookmark="Open-Closed Principle" class="preface">
+<div class="preface" id="idm45644733251160">
+<section data-type="sect2" data-pdf-bookmark="Detecting OCP Violations" class="preface"><div class="preface" id="idm45644732340392">
+<h2 class="calibre34" id="calibre_pb_4">Detecting OCP Violations</h2>
+
+<p class="author1">How can you tell if you should be writing code to be more extensible, adhering to the OCP?<a data-type="indexterm" data-primary="Open-Closed Principle (OCP)" data-secondary="detecting violations of" id="idm45644732338984" class="calibre5"/><a data-type="indexterm" data-primary="extensibility" data-secondary="Open-Closed Principle" data-tertiary="detecting OCP violations" id="idm45644732337992" class="calibre5"/> Here are some indicators that should raise an eyebrow as you think about your codebase:</p>
+<dl class="calibre13">
+<dt class="calibre14">Are the easy things hard to do?</dt>
+<dd class="calibre15">
+<p class="calibre16">Some things should be conceptually easy in your codebase. The effort needed to implement the concept should match the domain complexity. I once worked in a codebase that required 13 different files to be modified in order to add a user-configurable option. For a product that had hundreds of configurable options, this should have been an easy task. Suffice to say, it was not.</p>
+</dd>
+<dt class="calibre14">Do you encounter pushback against similar features?</dt>
+<dd class="calibre15">
+<p class="calibre16">If feature requesters are constantly pushing back on timelines for a feature, especially if it, in their words, “is almost identical to previous feature <em class="calibre6">X</em>“, ask yourself if the disconnect is due to complexity. It might be that the complexity is inherent in the domain, in which case you should make sure the feature requester is on the same page as you. If the complexity is accidental, though, your code probably needs to be reworked to make it easier to work in.</p>
+</dd>
+<dt class="calibre14">Do you have consistently high estimates?</dt>
+<dd class="calibre15">
+<p class="calibre16">Some teams use estimates to predict the amount of work they will do in a given timeline. If features consistently have high estimates, ask yourself the source of the estimate. Is complexity driving the high estimate, and is that complexity necessary? Is it risk and fear of the unknown? If it’s the latter, ask why your codebase feels risky to work in. Some teams split features into separate estimates by <span class="calibre">splitting</span> the work. If you’re doing this consistently, ask if restructuring the codebase could have mitigated the split.</p>
+</dd>
+<dt class="calibre14">Do commits contain large changesets?</dt>
+<dd class="calibre15">
+<p class="calibre16">Look for commits in your version control system that have a large number of files. This is a great indication that shotgun surgery is happening, especially if the same files keep showing up in multiple commits. Keep in mind this is a guideline; big commits don’t always indicate a problem, but if they happen frequently, it’s worth checking into.</p>
+</dd>
+</dl>
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+</div></section>
+
+<section data-type="chapter" epub:type="chapter" data-pdf-bookmark="Chapter 15. Extensibility" class="preface">
+<div class="preface" id="extensibility">
+<section data-type="sect1" data-pdf-bookmark="Open-Closed Principle" class="preface">
+<div class="preface" id="idm45644733251160">
+<section data-type="sect2" data-pdf-bookmark="Detecting OCP Violations" class="preface">
+<div class="preface" id="idm45644732340392">
+<div data-type="note" epub:type="note" class="calibre21"><h1 class="calibre38" id="calibre_pb_5">Discussion Topic</h1>
+<p class="author1">Which OCP violations have you encountered in your codebase? How could you restructure code to avoid them?<a data-type="indexterm" data-primary="extensibility" data-secondary="Open-Closed Principle" data-startref="ix_extnOCP" id="idm45644732326392" class="calibre5"/><a data-type="indexterm" data-primary="Open-Closed Principle (OCP)" data-startref="ix_OCP" id="idm45644732325144" class="calibre5"/></p>
+</div>
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+</div></section>
+
+<section data-type="chapter" epub:type="chapter" data-pdf-bookmark="Chapter 15. Extensibility" class="preface">
+<div class="preface" id="extensibility">
+<section data-type="sect1" data-pdf-bookmark="Open-Closed Principle" class="preface">
+<div class="preface" id="idm45644733251160">
+<section data-type="sect2" data-pdf-bookmark="Drawbacks" class="preface"><div class="preface" id="idm45644732323800">
+<h2 class="calibre34" id="calibre_pb_6">Drawbacks</h2>
+
+<p class="author1">Extensibility is not a panacea to all of your coding woes.<a data-type="indexterm" data-primary="extensibility" data-secondary="drawbacks of" id="idm45644732322264" class="calibre5"/> In fact, you can actually <em class="calibre6">degrade</em> your codebase with too much flexibility. If you overdo the OCP and try to make everything configurable and extensible, you will quickly find yourself in a mess.<a data-type="indexterm" data-primary="accidental complexity" data-secondary="effects of extensibility on" id="idm45644732320600" class="calibre5"/> The problem is that while making your code extensible reduces accidental complexity in making changes, it can <em class="calibre6">increase</em> accidental complexity in other areas.</p>
+
+<p class="author1">First, readability suffers. You are creating a whole new layer of abstraction that separates your business logic from other parts of your codebase. Anyone who wants to understand the entire picture has to jump through a few extra hoops. This will affect new developers getting up to speed, as well as hinder debugging efforts. You can mitigate this with good documentation and explaining your code structure.</p>
+
+<p class="author1">Secondly, you introduce<a data-type="indexterm" data-primary="coupling" data-secondary="introduction with extensibility" id="idm45644732317656" class="calibre5"/> a coupling that may not have been present before.<a data-type="indexterm" data-primary="dependencies" data-secondary="extensible code leading to" id="idm45644732316456" class="calibre5"/> Before, separate parts of the codebase were independent of each other. Now, they share a common subsystem; any change in that subsystem will affect all the consumers. I’ll go more in depth in <a data-type="xref" href="part0021_split_000.html#dependencies" class="calibre5">Chapter 16</a>. Mitigate this with a strong set of tests.</p>
+
+<p class="author1">Use the OCP in moderation and take care when applying these principles. Use them too much, and your codebase will be overabstracted with a confusing tangle of dependencies. Use it too little, and developers will take longer to make changes as well as introduce more bugs. Define extension points in areas that you are reasonably sure that someone will have to modify again, and you will drastically improve your future maintainer’s experience with your codebase.</p>
+</div></section>
+
+
+
+
+
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+</div></section>
+
+<section data-type="chapter" epub:type="chapter" data-pdf-bookmark="Chapter 15. Extensibility" class="preface">
+<div class="preface" id="extensibility">
+<section data-type="sect1" data-pdf-bookmark="Closing Thoughts" class="preface"><div class="preface" id="idm45644732313304">
+<h1 class="calibre12" id="calibre_pb_7">Closing Thoughts</h1>
+
+<p class="author1">Extensibility is one of the most important aspects of codebase maintenance. It allows your collaborators a way of adding functionality without modifying existing code. Any time you get away without modifying existing code is a time that you aren’t introducing any regressions. Adding extensible code now prevents bugs in the future. Remember the OCP: keep code open to extension but closed for modification. Apply this principle judiciously and you will see your codebase become more maintainable.</p>
+
+<p class="author1">Extensibility is an important theme that will weave throughout the next few chapters. In the next chapter, I’m going to focus on dependencies and how relationships in your codebase can constrain its extensibility. You’ll learn about the different types of dependencies and how to manage them. You’ll learn how to visualize and understand your dependencies, and why some parts of your codebases can have more dependencies than others. Once you start managing your dependencies, you will find it much easier to extend and modify code.<a data-type="indexterm" data-primary="extensibility" data-startref="ix_extn" id="idm45644732290952" class="calibre5"/></p>
+</div></section>
+
+
+
+
+
+
+
+<div data-type="footnotes" class="calibre25"><p data-type="footnote" id="idm45644733127304" class="calibre26"><sup class="calibre27"><a href="part0020_split_001.html#idm45644733127304-marker" class="calibre5">1</a></sup> Martin Fowler. <em class="calibre6">Refactoring: Improving the Design of Existing Code</em>. 2nd ed. Upper Saddle River, NJ: Addison-Wesley Professional, 2018.</p><p data-type="footnote" id="idm45644732423576" class="calibre26"><sup class="calibre27"><a href="part0020_split_003.html#idm45644732423576-marker" class="calibre5">2</a></sup> The OCP was first described in <em class="calibre6">Object-Oriented Software Construction</em> by Bertrand Meyer (Pearson).</p></div></div></section></body></html>

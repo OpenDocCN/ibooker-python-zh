@@ -1,0 +1,563 @@
+<html><head></head><body>
+<section data-type="chapter" epub:type="chapter" data-pdf-bookmark="Chapter 17. Composability" class="preface"><div class="preface" id="composability">
+<h1 class="calibre10" id="calibre_pb_0"><span class="calibre">Chapter 17. </span>Composability</h1>
+
+
+<p class="author1">One of the biggest challenges you face as a developer is predicting how future developers will change your system. <a data-type="indexterm" data-primary="composability" id="ix_cmpo" class="calibre5"/>Businesses evolve, and the assertions of today become the legacy systems of the future. How would you support such a system? How do you reduce the friction that future developers will face when adapting your system? You will need to develop your code so that it can perform in all sorts of circumstances.</p>
+
+<p class="author1">In this chapter, you are going to learn how to develop that code by thinking in terms of composability. When you write with composability in mind, you create your code to be small, discrete, and reusable. I’ll show you an architecture that is not composable and how that can hinder development. You’ll then learn how to fix it with composability in mind. You’ll learn how to compose objects, functions, and algorithms to make your codebase more extensible. But first, let’s examine how composability increases maintainability.</p>
+
+
+
+
+
+
+</div></section>
+
+<section data-type="chapter" epub:type="chapter" data-pdf-bookmark="Chapter 17. Composability" class="preface">
+<div class="preface" id="composability">
+<section data-type="sect1" data-pdf-bookmark="Composability" class="preface"><div class="preface" id="idm45644731933416">
+<h1 class="calibre12" id="calibre_pb_1">Composability</h1>
+
+<p class="author1"><em class="calibre6">Composability</em> focuses on building small components with minimal inter-dependencies and little business logic embedded inside. The goal is that future developers can use any one of these components to build their own solutions.<a data-type="indexterm" data-primary="dependencies" data-secondary="reduction with composability" id="idm45644731931240" class="calibre5"/> By making them small, you make them easier to read and understand. By reducing dependencies, you save future developers from worrying about all the costs involved in pulling new code (such as the costs you learned about in <a data-type="xref" href="part0021_split_000.html#dependencies" class="calibre5">Chapter 16</a>). By keeping the components mostly free of business logic, you allow your code to solve new problems, even if those new problems look nothing like the problems you encounter today. As the number of composable components increases, developers can mix’n’match your code to create brand-new applications with the utmost ease. By focusing on composability, you make it easier to reuse and extend your code.</p>
+
+<p class="author1">Consider the lowly spice rack in a kitchen. What sort of meals would you create if you were to stock your spice rack exclusively with blends of spices, such as pumpkin pie spice (cinnamon, nutmeg, ginger, and cloves) or Chinese five-spice (cinnamon, fennel, star anise, Sichuan peppercorns, and cloves)? You’d end up predominantly making recipes that centered on these spice mixes, such as pumpkin pie or five-spice chicken. While these blends make  specialized meals incredibly easy to prepare, what happens if you need to make something that just uses individual ingredients, such as a cinnamon-clove syrup? You could try to substitute pumpkin pie spice or five-spice powder and hope that the extra ingredients don’t clash, or you could buy cinnamon and cloves individually.</p>
+
+<p class="author1">The individual spices are analagous to small, composable bits of software. You don’t know what dishes you might want to make in the future, nor do you know what business needs you will have in the future. By focusing on discrete components, you give your collaborators flexibility in using what they need, without trying to make suboptimal substitutions or pulling other components along for the ride. And if you need a specialized blend of components (such as a pumpkin pie spice), you are free to build your application from those components. Software doesn’t expire like spice mixes; you can have your cake (or pumpkin pie) and eat it too. Build the specialized applications from small, discrete, composable software, and you’ll find that you can reuse those components in brand new ways next week or next year.</p>
+
+<p class="author1">You’ve actually seen composability before when you learned about building your own types in <a data-type="xref" href="part0011.html#part_2" class="calibre5">Part II</a>. I built up an array of small, discrete types that could be reused in multiple scenarios. Each type contributed to a vocabulary of concepts in the codebase. Developers could use these types to represent domain ideas, but also to build upon to define new concepts. Take a look at a definition of a soup from <a data-type="xref" href="part0013_split_000.html#dataclasses" class="calibre5">Chapter 9</a>:</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre35"><code class="k">class</code> <code class="nc">ImperialMeasure</code><code class="calibre17">(</code><code class="n">Enum</code><code class="calibre17">):</code>
+    <code class="n">TEASPOON</code> <code class="calibre17">=</code> <code class="n">auto</code><code class="calibre17">()</code>
+    <code class="n">TABLESPOON</code> <code class="calibre17">=</code> <code class="n">auto</code><code class="calibre17">()</code>
+    <code class="n">CUP</code> <code class="calibre17">=</code> <code class="n">auto</code><code class="calibre17">()</code>
+
+<code class="k">class</code> <code class="nc">Broth</code><code class="calibre17">(</code><code class="n">Enum</code><code class="calibre17">):</code>
+    <code class="n">VEGETABLE</code> <code class="calibre17">=</code> <code class="n">auto</code><code class="calibre17">()</code>
+    <code class="n">CHICKEN</code> <code class="calibre17">=</code> <code class="n">auto</code><code class="calibre17">()</code>
+    <code class="n">BEEF</code> <code class="calibre17">=</code> <code class="n">auto</code><code class="calibre17">()</code>
+    <code class="n">FISH</code> <code class="calibre17">=</code> <code class="n">auto</code><code class="calibre17">()</code>
+
+<code class="nd">@dataclass</code><code class="calibre17">(</code><code class="n">frozen</code><code class="calibre17">=</code><code class="nb">True</code><code class="calibre17">)</code>
+<code class="c"># Ingredients added into the broth</code>
+<code class="k">class</code> <code class="nc">Ingredient</code><code class="calibre17">:</code>
+    <code class="n">name</code><code class="calibre17">:</code> <code class="nb">str</code>
+    <code class="n">amount</code><code class="calibre17">:</code> <code class="nb">float</code> <code class="calibre17">=</code> <code class="mi">1</code>
+    <code class="n">units</code><code class="calibre17">:</code> <code class="n">ImperialMeasure</code> <code class="calibre17">=</code> <code class="n">ImperialMeasure</code><code class="calibre17">.</code><code class="n">CUP</code>
+
+<code class="nd">@dataclass</code>
+<code class="k">class</code> <code class="nc">Recipe</code><code class="calibre17">:</code>
+    <code class="n">aromatics</code><code class="calibre17">:</code> <code class="nb">set</code><code class="calibre17">[</code><code class="n">Ingredient</code><code class="calibre17">]</code>
+    <code class="n">broth</code><code class="calibre17">:</code> <code class="n">Broth</code>
+    <code class="n">vegetables</code><code class="calibre17">:</code> <code class="nb">set</code><code class="calibre17">[</code><code class="n">Ingredient</code><code class="calibre17">]</code>
+    <code class="n">meats</code><code class="calibre17">:</code> <code class="nb">set</code><code class="calibre17">[</code><code class="n">Ingredient</code><code class="calibre17">]</code>
+    <code class="n">starches</code><code class="calibre17">:</code> <code class="nb">set</code><code class="calibre17">[</code><code class="n">Ingredient</code><code class="calibre17">]</code>
+    <code class="n">garnishes</code><code class="calibre17">:</code> <code class="nb">set</code><code class="calibre17">[</code><code class="n">Ingredient</code><code class="calibre17">]</code>
+    <code class="n">time_to_cook</code><code class="calibre17">:</code> <code class="n">datetime</code><code class="calibre17">.</code><code class="n">timedelta</code></pre>
+
+<p class="author1">I was able to create a <code class="calibre17">Recipe</code> out of <code class="calibre17">Ingredient</code>, <code class="calibre17">Broth</code>, and <code class="calibre17">ImperialMeasure</code> objects. All of these concepts could have been embedded in <code class="calibre17">Recipe</code> itself, but this would have make reuse tougher (if somebody wanted to use an <code class="calibre17">ImperialMeasure</code>, it’d be confusing to depend on <code class="calibre17">Recipe</code> to do so.)  By keeping each of these types disparate, I allow future maintainers to build new types, such as non–soup-related concepts, without needing to find ways to tease apart dependencies.</p>
+
+<p class="author1">This<a data-type="indexterm" data-primary="type composition" id="idm45644731814392" class="calibre5"/> was an example of <em class="calibre6">type composition</em>, where I created discrete types that could be mixed and matched in new ways. In this chapter, I’m going to focus on other common composition types in Python, such as composing functionality, functions, and algorithms. Take, for instance, the simple menu at a sandwich shop, like the one in <a data-type="xref" href="part0022_split_001.html#menu" class="calibre5">Figure 17-1</a>.</p>
+
+<figure class="calibre36"><div id="menu" class="figure">
+<img src="../images/00029.gif" alt="A fictional menu, containing various wraps, sandwiches, sides and drinks. The menu advertises a pick-2 combo" class="calibre40"/>
+<h6 class="calibre37"><span class="calibre">Figure 17-1. </span>A fictional menu</h6>
+</div></figure>
+
+<p class="author1">This menu is another example of composability. Diners pick two entries off the first part of the menu, plus a side and a drink. They  <em class="calibre6">compose</em> different parts of the menu to get the exact lunch they want. If this menu were not composable, you would have to list every single option to represent all the combinations possible (and with 1,120 options, that’s a menu that puts most restaurants to shame). This is not tractable for any restaurant to handle; it’s easier to break the menu into parts that can be pieced together.</p>
+
+<p class="author1">I want you to think about your code in the same way. Code doesn’t become composable just by existing; you have to actively design with composability in mind. You want to look at the classes, functions, and data types that you create and ask how you can write them so that future developers can reuse them.</p>
+
+<p class="author1">Consider an automated kitchen, creatively named AutoKitchen, that serves as the backbone of Pat’s Café. It is a fully automated system that is able to make any dish on the menu. I want it to be easy to add new dishes to this system; Pat’s Café boasts an ever-changing menu, and the developers are tired of having to spend a lot of time modifying large chunks of the system each time. The design of AutoKitchen is shown in <a data-type="xref" href="part0022_split_001.html#auto_kitchen" class="calibre5">Figure 17-2</a>.</p>
+
+<figure class="calibre36"><div id="auto_kitchen" class="figure">
+<img src="../images/00030.gif" alt="AutoKitchen design" class="calibre40"/>
+<h6 class="calibre37"><span class="calibre">Figure 17-2. </span>AutoKitchen design</h6>
+</div></figure>
+
+<p class="author1">This design is fairly straightforward. The AutoKitchen depends on various preparation mechanisms, known as <em class="calibre6">preparers</em>. Each preparer depends on kitchen elements to turn ingredients into a dish component (such as turning ground beef into a cooked hamburger). Kitchen elements, such as the oven or grill, are issued commands to cook various ingredients; they have no knowledge of the specific ingredients being used or the resulting dish component. <a data-type="xref" href="part0022_split_001.html#sandwich_maker" class="calibre5">Figure 17-3</a> illustrates what a specific preparer might look like.</p>
+
+<p class="author1">This design is extensible, which is a good thing. Adding a new sandwich type is simple, because I don’t have to modify any of the existing sandwich code. However, this is not very composable. If I wanted to take dish components and reuse them for new dishes (such as cooking bacon for a BLT wrap, or cooking hamburgers for cheeseburger soup), I would have to bring the entire <code class="calibre17">BLT Maker</code> or <code class="calibre17">Patty Melt Maker</code> with me. If I do that, I’d have to take a <code class="calibre17">Bread Maker</code> and <code class="calibre17">Database</code> with me as well. This is what I want to avoid.</p>
+
+<figure class="calibre36"><div id="sandwich_maker" class="figure">
+<img src="../images/00031.gif" alt="Sandwich Preparer" class="calibre40"/>
+<h6 class="calibre37"><span class="calibre">Figure 17-3. </span>Sandwich Preparer</h6>
+</div></figure>
+
+<p class="author1">Now, I want to introduce a new soup: potato, leek, and bacon. The <code class="calibre17">Soup Preparer</code> already knows how to handle leeks and potatoes from other soups; I now want the <code class="calibre17">Soup Preparer</code> to know how to make bacon. While modifying <code class="calibre17">Soup Preparer</code>, I have a few options: introduce a dependency on a <code class="calibre17">BLT Maker</code>, write my own bacon-handling code, or find a way to reuse just the bacon-handling part separately from the <code class="calibre17">BLT Maker</code>.</p>
+
+<p class="author1">The first option has issues: if I depend on a <code class="calibre17">BLT Maker</code>, I need to depend on all of its physical dependencies, such as a <code class="calibre17">Bread Maker</code>. A <code class="calibre17">Soup Preparer</code> might not want all that baggage. The second option is not great either, because now I have duplication of bacon handling in my codebase (and once you have two, don’t be surprised if a third pops up eventually). The only good option is to find a way to split the bacon making from the <code class="calibre17">BLT Maker</code>.</p>
+
+<p class="author1">However, code doesn’t become reusable just because you wish it to be (it would be nice, though).<a data-type="indexterm" data-primary="composability" data-secondary="designing code for" id="idm45644731791416" class="calibre5"/> You have to consciously design your code to be reusable.<a data-type="indexterm" data-primary="business logic" data-secondary="composable code and" id="idm45644731790312" class="calibre5"/> You need to make it small, discrete, and mostly independent from business logic to make it composable. And to do that, you need to separate policies from mechanisms.</p>
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+</div></section>
+
+<section data-type="chapter" epub:type="chapter" data-pdf-bookmark="Chapter 17. Composability" class="preface">
+<div class="preface" id="composability">
+<section data-type="sect1" data-pdf-bookmark="Policy Versus Mechanisms" class="preface"><div class="preface" id="idm45644731932792">
+<h1 class="calibre12" id="calibre_pb_2">Policy Versus Mechanisms</h1>
+
+<p class="author1"><em class="calibre6">Policies</em> are your business logic, or the code directly responsible for solving your business needs.<a data-type="indexterm" data-primary="mechanisms versus policies" id="ix_MvP" class="calibre5"/><a data-type="indexterm" data-primary="composability" data-secondary="policy versus mechanisms" id="ix_cmpopVm" class="calibre5"/><a data-type="indexterm" data-primary="policies versus mechanisms" id="ix_PvM" class="calibre5"/> The <em class="calibre6">mechanisms</em> are the pieces of code that provide <em class="calibre6">how</em> you will enact the policies. In the previous example, the policies of the system are the specific recipes. In contrast, <em class="calibre6">how</em> it makes those recipes are the mechanisms.</p>
+
+<p class="author1">When you focus on making code composable, you need to separate the policies from the mechanisms. The mechanisms are often the thing you want to reuse; it doesn’t help when they are linked together with a policy. It’s this reason why a <code class="calibre17">Soup Preparer</code> depending on a <code class="calibre17">BLT Maker</code> doesn’t make sense. You end up with policy depending on a completely separate and unrelated policy.</p>
+
+<p class="author1">When you link two unrelated policies, you start creating a dependency that becomes tough to break later on.<a data-type="indexterm" data-primary="policies versus mechanisms" data-secondary="creating dependencies by linking policies" id="idm45644731780056" class="calibre5"/><a data-type="indexterm" data-primary="dependencies" data-secondary="creating by linking policies" id="idm45644731778968" class="calibre5"/> As you link more and more policies, you create spaghetti code. You get a tangled mess of dependencies, and extricating any one dependency becomes problematic. This is why you need to be cognizant of which parts of your codebase are policies and which are mechanisms.</p>
+
+<p class="author1">A great example of policy versus mechanisms is the <a href="https://oreil.ly/xNhjh" class="calibre5"><code class="calibre17">logging</code> module</a> in Python. <a data-type="indexterm" data-primary="policies versus mechanisms" data-secondary="logging module example" id="idm45644731776232" class="calibre5"/><a data-type="indexterm" data-primary="logging module, policy versus mechanisms" id="idm45644731775208" class="calibre5"/>The policy outlines what you need logged and where to log it; the mechanisms are what let you set log levels, filter log messages, and format logs.</p>
+
+<p class="author1">Mechanically, any module can call logging methods:</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre35"><code class="n">logging</code><code class="calibre17">.</code><code class="n">basicConfig</code><code class="calibre17">(</code><code class="n">format</code><code class="calibre17">=</code><code class="s">'</code><code class="err">%(levelname)s</code><code class="s">:</code><code class="err">%(message)s</code><code class="s">'</code><code class="calibre17">,</code> <code class="n">level</code><code class="calibre17">=</code><code class="n">logging</code><code class="calibre17">.</code><code class="n">DEBUG</code><code class="calibre17">)</code>
+<code class="n">logger</code><code class="calibre17">.</code><code class="n">warning</code><code class="calibre17">(</code><code class="s">"Family did not match any restaurants: Lookup code A1503"</code><code class="calibre17">)</code></pre>
+
+<p class="author1">The <code class="calibre17">logging</code> module does not care what it is logging or about the format of the log message. The <code class="calibre17">logging</code> module simply provides the <em class="calibre6">how</em> of logging. It’s up to any consuming application to define the policies, or the <em class="calibre6">what</em>, which outline what needs to get logged.  Separating the policy from the mechanism makes the <code class="calibre17">logging</code> module reusable. You can easily extend your codebase’s functionality without pulling along heaps of baggage. This is the model you should strive for in the mechanisms present in your codebase.</p>
+<aside data-type="sidebar" epub:type="sidebar" class="calibre32"><div class="sidebar" id="idm45644731765480">
+<h5 class="calibre33">Composability in the Wild</h5>
+<p class="author1">Once you start thinking about separating policies and mechanisms, you will start to see composability patterns show up in your everyday development life.</p>
+
+<p class="author1">Consider a Unix-style command line.<a data-type="indexterm" data-primary="Unix-style command line" id="idm45644731763352" class="calibre5"/><a data-type="indexterm" data-primary="command line, composability with" id="idm45644731762648" class="calibre5"/> Rather than defining new applications, the command line gives you small discrete programs that you can compose together through piping.</p>
+
+<p class="author1">Instead of writing a hyper-specialized program, such as parsing a log to get the error code, sorted by <code class="calibre17">datetime</code>, I could write the following on the command line:</p>
+
+<pre data-type="programlisting" class="calibre35">grep -i "ERROR" log.txt | cut 3,5 | sort -r</pre>
+
+<p class="author1">Another example is continuous integration pipelines with third-party integrations (such as GitHub Actions or Travis CI).<a data-type="indexterm" data-primary="continuous integration" data-secondary="pipelines with third-party integrations, policies versus mechanisms" id="idm45644731679608" class="calibre5"/> Developers want to run a series of checks and actions as part of their check-in process; many of these checks are provided by third-party entities (such as security scanners or pushing to a container registry). Developers don’t have to know the internals of how this is done. Instead, they define policies that tell these third-party integrations what to do—policies such as which folder should be scanned or which tags to apply in the container registry. Developers aren’t bogged down in the <em class="calibre6">how</em>; they reuse these integrations by composing them into their pipeline and move on with their work.</p>
+</div></aside>
+
+<p class="author1">In the previous café example, I can change the code’s architecture to split out the mechanisms. My goal is to design a system such that making any dish component is standalone and I can compose these components together to create a recipe. This will allow me to reuse code across systems and have flexibility in creating new recipes. <a data-type="xref" href="part0022_split_002.html#composable_arch" class="calibre5">Figure 17-4</a> demonstrates a more composable architecture (note that I have elided some systems in the interest of space).</p>
+
+<figure class="calibre36"><div id="composable_arch" class="figure">
+<img src="../images/00032.gif" alt="Composable architecture" class="calibre40"/>
+<h6 class="calibre37"><span class="calibre">Figure 17-4. </span>Composable architecture</h6>
+</div></figure>
+
+<p class="author1">By breaking out specific preparers into their own systems, I have both extensibility and composability. Not only is it easy to extend new dishes such as a new sandwich, but it becomes easy for new connections to be defined, such as letting the <code class="calibre17">Soup Preparer</code> reuse the bacon preparation code.</p>
+
+<p class="author1">When your mechanisms are split out like this, you find that writing your policies becomes much simpler. With none of the mechanisms tied to the policy, you can start to write <em class="calibre6">declaratively</em>, or in a style where you simply make declarations about what to do. Take a look at the following potato, leek, and bacon soup definition:</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre35"><code class="k">import</code> <code class="nn">bacon_preparer</code>
+<code class="k">import</code> <code class="nn">veg_cheese_preparer</code>
+
+<code class="k">def</code> <code class="nf">make_potato_leek_and_bacon_soup</code><code class="calibre17">():</code>
+    <code class="n">bacon</code> <code class="calibre17">=</code> <code class="n">bacon_preparer</code><code class="calibre17">.</code><code class="n">make_bacon</code><code class="calibre17">(</code><code class="n">slices</code><code class="calibre17">=</code><code class="mi">2</code><code class="calibre17">)</code>
+    <code class="n">potatoes</code> <code class="calibre17">=</code> <code class="n">veg_cheese_preparer</code><code class="calibre17">.</code><code class="n">cube_potatoes</code><code class="calibre17">(</code><code class="n">grams</code><code class="calibre17">=</code><code class="mi">300</code><code class="calibre17">)</code>
+    <code class="n">leeks</code> <code class="calibre17">=</code> <code class="n">veg_cheese_preparer</code><code class="calibre17">.</code><code class="n">slice</code><code class="calibre17">(</code><code class="n">ingredient</code><code class="calibre17">=</code><code class="n">Vegetable</code><code class="calibre17">.</code><code class="n">LEEKS</code><code class="calibre17">,</code> <code class="n">grams</code><code class="calibre17">=</code><code class="mi">250</code><code class="calibre17">)</code>
+
+    <code class="n">chopped_bacon</code> <code class="calibre17">=</code> <code class="n">chop</code><code class="calibre17">(</code><code class="n">bacon</code><code class="calibre17">)</code>
+
+    <code class="c"># the following methods are provided by soup preparer</code>
+    <code class="n">add_chicken_stock</code><code class="calibre17">()</code>
+    <code class="n">add</code><code class="calibre17">(</code><code class="n">potatoes</code><code class="calibre17">)</code>
+    <code class="n">add</code><code class="calibre17">(</code><code class="n">leeks</code><code class="calibre17">)</code>
+    <code class="n">cook_for</code><code class="calibre17">(</code><code class="n">minutes</code><code class="calibre17">=</code><code class="mi">30</code><code class="calibre17">)</code>
+    <code class="n">blend</code><code class="calibre17">()</code>
+    <code class="n">garnish</code><code class="calibre17">(</code><code class="n">chopped_bacon</code><code class="calibre17">)</code>
+    <code class="n">garnish</code><code class="calibre17">(</code><code class="n">Garnish</code><code class="calibre17">.</code><code class="n">BLACK_PEPPER</code><code class="calibre17">)</code></pre>
+
+<p class="author1">By focusing solely on what a recipe is in code, I don’t have to get bogged down with extraneous details such as how to make bacon or cube potatoes. I composed the <code class="calibre17">Bacon Preparer</code> and <code class="calibre17">Vegetable/Cheese Preparer</code> together with the <code class="calibre17">Soup Preparer</code> to define the new recipe. If a new soup (or any other dish) comes in tomorrow, it will be just as easy to define it as a linear set of instructions. Policies will change much more often than your mechanisms; make them easy to add, modify, or delete to meet your business needs.</p>
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+</div></section>
+
+<section data-type="chapter" epub:type="chapter" data-pdf-bookmark="Chapter 17. Composability" class="preface">
+<div class="preface" id="composability">
+<section data-type="sect1" data-pdf-bookmark="Policy Versus Mechanisms" class="preface">
+<div class="preface" id="idm45644731932792">
+<div data-type="note" epub:type="note" class="calibre21"><h1 class="calibre38" id="calibre_pb_3">Discussion Topic</h1>
+<p class="author1">What parts of your codebase have been easy to reuse? Which have been difficult? Have you wanted to reuse the policies or the mechanisms of the code? Discuss strategies for making your code more composable and reusable.</p>
+</div>
+
+<p class="author1">Try to make your mechanisms composable if you foresee a reason for reuse. You will accelerate development in the future because developers will be able to truly reuse your code with very few strings attached. You are increasing flexibility and reusability, which will make the code more maintainable.</p>
+
+<p class="author1">There is a cost attached to composability, though. <a data-type="indexterm" data-primary="composability" data-secondary="cost of" id="idm45644731571640" class="calibre5"/>You reduce readability by spreading out functionality across more files, and you introduce more moving parts, which means a greater chance of a change having a negative impact. Look for opportunities to introduce composability, but beware making your code <em class="calibre6">too</em> flexible, requiring developers to explore entire codebases just to find out how to code simple workflows.<a data-type="indexterm" data-primary="mechanisms versus policies" data-startref="ix_MvP" id="idm45644731569752" class="calibre5"/><a data-type="indexterm" data-primary="policies versus mechanisms" data-startref="ix_PvM" id="idm45644731568808" class="calibre5"/><a data-type="indexterm" data-primary="composability" data-secondary="policy versus mechanisms" data-startref="ix_cmpopVm" id="idm45644731567848" class="calibre5"/></p>
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+</div></section>
+
+<section data-type="chapter" epub:type="chapter" data-pdf-bookmark="Chapter 17. Composability" class="preface">
+<div class="preface" id="composability">
+<section data-type="sect1" data-pdf-bookmark="Composing on a Smaller Scale" class="preface"><div class="preface" id="idm45644731788472">
+<h1 class="calibre12" id="calibre_pb_4">Composing on a Smaller Scale</h1>
+
+<p class="author1">The AutoKitchen example showed you how to compose <a data-type="indexterm" data-primary="composability" data-secondary="composing on a smaller scale" id="ix_cmposm" class="calibre5"/>different modules and subsystems, but you can also apply composability principles at a smaller scale. You can write functions and algorithms to be composable, allowing you to build new code with ease.</p>
+
+
+
+
+
+
+
+
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+</div></section>
+
+<section data-type="chapter" epub:type="chapter" data-pdf-bookmark="Chapter 17. Composability" class="preface">
+<div class="preface" id="composability">
+<section data-type="sect1" data-pdf-bookmark="Composing on a Smaller Scale" class="preface">
+<div class="preface" id="idm45644731788472">
+<section data-type="sect2" data-pdf-bookmark="Composing Functions" class="preface"><div class="preface" id="idm45644731563496">
+<h2 class="calibre34" id="calibre_pb_5">Composing Functions</h2>
+
+<p class="author1">A lot of this book focuses on OOP principles (such as SOLID and class-based designs), but it’s important to learn from other software paradigms as well.<a data-type="indexterm" data-primary="functions" data-secondary="composing" id="idm45644731561560" class="calibre5"/><a data-type="indexterm" data-primary="composability" data-secondary="composing on a smaller scale" data-tertiary="functions" id="idm45644731560584" class="calibre5"/><a data-type="indexterm" data-primary="functional programming" id="idm45644731559400" class="calibre5"/> An increasingly popular paradigm is <em class="calibre6">functional programming</em> (FP). Where OOP’s first-class citizens are objects, FP focuses on <em class="calibre6">pure functions</em>. <a data-type="indexterm" data-primary="object-oriented programming" data-secondary="versus functional programming" data-secondary-sortas="functional" id="idm45644731557800" class="calibre5"/>A pure function is a function whose output is solely derived from the inputs.<a data-type="indexterm" data-primary="pure functions" id="idm45644731556312" class="calibre5"/> Given a pure function and a set of input arguments, it will always return the same output, regardless of any global state or environment change.</p>
+
+<p class="author1">What makes functional programming so attractive is that pure functions are much easier to compose than functions laden with side effects.<a data-type="indexterm" data-primary="side effects of functions" id="idm45644731554936" class="calibre5"/> A <em class="calibre6">side effect</em> is anything a function does that is outside of its returned values, such as logging a message, making a network call, or mutating variables. By removing side effects from your functions, you make them easier to reuse. There are no hidden dependencies or surprising outcomes; the entire function is dependent on the input data, and the only observable effect is the data that is returned.</p>
+
+<p class="author1">However, when you attempt to reuse code, you must pull in all of that code’s physical dependencies as well (and provide logical dependencies at runtime if needed). With pure functions, you don’t have any physical dependencies outside of a function call graph. You don’t need to pull in extra objects with complicated setup or global variables. FP encourages developers to write short, single-purpose functions that are inherently composable.</p>
+
+<p class="author1">Developers get used to treating functions just like any other variable.<a data-type="indexterm" data-primary="higher-order functions" id="idm45644731552024" class="calibre5"/> They create <em class="calibre6">higher-order</em> functions, which are functions that take other functions as arguments, or functions that return other functions as a return value. The simplest example is something that takes a function and calls it twice:</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre35"><code class="k">from</code> <code class="nn">typing</code> <code class="k">import</code> <code class="n">Callable</code>
+<code class="k">def</code> <code class="nf">do_twice</code><code class="calibre17">(</code><code class="n">func</code><code class="calibre17">:</code> <code class="n">Callable</code><code class="calibre17">,</code> <code class="calibre17">*</code><code class="n">args</code><code class="calibre17">,</code> <code class="calibre17">**</code><code class="n">kwargs</code><code class="calibre17">):</code>
+    <code class="n">func</code><code class="calibre17">(</code><code class="calibre17">*</code><code class="n">args</code><code class="calibre17">,</code> <code class="calibre17">**</code><code class="n">kwargs</code><code class="calibre17">)</code>
+    <code class="n">func</code><code class="calibre17">(</code><code class="calibre17">*</code><code class="n">args</code><code class="calibre17">,</code> <code class="calibre17">**</code><code class="n">kwargs</code><code class="calibre17">)</code></pre>
+
+<p class="author1">This isn’t a very exciting example, but it opens the door for some very interesting ways of composing functions.<a data-type="indexterm" data-primary="functools module" id="idm45644731548840" class="calibre5"/> In fact, there is an entire Python module dedicated to higher-order functions: <code class="calibre17">functools</code>. Most of <code class="calibre17">functools</code>, as well as any function composition you write, will be in the form of decorators.</p>
+
+
+
+
+
+
+
+
+
+
+<section data-type="sect3" data-pdf-bookmark="Decorators" class="preface"><div class="preface" id="idm45644731513960">
+<h3 class="calibre44">Decorators</h3>
+
+<p class="author1"><em class="calibre6">Decorators</em> are functions that take another function and <em class="calibre6">wrap</em> it, or specify behavior that must execute before the function executes.<a data-type="indexterm" data-primary="decorators" id="ix_deco" class="calibre5"/><a data-type="indexterm" data-primary="composability" data-secondary="composing on a smaller scale" data-tertiary="decorators" id="ix_cmposmdec" class="calibre5"/><a data-type="indexterm" data-primary="functions" data-secondary="decorators" id="ix_fncdeco" class="calibre5"/> It provides a way for you to compose functions together without requiring the function bodies to know about each other.</p>
+
+<p class="author1">Decorators are one of the main ways of wrapping functions in Python. I can rewrite the <code class="calibre17">do_twice</code> function into a more generic <code class="calibre17">repeat</code> function like such:</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre35"><code class="k">def</code> <code class="nf">repeat</code><code class="calibre17">(</code><code class="n">func</code><code class="calibre17">:</code> <code class="n">Callable</code><code class="calibre17">,</code> <code class="n">times</code><code class="calibre17">:</code> <code class="nb">int</code> <code class="calibre17">=</code> <code class="mi">1</code><code class="calibre17">)</code> <code class="calibre17">-&gt;</code> <code class="n">Callable</code><code class="calibre17">:</code>
+    <code class="sd">''' this is a function that calls the wrapped function</code>
+<code class="sd">        a specified number of times</code>
+<code class="sd">    '''</code>
+    <code class="k">def</code> <code class="nf">_wrapper</code><code class="calibre17">(</code><code class="calibre17">*</code><code class="n">args</code><code class="calibre17">,</code> <code class="calibre17">**</code><code class="n">kwargs</code><code class="calibre17">):</code>
+        <code class="k">for</code> <code class="n">_</code> <code class="calibre19">in</code> <code class="nb">range</code><code class="calibre17">(</code><code class="n">times</code><code class="calibre17">):</code>
+            <code class="n">func</code><code class="calibre17">(</code><code class="calibre17">*</code><code class="n">args</code><code class="calibre17">,</code> <code class="calibre17">**</code><code class="n">kwargs</code><code class="calibre17">)</code>
+    <code class="k">return</code> <code class="n">_wrapper</code>
+
+<code class="nd">@repeat</code><code class="calibre17">(</code><code class="n">times</code><code class="calibre17">=</code><code class="mi">3</code><code class="calibre17">)</code>
+<code class="k">def</code> <code class="nf">say_hello</code><code class="calibre17">():</code>
+    <code class="k">print</code><code class="calibre17">(</code><code class="s">"Hello"</code><code class="calibre17">)</code>
+
+<code class="n">say_hello</code><code class="calibre17">()</code>
+<code class="calibre17">&gt;&gt;&gt;</code> <code class="s">"Hello"</code>
+<code class="s">"Hello"</code>
+<code class="s">"Hello"</code></pre>
+
+<p class="author1">Once again, I’ve separated the policy (saying hello repeatedly) from the mechanisms (actually repeating the function calls).<a data-type="indexterm" data-primary="policies versus mechanisms" data-secondary="separation in decorators" id="idm45644731455032" class="calibre5"/> That mechanism is something I can use throughout other codebases without any repercussions. I can apply this decorator to all sorts of functions in my codebase, such as making two hamburger patties at once for a double cheeseburger or mass-producing specific orders for a catering event.</p>
+
+<p class="author1">Of course, decorators can do so much more than simply repeating a function invocation.<a data-type="indexterm" data-primary="backoff library" id="idm45644731376824" class="calibre5"/> One of my favorite decorators comes from the <a href="https://oreil.ly/4V6Ro" class="calibre5"><code class="calibre17">backoff</code> library</a>. <code class="calibre17">backoff</code> helps you define <em class="calibre6">retry logic</em>, or the actions you take to retry nondeterministic parts of your code.<a data-type="indexterm" data-primary="retry logic" id="idm45644731374184" class="calibre5"/> Consider the <code class="calibre17">AutoKitchen</code> from earlier needing to save data in a database. It will save orders taken, current inventory levels, and time spent making each dish.</p>
+
+<p class="author1">At its simplest, the code would look like this:</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre35"><code class="c"># setting properties of self.*_db objects will</code>
+<code class="c"># update data in the database</code>
+<code class="k">def</code> <code class="nf">on_dish_ordered</code><code class="calibre17">(</code><code class="n">dish</code><code class="calibre17">:</code> <code class="n">Dish</code><code class="calibre17">):</code>
+    <code class="n">dish_db</code><code class="calibre17">[</code><code class="n">dish</code><code class="calibre17">]</code><code class="calibre17">.</code><code class="n">count</code> <code class="calibre17">+=</code> <code class="mi">1</code>
+
+<code class="k">def</code> <code class="nf">save_inventory_counts</code><code class="calibre17">(</code><code class="n">inventory</code><code class="calibre17">):</code>
+    <code class="k">for</code> <code class="n">ingredient</code> <code class="calibre19">in</code> <code class="n">inventory</code><code class="calibre17">:</code>
+        <code class="n">inventory_db</code><code class="calibre17">[</code><code class="n">ingredient</code><code class="calibre17">.</code><code class="n">name</code><code class="calibre17">]</code> <code class="calibre17">=</code> <code class="n">ingredient</code><code class="calibre17">.</code><code class="n">count</code>
+
+<code class="k">def</code> <code class="nf">log_time_per_dish</code><code class="calibre17">(</code><code class="n">dish</code><code class="calibre17">:</code> <code class="n">Dish</code><code class="calibre17">,</code> <code class="n">number_of_seconds</code><code class="calibre17">:</code> <code class="nb">int</code><code class="calibre17">):</code>
+    <code class="n">dish_db</code><code class="calibre17">[</code><code class="n">dish</code><code class="calibre17">]</code><code class="calibre17">.</code><code class="n">time_spent</code><code class="calibre17">.</code><code class="n">append</code><code class="calibre17">(</code><code class="n">number_of_seconds</code><code class="calibre17">)</code></pre>
+
+<p class="author1">Whenever you work with a database (or any other I/O request), you always need to be prepared for errors. The database may be down, the network might be out, there might be a conflict with the data you are entering, or any other error might pop up. You can’t always rely on this code executing without errors. The business doesn’t want the code to give up on the first error; these operations should retry a set number of times or for a certain time period before giving up.</p>
+
+<p class="author1">I can use the <code class="calibre17">backoff.on_exception</code> to specify<a data-type="indexterm" data-primary="exceptions" data-secondary="backoff.on_exception" id="idm45644731328888" class="calibre5"/> that these functions should be retried if they throw an exception:</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre35"><code class="k">import</code> <code class="nn">backoff</code>
+<code class="k">import</code> <code class="nn">requests</code>
+<code class="k">from</code> <code class="nn">autokitchen.database</code> <code class="k">import</code> <code class="n">OperationException</code>
+<code class="c"># setting properties of self.*_db objects will</code>
+<code class="c"># update data in the database</code>
+<code class="nd">@backoff.on_exception</code><code class="calibre17">(</code><code class="n">backoff</code><code class="calibre17">.</code><code class="n">expo</code><code class="calibre17">,</code>
+                      <code class="n">OperationException</code><code class="calibre17">,</code>
+                      <code class="n">max_tries</code><code class="calibre17">=</code><code class="mi">5</code><code class="calibre17">)</code>
+<code class="k">def</code> <code class="nf">on_dish_ordered</code><code class="calibre17">(</code><code class="n">dish</code><code class="calibre17">:</code> <code class="n">Dish</code><code class="calibre17">):</code>
+    <code class="nb">self</code><code class="calibre17">.</code><code class="n">dish_db</code><code class="calibre17">[</code><code class="n">dish</code><code class="calibre17">]</code><code class="calibre17">.</code><code class="n">count</code> <code class="calibre17">+=</code> <code class="mi">1</code>
+
+<code class="nd">@backoff.on_exception</code><code class="calibre17">(</code><code class="n">backoff</code><code class="calibre17">.</code><code class="n">expo</code><code class="calibre17">,</code>
+                      <code class="n">OperationException</code><code class="calibre17">,</code>
+                      <code class="n">max_tries</code><code class="calibre17">=</code><code class="mi">5</code><code class="calibre17">)</code>
+<code class="nd">@backoff.on_exception</code><code class="calibre17">(</code><code class="n">backoff</code><code class="calibre17">.</code><code class="n">expo</code><code class="calibre17">,</code>
+                      <code class="n">requests</code><code class="calibre17">.</code><code class="n">exceptions</code><code class="calibre17">.</code><code class="n">HTTPError</code><code class="calibre17">,</code>
+                      <code class="n">max_time</code><code class="calibre17">=</code><code class="mi">60</code><code class="calibre17">)</code>
+<code class="k">def</code> <code class="nf">save_inventory_counts</code><code class="calibre17">(</code><code class="n">inventory</code><code class="calibre17">):</code>
+    <code class="k">for</code> <code class="n">ingredient</code> <code class="calibre19">in</code> <code class="n">inventory</code><code class="calibre17">:</code>
+        <code class="nb">self</code><code class="calibre17">.</code><code class="n">inventory_db</code><code class="calibre17">[</code><code class="n">ingredient</code><code class="calibre17">.</code><code class="n">name</code><code class="calibre17">]</code> <code class="calibre17">=</code> <code class="n">ingredient</code><code class="calibre17">.</code><code class="n">count</code>
+
+<code class="nd">@backoff.on_exception</code><code class="calibre17">(</code><code class="n">backoff</code><code class="calibre17">.</code><code class="n">expo</code><code class="calibre17">,</code>
+                      <code class="n">OperationException</code><code class="calibre17">,</code>
+                      <code class="n">max_time</code><code class="calibre17">=</code><code class="mi">60</code><code class="calibre17">)</code>
+<code class="k">def</code> <code class="nf">log_time_per_dish</code><code class="calibre17">(</code><code class="n">dish</code><code class="calibre17">:</code> <code class="n">Dish</code><code class="calibre17">,</code> <code class="n">number_of_seconds</code><code class="calibre17">:</code> <code class="nb">int</code><code class="calibre17">):</code>
+    <code class="nb">self</code><code class="calibre17">.</code><code class="n">dish_db</code><code class="calibre17">[</code><code class="n">dish</code><code class="calibre17">]</code><code class="calibre17">.</code><code class="n">time_spent</code><code class="calibre17">.</code><code class="n">append</code><code class="calibre17">(</code><code class="n">number_of_seconds</code><code class="calibre17">)</code></pre>
+
+<p class="author1">Through the use of decorators, I am able to modify behavior without messing with the function body. Each function will now back off exponentially (take longer between each retry) when specific exceptions are raised. Each function also has its own conditions for how much time to take or how many times to retry before giving up completely. I’ve defined the policy in this code, but left the actual <em class="calibre6">how</em> to do it, the mechanisms, abstracted away in the <code class="calibre17">backoff</code> library.</p>
+
+<p class="author1">Take special note of the <code class="calibre17">save_inventory_counts</code> function:</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre35"><code class="nd">@backoff.on_exception</code><code class="calibre17">(</code><code class="n">backoff</code><code class="calibre17">.</code><code class="n">expo</code><code class="calibre17">,</code>
+                      <code class="n">OperationException</code><code class="calibre17">,</code>
+                      <code class="n">max_tries</code><code class="calibre17">=</code><code class="mi">5</code><code class="calibre17">)</code>
+<code class="nd">@backoff.on_exception</code><code class="calibre17">(</code><code class="n">backoff</code><code class="calibre17">.</code><code class="n">expo</code><code class="calibre17">,</code>
+                      <code class="n">requests</code><code class="calibre17">.</code><code class="n">exceptions</code><code class="calibre17">.</code><code class="n">HTTPError</code><code class="calibre17">,</code>
+                      <code class="n">max_time</code><code class="calibre17">=</code><code class="mi">60</code><code class="calibre17">)</code>
+<code class="k">def</code> <code class="nf">save_inventory_counts</code><code class="calibre17">(</code><code class="n">inventory</code><code class="calibre17">):</code>
+    <code class="c"># ...</code></pre>
+
+<p class="author1">I have two decorators defined here. In this case, I’ll retry up to five times on an <code class="calibre17">OperationException</code> or up to 60 seconds for a <code class="calibre17">requests.exceptions.HTTPError</code>. This is composability at work; I can mix’n’match completely separate <code class="calibre17">backoff</code> decorators to define the policies however I want.</p>
+
+<p class="author1">Contrast this with writing the mechanisms directly into the function:</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre35"><code class="k">def</code> <code class="nf">save_inventory_counts</code><code class="calibre17">(</code><code class="n">inventory</code><code class="calibre17">):</code>
+    <code class="n">retry</code> <code class="calibre17">=</code> <code class="nb">True</code>
+    <code class="n">retry_counter</code> <code class="calibre17">=</code> <code class="mi">0</code>
+    <code class="n">time_to_sleep</code> <code class="calibre17">=</code> <code class="mi">1</code>
+    <code class="k">while</code> <code class="n">retry</code><code class="calibre17">:</code>
+        <code class="k">try</code><code class="calibre17">:</code>
+            <code class="k">for</code> <code class="n">ingredient</code> <code class="calibre19">in</code> <code class="n">inventory</code><code class="calibre17">:</code>
+                <code class="nb">self</code><code class="calibre17">.</code><code class="n">inventory_db</code><code class="calibre17">[</code><code class="n">ingredient</code><code class="calibre17">.</code><code class="n">name</code><code class="calibre17">]</code> <code class="calibre17">=</code> <code class="n">ingredient</code><code class="calibre17">.</code><code class="n">count</code>
+        <code class="k">except</code> <code class="n">OperationException</code><code class="calibre17">:</code>
+            <code class="n">retry_counter</code> <code class="calibre17">+=</code> <code class="mi">1</code>
+            <code class="k">if</code> <code class="n">retry_counter</code> <code class="calibre17">==</code> <code class="mi">5</code><code class="calibre17">:</code>
+                <code class="n">retry</code> <code class="calibre17">=</code> <code class="nb">False</code>
+        <code class="k">except</code> <code class="n">requests</code><code class="calibre17">.</code><code class="n">exception</code><code class="calibre17">.</code><code class="n">HTTPError</code><code class="calibre17">:</code>
+            <code class="n">time</code><code class="calibre17">.</code><code class="n">sleep</code><code class="calibre17">(</code><code class="n">time_to_sleep</code><code class="calibre17">)</code>
+            <code class="n">time_to_sleep</code> <code class="calibre17">*=</code> <code class="mi">2</code>
+            <code class="k">if</code> <code class="n">time_to_sleep</code> <code class="calibre17">&gt;</code> <code class="mi">60</code><code class="calibre17">:</code>
+                <code class="n">retry</code> <code class="calibre17">=</code> <code class="nb">False</code></pre>
+
+<p class="author1">The amount of code needed to handle retry mechanisms ends up obscuring the actual intent of the function. It is difficult to ascertain what this function is doing at a quick glance. Furthermore, you would need to write similar retry logic into every function that needs to handle nondeterministic operations. It is far easier to compose decorators to define your business needs, and avoid tedious repetition throughout your code.</p>
+
+<p class="author1"><code class="calibre17">backoff</code> is not the only useful decorator out there. There is a bevy of composable decorators that you can use to simplify your code, such as <code class="calibre17">functools.lru_cache</code> for saving function results, <code class="calibre17">click.command</code> from the <a href="https://oreil.ly/FlBcj" class="calibre5"><code class="calibre17">click</code> library</a> for command-line applications, or <code class="calibre17">timeout_decorator.timeout</code> from the <a href="https://oreil.ly/H5FcA" class="calibre5"><code class="calibre17">timeout_decorator</code> library</a> for limiting execution time of functions. Don’t be afraid to write your own decorators either. Find areas of your code that have <span class="calibre">similar</span> program structure, and look for ways to abstract the mechanisms away from the policies.<a data-type="indexterm" data-primary="functions" data-secondary="decorators" data-startref="ix_fncdeco" id="idm45644730899672" class="calibre5"/><a data-type="indexterm" data-primary="composability" data-secondary="composing on a smaller scale" data-tertiary="decorators" data-startref="ix_cmposmdec" id="idm45644730898424" class="calibre5"/><a data-type="indexterm" data-primary="decorators" data-startref="ix_deco" id="idm45644730896920" class="calibre5"/></p>
+</div></section>
+
+
+
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+</div></section>
+
+<section data-type="chapter" epub:type="chapter" data-pdf-bookmark="Chapter 17. Composability" class="preface">
+<div class="preface" id="composability">
+<section data-type="sect1" data-pdf-bookmark="Composing on a Smaller Scale" class="preface">
+<div class="preface" id="idm45644731788472">
+<section data-type="sect2" data-pdf-bookmark="Composing Algorithms" class="preface"><div class="preface" id="idm45644731513368">
+<h2 class="calibre34" id="calibre_pb_6">Composing Algorithms</h2>
+
+<p class="author1">Functions are not the only small-scale composition you can make; you also can compose <em class="calibre6">algorithms</em>.<a data-type="indexterm" data-primary="composability" data-secondary="composing on a smaller scale" data-tertiary="algorithms" id="ix_cmposmalg" class="calibre5"/><a data-type="indexterm" data-primary="algorithms" data-secondary="composing" id="ix_algocmp" class="calibre5"/> Algorithms are a description of defined steps needed to solve a problem, like sorting a collection or diffing snippets of text. To make an algorithm composable, you again need to divorce the policies from the mechanisms.</p>
+
+<p class="author1">Consider the meal recommendation for a café meal in the last section. Suppose the algorithm is as follows:</p>
+
+<pre data-type="programlisting" class="calibre35">Recommendation Algorithm #1
+
+Look at all daily specials
+Sort based on number of matching surplus ingredients
+Select the meals with the highest number of surplus ingredients
+Sort by proximity to last meal ordered
+    (proximity is defined by number of ingredients that match)
+Take only results that are above 75% proximity
+Return up to top 3 results</pre>
+
+<p class="author1">If I wrote this all out with <code class="calibre17">for</code> loops, it might look like this:</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre35"><code class="k">def</code> <code class="nf">recommend_meal</code><code class="calibre17">(</code><code class="n">last_meal</code><code class="calibre17">:</code> <code class="n">Meal</code><code class="calibre17">,</code>
+                   <code class="n">specials</code><code class="calibre17">:</code> <code class="nb">list</code><code class="calibre17">[</code><code class="n">Meal</code><code class="calibre17">],</code>
+                   <code class="n">surplus</code><code class="calibre17">:</code> <code class="nb">list</code><code class="calibre17">[</code><code class="n">Ingredient</code><code class="calibre17">])</code> <code class="calibre17">-&gt;</code> <code class="nb">list</code><code class="calibre17">[</code><code class="n">Meal</code><code class="calibre17">]:</code>
+    <code class="n">highest_proximity</code> <code class="calibre17">=</code> <code class="mi">0</code>
+    <code class="k">for</code> <code class="n">special</code> <code class="calibre19">in</code> <code class="n">specials</code><code class="calibre17">:</code>
+        <code class="k">if</code> <code class="calibre17">(</code><code class="n">proximity</code> <code class="calibre17">:</code><code class="calibre17">=</code> <code class="n">get_proximity</code><code class="calibre17">(</code><code class="n">special</code><code class="calibre17">,</code> <code class="n">surplus</code><code class="calibre17">))</code> <code class="calibre17">&gt;</code> <code class="n">highest_proximity</code><code class="calibre17">:</code>
+            <code class="n">highest_proximity</code> <code class="calibre17">=</code> <code class="n">proximity</code>
+
+    <code class="n">grouped_by_surplus_matching</code> <code class="calibre17">=</code> <code class="calibre17">[]</code>
+    <code class="k">for</code> <code class="n">special</code> <code class="calibre19">in</code> <code class="n">specials</code><code class="calibre17">:</code>
+        <code class="k">if</code> <code class="n">get_proximity</code><code class="calibre17">(</code><code class="n">special</code><code class="calibre17">,</code> <code class="n">surplus</code><code class="calibre17">)</code> <code class="calibre17">==</code> <code class="n">highest_proximity</code><code class="calibre17">:</code>
+            <code class="n">grouped_by_surplus_matching</code><code class="calibre17">.</code><code class="n">append</code><code class="calibre17">(</code><code class="n">special</code><code class="calibre17">)</code>
+
+    <code class="n">filtered_meals</code> <code class="calibre17">=</code> <code class="calibre17">[]</code>
+    <code class="k">for</code> <code class="n">meal</code> <code class="calibre19">in</code> <code class="n">grouped_by_surplus_matching</code><code class="calibre17">:</code>
+        <code class="k">if</code> <code class="n">get_proximity</code><code class="calibre17">(</code><code class="n">meal</code><code class="calibre17">,</code> <code class="n">last_meal</code><code class="calibre17">)</code> <code class="calibre17">&gt;</code> <code class="calibre17">.</code><code class="mi">75</code><code class="calibre17">:</code>
+            <code class="n">filtered_meals</code><code class="calibre17">.</code><code class="n">append</code><code class="calibre17">(</code><code class="n">meal</code><code class="calibre17">)</code>
+
+    <code class="n">sorted_meals</code> <code class="calibre17">=</code> <code class="nb">sorted</code><code class="calibre17">(</code><code class="n">filtered_meals</code><code class="calibre17">,</code>
+                          <code class="n">key</code><code class="calibre17">=</code><code class="k">lambda</code> <code class="n">meal</code><code class="calibre17">:</code> <code class="n">get_proximity</code><code class="calibre17">(</code><code class="n">meal</code><code class="calibre17">,</code> <code class="n">last_meal</code><code class="calibre17">),</code>
+                          <code class="n">reverse</code><code class="calibre17">=</code><code class="nb">True</code><code class="calibre17">)</code>
+
+    <code class="k">return</code> <code class="n">sorted_meals</code><code class="calibre17">[:</code><code class="mi">3</code><code class="calibre17">]</code></pre>
+
+<p class="author1">It’s not the prettiest code. If I didn’t list out the steps in text beforehand, it would take a little longer to understand the code and make sure it is bug free. Now, suppose a developer comes to you and tells you that not enough customers are picking recommendations and they want to try out a different algorithm. The new algorithm goes like this:</p>
+
+<pre data-type="programlisting" class="calibre35">Recommendation Algorithm #2
+
+Look at all meals available
+Sort based on proximity to last meal
+Select the meals with the highest proximity
+Sort the meals by number of surplus ingredients
+Take only results that are a special or have more than 3 surplus ingredients
+Return up to top 5 results</pre>
+
+<p class="author1">The catch is that this developer wants to A/B test these algorithms (and any other algorithm they come up with).<a data-type="indexterm" data-primary="testing" data-secondary="A/B testing of an algorithm" id="idm45644730884232" class="calibre5"/> With A/B testing, they want 75% of customers to be presented recommendations from the first algorithm and 25% of customers from the second. That way, they can measure how well the new algorithm works in relation to the old. This means your codebase has to support both algorithms (and be flexible to support new algorithms in the future). You don’t want to see your codebase littered with ugly recommendation algorithm methods.</p>
+
+<p class="author1">You need to apply composability principles to the algorithm itself. Copy-pasting the <code class="calibre17">for</code> loop code snippet and tweaking it is not a viable answer. To solve this, you once again need to separate your policies and mechanisms. This will help you break down the problem and improve the codebase.</p>
+
+<p class="author1">Your policy this time is the actual details of the algorithm: what you’re sorting, how you’re filtering, and what you’re ultimately selecting. The mechanisms are the iteration patterns that describe how we’re shaping the data. In fact, I’ve already used an iteration mechanism in my code above: sorting. Instead of manually sorting (and forcing readers to understand what I’m doing), I used the <code class="calibre17">sorted</code> method. I indicated what I want sorted and in the key to sort by, but I really don’t care (nor do I expect my readers to care) about the actual sorting algorithm.</p>
+
+<p class="author1">If I were to compare the two algorithms, I can break down the mechanisms into the following (I’ll mark policies with &lt;angle brackets&gt;):</p>
+
+<pre data-type="programlisting" class="calibre35">Look at &lt;a list of meals&gt;
+Sort based on &lt;initial sorting criteria&gt;
+Select the meals with the &lt;grouping criteria&gt;
+Sort the meals by &lt;secondary sorting criteria&gt;
+Take top results that match &lt;selection criteria&gt;
+Return up to top &lt;number&gt; results</pre>
+<div data-type="note" epub:type="note" class="calibre21"><h6 class="calibre22">Note</h6>
+<p class="author1">The <a href="https://oreil.ly/NZCCG" class="calibre5"><code class="calibre17">itertools</code> module</a> is a fantastic source of composable algorithms, all centered on iteration.<a data-type="indexterm" data-primary="itertools module" id="idm45644730719736" class="calibre5"/> It serves as a great example of what you can do when you create abstract mechanisms.</p>
+</div>
+
+<p class="author1">With that in mind, and the help of the <code class="calibre17">itertools</code> module, I’ll take another crack at writing the recommendation algorithm:</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre35"><code class="k">import</code> <code class="nn">itertools</code>
+<code class="k">def</code> <code class="nf">recommend_meal</code><code class="calibre17">(</code><code class="n">policy</code><code class="calibre17">:</code> <code class="n">RecommendationPolicy</code><code class="calibre17">)</code> <code class="calibre17">-&gt;</code> <code class="nb">list</code><code class="calibre17">[</code><code class="n">Meal</code><code class="calibre17">]:</code>
+    <code class="n">meals</code> <code class="calibre17">=</code> <code class="n">policy</code><code class="calibre17">.</code><code class="n">meals</code>
+    <code class="n">sorted_meals</code> <code class="calibre17">=</code> <code class="nb">sorted</code><code class="calibre17">(</code><code class="n">meals</code><code class="calibre17">,</code> <code class="n">key</code><code class="calibre17">=</code><code class="n">policy</code><code class="calibre17">.</code><code class="n">initial_sorting_criteria</code><code class="calibre17">,</code>
+                          <code class="n">reverse</code><code class="calibre17">=</code><code class="nb">True</code><code class="calibre17">)</code>
+    <code class="n">grouped_meals</code> <code class="calibre17">=</code> <code class="n">itertools</code><code class="calibre17">.</code><code class="n">groupby</code><code class="calibre17">(</code><code class="n">sorted_meals</code><code class="calibre17">,</code> <code class="n">key</code><code class="calibre17">=</code><code class="n">policy</code><code class="calibre17">.</code><code class="n">grouping_criteria</code><code class="calibre17">)</code>
+    <code class="n">_</code><code class="calibre17">,</code> <code class="n">top_grouped</code> <code class="calibre17">=</code> <code class="nb">next</code><code class="calibre17">(</code><code class="n">grouped_meals</code><code class="calibre17">)</code>
+    <code class="n">secondary_sorted</code> <code class="calibre17">=</code> <code class="nb">sorted</code><code class="calibre17">(</code><code class="n">top_grouped</code><code class="calibre17">,</code> <code class="n">key</code><code class="calibre17">=</code><code class="n">policy</code><code class="calibre17">.</code><code class="n">secondary_sorting_criteria</code><code class="calibre17">,</code>
+                              <code class="n">reverse</code><code class="calibre17">=</code><code class="nb">True</code><code class="calibre17">)</code>
+    <code class="n">candidates</code> <code class="calibre17">=</code> <code class="n">itertools</code><code class="calibre17">.</code><code class="n">takewhile</code><code class="calibre17">(</code><code class="n">policy</code><code class="calibre17">.</code><code class="n">selection_criteria</code><code class="calibre17">,</code> <code class="n">secondary_sorted</code><code class="calibre17">)</code>
+    <code class="k">return</code> <code class="nb">list</code><code class="calibre17">(</code><code class="n">candidates</code><code class="calibre17">)[:</code><code class="n">policy</code><code class="calibre17">.</code><code class="n">desired_number_of_recommendations</code><code class="calibre17">]</code></pre>
+
+<p class="author1">Then, to use this with an algorithm, I do the following:</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre35"><code class="c"># I've used named functions to increase readability in the following example</code>
+<code class="c"># instead of lambda functions</code>
+<code class="n">recommend_meal</code><code class="calibre17">(</code><code class="n">RecommendationPolicy</code><code class="calibre17">(</code>
+    <code class="n">meals</code><code class="calibre17">=</code><code class="n">get_specials</code><code class="calibre17">(),</code>
+    <code class="n">initial_sorting_criteria</code><code class="calibre17">=</code><code class="n">get_proximity_to_surplus_ingredients</code><code class="calibre17">,</code>
+    <code class="n">grouping_criteria</code><code class="calibre17">=</code><code class="n">get_proximity_to_surplus_ingredients</code><code class="calibre17">,</code>
+    <code class="n">secondary_sorting_criteria</code><code class="calibre17">=</code><code class="n">get_proximity_to_last_meal</code><code class="calibre17">,</code>
+    <code class="n">selection_criteria</code><code class="calibre17">=</code><code class="n">proximity_greater_than_75_percent</code><code class="calibre17">,</code>
+    <code class="n">desired_number_of_recommendations</code><code class="calibre17">=</code><code class="mi">3</code><code class="calibre17">)</code>
+<code class="calibre17">)</code></pre>
+
+<p class="author1">Think of how nice it would be to be able to tweak the algorithm on the fly here. I created a different <code class="calibre17">RecommendationPolicy</code> and passed it into <code class="calibre17">recommend_meal</code>. By separating the algorithm’s policy from the mechanism, I’ve provided a number of benefits. I’ve made the code easier to read, easier to extend, and more flexible.<a data-type="indexterm" data-primary="composability" data-secondary="composing on a smaller scale" data-tertiary="algorithms" data-startref="ix_cmposmalg" id="idm45644730668680" class="calibre5"/><a data-type="indexterm" data-primary="algorithms" data-secondary="composing" data-startref="ix_algocmp" id="idm45644730667208" class="calibre5"/><a data-type="indexterm" data-primary="composability" data-secondary="composing on a smaller scale" data-startref="ix_cmposm" id="idm45644730665992" class="calibre5"/></p>
+</div></section>
+
+
+
+
+
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+</div></section>
+
+<section data-type="chapter" epub:type="chapter" data-pdf-bookmark="Chapter 17. Composability" class="preface">
+<div class="preface" id="composability">
+<section data-type="sect1" data-pdf-bookmark="Closing Thoughts" class="preface"><div class="preface" id="idm45644730664632">
+<h1 class="calibre12" id="calibre_pb_7">Closing Thoughts</h1>
+
+<p class="author1">Composable code is reusable code. When you build small, discrete units of work, you’ll find that they are easy to introduce into new contexts or programs.  To make your code composable, focus on separating your policies and your mechanisms. It doesn’t matter if you’re working with subsystems, algorithms, or even functions. You will find that your mechanisms benefit from greater reuse, and policies become easier to modify. Your system’s robustness will greatly improve as you identify composable code.</p>
+
+<p class="author1">In the next chapter, you’re going to learn how to apply extensibility and composability at an architectural level with event-based architectures. Event-based architectures help you decouple your code into publishers and consumers of information. They provide a way for you to minimize dependencies while still retaining extensibility.<a data-type="indexterm" data-primary="composability" data-startref="ix_cmpo" id="idm45644730662040" class="calibre5"/></p>
+</div></section>
+
+
+
+
+
+
+
+</div></section></body></html>

@@ -1,0 +1,647 @@
+<html><head></head><body>
+<section data-type="chapter" epub:type="chapter" data-pdf-bookmark="Chapter 23. Property-Based Testing" class="preface"><div class="preface" id="property">
+<h1 class="calibre10" id="calibre_pb_0"><span class="calibre">Chapter 23. </span>Property-Based Testing</h1>
+
+
+<p class="author1">It is impossible to test absolutely everything in your codebase.<a data-type="indexterm" data-primary="property-based testing" id="ix_prptst" class="calibre5"/><a data-type="indexterm" data-primary="testing" data-secondary="property-based" id="ix_tstprp" class="calibre5"/> The best you can do is be smart in how you target specific use cases. You look for boundary cases, paths through the code, and any other interesting attributes of the code. Your main hope is that you haven’t left any big holes in your safety net. However, you can do better than hope. You can fill in those gaps with property-based testing.</p>
+
+<p class="author1">In this chapter, you will learn how to do property-based testing with a Python library called <a href="https://oreil.ly/OejR4" class="calibre5"><code class="calibre17">Hypothesis</code></a>. You’ll use <code class="calibre17">Hypothesis</code> to generate test cases for you, often in ways you could never expect. You’ll learn how to track failing test cases, craft input data in new ways, and even have <code class="calibre17">Hypothesis</code> create combinations of algorithms to test your software. <code class="calibre17">Hypothesis</code> will guard your codebase against a whole new combination of errors.</p>
+
+
+
+
+
+
+</div></section>
+
+<section data-type="chapter" epub:type="chapter" data-pdf-bookmark="Chapter 23. Property-Based Testing" class="preface">
+<div class="preface" id="property">
+<section data-type="sect1" data-pdf-bookmark="Property-Based Testing with Hypothesis" class="preface"><div class="preface" id="idm45644725332760">
+<h1 class="calibre12" id="calibre_pb_1">Property-Based Testing with Hypothesis</h1>
+
+<p class="author1">Property-based testing is a form of <em class="calibre6">generative testing</em>, where tools generate test cases for you.<a data-type="indexterm" data-primary="generative testing" id="idm45644725330104" class="calibre5"/><a data-type="indexterm" data-primary="property-based testing" data-secondary="using Hypothesis" id="ix_prptstHyp" class="calibre5"/> Instead of writing test cases based on specific input/output combinations, you define <em class="calibre6">properties</em> for your system.<a data-type="indexterm" data-primary="properties" id="idm45644725327672" class="calibre5"/> <em class="calibre6">Properties</em> in this context is another name for the invariants (discussed in <a data-type="xref" href="part0014_split_000.html#classes" class="calibre5">Chapter 10</a>) that hold true for your system.<a data-type="indexterm" data-primary="invariants" data-secondary="properties as another name for" id="idm45644725325512" class="calibre5"/></p>
+
+<p class="author1">Consider a menu recommendation system that selects dishes based on customer-provided constraints, such as total calories, price, and cuisine. For this specific example, I want customers to be able to order a full meal that falls below a specific calorie target. Here are the invariants I define for this function:</p>
+
+<ul class="printings">
+<li class="calibre9">
+<p class="author1">The customer will receive three dishes: an appetizer, a salad, and a main dish.</p>
+</li>
+<li class="calibre9">
+<p class="author1">When all the dishes’ calories are added together, the sum is less than their intended target.</p>
+</li>
+</ul>
+
+<p class="author1">If I were to write this as a <code class="calibre17">pytest</code> test that<a data-type="indexterm" data-primary="pytest" data-secondary="test focusing on properties" id="idm45644725320360" class="calibre5"/> focuses on testing these properties, it would look like the following:</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre35"><code class="k">def</code> <code class="nf">test_meal_recommendation_under_specific_calories</code><code class="calibre17">():</code>
+    <code class="n">calories</code> <code class="calibre17">=</code> <code class="mi">900</code>
+    <code class="n">meals</code> <code class="calibre17">=</code> <code class="n">get_recommended_meal</code><code class="calibre17">(</code><code class="n">Recommendation</code><code class="calibre17">.</code><code class="n">BY_CALORIES</code><code class="calibre17">,</code> <code class="n">calories</code><code class="calibre17">)</code>
+    <code class="k">assert</code> <code class="nb">len</code><code class="calibre17">(</code><code class="n">meals</code><code class="calibre17">)</code> <code class="calibre17">==</code> <code class="mi">3</code>
+    <code class="k">assert</code> <code class="n">is_appetizer</code><code class="calibre17">(</code><code class="n">meals</code><code class="calibre17">[</code><code class="mi">0</code><code class="calibre17">])</code>
+    <code class="k">assert</code> <code class="n">is_salad</code><code class="calibre17">(</code><code class="n">meals</code><code class="calibre17">[</code><code class="mi">1</code><code class="calibre17">])</code>
+    <code class="k">assert</code> <code class="n">is_main_dish</code><code class="calibre17">(</code><code class="n">meals</code><code class="calibre17">[</code><code class="mi">2</code><code class="calibre17">])</code>
+    <code class="k">assert</code> <code class="nb">sum</code><code class="calibre17">(</code><code class="n">meal</code><code class="calibre17">.</code><code class="n">calories</code> <code class="k">for</code> <code class="n">meal</code> <code class="calibre19">in</code> <code class="n">meals</code><code class="calibre17">)</code> <code class="calibre17">&lt;</code> <code class="n">calories</code></pre>
+
+<p class="author1">Contrast this with testing for a very specific result:</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre35"><code class="k">def</code> <code class="nf">test_meal_recommendation_under_specific_calories</code><code class="calibre17">():</code>
+    <code class="n">calories</code> <code class="calibre17">=</code> <code class="mi">900</code>
+    <code class="n">meals</code> <code class="calibre17">=</code> <code class="n">get_recommended_meal</code><code class="calibre17">(</code><code class="n">Recommendation</code><code class="calibre17">.</code><code class="n">BY_CALORIES</code><code class="calibre17">,</code> <code class="n">calories</code><code class="calibre17">)</code>
+    <code class="k">assert</code> <code class="n">meals</code> <code class="calibre17">==</code> <code class="calibre17">[</code><code class="n">Meal</code><code class="calibre17">(</code><code class="s">"Spring Roll"</code><code class="calibre17">,</code> <code class="mi">120</code><code class="calibre17">),</code>
+                     <code class="n">Meal</code><code class="calibre17">(</code><code class="s">"Green Papaya Salad"</code><code class="calibre17">,</code> <code class="mi">230</code><code class="calibre17">),</code>
+                     <code class="n">Meal</code><code class="calibre17">(</code><code class="s">"Larb Chicken"</code><code class="calibre17">,</code> <code class="mi">500</code><code class="calibre17">)]</code></pre>
+
+<p class="author1">The second method is testing for a very specific set of meals; this test is more specific, but also more <em class="calibre6">fragile</em>.<a data-type="indexterm" data-primary="fragile tests" id="idm45644725232168" class="calibre5"/> It is more likely to break when the production code changes, such as when introducing new menu items or changing the recommendation algorithm. The ideal test is one that only breaks when there is a legitimate bug. Remember that tests are not free. You want to reduce maintenance cost, and reducing the time it takes to tweak tests is a great way of doing so.</p>
+
+<p class="author1">In both cases, I am testing with a specific input: 900 calories. In order to build a more comprehensive safety net, it’s a good idea to expand your input domain to test for more cases. In traditional test cases, you pick which tests to write by performing  <em class="calibre6">boundary value analysis</em>. <a data-type="indexterm" data-primary="boundary value analysis" id="idm45644725229992" class="calibre5"/>Boundary value analysis is when you analyze the code under test, looking for how different inputs influence control flow, or the different execution paths in your code.</p>
+
+<p class="author1">For example, say <code class="calibre17">get_recommended_meal</code> raised an error if the calorie limit were below 650. The boundary value in this case is 650; this splits the input domain into two <em class="calibre6">equivalence classes</em>, or sets of values that have the same property.<a data-type="indexterm" data-primary="equivalence classes" id="idm45644725227320" class="calibre5"/> One equivalence class is all the numbers underneath 650, and another equivalence class is the values 650 and above. With boundary value analysis, there should be three tests: one with calories under 650 calories, one test exactly at the boundary of 650 calories, and one test with a value higher than 650 calories. In practice, this verifies that no developer has messed up relational operators (such as writing <code class="calibre17">&lt;=</code> instead of <code class="calibre17">&lt;</code>) or has made off-by-one errors.</p>
+
+<p class="author1">However, boundary value analysis is only useful if you can easily segment your input domain. If it is difficult to ascertain where you should split the domain, picking boundary values will not be easy.<a data-type="indexterm" data-primary="Hypothesis" data-secondary="property-based testing with" id="ix_Hypprptst" class="calibre5"/> This is where the generative nature of <code class="calibre17">Hypothesis</code> comes in; <code class="calibre17">Hypothesis</code> generates input for test cases. It will find boundary values <span class="calibre">for you.</span></p>
+
+<p class="author1">You can install <code class="calibre17">Hypothesis</code> through <code class="calibre17">pip</code>:</p>
+
+<pre data-type="programlisting" class="calibre35">pip install hypothesis</pre>
+
+<p class="author1">I’ll modify my original property test to let <code class="calibre17">Hypothesis</code> do the heavy lifting of generating input data.</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre35"><code class="k">from</code> <code class="nn">hypothesis</code> <code class="k">import</code> <code class="n">given</code>
+<code class="k">from</code> <code class="nn">hypothesis.strategies</code> <code class="k">import</code> <code class="n">integers</code>
+
+<code class="nd">@given</code><code class="calibre17">(</code><code class="n">integers</code><code class="calibre17">())</code>
+<code class="k">def</code> <code class="nf">test_meal_recommendation_under_specific_calories</code><code class="calibre17">(</code><code class="n">calories</code><code class="calibre17">):</code>
+    <code class="n">meals</code> <code class="calibre17">=</code> <code class="n">get_recommended_meal</code><code class="calibre17">(</code><code class="n">Recommendation</code><code class="calibre17">.</code><code class="n">BY_CALORIES</code><code class="calibre17">,</code> <code class="n">calories</code><code class="calibre17">)</code>
+    <code class="k">assert</code> <code class="nb">len</code><code class="calibre17">(</code><code class="n">meals</code><code class="calibre17">)</code> <code class="calibre17">==</code> <code class="mi">3</code>
+    <code class="k">assert</code> <code class="n">is_appetizer</code><code class="calibre17">(</code><code class="n">meals</code><code class="calibre17">[</code><code class="mi">0</code><code class="calibre17">])</code>
+    <code class="k">assert</code> <code class="n">is_salad</code><code class="calibre17">(</code><code class="n">meals</code><code class="calibre17">[</code><code class="mi">1</code><code class="calibre17">])</code>
+    <code class="k">assert</code> <code class="n">is_main_dish</code><code class="calibre17">(</code><code class="n">meals</code><code class="calibre17">[</code><code class="mi">2</code><code class="calibre17">])</code>
+    <code class="k">assert</code> <code class="nb">sum</code><code class="calibre17">(</code><code class="n">meal</code><code class="calibre17">.</code><code class="n">calories</code> <code class="k">for</code> <code class="n">meal</code> <code class="calibre19">in</code> <code class="n">meals</code><code class="calibre17">)</code> <code class="calibre17">&lt;</code> <code class="n">calories</code></pre>
+
+<p class="author1">With just a simple decorator, I can tell <code class="calibre17">Hypothesis</code> to pick the inputs for me. In this case, I am asking <code class="calibre17">Hypothesis</code> to generate different values of <code class="calibre17">integers</code>. <code class="calibre17">Hypothesis</code> will run this test multiple times, trying to find a value that violates the expected properties. If I run this test with <code class="calibre17">pytest</code>, I see the following output:</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre35"><code class="n">Falsifying</code> <code class="n">example</code><code class="calibre17">:</code> <code class="n">test_meal_recommendation_under_specific_calories</code><code class="calibre17">(</code>
+    <code class="n">calories</code><code class="calibre17">=</code><code class="mi">0</code><code class="calibre17">,</code>
+<code class="calibre17">)</code>
+<code class="calibre17">=============</code> <code class="n">short</code> <code class="n">test</code> <code class="n">summary</code> <code class="n">info</code> <code class="calibre17">======================</code>
+<code class="n">FAILED</code> <code class="n">code_examples</code><code class="calibre17">/</code><code class="n">chapter23</code><code class="calibre17">/</code><code class="n">test_basic_hypothesis</code><code class="calibre17">.</code><code class="n">py</code><code class="calibre17">::</code>
+    <code class="n">test_meal_recommendation_under_specific_calories</code> <code class="calibre17">-</code> <code class="k">assert</code> <code class="mi">850</code> <code class="calibre17">&lt;</code> <code class="mi">0</code></pre>
+
+<p class="author1"><code class="calibre17">Hypothesis</code> found an error early on with my production code: the code doesn’t handle a calorie limit of zero. Now, for this case, I want to specify that I should only be testing with a certain number of calories or above:</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre35"><code class="nd">@given</code><code class="calibre17">(</code><code class="n">integers</code><code class="calibre17">(</code><code class="n">min_value</code><code class="calibre17">=</code><code class="mi">900</code><code class="calibre17">))</code>
+<code class="k">def</code> <code class="nf">test_meal_recommendation_under_specific_calories</code><code class="calibre17">(</code><code class="n">calories</code><code class="calibre17">)</code>
+    <code class="c"># ... snip ...</code></pre>
+
+<p class="author1">Now, when I run the command with <code class="calibre17">pytest</code>, I want to show some more information about <code class="calibre17">Hypothesis</code>. I will run:</p>
+
+<pre data-type="programlisting" class="calibre35">py.test code_examples/chapter23 --hypothesis-show-statistics</pre>
+
+<p class="author1">This produces the following output:</p>
+
+<pre data-type="programlisting" class="calibre35">code_examples/chapter23/test_basic_hypothesis.py::
+    test_meal_recommendation_under_specific_calories:
+
+  - during generate phase (0.19 seconds):
+    - Typical runtimes: 0-1 ms, ~ 48% in data generation
+    - 100 passing examples, 0 failing examples, 0 invalid examples
+
+  - Stopped because settings.max_examples=100</pre>
+
+<p class="author1"><code class="calibre17">Hypothesis</code> checked 100 different values for me, without me needing to provide any specific input. Even better, <code class="calibre17">Hypothesis</code> will check new values every time you run this test. Rather than restricting yourself to the same test cases time and time again, you get a much broader blast radius in what you test. Consider all the different developers and continuous integration pipeline systems performing tests, and you’ll realize how quickly you can catch corner cases.</p>
+<div data-type="tip" class="calibre21"><h6 class="calibre22">Tip</h6>
+<p class="author1">You can also specify constraints on your domain by using <code class="calibre17">hypothesis.assume</code>. You can write assumptions into your tests, such as <code class="calibre17">assume(calories &gt; 850)</code>, to tell <code class="calibre17">Hypothesis</code> to skip any test cases that violate these assumptions.</p>
+</div>
+
+<p class="author1">If I introduce an error (say something goes wrong between 5,000 and 5,200 calories for some reason), <code class="calibre17">Hypothesis</code> catches the error within four test runs (the number of test runs may vary for you):</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre35"><code class="n">_________</code> <code class="n">test_meal_recommendation_under_specific_calories</code> <code class="n">_________</code>
+
+    <code class="nd">@given</code><code class="calibre17">(</code><code class="n">integers</code><code class="calibre17">(</code><code class="n">min_value</code><code class="calibre17">=</code><code class="mi">900</code><code class="calibre17">))</code>
+<code class="calibre17">&gt;</code>   <code class="k">def</code> <code class="nf">test_meal_recommendation_under_specific_calories</code><code class="calibre17">(</code><code class="n">calories</code><code class="calibre17">):</code>
+
+<code class="n">code_examples</code><code class="calibre17">/</code><code class="n">chapter23</code><code class="calibre17">/</code><code class="n">test_basic_hypothesis</code><code class="calibre17">.</code><code class="n">py</code><code class="calibre17">:</code><code class="mi">33</code><code class="calibre17">:</code>
+<code class="n">_</code> <code class="n">_</code> <code class="n">_</code> <code class="n">_</code> <code class="n">_</code> <code class="n">_</code> <code class="n">_</code> <code class="n">_</code> <code class="n">_</code> <code class="n">_</code> <code class="n">_</code> <code class="n">_</code> <code class="n">_</code> <code class="n">_</code> <code class="n">_</code> <code class="n">_</code> <code class="n">_</code> <code class="n">_</code> <code class="n">_</code> <code class="n">_</code> <code class="n">_</code> <code class="n">_</code> <code class="n">_</code> <code class="n">_</code> <code class="n">_</code> <code class="n">_</code> <code class="n">_</code> <code class="n">_</code> <code class="n">_</code> <code class="n">_</code> <code class="n">_</code>
+
+<code class="n">calories</code> <code class="calibre17">=</code> <code class="mi">5001</code>
+
+    <code class="nd">@given</code><code class="calibre17">(</code><code class="n">integers</code><code class="calibre17">(</code><code class="n">min_value</code><code class="calibre17">=</code><code class="mi">900</code><code class="calibre17">))</code>
+    <code class="k">def</code> <code class="nf">test_meal_recommendation_under_specific_calories</code><code class="calibre17">(</code><code class="n">calories</code><code class="calibre17">):</code>
+        <code class="n">meals</code> <code class="calibre17">=</code> <code class="n">get_recommended_meal</code><code class="calibre17">(</code><code class="n">Recommendation</code><code class="calibre17">.</code><code class="n">BY_CALORIES</code><code class="calibre17">,</code> <code class="n">calories</code><code class="calibre17">)</code>
+<code class="calibre17">&gt;</code>       <code class="k">assert</code> <code class="nb">len</code><code class="calibre17">(</code><code class="n">meals</code><code class="calibre17">)</code> <code class="calibre17">==</code> <code class="mi">3</code>
+<code class="n">E</code>       <code class="ne">TypeError</code><code class="calibre17">:</code> <code class="nb">object</code> <code class="n">of</code> <code class="nb">type</code> <code class="s">'NoneType'</code> <code class="n">has</code> <code class="n">no</code> <code class="nb">len</code><code class="calibre17">()</code>
+
+<code class="n">code_examples</code><code class="calibre17">/</code><code class="n">chapter23</code><code class="calibre17">/</code><code class="n">test_basic_hypothesis</code><code class="calibre17">.</code><code class="n">py</code><code class="calibre17">:</code><code class="mi">35</code><code class="calibre17">:</code> <code class="ne">TypeError</code>
+<code class="calibre17">------------------------</code> <code class="n">Hypothesis</code> <code class="calibre17">--------------------------------</code>
+<code class="n">Falsifying</code> <code class="n">example</code><code class="calibre17">:</code> <code class="n">test_meal_recommendation_under_specific_calories</code><code class="calibre17">(</code>
+    <code class="n">calories</code><code class="calibre17">=</code><code class="mi">5001</code><code class="calibre17">,</code>
+<code class="calibre17">)</code>
+<code class="calibre17">===========</code> <code class="n">Hypothesis</code> <code class="n">Statistics</code> <code class="calibre17">========================</code>
+<code class="n">code_examples</code><code class="calibre17">/</code><code class="n">chapter23</code><code class="calibre17">/</code><code class="n">test_basic_hypothesis</code><code class="calibre17">.</code><code class="n">py</code><code class="calibre17">::</code>
+   <code class="n">test_meal_recommendation_under_specific_calories</code><code class="calibre17">:</code>
+
+  <code class="calibre17">-</code> <code class="n">during</code> <code class="n">reuse</code> <code class="n">phase</code> <code class="calibre17">(</code><code class="mi">0.00</code> <code class="n">seconds</code><code class="calibre17">):</code>
+    <code class="calibre17">-</code> <code class="n">Typical</code> <code class="n">runtimes</code><code class="calibre17">:</code> <code class="calibre17">~</code> <code class="mi">1</code><code class="n">ms</code><code class="calibre17">,</code> <code class="calibre17">~</code> <code class="mi">43</code><code class="calibre17">%</code> <code class="calibre19">in</code> <code class="n">data</code> <code class="n">generation</code>
+    <code class="calibre17">-</code> <code class="mi">1</code> <code class="n">passing</code> <code class="n">examples</code><code class="calibre17">,</code> <code class="mi">0</code> <code class="n">failing</code> <code class="n">examples</code><code class="calibre17">,</code> <code class="mi">0</code> <code class="n">invalid</code> <code class="n">examples</code>
+
+  <code class="calibre17">-</code> <code class="n">during</code> <code class="n">generate</code> <code class="n">phase</code> <code class="calibre17">(</code><code class="mi">0.08</code> <code class="n">seconds</code><code class="calibre17">):</code>
+    <code class="calibre17">-</code> <code class="n">Typical</code> <code class="n">runtimes</code><code class="calibre17">:</code> <code class="mi">0</code><code class="calibre17">-</code><code class="mi">2</code> <code class="n">ms</code><code class="calibre17">,</code> <code class="calibre17">~</code> <code class="mi">51</code><code class="calibre17">%</code> <code class="calibre19">in</code> <code class="n">data</code> <code class="n">generation</code>
+    <code class="calibre17">-</code> <code class="mi">26</code> <code class="n">passing</code> <code class="n">examples</code><code class="calibre17">,</code> <code class="mi">1</code> <code class="n">failing</code> <code class="n">examples</code><code class="calibre17">,</code> <code class="mi">0</code> <code class="n">invalid</code> <code class="n">examples</code>
+    <code class="calibre17">-</code> <code class="n">Found</code> <code class="mi">1</code> <code class="n">failing</code> <code class="n">example</code> <code class="calibre19">in</code> <code class="n">this</code> <code class="n">phase</code>
+
+  <code class="calibre17">-</code> <code class="n">during</code> <code class="n">shrink</code> <code class="n">phase</code> <code class="calibre17">(</code><code class="mi">0.07</code> <code class="n">seconds</code><code class="calibre17">):</code>
+    <code class="calibre17">-</code> <code class="n">Typical</code> <code class="n">runtimes</code><code class="calibre17">:</code> <code class="mi">0</code><code class="calibre17">-</code><code class="mi">2</code> <code class="n">ms</code><code class="calibre17">,</code> <code class="calibre17">~</code> <code class="mi">37</code><code class="calibre17">%</code> <code class="calibre19">in</code> <code class="n">data</code> <code class="n">generation</code>
+    <code class="calibre17">-</code> <code class="mi">22</code> <code class="n">passing</code> <code class="n">examples</code><code class="calibre17">,</code> <code class="mi">12</code> <code class="n">failing</code> <code class="n">examples</code><code class="calibre17">,</code> <code class="mi">1</code> <code class="n">invalid</code> <code class="n">examples</code>
+    <code class="calibre17">-</code> <code class="n">Tried</code> <code class="mi">35</code> <code class="n">shrinks</code> <code class="n">of</code> <code class="n">which</code> <code class="mi">11</code> <code class="n">were</code> <code class="n">successful</code>
+
+  <code class="calibre17">-</code> <code class="n">Stopped</code> <code class="n">because</code> <code class="n">nothing</code> <code class="n">left</code> <code class="n">to</code> <code class="n">do</code></pre>
+
+<p class="author1">When you find an error, <code class="calibre17">Hypothesis</code> records the failing error so that it can specifically check that value in the future. You also can make sure that <code class="calibre17">Hypothesis</code> always tests specific cases using the <code class="calibre17">hypothesis.example</code> decorator:</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre35"><code class="nd">@given</code><code class="calibre17">(</code><code class="n">integers</code><code class="calibre17">(</code><code class="n">min_value</code><code class="calibre17">=</code><code class="mi">900</code><code class="calibre17">))</code>
+<code class="nd">@example</code><code class="calibre17">(</code><code class="mi">5001</code><code class="calibre17">)</code>
+<code class="k">def</code> <code class="nf">test_meal_recommendation_under_specific_calories</code><code class="calibre17">(</code><code class="n">calories</code><code class="calibre17">)</code>
+    <code class="c"># ... snip ...</code></pre>
+<aside data-type="sidebar" epub:type="sidebar" class="calibre32"><div class="sidebar" id="idm45644724657048">
+<h5 class="calibre33">The Hypothesis Database</h5>
+<p class="author1"><code class="calibre17">Hypothesis</code> will store examples of failed test cases in a local database (by default, in a folder called <em class="calibre6">.hypothesis/examples</em> under the same directory where you ran the tests).<a data-type="indexterm" data-primary="Hypothesis" data-secondary="property-based testing with" data-tertiary="Hypothesis database" id="idm45644724643896" class="calibre5"/> It is known as the <em class="calibre6">example database</em>. This is used for future test invocations to guide <code class="calibre17">Hypothesis</code> in testing common error cases.<a data-type="indexterm" data-primary="example database (Hypothesis)" id="idm45644724641656" class="calibre5"/></p>
+
+<p class="author1">There are many alternatives to the local database. An in-memory database will speed up your tests. For example, you can use a <a href="https://redis.io" class="calibre5">Redis</a> database to back the <code class="calibre17">Hypothesis</code> example database. You can even specify multiple databases to use with a <code class="calibre17">hypothesis.database.MultiplexedDatabase</code>.</p>
+
+<p class="author1">When running <code class="calibre17">Hypothesis</code> on a team, I recommend sharing a database, either through a shared drive on a network or through something like <code class="calibre17">Redis</code>. That way, CI systems can benefit from a shared history of test failures by using a database, and developers can use failed CI results to check troublesome error cases when they run tests locally. Consider using a <code class="calibre17">hypothesis.database.MultiplexedDatabase</code> so that the developers can pull in CI test failures but save their own local failures during development to their local database. You can learn more in the <a href="https://oreil.ly/D3cii" class="calibre5"><code class="calibre17">Hypothesis</code> database documentation</a>.</p>
+</div></aside>
+
+
+
+
+
+
+
+
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+</div></section>
+
+<section data-type="chapter" epub:type="chapter" data-pdf-bookmark="Chapter 23. Property-Based Testing" class="preface">
+<div class="preface" id="property">
+<section data-type="sect1" data-pdf-bookmark="Property-Based Testing with Hypothesis" class="preface">
+<div class="preface" id="idm45644725332760">
+<section data-type="sect2" data-pdf-bookmark="The Magic of Hypothesis" class="preface"><div class="preface" id="idm45644724635608">
+<h2 class="calibre34" id="calibre_pb_2">The Magic of Hypothesis</h2>
+
+<p class="author1"><code class="calibre17">Hypothesis</code> is very good at generating test cases that will find errors.<a data-type="indexterm" data-primary="Hypothesis" data-secondary="property-based testing with" data-tertiary="magic of Hypothesis" id="idm45644724633960" class="calibre5"/> It seems like magic, but it’s actually quite clever. In the previous example, you may have noticed that <code class="calibre17">Hypothesis</code> errored out on the value 5001. If you were to run the same code and introduce an error for values greater than 5000, you’ll find that the test errors out at 5001 as well. If <code class="calibre17">Hypothesis</code> is testing different values, shouldn’t we all see slightly different results?</p>
+
+<p class="author1"><code class="calibre17">Hypothesis</code> does something really nice for you when it finds a failure: it <em class="calibre6">shrinks</em> the test case.<a data-type="indexterm" data-primary="shrinking the test case (Hypothesis)" id="idm45644724630056" class="calibre5"/> Shrinking is when <code class="calibre17">Hypothesis</code> tries to find the minimal input that still fails the test. For <code class="calibre17">integers()</code>, <code class="calibre17">Hypothesis</code> will try successively smaller numbers (or bigger numbers when dealing with negatives) until the input value reaches zero. <code class="calibre17">Hypothesis</code> tries to zero in (no pun intended) on the smallest value that still fails the test.</p>
+
+<p class="author1">To learn more about how <code class="calibre17">Hypothesis</code> generates and shrinks values, it’s worth reading the original <a href="https://oreil.ly/htavw" class="calibre5">QuickCheck paper</a>. <a data-type="indexterm" data-primary="QuickCheck paper" id="idm45644724625992" class="calibre5"/>QuickCheck was one of the first property-based tools, and even though it deals with the Haskell programming language, it is quite informative. Most property-based testing tools like <code class="calibre17">Hypothesis</code> are descendents from the ideas put forth by QuickCheck.</p>
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+</div></section>
+
+<section data-type="chapter" epub:type="chapter" data-pdf-bookmark="Chapter 23. Property-Based Testing" class="preface">
+<div class="preface" id="property">
+<section data-type="sect1" data-pdf-bookmark="Property-Based Testing with Hypothesis" class="preface">
+<div class="preface" id="idm45644725332760">
+<section data-type="sect2" data-pdf-bookmark="Contrast with Traditional Tests" class="preface"><div class="preface" id="idm45644724624296">
+<h2 class="calibre34" id="calibre_pb_3">Contrast with Traditional Tests</h2>
+
+<p class="author1">Property-based testing can greatly simplify the test-writing process.<a data-type="indexterm" data-primary="Hypothesis" data-secondary="property-based testing with" data-tertiary="contrast with traditional tests" id="ix_Hypprptstvtr" class="calibre5"/><a data-type="indexterm" data-primary="property-based testing" data-secondary="using Hypothesis" data-tertiary="contrast with traditional tests" id="ix_prptstHypvtr" class="calibre5"/> There are entire classes of problems that you do not need to worry about:</p>
+<dl class="calibre13">
+<dt class="calibre14">Easier testing of nondeterminism</dt>
+<dd class="calibre15">
+<p class="calibre16">Nondeterminism is the bane of most traditional tests.<a data-type="indexterm" data-primary="nondeterminism, testing of" id="idm45644724591448" class="calibre5"/> Random behavior, creating temporary directories, or retrieving different records from a database can make it incredibly hard to write tests. You have to create a specific set of output values in your test, and to do that, you need to be deterministic; otherwise, your test will keep failing. You often try to control the nondeterminism by forcing specific behaviors, such as forcing the same folder to always be created or seeding a random number generator.</p>
+
+<p class="calibre16">With property-based testing, nondeterminism is part of the package. <code class="calibre17">Hypothesis</code> will give you different inputs for each test run. You don’t have to worry about testing for specific values anymore; define properties and embrace the nondeterminism. Your codebase will be better because of it.</p>
+</dd>
+<dt class="calibre14">Less fragility</dt>
+<dd class="calibre15">
+<p class="calibre16">When testing for specific input/output combinations, you are at the mercy of a slew of hard-coded assumptions. <a data-type="indexterm" data-primary="fragile tests" data-secondary="less fragility with property-based tests" id="idm45644724587656" class="calibre5"/>You assume that lists will always be in the same order, that dictionaries won’t get any key-value pairs added to them, and that your dependencies will never change their behavior. Any one of these seemingly unrelated changes can break one of your tests.</p>
+
+<p class="calibre16">When tests break for reasons unrelated to the functionality under test, it’s frustrating. The tests get a bad reputation for being flaky, and either they get ignored (masking true failures), or developers live with the constant nagging of needing to fix tests. Use property-based testing to add resilience to your testing.</p>
+</dd>
+<dt class="calibre14">Better chance at finding bugs</dt>
+<dd class="calibre15">
+<p class="calibre16">Property-based testing isn’t just about reducing the cost of test creation and maintenance.<a data-type="indexterm" data-primary="bugs, finding with property-based testing" id="idm45644724584072" class="calibre5"/> It will increase your chances of finding bugs. Even if you write your tests covering every path through your code today, there’s still a chance that you haven’t caught everything. If your functions change in a backward-incompatible way (say, by now erroring out on a value that you previously thought was fine), your luck depends on if you have a test case for that specific value. Property-based testing, by the nature of generating new test cases, will have a better chance of finding that bug over multiple runs.</p>
+</dd>
+</dl>
+</div></section>
+
+
+
+
+
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+</div></section>
+
+<section data-type="chapter" epub:type="chapter" data-pdf-bookmark="Chapter 23. Property-Based Testing" class="preface">
+<div class="preface" id="property">
+<section data-type="sect1" data-pdf-bookmark="Property-Based Testing with Hypothesis" class="preface">
+<div class="preface" id="idm45644725332760">
+<section data-type="sect2" data-pdf-bookmark="Contrast with Traditional Tests" class="preface">
+<div class="preface" id="idm45644724624296">
+<div data-type="note" epub:type="note" class="calibre21"><h1 class="calibre38" id="calibre_pb_4">Discussion Topic</h1>
+<p class="author1">Examine your current test cases and pick tests that are complicated to read. Search for tests that require a large amount of inputs and outputs to adequately test functionality. Discuss how property-based testing can replace these tests and simplify your test suite.<a data-type="indexterm" data-primary="Hypothesis" data-secondary="property-based testing with" data-tertiary="contrast with traditional tests" data-startref="ix_Hypprptstvtr" id="idm45644724580984" class="calibre5"/><a data-type="indexterm" data-primary="Hypothesis" data-secondary="property-based testing with" data-startref="ix_Hypprptst" id="idm45644724579432" class="calibre5"/><a data-type="indexterm" data-primary="property-based testing" data-secondary="using Hypothesis" data-tertiary="contrast with traditional tests" data-startref="ix_prptstHypvtr" id="idm45644724578200" class="calibre5"/><a data-type="indexterm" data-primary="property-based testing" data-secondary="using Hypothesis" data-startref="ix_prptstHyp" id="idm45644724576696" class="calibre5"/></p>
+</div>
+</div></section>
+
+
+
+
+
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+</div></section>
+
+<section data-type="chapter" epub:type="chapter" data-pdf-bookmark="Chapter 23. Property-Based Testing" class="preface">
+<div class="preface" id="property">
+<section data-type="sect1" data-pdf-bookmark="Getting the Most Out of Hypothesis" class="preface"><div class="preface" id="idm45644725331816">
+<h1 class="calibre12" id="calibre_pb_5">Getting the Most Out of Hypothesis</h1>
+
+<p class="author1">I’ve just scratched the surface of <code class="calibre17">Hypothesis</code> so far. <a data-type="indexterm" data-primary="Hypothesis" data-secondary="getting the most from" id="ix_Hypmost" class="calibre5"/><a data-type="indexterm" data-primary="property-based testing" data-secondary="getting the most from Hypothesis" id="ix_prptstget" class="calibre5"/>Once you really dive into property-based testing, you start opening up tons of doors for yourself. <code class="calibre17">Hypothesis</code> ships with some pretty cool features out of the box that can improve your testing experience.</p>
+
+
+
+
+
+
+
+
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+</div></section>
+
+<section data-type="chapter" epub:type="chapter" data-pdf-bookmark="Chapter 23. Property-Based Testing" class="preface">
+<div class="preface" id="property">
+<section data-type="sect1" data-pdf-bookmark="Getting the Most Out of Hypothesis" class="preface">
+<div class="preface" id="idm45644725331816">
+<section data-type="sect2" data-pdf-bookmark="Hypothesis Strategies" class="preface"><div class="preface" id="idm45644724570472">
+<h2 class="calibre34" id="calibre_pb_6">Hypothesis Strategies</h2>
+
+<p class="author1">In the previous section, I introduced you to the <code class="calibre17">integers()</code> strategy.<a data-type="indexterm" data-primary="strategies (Hypothesis)" id="idm45644724568104" class="calibre5"/><a data-type="indexterm" data-primary="Hypothesis" data-secondary="getting the most from" data-tertiary="Hypothesis strategies" id="idm45644724567368" class="calibre5"/><a data-type="indexterm" data-primary="property-based testing" data-secondary="getting the most from Hypothesis" data-tertiary="Hypothesis strategies" id="idm45644724566152" class="calibre5"/>  A <code class="calibre17">Hypothesis</code> strategy defines how test cases are generated, as well as how the data gets shrunk when a test case fails. <code class="calibre17">Hypothesis</code> ships with a ton of strategies right out of the box. Similar to passing <code class="calibre17">integers()</code> into your test case, you can pass things like <code class="calibre17">floats()</code>, <code class="calibre17">text()</code>, or <code class="calibre17">times()</code> to generate values for floating-point numbers, strings, or <code class="calibre17">datetime.time</code> objects, respectively.</p>
+
+<p class="author1"><code class="calibre17">Hypothesis</code> also provides <a data-type="indexterm" data-primary="composability" data-secondary="Hypothesis strategies" id="idm45644724561208" class="calibre5"/>strategies that can compose other strategies together, such as building lists, tuples, or dictionaries of strategies (this is a fantastic example of composability, as described in <a data-type="xref" href="part0022_split_000.html#composability" class="calibre5">Chapter 17</a>). For instance, let’s say I want to create a strategy that maps dish names (text) to calories (a number between 100 and 2,000):</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre35"><code class="k">from</code> <code class="nn">hypothesis</code> <code class="k">import</code> <code class="n">given</code>
+<code class="k">from</code> <code class="nn">hypothesis.strategies</code> <code class="k">import</code> <code class="n">dictionary</code><code class="calibre17">,</code> <code class="n">integers</code><code class="calibre17">,</code> <code class="n">text</code>
+
+<code class="nd">@given</code><code class="calibre17">(</code><code class="n">dictionaries</code><code class="calibre17">(</code><code class="n">text</code><code class="calibre17">(),</code> <code class="n">integers</code><code class="calibre17">(</code><code class="n">min_value</code><code class="calibre17">=</code><code class="mi">100</code><code class="calibre17">,</code> <code class="n">max_value</code><code class="calibre17">=</code><code class="mi">2000</code><code class="calibre17">)))</code>
+<code class="k">def</code> <code class="nf">test_calorie_count</code><code class="calibre17">(</code><code class="n">ingredient_to_calorie_mapping</code> <code class="calibre17">:</code> <code class="nb">dict</code><code class="calibre17">[</code><code class="nb">str</code><code class="calibre17">,</code> <code class="nb">int</code><code class="calibre17">]):</code>
+    <code class="c"># ... snip ...</code></pre>
+
+<p class="author1">For even more complicated data, you can use <code class="calibre17">Hypothesis</code> to define your own strategies. You are allowed to <code class="calibre17">map</code> and <code class="calibre17">filter</code> strategies, which are similar in concept to the built-in <code class="calibre17">map</code> and <code class="calibre17">filter</code> functions.</p>
+
+<p class="author1">You can also use the <code class="calibre17">hypothesis.composite</code> strategy decorator to define your own strategies. I want to create a strategy that creates three-course meals for me, consisting of an appetizer, main dish, and dessert. Each dish contains a name and a calorie count:</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre35"><code class="k">from</code> <code class="nn">hypothesis</code> <code class="k">import</code> <code class="n">given</code>
+<code class="k">from</code> <code class="nn">hypothesis.strategies</code> <code class="k">import</code> <code class="n">composite</code><code class="calibre17">,</code> <code class="n">integers</code>
+
+<code class="n">ThreeCourseMeal</code> <code class="calibre17">=</code> <code class="nb">tuple</code><code class="calibre17">[</code><code class="n">Dish</code><code class="calibre17">,</code> <code class="n">Dish</code><code class="calibre17">,</code> <code class="n">Dish</code><code class="calibre17">]</code>
+
+<code class="nd">@composite</code>
+<code class="k">def</code> <code class="nf">three_course_meals</code><code class="calibre17">(</code><code class="n">draw</code><code class="calibre17">)</code> <code class="calibre17">-&gt;</code> <code class="n">ThreeCourseMeal</code><code class="calibre17">:</code>
+    <code class="n">appetizer_calories</code> <code class="calibre17">=</code> <code class="n">integers</code><code class="calibre17">(</code><code class="n">min_value</code><code class="calibre17">=</code><code class="mi">100</code><code class="calibre17">,</code> <code class="n">max_value</code><code class="calibre17">=</code><code class="mi">900</code><code class="calibre17">)</code>
+    <code class="n">main_dish_calories</code> <code class="calibre17">=</code> <code class="n">integers</code><code class="calibre17">(</code><code class="n">min_value</code><code class="calibre17">=</code><code class="mi">550</code><code class="calibre17">,</code> <code class="n">max_value</code><code class="calibre17">=</code><code class="mi">1800</code><code class="calibre17">)</code>
+    <code class="n">dessert_calories</code> <code class="calibre17">=</code> <code class="n">integers</code><code class="calibre17">(</code><code class="n">min_value</code><code class="calibre17">=</code><code class="mi">500</code><code class="calibre17">,</code> <code class="n">max_value</code><code class="calibre17">=</code><code class="mi">1000</code><code class="calibre17">)</code>
+
+    <code class="k">return</code> <code class="calibre17">(</code><code class="n">Dish</code><code class="calibre17">(</code><code class="s">"Appetizer"</code><code class="calibre17">,</code> <code class="n">draw</code><code class="calibre17">(</code><code class="n">appetizer_calories</code><code class="calibre17">)),</code>
+            <code class="n">Dish</code><code class="calibre17">(</code><code class="s">"Main Dish"</code><code class="calibre17">,</code> <code class="n">draw</code><code class="calibre17">(</code><code class="n">main_dish_calories</code><code class="calibre17">)),</code>
+            <code class="n">Dish</code><code class="calibre17">(</code><code class="s">"Dessert"</code><code class="calibre17">,</code> <code class="n">draw</code><code class="calibre17">(</code><code class="n">dessert_calories</code><code class="calibre17">)))</code>
+
+<code class="nd">@given</code><code class="calibre17">(</code><code class="n">three_course_meals</code><code class="calibre17">)</code>
+<code class="k">def</code> <code class="nf">test_three_course_meal_substitutions</code><code class="calibre17">(</code><code class="n">three_course_meal</code><code class="calibre17">:</code> <code class="n">ThreeCourseMeal</code><code class="calibre17">):</code>
+    <code class="c"># ... do something with three_course_meal</code></pre>
+
+<p class="author1">This example works by defining a new composite strategy called <code class="calibre17">three_course_meals</code>. I create three integer strategies; each type of dish gets its own strategy with its own min/max values. From there, I create a new dish that has a name and a <em class="calibre6">drawn</em> value from the strategy. <code class="calibre17">draw</code> is a function that gets passed into your composite strategy and that you use to select values from the strategy.</p>
+
+<p class="author1">Once you’ve defined your own strategies, you can reuse them across multiple tests, making it easy to generate new data for your system. To learn more about <code class="calibre17">Hypothesis</code> strategies, I encourage you to read the <a href="https://oreil.ly/QhhnM" class="calibre5"><code class="calibre17">Hypothesis</code> documentation</a>.</p>
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+</div></section>
+
+<section data-type="chapter" epub:type="chapter" data-pdf-bookmark="Chapter 23. Property-Based Testing" class="preface">
+<div class="preface" id="property">
+<section data-type="sect1" data-pdf-bookmark="Getting the Most Out of Hypothesis" class="preface">
+<div class="preface" id="idm45644725331816">
+<section data-type="sect2" data-pdf-bookmark="Generating Algorithms" class="preface"><div class="preface" id="idm45644724269624">
+<h2 class="calibre34" id="calibre_pb_7">Generating Algorithms</h2>
+
+<p class="author1">In previous examples, I focused on generating input data to create your tests.<a data-type="indexterm" data-primary="property-based testing" data-secondary="getting the most from Hypothesis" data-tertiary="generating algorithms" id="ix_prptstgetalg" class="calibre5"/><a data-type="indexterm" data-primary="algorithms" data-secondary="generating with Hypothesis" id="ix_algHyp" class="calibre5"/><a data-type="indexterm" data-primary="Hypothesis" data-secondary="getting the most from" data-tertiary="generating algorithms" id="ix_Hypmostalg" class="calibre5"/><a data-type="indexterm" data-primary="stateful testing (Hypothesis)" id="ix_statetst" class="calibre5"/> However, <code class="calibre17">Hypothesis</code> can go a step further and generate combinations of operations as well. <code class="calibre17">Hypothesis</code> calls this <em class="calibre6">stateful testing</em>.</p>
+
+<p class="author1">Consider our meal recommendation system. I showed you how to filter by calories, but now I also want to filter by price, number of courses, proximity to user, and so on. Here are some properties I want to assert about the system:</p>
+
+<ul class="printings">
+<li class="calibre9">
+<p class="author1">The meal recommendation system always returns three meal options; it may be possible that not all recommended options fit all of the user’s criteria.</p>
+</li>
+<li class="calibre9">
+<p class="author1">All three meal options are unique.</p>
+</li>
+<li class="calibre9">
+<p class="author1">The meal options are ordered based on the most recent filter applied. In the case of ties, the next most recent filter is used.</p>
+</li>
+<li class="calibre9">
+<p class="author1">New filters replace old filters of the same type. For example, if you set the price filter to &lt;$20, and then change it to &lt;$15, only the &lt;$15 filter is applied. Setting something like a calorie filter, such as &lt;1800 calories, does not affect the price <span class="calibre">filter</span>.</p>
+</li>
+</ul>
+
+<p class="author1">Rather than writing a slew of test cases, I will represent my tests using a <code class="calibre17">hypothesis.stateful.RuleBasedStateMachine</code>. This will let me test entire algorithms using <code class="calibre17">Hypothesis</code>, while checking for invariants along the way. It’s a bit complicated, so I’ll show the entire code first, and then break it down afterward piece by piece.</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre35"><code class="k">from</code> <code class="nn">functools</code> <code class="k">import</code> <code class="nb">reduce</code>
+<code class="k">from</code> <code class="nn">hypothesis.strategies</code> <code class="k">import</code> <code class="n">integers</code>
+<code class="k">from</code> <code class="nn">hypothesis.stateful</code> <code class="k">import</code> <code class="n">Bundle</code><code class="calibre17">,</code> <code class="n">RuleBasedStateMachine</code><code class="calibre17">,</code> <code class="n">invariant</code><code class="calibre17">,</code> <code class="n">rule</code>
+
+<code class="k">class</code> <code class="nc">RecommendationChecker</code><code class="calibre17">(</code><code class="n">RuleBasedStateMachine</code><code class="calibre17">):</code>
+    <code class="k">def</code> <code class="calibre17">__init__</code><code class="calibre17">(</code><code class="nb">self</code><code class="calibre17">):</code>
+        <code class="nb">super</code><code class="calibre17">()</code><code class="calibre17">.</code><code class="calibre17">__init__</code><code class="calibre17">()</code>
+        <code class="nb">self</code><code class="calibre17">.</code><code class="n">recommender</code> <code class="calibre17">=</code> <code class="n">MealRecommendationEngine</code><code class="calibre17">()</code>
+        <code class="nb">self</code><code class="calibre17">.</code><code class="n">filters</code> <code class="calibre17">=</code> <code class="calibre17">[]</code>
+
+    <code class="nd">@rule</code><code class="calibre17">(</code><code class="n">price_limit</code><code class="calibre17">=</code><code class="n">integers</code><code class="calibre17">(</code><code class="n">min_value</code><code class="calibre17">=</code><code class="mi">6</code><code class="calibre17">,</code> <code class="n">max_value</code><code class="calibre17">=</code><code class="mi">200</code><code class="calibre17">))</code>
+    <code class="k">def</code> <code class="nf">filter_by_price</code><code class="calibre17">(</code><code class="nb">self</code><code class="calibre17">,</code> <code class="n">price_limit</code><code class="calibre17">):</code>
+        <code class="nb">self</code><code class="calibre17">.</code><code class="n">recommender</code><code class="calibre17">.</code><code class="n">apply_price_filter</code><code class="calibre17">(</code><code class="n">price_limit</code><code class="calibre17">)</code>
+        <code class="nb">self</code><code class="calibre17">.</code><code class="n">filters</code> <code class="calibre17">=</code> <code class="calibre17">[</code><code class="n">f</code> <code class="k">for</code> <code class="n">f</code> <code class="calibre19">in</code> <code class="nb">self</code><code class="calibre17">.</code><code class="n">filters</code> <code class="k">if</code> <code class="n">f</code><code class="calibre17">[</code><code class="mi">0</code><code class="calibre17">]</code> <code class="calibre17">!=</code> <code class="s">"price"</code><code class="calibre17">]</code>
+        <code class="nb">self</code><code class="calibre17">.</code><code class="n">filters</code><code class="calibre17">.</code><code class="n">append</code><code class="calibre17">((</code><code class="s">"price"</code><code class="calibre17">,</code> <code class="k">lambda</code> <code class="n">m</code><code class="calibre17">:</code> <code class="n">m</code><code class="calibre17">.</code><code class="n">price</code><code class="calibre17">))</code>
+
+    <code class="nd">@rule</code><code class="calibre17">(</code><code class="n">calorie_limit</code><code class="calibre17">=</code><code class="n">integers</code><code class="calibre17">(</code><code class="n">min_value</code><code class="calibre17">=</code><code class="mi">500</code><code class="calibre17">,</code> <code class="n">max_value</code><code class="calibre17">=</code><code class="mi">2000</code><code class="calibre17">))</code>
+    <code class="k">def</code> <code class="nf">filter_by_calories</code><code class="calibre17">(</code><code class="nb">self</code><code class="calibre17">,</code> <code class="n">calorie_limit</code><code class="calibre17">):</code>
+        <code class="nb">self</code><code class="calibre17">.</code><code class="n">recommender</code><code class="calibre17">.</code><code class="n">apply_calorie_filter</code><code class="calibre17">(</code><code class="n">calorie_limit</code><code class="calibre17">)</code>
+        <code class="nb">self</code><code class="calibre17">.</code><code class="n">filters</code> <code class="calibre17">=</code> <code class="calibre17">[</code><code class="n">f</code> <code class="k">for</code> <code class="n">f</code> <code class="calibre19">in</code> <code class="nb">self</code><code class="calibre17">.</code><code class="n">filters</code> <code class="k">if</code> <code class="n">f</code><code class="calibre17">[</code><code class="mi">0</code><code class="calibre17">]</code> <code class="calibre17">!=</code> <code class="s">"calorie"</code><code class="calibre17">]</code>
+        <code class="nb">self</code><code class="calibre17">.</code><code class="n">filters</code><code class="calibre17">.</code><code class="n">append</code><code class="calibre17">((</code><code class="s">"calorie"</code><code class="calibre17">,</code> <code class="k">lambda</code> <code class="n">m</code><code class="calibre17">:</code> <code class="n">m</code><code class="calibre17">.</code><code class="n">calories</code><code class="calibre17">))</code>
+
+    <code class="nd">@rule</code><code class="calibre17">(</code><code class="n">distance_limit</code><code class="calibre17">=</code><code class="n">integers</code><code class="calibre17">(</code><code class="n">max_value</code><code class="calibre17">=</code><code class="mi">100</code><code class="calibre17">))</code>
+    <code class="k">def</code> <code class="nf">filter_by_distance</code><code class="calibre17">(</code><code class="nb">self</code><code class="calibre17">,</code> <code class="n">distance_limit</code><code class="calibre17">):</code>
+        <code class="nb">self</code><code class="calibre17">.</code><code class="n">recommender</code><code class="calibre17">.</code><code class="n">apply_distance_filter</code><code class="calibre17">(</code><code class="n">distance_limit</code><code class="calibre17">)</code>
+        <code class="nb">self</code><code class="calibre17">.</code><code class="n">filters</code> <code class="calibre17">=</code> <code class="calibre17">[</code><code class="n">f</code> <code class="k">for</code> <code class="n">f</code> <code class="calibre19">in</code> <code class="nb">self</code><code class="calibre17">.</code><code class="n">filters</code> <code class="k">if</code> <code class="n">f</code><code class="calibre17">[</code><code class="mi">0</code><code class="calibre17">]</code> <code class="calibre17">!=</code> <code class="s">"distance"</code><code class="calibre17">]</code>
+        <code class="nb">self</code><code class="calibre17">.</code><code class="n">filters</code><code class="calibre17">.</code><code class="n">append</code><code class="calibre17">((</code><code class="s">"distance"</code><code class="calibre17">,</code> <code class="k">lambda</code> <code class="n">m</code><code class="calibre17">:</code> <code class="n">m</code><code class="calibre17">.</code><code class="n">distance</code><code class="calibre17">))</code>
+
+    <code class="nd">@invariant</code><code class="calibre17">()</code>
+    <code class="k">def</code> <code class="nf">recommender_provides_three_unique_meals</code><code class="calibre17">(</code><code class="nb">self</code><code class="calibre17">):</code>
+        <code class="k">assert</code> <code class="nb">len</code><code class="calibre17">(</code><code class="nb">self</code><code class="calibre17">.</code><code class="n">recommender</code><code class="calibre17">.</code><code class="n">get_meals</code><code class="calibre17">())</code> <code class="calibre17">==</code> <code class="mi">3</code>
+        <code class="k">assert</code> <code class="nb">len</code><code class="calibre17">(</code><code class="nb">set</code><code class="calibre17">(</code><code class="nb">self</code><code class="calibre17">.</code><code class="n">recommender</code><code class="calibre17">.</code><code class="n">get_meals</code><code class="calibre17">()))</code> <code class="calibre17">==</code> <code class="mi">3</code>
+
+    <code class="nd">@invariant</code><code class="calibre17">()</code>
+    <code class="k">def</code> <code class="nf">meals_are_appropriately_ordered</code><code class="calibre17">(</code><code class="nb">self</code><code class="calibre17">):</code>
+        <code class="n">meals</code> <code class="calibre17">=</code> <code class="nb">self</code><code class="calibre17">.</code><code class="n">recommender</code><code class="calibre17">.</code><code class="n">get_meals</code><code class="calibre17">()</code>
+        <code class="n">ordered_meals</code> <code class="calibre17">=</code> <code class="nb">reduce</code><code class="calibre17">(</code><code class="k">lambda</code> <code class="n">meals</code><code class="calibre17">,</code> <code class="n">f</code><code class="calibre17">:</code> <code class="nb">sorted</code><code class="calibre17">(</code><code class="n">meals</code><code class="calibre17">,</code> <code class="n">key</code><code class="calibre17">=</code><code class="n">f</code><code class="calibre17">[</code><code class="mi">1</code><code class="calibre17">]),</code>
+                               <code class="nb">self</code><code class="calibre17">.</code><code class="n">filters</code><code class="calibre17">,</code>
+                               <code class="n">meals</code><code class="calibre17">)</code>
+        <code class="k">assert</code> <code class="n">ordered_meals</code> <code class="calibre17">==</code> <code class="n">meals</code>
+
+
+<code class="n">TestRecommender</code> <code class="calibre17">=</code> <code class="n">RecommendationChecker</code><code class="calibre17">.</code><code class="n">TestCase</code></pre>
+
+<p class="author1">That’s quite a lot of code, but it’s really cool how it all works. So let’s break it down.</p>
+
+<p class="author1">First, I will create a subclass of a <code class="calibre17">hypothesis.stateful.RuleBasedStateMachine</code>:</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre35"><code class="k">from</code> <code class="nn">functools</code> <code class="k">import</code> <code class="nb">reduce</code>
+<code class="k">from</code> <code class="nn">hypothesis.strategies</code> <code class="k">import</code> <code class="n">integers</code>
+<code class="k">from</code> <code class="nn">hypothesis.stateful</code> <code class="k">import</code> <code class="n">Bundle</code><code class="calibre17">,</code> <code class="n">RuleBasedStateMachine</code><code class="calibre17">,</code> <code class="n">invariant</code><code class="calibre17">,</code> <code class="n">rule</code>
+
+<code class="k">class</code> <code class="nc">RecommendationChecker</code><code class="calibre17">(</code><code class="n">RuleBasedStateMachine</code><code class="calibre17">):</code>
+    <code class="k">def</code> <code class="calibre17">__init__</code><code class="calibre17">(</code><code class="nb">self</code><code class="calibre17">):</code>
+        <code class="nb">super</code><code class="calibre17">()</code><code class="calibre17">.</code><code class="calibre17">__init__</code><code class="calibre17">()</code>
+        <code class="nb">self</code><code class="calibre17">.</code><code class="n">recommender</code> <code class="calibre17">=</code> <code class="n">MealRecommendationEngine</code><code class="calibre17">()</code>
+        <code class="nb">self</code><code class="calibre17">.</code><code class="n">filters</code> <code class="calibre17">=</code> <code class="calibre17">[]</code></pre>
+
+<p class="author1">This class will be responsible for defining the discrete steps that I want to test in combination. In the constructor, I set up <code class="calibre17">self.recommender</code> as a <code class="calibre17">MealRecommendationEngine</code>, which is what I’m testing in this scenario. I also will keep track of a list of filters that are applied as part of this class.
+Next, I will set up <code class="calibre17">hypothesis.stateful.rule</code> functions:</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre35">    <code class="nd">@rule</code><code class="calibre17">(</code><code class="n">price_limit</code><code class="calibre17">=</code><code class="n">integers</code><code class="calibre17">(</code><code class="n">min_value</code><code class="calibre17">=</code><code class="mi">6</code><code class="calibre17">,</code> <code class="n">max_value</code><code class="calibre17">=</code><code class="mi">200</code><code class="calibre17">))</code>
+    <code class="k">def</code> <code class="nf">filter_by_price</code><code class="calibre17">(</code><code class="nb">self</code><code class="calibre17">,</code> <code class="n">price_limit</code><code class="calibre17">):</code>
+        <code class="nb">self</code><code class="calibre17">.</code><code class="n">recommender</code><code class="calibre17">.</code><code class="n">apply_price_filter</code><code class="calibre17">(</code><code class="n">price_limit</code><code class="calibre17">)</code>
+        <code class="nb">self</code><code class="calibre17">.</code><code class="n">filters</code> <code class="calibre17">=</code> <code class="calibre17">[</code><code class="n">f</code> <code class="k">for</code> <code class="n">f</code> <code class="calibre19">in</code> <code class="nb">self</code><code class="calibre17">.</code><code class="n">filters</code> <code class="k">if</code> <code class="n">f</code><code class="calibre17">[</code><code class="mi">0</code><code class="calibre17">]</code> <code class="calibre17">!=</code> <code class="s">"price"</code><code class="calibre17">]</code>
+        <code class="nb">self</code><code class="calibre17">.</code><code class="n">filters</code><code class="calibre17">.</code><code class="n">append</code><code class="calibre17">((</code><code class="s">"price"</code><code class="calibre17">,</code> <code class="k">lambda</code> <code class="n">m</code><code class="calibre17">:</code> <code class="n">m</code><code class="calibre17">.</code><code class="n">price</code><code class="calibre17">))</code>
+
+    <code class="nd">@rule</code><code class="calibre17">(</code><code class="n">calorie_limit</code><code class="calibre17">=</code><code class="n">integers</code><code class="calibre17">(</code><code class="n">min_value</code><code class="calibre17">=</code><code class="mi">500</code><code class="calibre17">,</code> <code class="n">max_value</code><code class="calibre17">=</code><code class="mi">2000</code><code class="calibre17">))</code>
+    <code class="k">def</code> <code class="nf">filter_by_calories</code><code class="calibre17">(</code><code class="nb">self</code><code class="calibre17">,</code> <code class="n">calorie_limit</code><code class="calibre17">):</code>
+        <code class="nb">self</code><code class="calibre17">.</code><code class="n">recommender</code><code class="calibre17">.</code><code class="n">apply_calorie_filter</code><code class="calibre17">(</code><code class="n">calorie_limit</code><code class="calibre17">)</code>
+        <code class="nb">self</code><code class="calibre17">.</code><code class="n">filters</code> <code class="calibre17">=</code> <code class="calibre17">[</code><code class="n">f</code> <code class="k">for</code> <code class="n">f</code> <code class="calibre19">in</code> <code class="nb">self</code><code class="calibre17">.</code><code class="n">filters</code> <code class="k">if</code> <code class="n">f</code><code class="calibre17">[</code><code class="mi">0</code><code class="calibre17">]</code> <code class="calibre17">!=</code> <code class="s">"calorie"</code><code class="calibre17">]</code>
+        <code class="nb">self</code><code class="calibre17">.</code><code class="n">filters</code><code class="calibre17">.</code><code class="n">append</code><code class="calibre17">((</code><code class="s">"calorie"</code><code class="calibre17">,</code> <code class="k">lambda</code> <code class="n">m</code><code class="calibre17">:</code> <code class="n">m</code><code class="calibre17">.</code><code class="n">calories</code><code class="calibre17">))</code>
+
+    <code class="nd">@rule</code><code class="calibre17">(</code><code class="n">distance_limit</code><code class="calibre17">=</code><code class="n">integers</code><code class="calibre17">(</code><code class="n">max_value</code><code class="calibre17">=</code><code class="mi">100</code><code class="calibre17">))</code>
+    <code class="k">def</code> <code class="nf">filter_by_distance</code><code class="calibre17">(</code><code class="nb">self</code><code class="calibre17">,</code> <code class="n">distance_limit</code><code class="calibre17">):</code>
+        <code class="nb">self</code><code class="calibre17">.</code><code class="n">recommender</code><code class="calibre17">.</code><code class="n">apply_distance_filter</code><code class="calibre17">(</code><code class="n">distance_limit</code><code class="calibre17">)</code>
+        <code class="nb">self</code><code class="calibre17">.</code><code class="n">filters</code> <code class="calibre17">=</code> <code class="calibre17">[</code><code class="n">f</code> <code class="k">for</code> <code class="n">f</code> <code class="calibre19">in</code> <code class="nb">self</code><code class="calibre17">.</code><code class="n">filters</code> <code class="k">if</code> <code class="n">f</code><code class="calibre17">[</code><code class="mi">0</code><code class="calibre17">]</code> <code class="calibre17">!=</code> <code class="s">"distance"</code><code class="calibre17">]</code>
+        <code class="nb">self</code><code class="calibre17">.</code><code class="n">filters</code><code class="calibre17">.</code><code class="n">append</code><code class="calibre17">((</code><code class="s">"distance"</code><code class="calibre17">,</code> <code class="k">lambda</code> <code class="n">m</code><code class="calibre17">:</code> <code class="n">m</code><code class="calibre17">.</code><code class="n">distance</code><code class="calibre17">))</code></pre>
+
+<p class="author1">Each rule acts as a step of the algorithm that you want to test. <code class="calibre17">Hypothesis</code> will generate tests using these rules as opposed to generating test data. In this case, each of these rules applies a filter to the recommendation engine. I also save the filters locally so that I can check results later.</p>
+
+<p class="author1">I then use <code class="calibre17">hypothesis.stateful.invariant</code> decorators to define assertions that should be checked after every rule change.</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre35">    <code class="nd">@invariant</code><code class="calibre17">()</code>
+    <code class="k">def</code> <code class="nf">recommender_provides_three_unique_meals</code><code class="calibre17">(</code><code class="nb">self</code><code class="calibre17">):</code>
+        <code class="k">assert</code> <code class="nb">len</code><code class="calibre17">(</code><code class="nb">self</code><code class="calibre17">.</code><code class="n">recommender</code><code class="calibre17">.</code><code class="n">get_meals</code><code class="calibre17">())</code> <code class="calibre17">==</code> <code class="mi">3</code>
+        <code class="c"># make sure all of the meals are unique - sets de-dupe elements</code>
+        <code class="c"># so we should have three unique elements</code>
+        <code class="k">assert</code> <code class="nb">len</code><code class="calibre17">(</code><code class="nb">set</code><code class="calibre17">(</code><code class="nb">self</code><code class="calibre17">.</code><code class="n">recommender</code><code class="calibre17">.</code><code class="n">get_meals</code><code class="calibre17">()))</code> <code class="calibre17">==</code> <code class="mi">3</code>
+
+    <code class="nd">@invariant</code><code class="calibre17">()</code>
+    <code class="k">def</code> <code class="nf">meals_are_appropriately_ordered</code><code class="calibre17">(</code><code class="nb">self</code><code class="calibre17">):</code>
+        <code class="n">meals</code> <code class="calibre17">=</code> <code class="nb">self</code><code class="calibre17">.</code><code class="n">recommender</code><code class="calibre17">.</code><code class="n">get_meals</code><code class="calibre17">()</code>
+        <code class="n">ordered_meals</code> <code class="calibre17">=</code> <code class="nb">reduce</code><code class="calibre17">(</code><code class="k">lambda</code> <code class="n">meals</code><code class="calibre17">,</code> <code class="n">f</code><code class="calibre17">:</code> <code class="nb">sorted</code><code class="calibre17">(</code><code class="n">meals</code><code class="calibre17">,</code> <code class="n">key</code><code class="calibre17">=</code><code class="n">f</code><code class="calibre17">[</code><code class="mi">1</code><code class="calibre17">]),</code>
+                               <code class="nb">self</code><code class="calibre17">.</code><code class="n">filters</code><code class="calibre17">,</code>
+                               <code class="n">meals</code><code class="calibre17">)</code>
+        <code class="k">assert</code> <code class="n">ordered_meals</code> <code class="calibre17">==</code> <code class="n">meals</code></pre>
+
+<p class="author1">I’ve written two invariants: one stating that the recommender always returns three unique meals and one that the meals are in the correct order based on the filters chosen.</p>
+
+<p class="author1">Finally, I save off the <code class="calibre17">TestCase</code> from the <code class="calibre17">RecommendationChecker</code> into a variable that is prefixed with <code class="calibre17">Test</code>. This is so <code class="calibre17">pytest</code> can discover the stateful <code class="calibre17">Hypothesis</code> test.</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre35"><code class="n">TestRecommender</code> <code class="calibre17">=</code> <code class="n">RecommendationChecker</code><code class="calibre17">.</code><code class="n">TestCase</code></pre>
+
+<p class="author1">Once it’s all put together, <code class="calibre17">Hypothesis</code> will start generating test cases with different combinations of rules. For instance, with one <code class="calibre17">Hypothesis</code> test run (with an intentionally introduced error), <code class="calibre17">Hypothesis</code> generated the following test.</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre35"><code class="n">state</code> <code class="calibre17">=</code> <code class="n">RecommendationChecker</code><code class="calibre17">()</code>
+<code class="n">state</code><code class="calibre17">.</code><code class="n">filter_by_distance</code><code class="calibre17">(</code><code class="n">distance_limit</code><code class="calibre17">=</code><code class="mi">0</code><code class="calibre17">)</code>
+<code class="n">state</code><code class="calibre17">.</code><code class="n">filter_by_distance</code><code class="calibre17">(</code><code class="n">distance_limit</code><code class="calibre17">=</code><code class="mi">0</code><code class="calibre17">)</code>
+<code class="n">state</code><code class="calibre17">.</code><code class="n">filter_by_distance</code><code class="calibre17">(</code><code class="n">distance_limit</code><code class="calibre17">=</code><code class="mi">0</code><code class="calibre17">)</code>
+<code class="n">state</code><code class="calibre17">.</code><code class="n">filter_by_calories</code><code class="calibre17">(</code><code class="n">calorie_limit</code><code class="calibre17">=</code><code class="mi">500</code><code class="calibre17">)</code>
+<code class="n">state</code><code class="calibre17">.</code><code class="n">filter_by_distance</code><code class="calibre17">(</code><code class="n">distance_limit</code><code class="calibre17">=</code><code class="mi">0</code><code class="calibre17">)</code>
+<code class="n">state</code><code class="calibre17">.</code><code class="n">teardown</code><code class="calibre17">()</code></pre>
+
+<p class="author1">When I introduced a different error, <code class="calibre17">Hypothesis</code> shows me a different test case that catches the fault.</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre35"><code class="n">state</code> <code class="calibre17">=</code> <code class="n">RecommendationChecker</code><code class="calibre17">()</code>
+<code class="n">state</code><code class="calibre17">.</code><code class="n">filter_by_price</code><code class="calibre17">(</code><code class="n">price_limit</code><code class="calibre17">=</code><code class="mi">6</code><code class="calibre17">)</code>
+<code class="n">state</code><code class="calibre17">.</code><code class="n">filter_by_price</code><code class="calibre17">(</code><code class="n">price_limit</code><code class="calibre17">=</code><code class="mi">6</code><code class="calibre17">)</code>
+<code class="n">state</code><code class="calibre17">.</code><code class="n">filter_by_price</code><code class="calibre17">(</code><code class="n">price_limit</code><code class="calibre17">=</code><code class="mi">6</code><code class="calibre17">)</code>
+<code class="n">state</code><code class="calibre17">.</code><code class="n">filter_by_price</code><code class="calibre17">(</code><code class="n">price_limit</code><code class="calibre17">=</code><code class="mi">6</code><code class="calibre17">)</code>
+<code class="n">state</code><code class="calibre17">.</code><code class="n">filter_by_distance</code><code class="calibre17">(</code><code class="n">distance_limit</code><code class="calibre17">=</code><code class="mi">0</code><code class="calibre17">)</code>
+<code class="n">state</code><code class="calibre17">.</code><code class="n">filter_by_price</code><code class="calibre17">(</code><code class="n">price_limit</code><code class="calibre17">=</code><code class="mi">16</code><code class="calibre17">)</code>
+<code class="n">state</code><code class="calibre17">.</code><code class="n">teardown</code><code class="calibre17">()</code></pre>
+
+<p class="author1">This is handy for testing complex algorithms or objects with very specific invariants. <code class="calibre17">Hypothesis</code> will mix and match different steps, constantly searching for some ordering of steps that will produce an error.</p>
+</div></section>
+
+
+
+
+
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+</div></section>
+
+<section data-type="chapter" epub:type="chapter" data-pdf-bookmark="Chapter 23. Property-Based Testing" class="preface">
+<div class="preface" id="property">
+<section data-type="sect1" data-pdf-bookmark="Getting the Most Out of Hypothesis" class="preface">
+<div class="preface" id="idm45644725331816">
+<section data-type="sect2" data-pdf-bookmark="Generating Algorithms" class="preface">
+<div class="preface" id="idm45644724269624">
+<div data-type="note" epub:type="note" class="calibre21"><h1 class="calibre38" id="calibre_pb_8">Discussion Topic</h1>
+<p class="author1">What areas of your codebase contain hard-to-test, highly interrelated functions? Write a few stateful <code class="calibre17">Hypothesis</code> tests as a proof of concept and discuss how these sorts of tests can build confidence in your testing suite.</p>
+</div>
+</div></section>
+
+
+
+
+
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+</div></section>
+
+<section data-type="chapter" epub:type="chapter" data-pdf-bookmark="Chapter 23. Property-Based Testing" class="preface">
+<div class="preface" id="property">
+<section data-type="sect1" data-pdf-bookmark="Closing Thoughts" class="preface"><div class="preface" id="idm45644724268520">
+<h1 class="calibre12" id="calibre_pb_9">Closing Thoughts</h1>
+
+<p class="author1">Property-based testing does not exist to replace traditional testing; it exists to supplement it.<a data-type="indexterm" data-primary="property-based testing" data-secondary="getting the most from Hypothesis" data-tertiary="generating algorithms" data-startref="ix_prptstgetalg" id="idm45644723151720" class="calibre5"/><a data-type="indexterm" data-primary="algorithms" data-secondary="generating with Hypothesis" data-startref="ix_algHyp" id="idm45644723150232" class="calibre5"/><a data-type="indexterm" data-primary="stateful testing (Hypothesis)" data-startref="ix_statetst" id="idm45644723149048" class="calibre5"/><a data-type="indexterm" data-primary="Hypothesis" data-secondary="getting the most from" data-tertiary="generating algorithms" data-startref="ix_Hypmostalg" id="idm45644723148136" class="calibre5"/><a data-type="indexterm" data-primary="property-based testing" data-secondary="getting the most from Hypothesis" data-startref="ix_prptstget" id="idm45644723146648" class="calibre5"/><a data-type="indexterm" data-primary="Hypothesis" data-secondary="getting the most from" data-startref="ix_Hypmost" id="idm45644723145464" class="calibre5"/> When your code has well-defined inputs and outputs, testing with hard-coded preconditions and expected assertions is sufficient. However, as your code gets more complex, your tests become more complex, and you find yourself spending more time than you want parsing and understanding tests.</p>
+
+<p class="author1">Property-based testing is simple to use with <code class="calibre17">Hypothesis</code> in Python. It repairs holes in your safety net by generating new tests throughout the lifetime of your codebase.You use <code class="calibre17">hypothesis.strategies</code> to control exactly how your test data gets generated. You can even test algorithms by combining different steps with <code class="calibre17">hypothesis.stateful</code> testing. <code class="calibre17">Hypothesis</code> will let you focus on the properties and invariants of your code and express your tests more naturally.<a data-type="indexterm" data-primary="testing" data-secondary="property-based" data-startref="ix_tstprp" id="idm45644723141048" class="calibre5"/><a data-type="indexterm" data-primary="property-based testing" data-startref="ix_prptst" id="idm45644723139800" class="calibre5"/></p>
+
+<p class="author1">In the next chapter, I will wrap up the book with mutation testing. Mutation testing is another method of filling gaps in your safety net. Instead of finding new ways of testing your code, mutation code focuses on measuring the efficacy of your tests. It is another tool in your arsenal for more robust testing.</p>
+</div></section>
+
+
+
+
+
+
+
+</div></section></body></html>

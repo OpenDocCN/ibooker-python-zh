@@ -1,0 +1,383 @@
+<html><head></head><body>
+<section data-type="chapter" epub:type="chapter" data-pdf-bookmark="Chapter 19. Pluggable Python" class="preface"><div class="preface" id="pluggable">
+<h1 class="calibre10" id="calibre_pb_0"><span class="calibre">Chapter 19. </span>Pluggable Python</h1>
+
+
+<p class="author1">The greatest challenge in building a robust codebase is predicting the future. You will never completely guess what a future developer will do.<a data-type="indexterm" data-primary="pluggable code" id="ix_plgg" class="calibre5"/> The best strategy is not being perfectly prescient, but instead creating flexibility so that future collaborators can hook into your system with minimal work. In this chapter, I will focus on creating <em class="calibre6">pluggable</em> code. Pluggable code allows you to define behaviors that are to be supplied later. You define a framework with <em class="calibre6">extension points</em>, or parts of your system that other developers will use to extend functionality.<a data-type="indexterm" data-primary="extension points" id="idm45644729680424" class="calibre5"/></p>
+
+<p class="author1">Think about a stand mixer sitting on a kitchen counter. You can select a variety of attachments to use with your mixer: a hook for mixing bread, a whisk for beating eggs and cream, and a flat beater to do general-purpose mixing. Each attachment serves a specific purpose. What’s great is that you can detach and attach hooks or blades as the situation calls for it. You don’t need to buy an entire new mixer for each use case; you <em class="calibre6">plug in</em> whatever you need when you need it.</p>
+
+<p class="author1">This is the goal for pluggable Python. You don’t need to rebuild entire applications when new functionality is needed. You build extensions or attachments that snap onto a solid foundation. You pick the functionality you need for your specific use case and you plug that into your system.</p>
+
+<p class="author1">In most of this book, I’ve been illustrating examples with automated food makers of some sort or another. In this chapter, I will perform the mother of mergers and design a system that can combine them all. I want to build a system that can take any of the recipes I’ve talked about and cook them. I call it the “Ultimate Kitchen Assistant” (if you think this is a terrible name, you now know why I don’t work in <span class="calibre">marketing</span>).</p>
+
+<p class="author1">The Ultimate Kitchen Assistant contains all the instructions and gear you will need for working around the kitchen. It knows how to slice, dice, fry, sauté, bake, broil, and blend any ingredient. It comes with some premade recipes, but the real magic is that customers can buy off-the-shelf modules to extend its functionality (such as a “Pasta-Making Module” for sating Italian cuisine cravings).</p>
+
+<p class="author1">The problem is, I don’t want the code to become burdensome to maintain. There are a lot of different dishes to make, and I want to give the system some sort of flexibility without oodles of physical dependencies turning the system into spaghetti code (although your system making spaghetti itself in the kitchen is highly encouraged!). Just like  plugging a new attachment onto the stand mixer, I want developers to affix different attachments to solve their use cases. I even want other organizations to build modules for the Ultimate Kitchen Assistant. I want this codebase to be extensible and composable.</p>
+
+<p class="author1">I’ll use this example to illustrate three separate ways of plugging into different Python constructs. First, I’ll focus on how to plug in specific parts of an algorithm with the Template Method Pattern. Then, I’ll talk through plugging in an entire class with the Strategy Pattern. Finally, I’ll introduce you to an incredibly useful library, stevedore, to do plug-ins at a much larger architectural scale. All of these techniques will help you give future developers the extensibility they need.</p>
+
+
+
+
+
+
+</div></section>
+
+<section data-type="chapter" epub:type="chapter" data-pdf-bookmark="Chapter 19. Pluggable Python" class="preface">
+<div class="preface" id="pluggable">
+<section data-type="sect1" data-pdf-bookmark="The Template Method Pattern" class="preface"><div class="preface" id="idm45644729673240">
+<h1 class="calibre12" id="calibre_pb_1">The Template Method Pattern</h1>
+
+<p class="author1">The <em class="calibre6">Template Method Pattern</em> is a <a data-type="indexterm" data-primary="design patterns" data-secondary="Template Method Pattern" id="idm45644729670872" class="calibre5"/><a data-type="indexterm" data-primary="pluggable code" data-secondary="Template Method Pattern" id="ix_plggTMP" class="calibre5"/><a data-type="indexterm" data-primary="Template Method Pattern" id="ix_TMP" class="calibre5"/>pattern for filling in the blanks of an algorithm.<sup class="calibre11"><a data-type="noteref" id="idm45644729667576-marker" href="part0024_split_005.html#idm45644729667576" class="calibre5">1</a></sup> The idea <a data-type="indexterm" data-primary="algorithms" data-secondary="defining in series of steps, Template Method Pattern" id="idm45644729666504" class="calibre5"/>is that you define an algorithm as a series of steps, but you force the caller to override some of those steps, as shown in <a data-type="xref" href="part0024_split_001.html#template_method" class="calibre5">Figure 19-1</a>.</p>
+
+<figure class="calibre36"><div id="template_method" class="figure">
+<img src="../images/00035.gif" alt="ropy 1901" class="calibre40"/>
+<h6 class="calibre37"><span class="calibre">Figure 19-1. </span>The Template Method Pattern</h6>
+</div></figure>
+
+<p class="author1">First up for the Ultimate Kitchen Assistant is a pizza-making module. While traditional sauce-and-cheese pizzas are great, I want the Ultimate Kitchen Assistant to be more flexible. I want it to handle all sorts of pizza-like entities, from a Lebanese manoush to a Korean bulgogi pizza. To make any of these pizza-like dishes, I want the machinery to perform a similar set of steps, but let developers tweak certain operations to make their style of pizza. <a data-type="xref" href="part0024_split_001.html#pizza_template" class="calibre5">Figure 19-2</a> describes such a pizza-making <span class="calibre">algorithm</span>.<a data-type="indexterm" data-primary="Template Method Pattern" data-secondary="pizza-making algorithm" id="idm45644729660072" class="calibre5"/></p>
+
+<figure class="calibre36"><div id="pizza_template" class="figure">
+<img src="../images/00036.gif" alt="ropy 1902" class="calibre40"/>
+<h6 class="calibre37"><span class="calibre">Figure 19-2. </span>Pizza-making algorithm</h6>
+</div></figure>
+
+<p class="author1">Each pizza will use the same basic steps, but I want to be able to tweak certain steps (preparing ingredients, adding prebake toppings, and adding postbake toppings). My goal in applying the Template Method Pattern is to make these steps pluggable.</p>
+
+<p class="author1">In its simplest incarnation, I can pass functions<a data-type="indexterm" data-primary="Template Method Pattern" data-secondary="passing new functions into template method" id="idm45644729655992" class="calibre5"/> into the template method:</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre35"><code class="nd">@dataclass</code>
+<code class="k">class</code> <code class="nc">PizzaCreationFunctions</code><code class="calibre17">:</code>
+    <code class="n">prepare_ingredients</code><code class="calibre17">:</code> <code class="n">Callable</code>
+    <code class="n">add_pre_bake_toppings</code><code class="calibre17">:</code> <code class="n">Callable</code>
+    <code class="n">add_post_bake_toppings</code><code class="calibre17">:</code> <code class="n">Callable</code>
+
+<code class="k">def</code> <code class="nf">create_pizza</code><code class="calibre17">(</code><code class="n">pizza_creation_functions</code><code class="calibre17">:</code> <code class="n">PizzaCreationFunctions</code><code class="calibre17">):</code>
+    <code class="n">pizza_creation_functions</code><code class="calibre17">.</code><code class="n">prepare_ingredients</code><code class="calibre17">()</code>
+    <code class="n">roll_out_pizza_base</code><code class="calibre17">()</code>
+    <code class="n">pizza_creation_functions</code><code class="calibre17">.</code><code class="n">add_pre_bake_toppings</code><code class="calibre17">()</code>
+    <code class="n">bake_pizza</code><code class="calibre17">()</code>
+    <code class="n">pizza_creation_functions</code><code class="calibre17">.</code><code class="n">add_post_bake_toppings</code><code class="calibre17">()</code></pre>
+
+<p class="author1">Now, if you want to create a pizza, you just pass in your own functions:</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre35"><code class="n">pizza_creation_functions</code> <code class="calibre17">=</code> <code class="n">PizzaCreationFunctions</code><code class="calibre17">(</code>
+    <code class="n">prepare_ingredients</code><code class="calibre17">=</code><code class="n">mix_zaatar</code><code class="calibre17">,</code>
+    <code class="n">add_pre_bake_toppings</code><code class="calibre17">=</code><code class="n">add_meat_and_halloumi</code><code class="calibre17">,</code>
+    <code class="n">add_post_bake_toppings</code><code class="calibre17">=</code><code class="n">drizzle_olive_oil</code>
+<code class="calibre17">)</code>
+
+<code class="n">create_pizza</code><code class="calibre17">(</code><code class="n">pizza_creation_functions</code><code class="calibre17">)</code></pre>
+
+<p class="author1">This is incredibly convenient for any pizza, now or in the future. As new pizza-making capabilities come online, developers need to pass their new functions into the template method. These developers can plug in specific parts of the pizza-making algorithm to suit their needs. They don’t need to know anything about their use case at all; they are free to grow the system without being bogged down with changing legacy code. Suppose they want to create the bulgogi pizza. Instead of changing <span class="calibre"><code class="calibre17">create_pizza</code></span>, I simply need to pass in a new <code class="calibre17">PizzaCreationFunctions</code>:</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre35"><code class="n">pizza_creation_functions</code> <code class="calibre17">=</code> <code class="n">PizzaCreationFunctions</code><code class="calibre17">(</code>
+    <code class="n">prepare_ingredients</code><code class="calibre17">=</code><code class="n">cook_bulgogi</code><code class="calibre17">,</code>
+    <code class="n">add_pre_bake_toppings</code><code class="calibre17">=</code><code class="n">add_bulgogi_toppings</code><code class="calibre17">,</code>
+    <code class="n">add_post_bake_toppings</code><code class="calibre17">=</code><code class="n">garnish_with_scallions_and_sesame</code>
+<code class="calibre17">)</code>
+
+<code class="n">create_pizza</code><code class="calibre17">(</code><code class="n">pizza_creation_functions</code><code class="calibre17">)</code></pre>
+<aside data-type="sidebar" epub:type="sidebar" class="calibre32"><div class="sidebar" id="idm45644729557512">
+<h5 class="calibre33">The Canonical Template Method Pattern</h5>
+<p class="author1">The Template Method Pattern described in the Gang of Four book is a bit different than what I’ve shown in this section.<a data-type="indexterm" data-primary="Template Method Pattern" data-secondary="canonical version" id="idm45644729506536" class="calibre5"/><a data-type="indexterm" data-primary="object-oriented programming" data-secondary="Template Method Pattern" id="idm45644729505592" class="calibre5"/> This is another case where the Gang of Four book leans heavily on class- and inheritance-based design. In the original Template Method Pattern, you are required to write a base class:</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre35"><code class="k">class</code> <code class="nc">PizzaCreator</code><code class="o">:</code>
+    <code class="k">def</code> <code class="nf">roll_out_dough</code><code class="o">():</code>
+        <code class="c"># snip</code>
+    <code class="k">def</code> <code class="nf">bake</code><code class="o">():</code>
+        <code class="c"># snip</code>
+    <code class="k">def</code> <code class="nf">serve</code><code class="o">():</code>
+        <code class="c"># snip</code>
+
+    <code class="k">def</code> <code class="nf">prepare_ingredients</code><code class="o">():</code>
+        <code class="k">raise</code> <code class="ne">NotImplementedError</code><code class="o">()</code>
+
+    <code class="k">def</code> <code class="nf">add_pre_bake_toppings</code><code class="o">():</code>
+        <code class="k">raise</code> <code class="ne">NotImplementedError</code><code class="o">()</code>
+
+    <code class="k">def</code> <code class="nf">add_post_bake_toppings</code><code class="o">():</code>
+        <code class="k">raise</code> <code class="ne">NotImplementedError</code><code class="o">()</code></pre>
+
+<p class="author1">To use this base class, you have to subclass and override the three required methods. You then have to find a way to substitute your derived class into any code that needs a pizza maker. You typically have to set up Abstract Factories (another design pattern found in the Gang of Four book) to inject derived classes.</p>
+
+<p class="author1">Since Python does not require everything to be in a class and offers first-class support for functions, I prefer using a data class of functions to fill in a template. It involves less boilerplate, but still provides similar flexibility and extensibility. Just be aware that design-pattern purists may prefer the OO pattern described above.<a data-type="indexterm" data-primary="pluggable code" data-secondary="Template Method Pattern" data-startref="ix_plggTMP" id="idm45644729424776" class="calibre5"/><a data-type="indexterm" data-primary="Template Method Pattern" data-startref="ix_TMP" id="idm45644729423768" class="calibre5"/></p>
+</div></aside>
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+</div></section>
+
+<section data-type="chapter" epub:type="chapter" data-pdf-bookmark="Chapter 19. Pluggable Python" class="preface">
+<div class="preface" id="pluggable">
+<section data-type="sect1" data-pdf-bookmark="The Strategy Pattern" class="preface"><div class="preface" id="idm45644729672616">
+<h1 class="calibre12" id="calibre_pb_2">The Strategy Pattern</h1>
+
+<p class="author1">The Template Method Pattern is great for swapping out select parts of an algorithm, but what if you want to swap out the <em class="calibre6">entire</em> algorithm?<a data-type="indexterm" data-primary="pluggable code" data-secondary="Strategy Pattern" id="ix_plggSP" class="calibre5"/><a data-type="indexterm" data-primary="Strategy Pattern" id="ix_StratP" class="calibre5"/><a data-type="indexterm" data-primary="algorithms" data-secondary="plugging entire algorithm into a context using Strategy Pattern" id="idm45644729418344" class="calibre5"/> A very similar design pattern exists for this use case: the Strategy Pattern.<a data-type="indexterm" data-primary="design patterns" data-secondary="Strategy Pattern" id="idm45644729417304" class="calibre5"/></p>
+
+<p class="author1">The Strategy Pattern is for plugging entire algorithms into a context.<sup class="calibre11"><a data-type="noteref" id="idm45644729415976-marker" href="part0024_split_005.html#idm45644729415976" class="calibre5">2</a></sup> For the Ultimate Kitchen Assistant, consider a module that specializes in Tex-Mex (a regional American cuisine that blends southwestern US and northern Mexican cuisines). A large variety of dishes can be made from a common set of items; you mix and match the different ingredients in new ways.</p>
+
+<p class="author1">For instance, you will find the following ingredients on most Tex-Mex menus: tortillas (corn or flour), beans, ground beef, chicken, lettuce, tomato, guacamole, salsa, and cheese. From these ingredients, you can create tacos, flautas, chimichangas, enchiladas, taco salads, nachos, gorditas…the list goes on. I don’t want the system to restrict all the different Tex-Mex dishes; I want different groups of developers to supply <em class="calibre6">how</em> to make the dish.</p>
+
+<p class="author1">To do this with the Strategy Pattern, I need to define what the Ultimate Kitchen Assistant does and what the strategy does. In this case, the Ultimate Kitchen Assistant should provide the mechanisms for interacting with ingredients, but future developers are free to keep adding new Tex-Mex concoctions with a <code class="calibre17">TexMexStrategy</code>.</p>
+
+<p class="author1">As with any code designed to be extensible, I need to make sure that the interaction between my Ultimate Kitchen Assistant and the Tex-Mex module agrees on the pre- and postconditions, namely what gets passed into the Tex-Mex module and what comes out.</p>
+
+<p class="author1">Suppose the Ultimate Kitchen Assistant has numbered bins to put ingredients in. The Tex-Mex module needs to know what bins the common Tex-Mex ingredients are in, so it can use the Ultimate Kitchen Assistant to actually do the prepping and cooking.</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre35"><code class="nd">@dataclass</code>
+<code class="k">class</code> <code class="nc">TexMexIngredients</code><code class="calibre17">:</code>
+    <code class="n">corn_tortilla_bin</code><code class="calibre17">:</code> <code class="nb">int</code>
+    <code class="n">flour_tortilla_bin</code><code class="calibre17">:</code> <code class="nb">int</code>
+    <code class="n">salsa_bin</code><code class="calibre17">:</code> <code class="nb">int</code>
+    <code class="n">ground_beef_bin</code><code class="calibre17">:</code> <code class="nb">int</code>
+    <code class="c"># ... snip ..</code>
+    <code class="n">shredded_cheese_bin</code><code class="calibre17">:</code> <code class="nb">int</code>
+
+<code class="k">def</code> <code class="nf">prepare_tex_mex_dish</code><code class="calibre17">(</code><code class="n">tex_mex_recipe_maker</code><code class="calibre17">:</code> <code class="n">Callable</code><code class="calibre17">[</code><code class="n">TexMexIngredients</code><code class="calibre17">]);</code>
+    <code class="n">tex_mex_ingredients</code> <code class="calibre17">=</code> <code class="n">get_available_ingredients</code><code class="calibre17">(</code><code class="s">"Tex-Mex"</code><code class="calibre17">)</code>
+    <code class="n">dish</code> <code class="calibre17">=</code> <code class="n">tex_mex_recipe_maker</code><code class="calibre17">(</code><code class="n">tex_mex_ingredients</code><code class="calibre17">)</code>
+    <code class="n">serve</code><code class="calibre17">(</code><code class="n">dish</code><code class="calibre17">)</code></pre>
+
+<p class="author1">The function <code class="calibre17">prepare_tex_mex_dish</code> collects ingredients,  then delegates to the actual <code class="calibre17">tex_mex_recipe_maker</code> to create the dish to serve. The <code class="calibre17">tex_mex_recipe_maker</code> is the strategy. It’s very similar to the Template Method Pattern, but you typically are just passing a single function rather than a collection of functions.</p>
+
+<p class="author1">A future developer just has to write a function that does the actual preparation, given the ingredients. They could write:</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre35"><code class="k">import</code> <code class="nn">tex_mex_module</code> <code class="k">as</code> <code class="nn">tmm</code>
+<code class="k">def</code> <code class="nf">make_soft_taco</code><code class="calibre17">(</code><code class="n">ingredients</code><code class="calibre17">:</code> <code class="n">TexMexIngredients</code><code class="calibre17">)</code> <code class="calibre17">-&gt;</code> <code class="n">tmm</code><code class="calibre17">.</code><code class="n">Dish</code><code class="calibre17">:</code>
+    <code class="n">tortilla</code> <code class="calibre17">=</code> <code class="n">tmm</code><code class="calibre17">.</code><code class="n">get_ingredient_from_bin</code><code class="calibre17">(</code><code class="n">ingredients</code><code class="calibre17">.</code><code class="n">flour_tortilla_bin</code><code class="calibre17">)</code>
+    <code class="n">beef</code> <code class="calibre17">=</code> <code class="n">tmm</code><code class="calibre17">.</code><code class="n">get_ingredient_from_bin</code><code class="calibre17">(</code><code class="n">ingredients</code><code class="calibre17">.</code><code class="n">ground_beef_bin</code><code class="calibre17">)</code>
+    <code class="n">dish</code> <code class="calibre17">=</code> <code class="n">tmm</code><code class="calibre17">.</code><code class="n">get_plate</code><code class="calibre17">()</code>
+    <code class="n">dish</code><code class="calibre17">.</code><code class="n">lay_on_dish</code><code class="calibre17">(</code><code class="n">tortilla</code><code class="calibre17">)</code>
+    <code class="n">tmm</code><code class="calibre17">.</code><code class="n">season</code><code class="calibre17">(</code><code class="n">beef</code><code class="calibre17">,</code> <code class="n">tmm</code><code class="calibre17">.</code><code class="n">CHILE_POWDER_BLEND</code><code class="calibre17">)</code>
+    <code class="c"># ... snip</code>
+
+<code class="n">prepare_tex_mex_dish</code><code class="calibre17">(</code><code class="n">make_soft_taco</code><code class="calibre17">)</code></pre>
+
+<p class="author1">If they decide they want to provide support for a different dish at some point in the future, they just have to write a new function:</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre35"><code class="k">def</code> <code class="nf">make_chimichanga</code><code class="calibre17">(</code><code class="n">ingredients</code><code class="calibre17">:</code> <code class="n">TexMexIngredients</code><code class="calibre17">):</code>
+    <code class="c"># ... snip</code></pre>
+
+<p class="author1">Developers can continue to define functions however they want, whenever they want. Just like the Template Method Pattern, they can plug in new functionality with minimal impact to the original code.</p>
+<div data-type="note" epub:type="note" class="calibre21"><h6 class="calibre22">Note</h6>
+<p class="author1">As with the Template Method, the implementation I’ve shown is a bit different than what was originally described in the Gang of Four book. The original implementation involved classes and subclasses that wrap a single method. In Python, it’s far easier to just pass the single function.<a data-type="indexterm" data-primary="pluggable code" data-secondary="Strategy Pattern" data-startref="ix_plggSP" id="idm45644729222136" class="calibre5"/><a data-type="indexterm" data-primary="Strategy Pattern" data-startref="ix_StratP" id="idm45644729220920" class="calibre5"/></p>
+</div>
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+</div></section>
+
+<section data-type="chapter" epub:type="chapter" data-pdf-bookmark="Chapter 19. Pluggable Python" class="preface">
+<div class="preface" id="pluggable">
+<section data-type="sect1" data-pdf-bookmark="Plug-in Architectures" class="preface"><div class="preface" id="idm45644729422232">
+<h1 class="calibre12" id="calibre_pb_3">Plug-in Architectures</h1>
+
+<p class="author1">The Strategy and Template Method Patterns are great for plugging in small bits of functionality: a class here or a function there.<a data-type="indexterm" data-primary="plug-in architectures" id="ix_plgin" class="calibre5"/> However, the same patterns apply to your architecture as well. Being able to inject classes, modules, or subsystems is just as important.<a data-type="indexterm" data-primary="pluggable code" data-secondary="stevedore tool to manage plug-ins" id="idm45644729216200" class="calibre5"/><a data-type="indexterm" data-primary="stevedore" id="idm45644729211576" class="calibre5"/> A Python library called <a href="https://oreil.ly/AybtZ" class="calibre5">stevedore</a> is an incredibly useful tool for managing <em class="calibre6">plug-ins</em>.<a data-type="indexterm" data-primary="plug-ins" id="idm45644729209704" class="calibre5"/></p>
+
+<p class="author1">A plug-in is a piece of code that can be dynamically loaded at runtime. Code can scan for installed plug-ins, select an appropriate one, and delegate responsibilities to that plug-in. This is another example of extensibility; developers can focus on specific plug-ins without touching the core codebase.</p>
+
+<p class="author1">There are <a data-type="indexterm" data-primary="plug-in architectures" data-secondary="benefits beyond extensibility" id="idm45644729207976" class="calibre5"/>a number of benefits beyond extensibility to a plug-in architecture:</p>
+
+<ul class="printings">
+<li class="calibre9">
+<p class="author1">You can deploy plug-ins independently from the core, giving you more granularity for rolling out updates.</p>
+</li>
+<li class="calibre9">
+<p class="author1">Third parties can write plug-ins without modifying your codebase.</p>
+</li>
+<li class="calibre9">
+<p class="author1">Plug-ins are able to be developed in isolation from the core codebase, reducing the chances of creating tightly coupled code.</p>
+</li>
+</ul>
+
+<p class="author1">To demonstrate how plug-ins work, say I want to support an ecosystem for the Ultimate Kitchen Assistant where users can buy and install modules (such as the Tex-Mex module in the last section) separately from the main kitchen assistant. Each module provides a set of recipes, special equipment, and storage of ingredients for the Ultimate Kitchen Assistant to do work. The real benefit is that each module can be developed separately from the Ultimate Kitchen Assistant core; each module is a plug-in.</p>
+
+<p class="author1">The first thing to do when designing plug-ins is determine the contract between the core and the various plug-ins.<a data-type="indexterm" data-primary="plug-in architectures" data-secondary="determining contract between core and plug-ins" id="idm45644729202120" class="calibre5"/>  Ask yourself what services the core platform provides and what you expect the plug-ins to provide. In the case of the Ultimate Kitchen Assistant, <a data-type="xref" href="part0024_split_003.html#plugin_contract" class="calibre5">Figure 19-3</a> demonstrates the contract I will be using in the following examples.</p>
+
+<figure class="calibre36"><div id="plugin_contract" class="figure">
+<img src="../images/00037.gif" alt="ropy 1903" class="calibre40"/>
+<h6 class="calibre37"><span class="calibre">Figure 19-3. </span>Contract between core and plug-in</h6>
+</div></figure>
+
+<p class="author1">I want to put this contract into code, so that it is unambiguous what I expect out of a plug-in:</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre35"><code class="k">from</code> <code class="nn">abc</code> <code class="k">import</code> <code class="n">abstractmethod</code>
+<code class="k">from</code> <code class="nn">typing</code> <code class="k">import</code> <code class="n">runtime_checkable</code><code class="calibre17">,</code> <code class="n">Protocol</code>
+
+<code class="k">from</code> <code class="nn">ultimate_kitchen_assistant</code> <code class="k">import</code> <code class="n">Amount</code><code class="calibre17">,</code> <code class="n">Dish</code><code class="calibre17">,</code> <code class="n">Ingredient</code><code class="calibre17">,</code> <code class="n">Recipe</code>
+
+<code class="nd">@runtime_checkable</code>
+<code class="k">class</code> <code class="nc">UltimateKitchenAssistantModule</code><code class="calibre17">(</code><code class="n">Protocol</code><code class="calibre17">):</code>
+
+    <code class="n">ingredients</code><code class="calibre17">:</code> <code class="nb">list</code><code class="calibre17">[</code><code class="n">Ingredient</code><code class="calibre17">]</code>
+
+    <code class="nd">@abstractmethod</code>
+    <code class="k">def</code> <code class="nf">get_recipes</code><code class="calibre17">()</code> <code class="calibre17">-&gt;</code> <code class="nb">list</code><code class="calibre17">[</code><code class="n">Recipe</code><code class="calibre17">]:</code>
+        <code class="k">raise</code> <code class="ne">NotImplementedError</code>
+
+    <code class="nd">@abstractmethod</code>
+    <code class="k">def</code> <code class="nf">prepare_dish</code><code class="calibre17">(</code><code class="n">inventory</code><code class="calibre17">:</code> <code class="nb">dict</code><code class="calibre17">[</code><code class="n">Ingredient</code><code class="calibre17">,</code> <code class="n">Amount</code><code class="calibre17">],</code>
+                     <code class="n">recipe</code><code class="calibre17">:</code> <code class="n">Recipe</code><code class="calibre17">)</code> <code class="calibre17">-&gt;</code> <code class="n">Dish</code><code class="calibre17">:</code>
+        <code class="k">raise</code> <code class="ne">NotImplementedError</code></pre>
+
+<p class="author1">This serves as the definition of what the plug-in looks like.  To create a plug-in that satisfies my expectations, I just need to create a class that inherits from my base class.<a data-type="indexterm" data-primary="plug-in architectures" data-secondary="creating a plug-in" id="idm45644729174344" class="calibre5"/></p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre35"><code class="k">class</code> <code class="nc">PastaModule</code><code class="calibre17">(</code><code class="n">UltimateKitchenAssistantModule</code><code class="calibre17">):</code>
+    <code class="k">def</code> <code class="calibre17">__init__</code><code class="calibre17">(</code><code class="nb">self</code><code class="calibre17">):</code>
+        <code class="nb">self</code><code class="calibre17">.</code><code class="n">ingredients</code> <code class="calibre17">=</code> <code class="calibre17">[</code><code class="s">"Linguine"</code><code class="calibre17">,</code>
+                             <code class="c"># ... snip ...</code>
+                            <code class="s">"Spaghetti"</code> <code class="calibre17">]</code>
+
+    <code class="k">def</code> <code class="nf">get_recipes</code><code class="calibre17">(</code><code class="nb">self</code><code class="calibre17">)</code> <code class="calibre17">-&gt;</code> <code class="nb">list</code><code class="calibre17">[</code><code class="n">Recipe</code><code class="calibre17">]:</code>
+        <code class="c"># ... snip returning all possible recipes ...</code>
+
+    <code class="k">def</code> <code class="nf">prepare_dish</code><code class="calibre17">(</code><code class="nb">self</code><code class="calibre17">,</code> <code class="n">inventory</code><code class="calibre17">:</code> <code class="nb">dict</code><code class="calibre17">[</code><code class="n">Ingredient</code><code class="calibre17">,</code> <code class="n">Amount</code><code class="calibre17">],</code>
+                     <code class="n">recipe</code><code class="calibre17">:</code> <code class="n">Recipe</code><code class="calibre17">)</code> <code class="calibre17">-&gt;</code> <code class="n">Dish</code><code class="calibre17">:</code>
+        <code class="c"># interact with Ultimate Kitchen Assistant to make recipe</code>
+        <code class="c"># ... snip ...</code></pre>
+
+<p class="author1">Once you have created the plug-in, you need to register it with stevedore. stevedore matches plug-ins to a <em class="calibre6">namespace</em>, or an identifier that groups plug-ins together.<a data-type="indexterm" data-primary="pluggable code" data-secondary="stevedore tool to manage plug-ins" id="idm45644729013128" class="calibre5"/><a data-type="indexterm" data-primary="stevedore" data-secondary="registering plug-ins with" id="idm45644729012280" class="calibre5"/><a data-type="indexterm" data-primary="namespace, matching plug-ins to" id="idm45644729011400" class="calibre5"/><a data-type="indexterm" data-primary="entry points" id="idm45644729010760" class="calibre5"/> It does so by using Python’s <em class="calibre6">entry points</em>, which allow Python to discover components at runtime.<sup class="calibre11"><a data-type="noteref" id="idm45644729009512-marker" href="part0024_split_005.html#idm45644729009512" class="calibre5">3</a></sup></p>
+
+<p class="author1">You register plug-ins with the help of <code class="calibre17">setuptools</code> and <code class="calibre17">setup.py</code>.<a data-type="indexterm" data-primary="plug-in architectures" data-secondary="registering plug-ins with stevedore" id="idm45644728976312" class="calibre5"/><a data-type="indexterm" data-primary="setup.py" id="idm45644728975288" class="calibre5"/><a data-type="indexterm" data-primary="setuptools" id="idm45644728974616" class="calibre5"/> Many Python packages use <code class="calibre17">setup.py</code> to define packaging rules, one of which being entry points. In the <code class="calibre17">setup.py</code> for  <code class="calibre17">ultimate_kitchen_assistant</code>, I would register my plug-in as follows:</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre35"><code class="k">from</code> <code class="nn">setuptools</code> <code class="k">import</code> <code class="n">setup</code>
+
+<code class="n">setup</code><code class="calibre17">(</code>
+    <code class="n">name</code><code class="calibre17">=</code><code class="s">'ultimate_kitchen_assistant'</code><code class="calibre17">,</code>
+    <code class="n">version</code><code class="calibre17">=</code><code class="s">'1.0'</code><code class="calibre17">,</code>
+    <code class="c">#.... snip ....</code>
+
+    <code class="n">entry_points</code><code class="calibre17">=</code><code class="calibre17">{</code>
+        <code class="s">'ultimate_kitchen_assistant.recipe_maker'</code><code class="calibre17">:</code> <code class="calibre17">[</code>
+            <code class="s">'pasta_maker = ultimate_kitchen_assistant.pasta_maker:PastaModule'</code><code class="calibre17">,</code>
+            <code class="s">'tex_mex = ultimate_kitchen_assistant.tex_mex:TexMexModule'</code>
+        <code class="calibre17">],</code>
+    <code class="calibre17">},</code>
+<code class="calibre17">)</code></pre>
+<div data-type="note" epub:type="note" class="calibre21"><h6 class="calibre22">Note</h6>
+<p class="author1">If you are having trouble linking your plug-ins, check out the <a href="https://oreil.ly/kbMro" class="calibre5"><code class="calibre17">entry-point-inspector</code> package</a> for debugging help.</p>
+</div>
+
+<p class="author1">I am binding my <code class="calibre17">PastaMaker</code> class (in the <code class="calibre17">ultimate_kitchen_assis⁠tant.pasta_maker</code> package) to a plug-in with the namespace <code class="calibre17">ultimate_⁠kitchen_assis⁠tant.recipe_maker</code>. I’ve created another hypothetical plug-in called <code class="calibre17">TexMexModule</code>, as well.<a data-type="indexterm" data-primary="entry points" data-secondary="registering plug-ins as" id="idm45644728902072" class="calibre5"/></p>
+
+<p class="author1">Once the plug-ins are registered as entry points, you can use stevedore to load them dynamically at runtime. <a data-type="indexterm" data-primary="plug-in architectures" data-secondary="loading plug-ins dynamically at runtime using stevedore" id="idm45644728900552" class="calibre5"/><a data-type="indexterm" data-primary="stevedore" data-secondary="loading plug-ins dynamically at runtime" id="idm45644728899480" class="calibre5"/>For instance, if I wanted to collect all recipes from all plug-ins, I could write the following:</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre35"><code class="k">import</code> <code class="nn">itertools</code>
+<code class="k">from</code> <code class="nn">stevedore</code> <code class="k">import</code> <code class="n">extension</code>
+<code class="k">from</code> <code class="nn">ultimate_kitchen_assisstant</code> <code class="k">import</code> <code class="n">Recipe</code>
+
+<code class="k">def</code> <code class="nf">get_all_recipes</code><code class="calibre17">()</code> <code class="calibre17">-&gt;</code> <code class="nb">list</code><code class="calibre17">[</code><code class="n">Recipe</code><code class="calibre17">]:</code>
+    <code class="n">mgr</code> <code class="calibre17">=</code> <code class="n">extension</code><code class="calibre17">.</code><code class="n">ExtensionManager</code><code class="calibre17">(</code>
+            <code class="n">namespace</code><code class="calibre17">=</code><code class="s">'ultimate_kitchen_assistant.recipe_maker'</code><code class="calibre17">,</code>
+            <code class="n">invoke_on_load</code><code class="calibre17">=</code><code class="nb">True</code><code class="calibre17">,</code>
+        <code class="calibre17">)</code>
+
+    <code class="k">def</code> <code class="nf">get_recipes</code><code class="calibre17">(</code><code class="n">extension</code><code class="calibre17">):</code>
+        <code class="k">return</code> <code class="n">extension</code><code class="calibre17">.</code><code class="n">obj</code><code class="calibre17">.</code><code class="n">get_recipes</code><code class="calibre17">()</code>
+
+    <code class="k">return</code> <code class="nb">list</code><code class="calibre17">(</code><code class="n">itertools</code><code class="calibre17">.</code><code class="n">chain</code><code class="calibre17">(</code><code class="n">mgr</code><code class="calibre17">.</code><code class="n">map</code><code class="calibre17">(</code><code class="n">get_recipes</code><code class="calibre17">)))</code></pre>
+
+<p class="author1">I use <code class="calibre17">stevedore.extension.ExtensionManager</code> to find and load all plug-ins in the namespace <code class="calibre17">ultimate_kitchen_assistant.recipe_maker</code>. I can then map (or apply) a function to every plug-in that gets found to get their recipes. Lastly, I use <code class="calibre17">itertools</code> to chain them all together. It doesn’t matter how many plug-ins I have set up; I can load them all with this code.</p>
+
+<p class="author1">Let’s say a user wants to make something from the pasta maker, such as “Pasta with Sausage.” All the calling code needs to do is ask for a plug-in named <code class="calibre17">pasta_maker</code>. I can load the specific plug-in with a <code class="calibre17">stevedore.driver.DriverManager</code>.</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre35"><code class="k">from</code> <code class="nn">stevedore</code> <code class="k">import</code> <code class="n">driver</code>
+
+
+<code class="k">def</code> <code class="nf">make_dish</code><code class="calibre17">(</code><code class="n">recipe</code><code class="calibre17">:</code> <code class="n">Recipe</code><code class="calibre17">,</code> <code class="n">module_name</code><code class="calibre17">:</code> <code class="nb">str</code><code class="calibre17">)</code> <code class="calibre17">-&gt;</code> <code class="n">Dish</code><code class="calibre17">:</code>
+    <code class="n">mgr</code> <code class="calibre17">=</code> <code class="n">driver</code><code class="calibre17">.</code><code class="n">DriverManager</code><code class="calibre17">(</code>
+        <code class="n">namespace</code><code class="calibre17">=</code><code class="s">'ultimate_kitchen_assistant.recipe_maker'</code><code class="calibre17">,</code>
+        <code class="n">name</code><code class="calibre17">=</code><code class="n">module_name</code><code class="calibre17">,</code>
+        <code class="n">invoke_on_load</code><code class="calibre17">=</code><code class="nb">True</code><code class="calibre17">,</code>
+    <code class="calibre17">)</code>
+
+    <code class="k">return</code> <code class="n">mgr</code><code class="calibre17">.</code><code class="n">driver</code><code class="calibre17">.</code><code class="n">prepare_dish</code><code class="calibre17">(</code><code class="n">get_inventory</code><code class="calibre17">(),</code> <code class="n">recipe</code><code class="calibre17">)</code></pre>
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+</div></section>
+
+<section data-type="chapter" epub:type="chapter" data-pdf-bookmark="Chapter 19. Pluggable Python" class="preface">
+<div class="preface" id="pluggable">
+<section data-type="sect1" data-pdf-bookmark="Plug-in Architectures" class="preface">
+<div class="preface" id="idm45644729422232">
+<div data-type="note" epub:type="note" class="calibre21"><h1 class="calibre38" id="calibre_pb_4">Discussion Topic</h1>
+<p class="author1">What parts of your system could use a plug-in architecture? How would this benefit your codebase?</p>
+</div>
+
+<p class="author1">stevedore provides a great way to decouple code; separating the code into plug-ins keeps it flexible and extensible. Remember, the goal of extensible programs is to limit the number of modifications needed in the core system. Developers can create plug-ins in isolation, test them, and integrate them into your core seamlessly.</p>
+
+<p class="author1">My favorite part about stevedore is that it actually can work <em class="calibre6">across</em> packages.<a data-type="indexterm" data-primary="stevedore" data-secondary="ability to work across packages" id="idm45644728730360" class="calibre5"/> You can write plug-ins in a completely separate Python package than the core. As long as the same namespace is used for the plug-in, stevedore can stitch everything together. stevedore has a load of other features that are worth checking out, such as event notifications, enabling plug-ins through a variety of methods, and automatic plug-in documentation generation. If a plug-in architecture meets your needs, I highly recommend checking out more of stevedore.</p>
+<div data-type="warning" epub:type="warning" class="calibre23"><h6 class="calibre24">Warning</h6>
+<p class="author1">You can technically register any class as a plug-in, regardless of whether it is substitutable for the base class or not.<a data-type="indexterm" data-primary="classes" data-secondary="registering any class as plug-in" id="idm45644728727656" class="calibre5"/> Because the code is separated by an abstract layer with stevedore, your typechecker will not be able to detect this. Consider checking the interface at runtime to catch any mismatches before using the plug-in.<a data-type="indexterm" data-primary="plug-in architectures" data-startref="ix_plgin" id="idm45644728726360" class="calibre5"/></p>
+</div>
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+</div></section>
+
+<section data-type="chapter" epub:type="chapter" data-pdf-bookmark="Chapter 19. Pluggable Python" class="preface">
+<div class="preface" id="pluggable">
+<section data-type="sect1" data-pdf-bookmark="Closing Thoughts" class="preface"><div class="preface" id="idm45644729218936">
+<h1 class="calibre12" id="calibre_pb_5">Closing Thoughts</h1>
+
+<p class="author1">When you create pluggable Python, you give your collaborators the ability to isolate new functionality but still easily integrate it into an existing codebase. Developers can plug into an existing algorithm with the Template Method Pattern, an entire class or algorithm with the Strategy Pattern, or even entire subsystems with stevedore. stevedore is especially useful when you want to split your plug-ins across discrete Python packages.</p>
+
+<p class="author1">This concludes <a data-type="xref" href="part0019.html#part_3" class="calibre5">Part III</a>, which was all about extensibility. <a data-type="indexterm" data-primary="extensibility" id="idm45644728722664" class="calibre5"/>Writing extensible code is adhering to the Open-Closed Principle, where you make it easy to add onto your code without requiring modifications to existing code. Event-driven architectures and plug-in architectures are fantastic examples of designing with extensibility in mind. All of these architectural patterns require you to be aware of dependencies: physical, logical, and temporal.<a data-type="indexterm" data-primary="dependencies" data-secondary="architectural design patterns and" id="idm45644728721464" class="calibre5"/> As you find ways to minimize physical dependencies, you’ll find that your code becomes composable, and can be rearranged in new compositions at will.</p>
+
+<p class="author1">The first three parts of this book focused on changes that can make your code more maintainable and readable and reduce the chance of errors. However, errors still have a chance of showing up; they are an unavoidable part of developing software.<a data-type="indexterm" data-primary="pluggable code" data-startref="ix_plgg" id="idm45644728719560" class="calibre5"/> To combat this, you need to make it easy to detect errors before they hit production. You’ll learn how to do just that with tools like linters and tests in <a data-type="xref" data-xrefstyle="chap-num-title" href="part0025.html#part_4" class="calibre5">Part IV, <em class="calibre6">Building a Safety Net</em></a>.</p>
+</div></section>
+
+
+
+
+
+
+
+<div data-type="footnotes" class="calibre25"><p data-type="footnote" id="idm45644729667576" class="calibre26"><sup class="calibre27"><a href="part0024_split_001.html#idm45644729667576-marker" class="calibre5">1</a></sup> Erich Gamma, Richard Helm, Ralph E. Johnson, and John Vlissides. <em class="calibre6">Design Patterns: Elements of Reusable Object-Oriented Software</em>. Boston, MA: Addison-Wesley Professional, 1994.</p><p data-type="footnote" id="idm45644729415976" class="calibre26"><sup class="calibre27"><a href="part0024_split_002.html#idm45644729415976-marker" class="calibre5">2</a></sup> Erich Gamma, Richard Helm, Ralph E. Johnson, and John Vlissides. <em class="calibre6">Design Patterns: Elements of Reusable Object-Oriented Software</em>. Boston, MA: Addison-Wesley Professional, 1994.</p><p data-type="footnote" id="idm45644729009512" class="calibre26"><sup class="calibre27"><a href="part0024_split_003.html#idm45644729009512-marker" class="calibre5">3</a></sup> Entry points can be complex in how they interact with Python packaging, but that’s beyond the scope of this book. You can learn more at <a href="https://oreil.ly/bMyJS" class="calibre5"><em class="calibre6">https://oreil.ly/bMyJS</em></a>.</p></div></div></section></body></html>
