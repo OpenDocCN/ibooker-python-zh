@@ -1,61 +1,87 @@
 - en: Chapter 11\. Using GPUs and Accelerators with Ray
+  id: totrans-0
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 第11章。使用 Ray 与 GPU 和加速器
 - en: While Ray is primarily focused on horizontal scaling, sometimes using special
     accelerators like GPUs can be cheaper and faster than just throwing more “regular”
     compute nodes at a problem. GPUs are well suited to vectorized operations performing
     the same operation on chunks of data at a time. ML, and more generally linear
     algebra, are some of the top use cases,^([1](ch11.html#idm45354762212512)) as
     deep learning is incredibly vectorizable.
+  id: totrans-1
   prefs: []
   type: TYPE_NORMAL
+  zh: 虽然 Ray 主要专注于水平扩展，但有时使用像 GPU 这样的特殊加速器可能比仅仅投入更多“常规”计算节点更便宜和更快。GPU 特别适合执行向量化操作，一次对数据块执行相同操作。机器学习，以及更广泛的线性代数，是一些顶级用例，^([1](ch11.html#idm45354762212512))
+    因为深度学习极易向量化。
 - en: Often GPU resources are more expensive than CPU resources, so Ray’s architecture
     makes it easy to request GPU resources only when necessary. To take advantage
     of GPUs, you need to use specialized libraries, and since these libraries deal
     with direct memory access, their results may not always be serializable. In the
     GPU computing world, NVIDIA and, to a lesser degree, AMD are the two main options,
     with different libraries for integration.
+  id: totrans-2
   prefs: []
   type: TYPE_NORMAL
+  zh: 通常情况下，GPU 资源比 CPU 资源更昂贵，因此 Ray 的架构使得在必要时仅需请求 GPU 资源变得更加容易。要利用 GPU，您需要使用专门的库，并且由于这些库涉及直接内存访问，它们的结果可能并不总是可串行化的。在
+    GPU 计算世界中，NVIDIA 和 AMD 是两个主要选项，具有不同的集成库。
 - en: What Are GPUs Good At?
+  id: totrans-3
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: GPU 擅长什么？
 - en: Not every problem is a good fit for GPU acceleration. GPUs are especially good
     at performing the same calculation on many data points at the same time. If a
     problem is well suited to vectorization, there is a good chance that GPUs may
     be well suited to it.
+  id: totrans-4
   prefs: []
   type: TYPE_NORMAL
+  zh: 并非每个问题都适合 GPU 加速。GPU 特别擅长同时在许多数据点上执行相同计算。如果一个问题非常适合向量化，那么 GPU 可能非常适合解决这个问题。
 - en: 'The following are common problems that benefit from GPU acceleration:'
+  id: totrans-5
   prefs: []
   type: TYPE_NORMAL
+  zh: 以下是从 GPU 加速中受益的常见问题：
 - en: ML
+  id: totrans-6
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 机器学习
 - en: Linear algebra
+  id: totrans-7
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 线性代数
 - en: Physics simulations
+  id: totrans-8
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 物理学模拟
 - en: Graphics (no surprise here)
+  id: totrans-9
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 图形（这不奇怪）
 - en: GPUs are not well suited to branch-heavy nonvectorized workflows, or workflows
     for which the cost of copying the data is similar to or higher than the cost of
     the computation.
+  id: totrans-10
   prefs: []
   type: TYPE_NORMAL
+  zh: GPU 不适合分支密集的非向量化工作流程，或者数据复制成本与计算成本相似或更高的工作流程。
 - en: The Building Blocks
+  id: totrans-11
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 构建模块
 - en: Working with GPUs involves additional overhead, similar to the overhead of distributing
     tasks (although a bit faster). This overhead comes from serializing data as well
     as communication, although the links between CPU and GPU are generally faster
@@ -64,15 +90,23 @@
     generate or call native GPU code. CUDA and Radeon Open Compute (ROCm) are the
     two de facto low-level libraries for interacting with GPUs, from NVIDIA and AMD,
     respectively.
+  id: totrans-12
   prefs: []
   type: TYPE_NORMAL
+  zh: 使用 GPU 需要额外的开销，类似于分发任务的开销（尽管速度稍快）。这些开销来自于数据串行化以及通信，尽管 CPU 和 GPU 之间的链接通常比网络链接更快。与
+    Ray 的分布式任务不同，GPU 没有 Python 解释器。相反，您的高级工具通常会生成或调用本机 GPU 代码。CUDA 和 Radeon Open Compute（ROCm）是与
+    GPU 交互的两个事实上的低级库，分别来自 NVIDIA 和 AMD。
 - en: NVIDIA released CUDA first, and it quickly gained traction with many higher-level
     libraries and tools, including TensorFlow. AMD’s ROCm has had a slower start and
     has not seen the same level of adoption. Some high-level tools, including PyTorch,
     have now integrated ROCm support, but many others require using a special forked
     ROCm version, like TensorFlow (tensorflow-rocm) or LAPACK (rocSOLVER).
+  id: totrans-13
   prefs: []
   type: TYPE_NORMAL
+  zh: NVIDIA 首先发布了 CUDA，并迅速在许多高级库和工具中获得了广泛应用，包括 TensorFlow。AMD 的 ROCm 起步较慢，并未见到同样程度的采纳。一些高级工具，包括
+    PyTorch，现在已经集成了 ROCm 支持，但许多其他工具需要使用特殊分支的 ROCm 版本，例如 TensorFlow（tensorflow-rocm）或
+    LAPACK（rocSOLVER）。
 - en: Getting the building blocks right can be surprisingly challenging. For example,
     in our experience, getting NVIDIA GPU Docker containers to build with Ray on Linux4Tegra
     took several days. ROCm and CUDA libraries have specific versions that support
@@ -81,83 +115,122 @@
     containerized platform, you can benefit from starting with prebuilt containers
     like NVIDIA’s [CUDA images](https://oreil.ly/klaV4) or AMD’s [ROCm images](https://oreil.ly/IKLF9)
     as the base.
+  id: totrans-14
   prefs: []
   type: TYPE_NORMAL
+  zh: 弄清楚构建模块可能会出人意料地具有挑战性。例如，在我们的经验中，让 NVIDIA GPU Docker 容器在 Linux4Tegra 上与 Ray 构建需要几天的时间。
+    ROCm 和 CUDA 库有支持特定硬件的特定版本，同样，您可能希望使用的更高级程序可能仅支持某些版本。如果您正在运行 Kubernetes 或类似的容器化平台，则可以从像
+    NVIDIA 的 [CUDA 映像](https://oreil.ly/klaV4) 或 AMD 的 [ROCm 映像](https://oreil.ly/IKLF9)
+    这样的预构建容器开始受益，作为基础。
 - en: Higher-Level Libraries
+  id: totrans-15
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 更高级的库
 - en: Unless you have specialized needs, you’ll likely find it easiest to work with
     higher-level libraries that generate GPU code for you, like Basic Linear Algebra
     Subprograms (BLAS), TensorFlow, or Numba. You should try to install these libraries
     in the base container or machine image that you are using, as they often involve
     a substantial amount of compile time during installation.
+  id: totrans-16
   prefs: []
   type: TYPE_NORMAL
+  zh: 除非您有特殊需求，否则您可能会发现与为您生成 GPU 代码的更高级库一起工作最容易，例如基本线性代数子程序（BLAS）、TensorFlow 或 Numba。您应尝试将这些库安装在您正在使用的基础容器或机器映像中，因为它们在安装期间通常需要大量编译时间。
 - en: Some of the libraries, like Numba, perform dynamic rewriting of your Python
     code. To have Numba operate on your code, you add a decorator to your function
     (e.g., `@numba.jit`). Unfortunately, `numba.jit` and other dynamic rewriting of
     your functions are not directly supported in Ray. Instead, if you are using such
     a library, simply wrap the call as shown in [Example 11-1](#numba_ex).
+  id: totrans-17
   prefs: []
   type: TYPE_NORMAL
+  zh: 一些库，例如 Numba，执行动态重写您的 Python 代码。要使 Numba 对您的代码起作用，您需要在函数中添加装饰器（例如 `@numba.jit`）。不幸的是，`numba.jit`
+    和其他对函数的动态重写在 Ray 中不受直接支持。相反，如果您使用此类库，只需像[示例 11-1](#numba_ex)中所示包装调用即可。
 - en: Example 11-1\. [Simple CUDA example](https://oreil.ly/xjpkD)
+  id: totrans-18
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 11-1\. [简单的 CUDA 示例](https://oreil.ly/xjpkD)
 - en: '[PRE0]'
+  id: totrans-19
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE0]'
 - en: Note
+  id: totrans-20
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 注意
 - en: Similar to Ray’s distributed functions, these tools will generally take care
     of copying data for you, but it’s important to remember it isn’t free to move
     data in and out of GPUs. Since these datasets can be large, most libraries try
     to do multiple operations on the same data. If you have an iterative algorithm
     that reuses the data, using an actor to hold on to the GPU resource and keep data
     in the GPU can reduce this cost.
+  id: totrans-21
   prefs: []
   type: TYPE_NORMAL
+  zh: 与 Ray 的分布式函数类似，这些工具通常会为您处理数据复制，但重要的是要记住移动数据进出 GPU 不是免费的。由于这些数据集可能很大，大多数库尝试在相同数据上执行多个操作。如果您有一个重复使用数据的迭代算法，则使用
+    actor 来持有 GPU 资源并将数据保留在 GPU 中可以减少此成本。
 - en: Regardless of which libraries you choose (or if you decide to write your own
     GPU code), you’ll need to make sure Ray schedules your code on nodes with GPUs.
+  id: totrans-22
   prefs: []
   type: TYPE_NORMAL
+  zh: 无论您选择哪个库（或者是否决定编写自己的 GPU 代码），都需要确保 Ray 将您的代码调度到具有 GPU 的节点上。
 - en: Acquiring and Releasing GPU and Accelerator Resources
+  id: totrans-23
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 获取和释放 GPU 和加速器资源
 - en: You can request GPU resources by adding `num_gpus` to the `ray.remote` decorator,
     much the same way as memory and CPU. Like other resources in Ray (including memory),
     GPUs in Ray are not guaranteed, and Ray does not automatically clean up resources
     for you. While Ray does not automatically clean up memory for you, Python does
     (to an extent), making GPU leaks more likely than memory leaks.
+  id: totrans-24
   prefs: []
   type: TYPE_NORMAL
+  zh: 您可以通过将 `num_gpus` 添加到 `ray.remote` 装饰器来请求 GPU 资源，与内存和 CPU 的方式类似。与 Ray 中的其他资源（包括内存）一样，Ray
+    中的 GPU 不能保证，并且 Ray 不会自动为您清理资源。虽然 Ray 不会自动为您清理内存，但 Python（在一定程度上）会，这使得 GPU 泄漏比内存泄漏更有可能。
 - en: Many of the high-level libraries do not release the GPU unless the Python VM
     exits. You can force the Python VM to exit after each call, thereby releasing
     any GPU resources, by adding `max_calls=1` in your `ray.remote` decorator, as
     in [Example 11-2](#remote_gpu).
+  id: totrans-25
   prefs: []
   type: TYPE_NORMAL
+  zh: 许多高级库在 Python VM 退出之前不会释放 GPU。您可以在每次调用后强制 Python VM 退出，从而释放任何 GPU 资源，方法是在您的
+    `ray.remote` 装饰器中添加 `max_calls=1`，如[示例 11-2](#remote_gpu)所示。
 - en: Example 11-2\. [Requesting and releasing GPU resources](https://oreil.ly/xjpkD)
+  id: totrans-26
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 11-2\. [请求和释放 GPU 资源](https://oreil.ly/xjpkD)
 - en: '[PRE1]'
+  id: totrans-27
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE1]'
 - en: One downside of restarting is that it removes your ability to reuse existing
     data in the GPU or accelerator. You can work around this by using long-lived actors
     in place of functions, but with the trade-off of locking up the resources in those
     actors.
+  id: totrans-28
   prefs: []
   type: TYPE_NORMAL
+  zh: 重新启动的一个缺点是它会移除你在GPU或加速器中重用现有数据的能力。你可以通过使用长生命周期的actors来解决这个问题，但这会牺牲资源在这些actors中的锁定。
 - en: Ray’s ML Libraries
+  id: totrans-29
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: Ray的机器学习库
 - en: 'You can also configure Ray’s built-in ML libraries to use GPUs. To have Ray
     Train launch PyTorch to use GPU resources for training, you need to set `use_gpu=True`
     in your `Trainer` constructor call, just as you configure the number of workers.
@@ -165,71 +238,101 @@
     resources in `tune.run`, using the same dictionary as you would in `ray.remote`.
     For example, to use two CPUs and one GPU per trial, you would call `tune.run(trainable,
     num_samples=10, resources_per_trial=\{"cpu": 2, "gpu": 2})`.'
+  id: totrans-30
   prefs: []
   type: TYPE_NORMAL
+  zh: '你也可以配置Ray的内置机器学习库来使用GPU。为了让Ray Train启动PyTorch使用GPU资源进行训练，你需要在`Trainer`构造函数调用中设置`use_gpu=True`，就像你配置工作进程数量一样。Ray
+    Tune为资源请求提供了更大的灵活性，你可以在`tune.run`中指定资源，使用与`ray.remote`相同的字典。例如，要在每次试验中使用两个CPU和一个GPU，你会调用`tune.run(trainable,
+    num_samples=10, resources_per_trial={"cpu": 2, "gpu": 2})`。'
 - en: Autoscaler with GPUs and Accelerators
+  id: totrans-31
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 带有GPU和加速器的自动缩放器
 - en: 'Ray’s autoscaler has the ability to understand different types of nodes and
     chooses which node type to schedule based on the requested resources. This is
     especially important with GPUs, which tend to be more expensive (and in lower
     supply) than other resources. On our cluster, since we have only four nodes with
     GPUs, we configure the autoscaler [as follows](https://oreil.ly/juA4y):'
+  id: totrans-32
   prefs: []
   type: TYPE_NORMAL
+  zh: Ray的自动缩放器具有理解不同类型节点并选择基于请求资源调度的能力。这在GPU方面尤为重要，因为GPU比其他资源更昂贵（且供应更少）。在我们的集群中，由于只有四个带有GPU的节点，我们配置自动缩放器如下(https://oreil.ly/juA4y)：
 - en: '[PRE2]'
+  id: totrans-33
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE2]'
 - en: This way, the autoscaler can allocate containers without GPU resources, which
     allows Kubernetes to place those pods on CPU-only nodes.
+  id: totrans-34
   prefs: []
   type: TYPE_NORMAL
+  zh: 这样，自动缩放器可以分配不带GPU资源的容器，从而使Kubernetes能够将这些pod放置在仅CPU节点上。
 - en: CPU Fallback as a Design Pattern
+  id: totrans-35
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: CPU回退作为一种设计模式
 - en: Most of the high-level libraries that can be accelerated by GPUs also have CPU
     fallback. Ray does not have a built-in way of expressing the concept of CPU fallback,
     or “GPU if available.” In Ray, if you ask for a resource and the scheduler cannot
     find it, and the autoscaler cannot create an instance for it, the function or
     actor will block forever. With a bit of creativity, you can build your own CPU-fallback
     code in Ray.
+  id: totrans-36
   prefs: []
   type: TYPE_NORMAL
+  zh: 大多数可以通过GPU加速的高级库也具有CPU回退功能。Ray没有内置的表达CPU回退或“如果可用则使用GPU”的方法。在Ray中，如果你请求一个资源，调度程序找不到它，并且自动缩放器无法为其创建一个实例，该函数或actor将永远阻塞。通过一些创意，你可以在Ray中构建自己的CPU回退代码。
 - en: If you want to use GPU resources when the cluster has them and fall back to
     CPU, you’ll need to do a bit of extra work. The simplest way to determine whether
     a cluster has usable GPU resources is to ask Ray to run a remote task with a GPU
     and then set the resources based on this, as shown in [Example 11-3](#cpu_fallback).
+  id: totrans-37
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果你希望在集群有GPU资源时使用它们，并在没有GPU时回退到CPU，你需要做一些额外的工作。确定集群是否有可用的GPU资源的最简单方法是请求Ray运行一个带有GPU的远程任务，然后基于此设置资源，如示例[11-3](#cpu_fallback)所示。
 - en: Example 11-3\. [Falling back to a CPU if no GPU exists](https://oreil.ly/xjpkD)
+  id: totrans-38
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例11-3\. [如果不存在GPU，则回退到CPU](https://oreil.ly/xjpkD)
 - en: '[PRE3]'
+  id: totrans-39
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE3]'
 - en: Any libraries you use will also need to fall back to CPU-based code. If they
     don’t do so automatically (e.g., you have two different functions called depending
     on CPU versus GPU, like `mul_two_cuda` and `mul_two_np`), you can pass through
     a Boolean indicating whether the cluster has GPUs.
+  id: totrans-40
   prefs: []
   type: TYPE_NORMAL
+  zh: 你使用的任何库也需要回退到基于CPU的代码。如果它们不会自动这样做（例如，根据CPU与GPU调用不同的两个函数，如`mul_two_cuda`和`mul_two_np`），你可以通过传递一个布尔值来指示集群是否有GPU。
 - en: Warning
+  id: totrans-41
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 警告
 - en: This can still result in failures on GPU clusters if GPU resources are not properly
     released. Ideally, you should fix the GPU release issue, but on a multitenant
     cluster, that may not be an option. You can also do try/except with acquiring
     the GPU inside each function.
+  id: totrans-42
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果GPU资源没有得到正确释放，这仍可能导致在GPU集群上失败。理想情况下，你应该修复GPU释放问题，但在多租户集群上，这可能不是一个选项。你还可以在每个函数内部尝试/捕获获取GPU的异常。
 - en: Other (Non-GPU) Accelerators
+  id: totrans-43
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 其他（非GPU）加速器
 - en: While much of this chapter has focused on GPU accelerators, the same general
     techniques apply to other kinds of hardware acceleration. For example, Numba is
     able to take advantage of special CPU features, and TensorFlow can take advantage
@@ -238,24 +341,36 @@
     machines with Non-Volatile Memory Express (NVMe) drives. In all of those cases,
     you can configure your autoscaler to tag and make these resources available in
     much the same way as GPUs.
+  id: totrans-44
   prefs: []
   type: TYPE_NORMAL
+  zh: 尽管本章的大部分内容集中在 GPU 加速器上，但相同的一般技术也适用于其他类型的硬件加速。例如，Numba 能够利用特殊的 CPU 特性，而 TensorFlow
+    则可以利用张量处理单元（TPU）。在某些情况下，资源可能不需要代码更改，而只是通过相同的 API 提供更快的性能，例如具有非易失性存储器快速执行（NVMe）驱动器的机器。在所有这些情况下，您可以配置自动扩展器来标记并使这些资源可用，方式与
+    GPU 类似。
 - en: Conclusion
+  id: totrans-45
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 结论
 - en: GPUs are a wonderful tool to accelerate certain types of workflows on Ray. While
     Ray itself doesn’t have hooks for accelerating your code with GPUs, it integrates
     well with the various libraries that you can use for GPU computation. Many of
     these libraries were not created with shared computation in mind, so it’s important
     to be on the lookout for accidental resource leaks, especially since GPU resources
     tend to be more expensive.
+  id: totrans-46
   prefs: []
   type: TYPE_NORMAL
+  zh: GPU 是在 Ray 上加速某些工作流程的绝佳工具。虽然 Ray 本身没有用于利用 GPU 加速代码的钩子，但它与各种您可以用于 GPU 计算的库集成良好。许多这些库并非为共享计算而创建，因此需要特别注意意外资源泄漏，尤其是由于
+    GPU 资源往往更昂贵。
 - en: ^([1](ch11.html#idm45354762212512-marker)) Another one of the top use cases
     has been cryptocurrency mining, but you don’t need a system like Ray for that.
     Cryptomining with GPUs has led to increased demand, with many cards selling above
     list price, and NVIDIA has been [attempting to discourage cryptocurrency mining
     with its latest GPUs](https://oreil.ly/tG6qH).
+  id: totrans-47
   prefs: []
   type: TYPE_NORMAL
+  zh: ^([1](ch11.html#idm45354762212512-marker)) 其他顶级用例之一是加密货币挖矿，但你不需要像 Ray 这样的系统。使用
+    GPU 进行加密货币挖矿导致需求增加，许多显卡售价高于官方价格，而 NVIDIA 已经在[尝试用其最新的 GPU 抑制加密货币挖矿](https://oreil.ly/tG6qH)。
