@@ -1,238 +1,352 @@
 - en: 'Chapter 6\. Improving Functional Tests: Ensuring Isolation and Removing Voodoo
     Sleeps'
+  id: totrans-0
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 第六章。改进功能测试：确保隔离和移除“巫术”睡眠
 - en: Before we dive in and fix our single-global-list problem, let’s take care of
     a couple of housekeeping items. At the end of the last chapter, we made a note
     that different test runs were interfering with each other, so we’ll fix that.
     I’m also not happy with all these `time.sleep`s peppered through the code; they
     seem a bit unscientific, so we’ll replace them with something more reliable.
+  id: totrans-1
   prefs: []
   type: TYPE_NORMAL
+  zh: 在我们深入解决全局列表问题之前，让我们先处理一些日常事务。在上一章的结尾，我们注意到不同的测试运行相互干扰，因此我们会解决这个问题。此外，我对代码中到处都是的`time.sleep`不太满意，它们似乎有些不科学，所以我们会用更可靠的方法替换它们。
 - en: Both of these changes will be moving us towards testing “best practices”, making
     our tests more deterministic and more reliable.
+  id: totrans-2
   prefs: []
   type: TYPE_NORMAL
+  zh: 这两个变化将使我们朝着测试“最佳实践”迈进，使我们的测试更加确定性和可靠。
 - en: Ensuring Test Isolation in Functional Tests
+  id: totrans-3
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 在功能测试中确保测试隔离
 - en: 'We ended the last chapter with a classic testing problem: how to ensure *isolation*
     between tests. Each run of our functional tests was leaving list items lying around
     in the database, and that would interfere with the test results when you next
     ran the tests.'
+  id: totrans-4
   prefs: []
   type: TYPE_NORMAL
+  zh: 我们在上一章结束时遇到了一个经典的测试问题：如何确保测试之间的*隔离*。我们的功能测试每次运行后都会在数据库中留下列表项，这会影响下次运行测试时的结果。
 - en: When we run *unit* tests, the Django test runner automatically creates a brand
     new test database (separate from the real one), which it can safely reset before
     each individual test is run, and then throw away at the end. But our functional
     tests currently run against the “real” database, *db.sqlite3*.
+  id: totrans-5
   prefs: []
   type: TYPE_NORMAL
+  zh: 当我们运行 *单元* 测试时，Django 测试运行器会自动创建一个全新的测试数据库（与真实数据库分开），它可以在每个单独的测试运行之前安全地重置，然后在结束时丢弃。但我们的功能测试目前运行在“真实”的数据库
+    *db.sqlite3* 上。
 - en: One way to tackle this would be to “roll our own” solution, and add some code
     to *functional_tests.py* which would do the cleaning up. The `setUp` and `tearDown`
     methods are perfect for this sort of thing.
+  id: totrans-6
   prefs: []
   type: TYPE_NORMAL
+  zh: 解决这个问题的一种方法是自己“摸索”解决方案，并向 *functional_tests.py* 添加一些清理代码。`setUp`和`tearDown`方法非常适合这种情况。
 - en: But since this is a common problem, Django supplies a test class called `LiveServerTestCase`
     which addresses this issue. It will automatically create a test database (just
     like in a unit test run), and start up a development server for the functional
     tests to run against. Although as a tool it has some limitations which we’ll need
     to work around later, it’s dead useful at this stage, so let’s check it out.
+  id: totrans-7
   prefs: []
   type: TYPE_NORMAL
+  zh: 但由于这是一个常见的问题，Django 提供了一个名为`LiveServerTestCase`的测试类来解决这个问题。它将自动创建一个测试数据库（就像在单元测试运行中一样），并启动一个开发服务器，供功能测试运行。尽管作为一个工具它有一些限制，我们稍后需要解决这些限制，但在这个阶段它非常有用，所以让我们来看看它。
 - en: '`LiveServerTestCase` expects to be run by the Django test runner using *manage.py*,
     which will run tests from any files whose name begins with *test_*. To keep things
     neat and tidy, let’s make a folder for our functional tests, so that it looks
     a bit like an app. All Django needs is for it to be a valid Python package directory
     (i.e., one with a *___init___.py* in it):'
+  id: totrans-8
   prefs: []
   type: TYPE_NORMAL
+  zh: '`LiveServerTestCase` 期望由 Django 测试运行器使用 *manage.py* 运行，它将运行任何以 *test_* 开头的文件中的测试。为了保持整洁，让我们为我们的功能测试创建一个文件夹，使它看起来像一个应用程序。Django
+    需要的只是一个有效的 Python 包目录（即其中包含一个 *___init___.py* 文件）：'
 - en: '[PRE0]'
+  id: totrans-9
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE0]'
 - en: Now we want to *move* our functional tests, from being a standalone file called
     *functional_tests.py*, to being the *tests.py* of the `functional_tests` app.
     We use **`git mv`** so that Git keeps track of the fact that this is the same
     file and should have a single history.
+  id: totrans-10
   prefs: []
   type: TYPE_NORMAL
+  zh: 现在我们想要将我们的功能测试从名为 *functional_tests.py* 的独立文件移动到 `functional_tests` 应用程序的 *tests.py*
+    中。我们使用 **`git mv`** 让 Git 知道这是同一个文件，并且应该有一个单一的历史记录。
 - en: '[PRE1]'
+  id: totrans-11
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE1]'
 - en: 'At this point your directory tree should look like this:'
+  id: totrans-12
   prefs: []
   type: TYPE_NORMAL
+  zh: 此时，你的目录树应该是这样的：
 - en: '[PRE2]'
+  id: totrans-13
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE2]'
 - en: '*functional_tests.py* is gone, and has turned into *functional_tests/tests.py*.
     Now, whenever we want to run our functional tests, instead of running `python
     functional_tests.py`, we will use `python manage.py test functional_tests`.'
+  id: totrans-14
   prefs: []
   type: TYPE_NORMAL
+  zh: '*functional_tests.py* 已经不见了，变成了 *functional_tests/tests.py*。现在，每当我们想运行功能测试时，不再运行`python
+    functional_tests.py`，而是使用`python manage.py test functional_tests`。'
 - en: Note
+  id: totrans-15
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 注意
 - en: You could mix your functional tests into the tests for the `lists` app. I tend
     to prefer to keep them separate, because functional tests usually have cross-cutting
     concerns that run across different apps. FTs are meant to see things from the
     point of view of your users, and your users don’t care about how you’ve split
     work between different apps!
+  id: totrans-16
   prefs: []
   type: TYPE_NORMAL
+  zh: 你可以将功能测试混合到 `lists` 应用的测试中。我倾向于保持它们分开，因为功能测试通常涉及跨不同应用的横切关注点。FT 应该从用户的角度看事情，而你的用户并不关心你是如何在不同应用之间分割工作的！
 - en: 'Now let’s edit *functional_tests/tests.py* and change our `NewVisitorTest`
     class to make it use `LiveServerTestCase`:'
+  id: totrans-17
   prefs: []
   type: TYPE_NORMAL
+  zh: 现在让我们编辑 *functional_tests/tests.py* 并修改我们的 `NewVisitorTest` 类以使其使用 `LiveServerTestCase`：
 - en: functional_tests/tests.py (ch06l001)
+  id: totrans-18
   prefs: []
   type: TYPE_NORMAL
+  zh: functional_tests/tests.py (ch06l001)
 - en: '[PRE3]'
+  id: totrans-19
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE3]'
 - en: 'Next, instead of hardcoding the visit to localhost port 8000, `LiveServerTestCase`
     gives us an attribute called `live_server_url`:'
+  id: totrans-20
   prefs: []
   type: TYPE_NORMAL
+  zh: 接下来，不再将访问本地主机端口 8000 硬编码，`LiveServerTestCase` 给了我们一个叫做 `live_server_url` 的属性：
 - en: functional_tests/tests.py (ch06l002)
+  id: totrans-21
   prefs: []
   type: TYPE_NORMAL
+  zh: functional_tests/tests.py (ch06l002)
 - en: '[PRE4]'
+  id: totrans-22
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE4]'
 - en: We can also remove the `if __name__ == '__main__'` from the end if we want,
     since we’ll be using the Django test runner to launch the FT.
+  id: totrans-23
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果希望，我们也可以从末尾移除 `if __name__ == '__main__'`，因为我们将使用 Django 测试运行器来启动 FT。
 - en: TODO — FIXES FROM HERE
+  id: totrans-24
   prefs: []
   type: TYPE_NORMAL
+  zh: TODO — 从这里修复
 - en: 'Now we are able to run our functional tests using the Django test runner, by
     telling it to run just the tests for our new `functional_tests` app:'
+  id: totrans-25
   prefs: []
   type: TYPE_NORMAL
+  zh: 现在我们可以通过告诉 Django 测试运行器仅运行我们新的 `functional_tests` 应用的测试来运行我们的功能测试：
 - en: '[PRE5]'
+  id: totrans-26
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE5]'
 - en: 'The FT still passes, reassuring us that our refactor didn’t break anything.
     You’ll also notice that if you run the tests a second time, there aren’t any old
     list items lying around from the previous test—​it has cleaned up after itself.
     Success! We should commit it as an atomic change:'
+  id: totrans-27
   prefs: []
   type: TYPE_NORMAL
+  zh: FT 依然通过，让我们放心，我们的重构没有出问题。你还会注意到，如果你再次运行测试，之前测试留下的旧列表项都不见了，系统已经自我清理完毕。成功！我们应该将其作为一个原子更改提交：
 - en: '[PRE6]'
+  id: totrans-28
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE6]'
 - en: Running Just the Unit Tests
+  id: totrans-29
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 仅运行单元测试
 - en: 'Now if we run `manage.py test`, Django will run both the functional and the
     unit tests:'
+  id: totrans-30
   prefs: []
   type: TYPE_NORMAL
+  zh: 现在如果我们运行 `manage.py test`，Django 将运行功能测试和单元测试：
 - en: '[PRE7]'
+  id: totrans-31
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE7]'
 - en: 'In order to run just the unit tests, we can specify that we want to only run
     the tests for the `lists` app:'
+  id: totrans-32
   prefs: []
   type: TYPE_NORMAL
+  zh: 为了仅运行单元测试，我们可以指定只运行 `lists` 应用的测试：
 - en: '[PRE8]'
+  id: totrans-33
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE8]'
 - en: 'Aside: Upgrading Selenium and Geckodriver'
+  id: totrans-34
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 附注：升级 Selenium 和 Geckodriver
 - en: As I was running through this chapter again today, I found the FTs hung when
     I tried to run them.
+  id: totrans-35
   prefs: []
   type: TYPE_NORMAL
+  zh: 当我今天再次运行这一章时，我发现当我试图运行它们时 FT 被挂起了。
 - en: 'It turns out that Firefox had auto-updated itself overnight, and my versions
     of Selenium and Geckodriver needed upgrading too. A quick visit to the [geckodriver
     releases page](https://github.com/mozilla/geckodriver/releases) confirmed there
     was a new version out. So a few downloads and upgrades were in order:'
+  id: totrans-36
   prefs: []
   type: TYPE_NORMAL
+  zh: 结果 Firefox 在夜间自动更新了，我的 Selenium 和 Geckodriver 版本也需要升级。快速访问 [geckodriver 发布页面](https://github.com/mozilla/geckodriver/releases)
+    确认有新版本发布。所以需要进行一些下载和升级：
 - en: A quick `pip install --upgrade selenium` first.
+  id: totrans-37
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 首先快速执行 `pip install --upgrade selenium`。
 - en: Then a quick download of the new geckodriver.
+  id: totrans-38
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 然后快速下载新版的 geckodriver。
 - en: I saved a backup copy of the old one somewhere, and put the new one in its place
     somewhere on the `PATH`.
+  id: totrans-39
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 我保存了旧版本的备份副本，并将新版本放在了 `PATH` 中的某个地方。
 - en: And a quick check with `geckodriver --version` confirms the new one was ready
     to go.
+  id: totrans-40
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 并通过 `geckodriver --version` 快速检查确认新版本已经准备就绪。
 - en: The FTs were then back to running the way I expected them to.
+  id: totrans-41
   prefs: []
   type: TYPE_NORMAL
+  zh: 然后 FT 又回到了我预期的运行方式。
 - en: There was no particular reason that it happened at this point in the book; indeed,
     it’s quite unlikely that it’ll happen right now for you, but it may happen at
     some point, and this seemed as good a place as any to talk about it, since we’re
     doing some housekeeping.
+  id: totrans-42
   prefs: []
   type: TYPE_NORMAL
+  zh: 没有特别的原因会让它在书中的这一点发生；实际上，对你来说现在发生的可能性很小，但某个时候可能会发生，而且既然我们在做一些清理工作，这似乎是一个好地方来谈谈它。
 - en: It’s one of the things you have to put up with when using Selenium. Although
     it is possible to pin your browser and Selenium versions (on a CI server, for
     example), browser versions don’t stand still out in the real world, and you need
     to keep up with what your users have.
+  id: totrans-43
   prefs: []
   type: TYPE_NORMAL
+  zh: 这是使用 Selenium 时必须忍受的事情之一。尽管在 CI 服务器上可能固定浏览器和 Selenium 版本（例如），但是浏览器版本在真实世界中是不断变化的，你需要跟上你的用户的步伐。
 - en: Note
+  id: totrans-44
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 注意
 - en: If something strange is going on with your FTs, it’s always worth trying to
     upgrade Selenium.
+  id: totrans-45
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果你的 FT 出现了奇怪的情况，尝试升级 Selenium 总是值得的。
 - en: Back to our regular programming now.
+  id: totrans-46
   prefs: []
   type: TYPE_NORMAL
+  zh: 现在回到我们的常规编程。
 - en: On Implicit and Explicit Waits, and Voodoo time.sleeps
+  id: totrans-47
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 关于隐式等待和显式等待，以及神秘的   关于隐式等待和显式等待，以及巫术式的`time.sleep`。
 - en: 'Let’s talk about the `time.sleep` in our FT:'
+  id: totrans-48
   prefs: []
   type: TYPE_NORMAL
+  zh: 让我们来谈谈我们功能测试中的`time.sleep`：
 - en: functional_tests/tests.py
+  id: totrans-49
   prefs: []
   type: TYPE_NORMAL
+  zh: functional_tests/tests.py
 - en: '[PRE9]'
+  id: totrans-50
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE9]'
 - en: 'This is what’s called an “explicit wait”. That’s by contrast with “implicit
     waits”: in certain cases, Selenium tries to wait “automatically” for you, when
     it thinks the page is loading. It even provides a method called `implicitly_wait`
     that lets you control how long it will wait if you ask it for an element that
     doesn’t seem to be on the page yet.'
+  id: totrans-51
   prefs: []
   type: TYPE_NORMAL
+  zh: 这就是所谓的“显式等待”。这与“隐式等待”相对：在某些情况下，Selenium 会试图在你认为页面正在加载时“自动”等待。它甚至提供了一种名为`implicitly_wait`的方法，让你控制如果你请求的元素似乎还不在页面上，它会等多久。
 - en: In fact, in the first edition, I was able to rely entirely on implicit waits.
     The problem is that implicit waits are always a little flakey, and with the release
     of Selenium 4, implicit waits were disabled by default. At the same time, the
     general opinion from the Selenium team was that implicit waits were just a bad
     idea, and [to be avoided](https://www.selenium.dev/documentation/webdriver/waits/).
+  id: totrans-52
   prefs: []
   type: TYPE_NORMAL
+  zh: 实际上，在第一版中，我完全可以依赖隐式等待。问题在于隐式等待总是有些不稳定，随着 Selenium 4 的发布，隐式等待默认被禁用。同时，Selenium
+    团队普遍认为隐式等待只是一个坏主意， [应该避免使用](https://www.selenium.dev/documentation/webdriver/waits/)。
 - en: So this edition has explicit waits from the very beginning. But the problem
     is that those `time.sleep`s have their own issues.
+  id: totrans-53
   prefs: []
   type: TYPE_NORMAL
+  zh: 因此，这个版本一开始就有显式等待。但问题是那些`time.sleep`有自己的问题。
 - en: Currently we’re waiting for one second, but who’s to say that’s the right amount
     of time? For most tests we run against our own machine, one second is way too
     long, and it’s going to really slow down our FT runs. 0.1s would be fine. But
@@ -241,160 +355,243 @@
     just then. And even at 1s you can never be quite sure you’re not going to get
     random failures that don’t indicate a real problem, and false positives in tests
     are a real annoyance (there’s lots more on this in [an article by Martin Fowler](https://martinfowler.com/articles/nonDeterminism.xhtml)).
+  id: totrans-54
   prefs: []
   type: TYPE_NORMAL
+  zh: 目前我们正在等待一秒钟，但谁又能说这是正确的时间呢？对于我们在自己机器上运行的大多数测试，一秒钟时间太长了，这将极大地减慢我们的功能测试运行速度。0.1秒就足够了。但问题是，如果你将其设置得太低，每隔一段时间你会因为某种原因，笔记本电脑刚好运行得慢而导致虚假失败。即使是1秒，也不能完全确定不会出现随机失败，这些随机失败并不表示真正的问题，测试中的假阳性是真正的烦恼（在[马丁·福勒的文章](https://martinfowler.com/articles/nonDeterminism.xhtml)中有更多内容）。
 - en: 'TIP: Unexpected `NoSuchElementException` and `StaleElementException` errors
     are often a sign that you need an explicit wait.'
+  id: totrans-55
   prefs: []
   type: TYPE_NORMAL
+  zh: 小贴士：意外的`NoSuchElementException`和`StaleElementException`错误通常是你需要显式等待的信号。
 - en: 'So let’s replace our sleeps with a tool that will wait for just as long as
     is needed, up to a nice long timeout to catch any glitches. We’ll rename `check_for_row_in_list_table`
     to `wait_for_row_in_list_table`, and add some polling/retry logic to it:'
+  id: totrans-56
   prefs: []
   type: TYPE_NORMAL
+  zh: 所以让我们用一个工具替换我们的`sleeps`，它只会等待所需的时间，最长到一个合适的超时时间以捕捉任何故障。我们将`check_for_row_in_list_table`重命名为`wait_for_row_in_list_table`，并添加一些轮询/重试逻辑：
 - en: functional_tests/tests.py (ch06l004)
+  id: totrans-57
   prefs: []
   type: TYPE_NORMAL
+  zh: functional_tests/tests.py（ch06l004）
 - en: '[PRE10]'
+  id: totrans-58
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE10]'
 - en: '[![1](assets/1.png)](#co_improving_functional_tests__ensuring_isolation_and_removing_voodoo_sleeps_CO1-1)'
+  id: totrans-59
   prefs: []
   type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_improving_functional_tests__ensuring_isolation_and_removing_voodoo_sleeps_CO1-1)'
 - en: We’ll use a constant called `MAX_WAIT` to set the maximum amount of time we’re
     prepared to wait. 5 seconds should be enough to catch any glitches or random slowness.
+  id: totrans-60
   prefs: []
   type: TYPE_NORMAL
+  zh: 我们将使用一个常量`MAX_WAIT`来设置我们准备等待的最大时间。5秒应该足够捕捉任何故障或随机延迟。
 - en: '[![2](assets/2.png)](#co_improving_functional_tests__ensuring_isolation_and_removing_voodoo_sleeps_CO1-2)'
+  id: totrans-61
   prefs: []
   type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_improving_functional_tests__ensuring_isolation_and_removing_voodoo_sleeps_CO1-2)'
 - en: Here’s the loop, which will keep going forever, unless we get to one of two
     possible exit routes.
+  id: totrans-62
   prefs: []
   type: TYPE_NORMAL
+  zh: 这里是循环，除非我们到达两种可能的退出路线之一，否则它将一直运行。
 - en: '[![3](assets/3.png)](#co_improving_functional_tests__ensuring_isolation_and_removing_voodoo_sleeps_CO1-3)'
+  id: totrans-63
   prefs: []
   type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_improving_functional_tests__ensuring_isolation_and_removing_voodoo_sleeps_CO1-3)'
 - en: Here are our three lines of assertions from the old version of the method.
+  id: totrans-64
   prefs: []
   type: TYPE_NORMAL
+  zh: 这是我们从方法旧版本中提取的三行断言。
 - en: '[![4](assets/4.png)](#co_improving_functional_tests__ensuring_isolation_and_removing_voodoo_sleeps_CO1-4)'
+  id: totrans-65
   prefs: []
   type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_improving_functional_tests__ensuring_isolation_and_removing_voodoo_sleeps_CO1-4)'
 - en: If we get through them and our assertion passes, we return from the function
     and escape the loop.
+  id: totrans-66
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果我们通过了它们，并且我们的断言通过，我们将从函数中返回并退出循环。
 - en: '[![5](assets/5.png)](#co_improving_functional_tests__ensuring_isolation_and_removing_voodoo_sleeps_CO1-5)'
+  id: totrans-67
   prefs: []
   type: TYPE_NORMAL
+  zh: '[![5](assets/5.png)](#co_improving_functional_tests__ensuring_isolation_and_removing_voodoo_sleeps_CO1-5)'
 - en: 'But if we catch an exception, we wait a short amount of time and loop around
     to retry. There are two types of exceptions we want to catch: `WebDriverException`
     for when the page hasn’t loaded and Selenium can’t find the table element on the
     page, and `AssertionError` for when the table is there, but it’s perhaps a table
     from before the page reloads, so it doesn’t have our row in yet.'
+  id: totrans-68
   prefs: []
   type: TYPE_NORMAL
+  zh: 但是如果我们捕获到异常，我们会等待一小段时间然后循环重试。我们想要捕获两种类型的异常：`WebDriverException`，当页面尚未加载并且Selenium无法在页面上找到表元素时，以及`AssertionError`，当表存在，但可能是页面重新加载前的表，因此还没有我们的行。
 - en: '[![6](assets/6.png)](#co_improving_functional_tests__ensuring_isolation_and_removing_voodoo_sleeps_CO1-6)'
+  id: totrans-69
   prefs: []
   type: TYPE_NORMAL
+  zh: '[![6](assets/6.png)](#co_improving_functional_tests__ensuring_isolation_and_removing_voodoo_sleeps_CO1-6)'
 - en: Here’s our second escape route. If we get to this point, that means our code
     kept raising exceptions every time we tried it until we exceeded our timeout.
     So this time, we re-raise the exception and let it bubble up to our test, and
     most likely end up in our traceback, telling us why the test failed.
+  id: totrans-70
   prefs: []
   type: TYPE_NORMAL
+  zh: 这是我们的第二个逃生路线。如果我们到达这一点，那意味着我们的代码每次尝试都会引发异常，直到超过超时时间。所以这一次，我们重新引发异常，并让它冒泡到我们的测试中，很可能最终会出现在我们的回溯中，告诉我们测试失败的原因。
 - en: Are you thinking this code is a little ugly, and makes it a bit harder to see
     exactly what we’re doing? I agree. Later on ([Link to Come]), we’ll refactor out
     a general `wait_for` helper, to separate the timing and re-raising logic from
     the test assertions. But we’ll wait until we need it in multiple places.
+  id: totrans-71
   prefs: []
   type: TYPE_NORMAL
+  zh: 您是否认为这段代码有点丑陋，让人有点难以理解我们到底在做什么？我同意。稍后（[Link to Come]），我们将重构一个通用的`wait_for`辅助函数，将时间和重新引发逻辑与测试断言分开。但我们会等到我们需要在多个地方使用它。
 - en: Note
+  id: totrans-72
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 注意
 - en: If you’ve used Selenium before, you may know that it has a few [helper functions
     to do waits](https://www.selenium.dev/documentation/webdriver/waits/#explicit-wait).
     I’m not a big fan of them, though not for any objective reason really. Over the
     course of the book we’ll build a couple of wait helper tools which I think will
     make for nice, readable code, but of course you should check out the homegrown
     Selenium waits in your own time, and see if you prefer them.
+  id: totrans-73
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果您之前使用过Selenium，您可能知道它有一些[等待的辅助函数](https://www.selenium.dev/documentation/webdriver/waits/#explicit-wait)。不过，我对它们不是很感冒，虽然真的没有任何客观理由。在本书的过程中，我们将构建一些等待的辅助工具，我认为这将产生漂亮、可读的代码，但当然您应该在自己的时间内查看自制的Selenium等待，并看看您是否更喜欢它们。
 - en: 'Now we can rename our method calls, and remove the voodoo `time.sleep`s:'
+  id: totrans-74
   prefs: []
   type: TYPE_NORMAL
+  zh: 现在我们可以重命名我们的方法调用，并移除那些神秘的`time.sleep`：
 - en: functional_tests/tests.py (ch06l005)
+  id: totrans-75
   prefs: []
   type: TYPE_NORMAL
+  zh: functional_tests/tests.py (ch06l005)
 - en: '[PRE11]'
+  id: totrans-76
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE11]'
 - en: 'And rerun the tests:'
+  id: totrans-77
   prefs: []
   type: TYPE_NORMAL
+  zh: 然后重新运行测试：
 - en: '[PRE12]'
+  id: totrans-78
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE12]'
 - en: Hooray we’re back to passing, and notice we’ve shaved a couple of seconds off
     the execution time too. That might not seem like a lot right now, but it all adds
     up.
+  id: totrans-79
   prefs: []
   type: TYPE_NORMAL
+  zh: 哦耶，我们又通过了，并且注意我们的执行时间减少了几秒钟。现在可能不算太多，但这一切都会累积起来。
 - en: 'Just to check we’ve done the right thing, let’s deliberately break the test
     in a couple of ways and see some errors. First let’s check that if we look for
     some row text that will never appear, we get the right error:'
+  id: totrans-80
   prefs: []
   type: TYPE_NORMAL
+  zh: 为了确认我们已经做对了事情，让我们故意破坏测试的几种方式，并查看一些错误。首先，让我们检查一下，如果我们搜索一些永远不会出现的行文本，我们会得到正确的错误：
 - en: functional_tests/tests.py (ch06l006)
+  id: totrans-81
   prefs: []
   type: TYPE_NORMAL
+  zh: functional_tests/tests.py (ch06l006)
 - en: '[PRE13]'
+  id: totrans-82
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE13]'
 - en: 'We see we still get a nice self-explanatory test failure message:'
+  id: totrans-83
   prefs: []
   type: TYPE_NORMAL
+  zh: 我们看到我们仍然得到了一个很好的自说明的测试失败消息：
 - en: '[PRE14]'
+  id: totrans-84
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE14]'
 - en: Note
+  id: totrans-85
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 注意
 - en: Did you get a bit bored waiting 5 seconds for the test to fail? That’s one of
     the downsides of explicit waits. There’s a tricky tradeoff between waiting long
     enough that little glitches don’t throw you, versus waiting so long that expected
     failures are painfully slow to watch. Making MAX_WAIT configurable so that it’s
     fast in local dev, but more conservative on Continuous Integration (CI) servers
     can be a good idea. See [Link to Come] for an introduction to CI.
+  id: totrans-86
   prefs: []
   type: TYPE_NORMAL
+  zh: 您是否对等待测试失败等待5秒感到有点无聊？这是显式等待的一个缺点。在等待足够长时间以确保小故障不会干扰您与等待时间过长以至于期望失败令人痛苦之间存在着棘手的权衡。使MAX_WAIT可配置，以便在本地开发时快速，在持续集成（CI）服务器上更为保守，可能是一个不错的主意。请参阅[Link
+    to Come]，了解持续集成的简介。
 - en: 'Let’s put that back the way it was and break something else:'
+  id: totrans-87
   prefs: []
   type: TYPE_NORMAL
+  zh: 让我们把它改回原样，然后破坏其他东西：
 - en: functional_tests/tests.py (ch06l007)
+  id: totrans-88
   prefs: []
   type: TYPE_NORMAL
+  zh: functional_tests/tests.py (ch06l007)
 - en: '[PRE15]'
+  id: totrans-89
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE15]'
 - en: 'Sure enough, we get the errors for when the page doesn’t contain the element
     we’re looking for too:'
+  id: totrans-90
   prefs: []
   type: TYPE_NORMAL
+  zh: 确实，我们得到了当页面不包含我们寻找的元素时的错误：
 - en: '[PRE16]'
+  id: totrans-91
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE16]'
 - en: 'Everything seems to be in order. Let’s put our code back to way it should be,
     and do one final test run:'
+  id: totrans-92
   prefs: []
   type: TYPE_NORMAL
+  zh: 一切看起来都井然有序。让我们把我们的代码恢复到应该的状态，并进行最后一次测试运行：
 - en: '[PRE17]'
+  id: totrans-93
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE17]'
 - en: Great. With that little interlude over, let’s crack on with getting our application
     actually working for multiple lists. Don’t forget to commit first!
+  id: totrans-94
   prefs: []
   type: TYPE_NORMAL
+  zh: 很好。随着这小插曲的结束，让我们继续为多个列表使我们的应用程序实际工作。不要忘记先提交！
