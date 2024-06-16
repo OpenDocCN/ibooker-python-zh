@@ -1,7 +1,9 @@
 - en: Chapter 10\. Dask with GPUs and Other Special Resources
+  id: totrans-0
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 第 10 章。使用 GPU 和其他特殊资源的 Dask
 - en: Sometimes the answer to our scaling problem isn’t throwing more computers at
     it; it’s throwing different types of resources at it. One example of this might
     be ten thousand monkeys trying to reproduce the works of Shakespeare, versus one
@@ -11,15 +13,22 @@
     Dask is found in the libraries and ecosystem surrounding it. The libraries can
     either run on a collection of GPU workers or parallelize work over different GPUs
     on one host.
+  id: totrans-1
   prefs: []
   type: TYPE_NORMAL
+  zh: 有时解决我们的扩展问题的答案并不是增加更多计算机，而是投入不同类型的资源。一个例子是一万只猴子试图复制莎士比亚的作品，与一个莎士比亚^([1](ch10.xhtml#id778))。尽管性能有所不同，但一些基准测试显示，使用
+    GPU 而不是 CPU 在模型训练时间上的提升可以高达 85%。继续其模块化传统，Dask 的 GPU 逻辑存在于围绕其构建的库和生态系统中。这些库可以在一组
+    GPU 工作节点上运行，也可以在一个主机上的不同 GPU 上并行工作。
 - en: Most work we do on the computer is done on the CPU. GPUs were created for displaying
     video but involve doing large amounts of vectorized floating point (e.g., non-integer)
     operations. With vectorized operations, the same operation is applied in parallel
     on large sets of data, like a `map`. Tensor Processing Units (TPUs) are similar
     to GPUs, except without also being used for graphics.
+  id: totrans-2
   prefs: []
   type: TYPE_NORMAL
+  zh: 我们在计算机上进行的大部分工作都是由 CPU 完成的。GPU 最初是用于显示视频，但涉及大量矢量化浮点（例如非整数）运算。通过矢量化运算，相同的操作并行应用于大量数据集，类似于`map`操作。张量处理单元（TPU）类似于
+    GPU，但不用于图形显示。
 - en: For our purposes, in Dask, we can think of GPUs and TPUs as specializing in
     offloading large vectorized computations, but there are many other kinds of accelerators.
     While much of this chapter is focused on GPUs, the same general techniques, albeit
@@ -30,130 +39,191 @@
     all these share is that Dask has no built-in understanding of these resources,
     and it’s up to you to provide that information to the Dask scheduler and also
     take advantage of it.
+  id: totrans-3
   prefs: []
   type: TYPE_NORMAL
+  zh: 对于我们在 Dask 中的目的，我们可以将 GPU 和 TPU 视为专门用于卸载大规模矢量化计算的设备，但还有许多其他类型的加速器。虽然本章的大部分内容集中在
+    GPU 上，但相同的一般技术通常也适用于其他加速器，只是使用了不同的库。其他类型的特殊资源包括 NVMe 驱动器、更快（或更大）的 RAM、TCP/IP 卸载、Just-a-Bunch-of-Disks
+    扩展端口以及英特尔的 OPTAIN 内存。特殊资源/加速器可以改善从网络延迟到大文件写入到磁盘的各个方面。所有这些资源的共同点在于，Dask 并没有内置对这些资源的理解，您需要为
+    Dask 调度器提供这些信息，并利用这些资源。
 - en: This chapter will look at the current state of accelerated analytics in Python
     and how to use these tools together with Dask. You will learn what kinds of problems
     are well suited to GPU acceleration, a bit about other kinds of accelerators,
     and how to apply this knowledge to your problems.
+  id: totrans-4
   prefs: []
   type: TYPE_NORMAL
+  zh: 本章将探讨 Python 中加速分析的当前状态以及如何与 Dask 结合使用这些工具。您将了解到哪些问题适合使用 GPU 加速，以及其他类型加速器的相关信息，以及如何将这些知识应用到您的问题中。
 - en: Warning
+  id: totrans-5
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 警告
 - en: Cloud accounts and machines with access to GPUs are especially of interest to
     less-than-savory folks on the internet due to the relative ease of mining cryptocurrency.
     If you are used to working with only public data and lax security controls, take
     this as an opportunity to review your security process and restrict runtime access
     to only those who need it. Or be prepared for a really large cloud bill.
+  id: totrans-6
   prefs: []
   type: TYPE_NORMAL
+  zh: 由于挖掘加密货币的相对简易性，云账户和拥有 GPU 访问权限的机器特别受到互联网上不良分子的关注。如果您习惯于仅使用公共数据和宽松的安全控制，这是一个审视您的安全流程并限制运行时访问仅限于需要的人的机会。否则可能会面临巨额云服务账单。
 - en: Transparent Versus Non-transparent Accelerators
+  id: totrans-7
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 透明与非透明加速器
 - en: 'Accelerators largely break down into two categories: transparent (no code or
     change required) and non-transparent optimizers. Whether an accelerator is transparent
     or not largely depends on whether someone below us in the stack has made it transparent
     to us.'
+  id: totrans-8
   prefs: []
   type: TYPE_NORMAL
+  zh: 加速器主要分为两类：透明（无需代码或更改）和非透明优化器。加速器是否透明在很大程度上取决于我们在堆栈下面的某人是否使其对我们透明化。
 - en: TCP/IP offloading is generally transparent at the user space level, which means
     the operating system takes care of it for us. NVMe drives are also generally transparent,
     generally appearing the same as spinning disks, except faster. It is still important
     to make Dask aware of transparent optimizers; for example, a disk-intensive workload
     should be scheduled on the machines with faster disks.
+  id: totrans-9
   prefs: []
   type: TYPE_NORMAL
+  zh: 在用户空间级别，TCP/IP 卸载通常是透明的，这意味着操作系统为我们处理它。NVMe 驱动器通常也是透明的，通常看起来与传统磁盘相同，但速度更快。仍然很重要的是让
+    Dask 意识到透明优化器；例如，应将磁盘密集型工作负载安排在具有更快磁盘的机器上。
 - en: The non-transparent accelerators include GPUs, Optane, QAT, and many more. Using
     these requires changing our code to be able to take advantage of them. Sometimes
     this can be as simple as swapping in a different library, but not always. Many
     non-transparent accelerators require either copying our data or special formatting
     to be able to operate. This means that if an operation is relatively fast, moving
     to an optimizer could make it slower.
+  id: totrans-10
   prefs: []
   type: TYPE_NORMAL
+  zh: 非透明加速器包括 GPUs、Optane、QAT 等。使用它们需要修改我们的代码以充分利用它们。有时这可能只需切换到不同的库，但并非总是如此。许多非透明加速器要求要么复制我们的数据，要么进行特殊格式化才能运行。这意味着如果一个操作相对较快，转移到优化器可能会使其变慢。
 - en: Understanding Whether GPUs or TPUs Can Help
+  id: totrans-11
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 理解 GPU 或 TPU 是否有助于解决问题
 - en: Not every problem is a good fit for GPU acceleration. GPUs are especially good
     at performing the same calculation on a large number of data points at the same
     time. If a problem is well suited to vectorized computation, then there is a good
     chance that GPUs may be well suited to it.
+  id: totrans-12
   prefs: []
   type: TYPE_NORMAL
+  zh: 并非每个问题都适合 GPU 加速。 GPUs 特别擅长在同一时间对大量数据点执行相同的计算。如果一个问题非常适合矢量化计算，那么 GPU 可能非常适合。
 - en: 'Some common problems that benefit from GPU acceleration include:'
+  id: totrans-13
   prefs: []
   type: TYPE_NORMAL
+  zh: 一些通常受益于 GPU 加速的常见问题包括：
 - en: Machine learning
+  id: totrans-14
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 机器学习
 - en: Linear algebra
+  id: totrans-15
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 线性代数
 - en: Physics simulations
+  id: totrans-16
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 物理模拟
 - en: Graphics (no surprise here)
+  id: totrans-17
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 图形（毫不意外）
 - en: GPUs are not well suited to branch-heavy non-vectorized workflows, or workflows
     where the cost of copying the data is similar to or higher than the cost of the
     computation.
+  id: totrans-18
   prefs: []
   type: TYPE_NORMAL
+  zh: GPUs 不太适合分支繁多且非矢量化的工作流程，或者数据复制成本与计算成本相似或更高的工作流程。
 - en: Making Dask Resource-Aware
+  id: totrans-19
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 使 Dask 资源感知
 - en: If you have decided that your problem is well suited to a specialized resource,
     the next step is to [make the scheduler aware of which machines and processes
     have the resource](https://oreil.ly/EHFTr). You can do this by adding either an
     environment variable or a command-line flag to the worker launch (e.g., `--resources
     "GPU=2"` or `DASK​_DIS⁠TRIBUTED__WORKER__RESOURCES__GPU=2`).
+  id: totrans-20
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果您已经确定您的问题非常适合专用资源，下一步是让调度器意识到哪些机器和进程拥有该资源。您可以通过添加环境变量或命令行标志到工作进程启动（例如 `--resources
+    "GPU=2"` 或 `DASK_DISTRIBUTED_WORKER_RESOURCES_GPU=2`）来实现这一点。
 - en: For NVIDIA users, the `dask-cuda` package can launch one worker per GPU, pinning
     the GPU and thread together for performance. For example, on our Kubernetes cluster
     with GPU resources, we configure the workers to use the `dask-cuda-worker` launcher,
     as shown in [Example 10-1](#ex_dask_cuda_k8s).
+  id: totrans-21
   prefs: []
   type: TYPE_NORMAL
+  zh: 对于 NVIDIA 用户来说，`dask-cuda` 软件包可以每个 GPU 启动一个工作进程，将 GPU 和线程捆绑在一起以提升性能。例如，在我们的带有
+    GPU 资源的 Kubernetes 集群上，我们配置工作进程使用 `dask-cuda-worker` 启动器，如 [示例 10-1](#ex_dask_cuda_k8s)
+    所示。
 - en: Example 10-1\. Using the `dask-cuda-worker` package in the Dask Kubernetes template
+  id: totrans-22
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 10-1\. 在 Dask Kubernetes 模板中使用 `dask-cuda-worker` 软件包
 - en: '[PRE0]'
+  id: totrans-23
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE0]'
 - en: Here you see we still add the `--resources` flag so that in a mixed environment
     we can select just the GPU workers.
+  id: totrans-24
   prefs: []
   type: TYPE_NORMAL
+  zh: 在这里，我们仍然添加 `--resources` 标志，以便在混合环境中仅选择 GPU 工作进程。
 - en: If you’re using Dask to schedule work on multiple GPUs on a single computer
     (e.g., using Dask local mode with CUDA), the same `dask-cuda` package provides
     a `LocalCUDACluster`. As with `dask-cuda-worker`, you still need to add the resource
     tag manually, as shown in [Example 10-2](#ex_dask_cuda_local), but `LocalCUDACluster`
     launches the correct workers and pins them to threads.
+  id: totrans-25
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果您使用 Dask 在单台计算机上安排多个 GPU 的工作（例如使用带有 CUDA 的 Dask 本地模式），同样的 `dask-cuda` 软件包提供了
+    `LocalCUDACluster`。与 `dask-cuda-worker` 类似，您仍然需要手动添加资源标记，如 [示例 10-2](#ex_dask_cuda_local)
+    所示，但 `LocalCUDACluster` 可以启动正确的工作进程并将它们固定在线程上。
 - en: Example 10-2\. `LocalCUDACluster` with resource tagging
+  id: totrans-26
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 10-2\. 带有资源标记的 `LocalCUDACluster`
 - en: '[PRE1]'
+  id: totrans-27
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE1]'
 - en: Note
+  id: totrans-28
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 注
 - en: For homogeneous clusters it may seem tempting to avoid labeling these resources,
     but unless you will always have a 1:1 mapping of worker process/thread to the
     accelerator (or the accelerator can be used by all workers at the same time),
@@ -162,226 +232,332 @@
     tasks trying to access the GPU. But for shareable resources like NVMe drives,
     or TCP/IP offloading, if it’s present on every node in the cluster and will always
     be, you can probably skip it.
+  id: totrans-29
   prefs: []
   type: TYPE_NORMAL
+  zh: 对于均质集群来说，可能会有诱惑避免标记这些资源，但除非您始终将工作进程/线程与加速器进行1:1映射（或加速器可以同时被所有工作进程使用），否则标记这些资源仍然是有益的。这对于像
+    GPU/TPU 这样的非共享（或难以共享）资源尤为重要，因为 Dask 可能会安排两个试图访问 GPU 的任务。但对于像 NVMe 驱动器或 TCP/IP
+    卸载这样的共享资源，如果它在集群中的每个节点上都存在且始终存在，则可能可以跳过标记。
 - en: It’s important to note that Dask does not manage custom resources (including
     GPUs). If another process uses all of the GPU cores without asking Dask, there
     is no protection for this. In some ways, this is reminiscent of early computing,
     where we had “cooperative” multi-tasking; we depend on our neighbors being well
     behaved.
+  id: totrans-30
   prefs: []
   type: TYPE_NORMAL
+  zh: 需要注意的是，Dask 不管理自定义资源（包括 GPU）。如果另一个进程在没有经过 Dask 请求的情况下使用了所有 GPU 核心，这是无法保护的。在某些方面，这类似于早期的计算方式，即我们使用“协作式”多任务处理；我们依赖于邻居的良好行为。
 - en: Warning
+  id: totrans-31
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 警告
 - en: Dask depends on well-behaved Python code, which does not use resources it has
     not asked for and releases the resources when finished. This most commonly happens
     with memory leaks (both accelerated and not), often with specialized libraries
     like CUDA that allocate memory outside of Python. These libraries often have special
     steps you need to call when you are done with the task you’ve asked to make the
     resources available for others.
+  id: totrans-32
   prefs: []
   type: TYPE_NORMAL
+  zh: Dask 依赖于行为良好的 Python 代码，即不会使用未请求的资源，并在完成时释放资源。这通常发生在内存泄漏（包括加速和非加速）时，尤其是在像 CUDA
+    这样的专门库中分配 Python 之外的内存。这些库通常在完成任务后需要调用特定步骤，以便让资源可供其他人使用。
 - en: Installing the Libraries
+  id: totrans-33
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 安装库
 - en: Now that Dask is aware of the special resources on your cluster, it’s time to
     make sure that your code can take advantage of them. Often, but not always, these
     accelerators will require some kind of special library to be installed, which
     may involve long compile times. When possible, installing the acceleration libraries
     from conda and pre-installing on the workers (in the container or on the host)
     can help minimize this overhead.
+  id: totrans-34
   prefs: []
   type: TYPE_NORMAL
+  zh: 现在 Dask 已经意识到集群上的特殊资源，是时候确保您的代码能够利用这些资源了。通常情况下，这些加速器会要求安装某种特殊库，可能需要较长的编译时间。在可能的情况下，从
+    conda 安装加速库，并在工作节点（容器或主机上）预先安装，可以帮助减少这种开销。
 - en: For Kubernetes (or other Docker container users), you can do this by making
     a custom container with the accelerator libraries pre-installed, as seen in [Example 10-3](#preinstall_gpu_docker).
+  id: totrans-35
   prefs: []
   type: TYPE_NORMAL
+  zh: 对于 Kubernetes（或其他 Docker 容器用户），您可以通过创建一个预先安装了加速器库的自定义容器来实现这一点，如[示例 10-3](#preinstall_gpu_docker)所示。
 - en: Example 10-3\. Pre-installing cuDF
+  id: totrans-36
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 10-3\. 预安装 cuDF
 - en: '[PRE2]'
+  id: totrans-37
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE2]'
 - en: Then, to build this, we run the script shown in [Example 10-4](#build_custom_ch10_1686240447279).
+  id: totrans-38
   prefs: []
   type: TYPE_NORMAL
+  zh: 然后，为了构建这个，我们运行[示例 10-4](#build_custom_ch10_1686240447279)中显示的脚本。
 - en: Example 10-4\. Building custom Dask Docker containers
+  id: totrans-39
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 10-4\. 构建自定义 Dask Docker 容器
 - en: '[PRE3]'
+  id: totrans-40
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE3]'
 - en: Using Custom Resources Inside Your Dask Tasks
+  id: totrans-41
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 在您的 Dask 任务中使用自定义资源
 - en: It is important that you make sure your tasks that need accelerators run on
     worker processes with the accelerator available. You can ask for special resources
     when scheduling tasks with Dask, either explicitly in `client.submit`, as seen
     in [Example 10-5](#ex_submit_gpu), or by adding an annotation to your existing
     code, as seen in [Example 10-6](#ex_annotate_gpu).
+  id: totrans-42
   prefs: []
   type: TYPE_NORMAL
+  zh: 您必须确保需要加速器的任务在具有加速器的工作进程上运行。您可以在使用 Dask 调度任务时通过 `client.submit` 显式地请求特殊资源，如[示例 10-5](#ex_submit_gpu)所示，或通过向现有代码添加注释，如[示例 10-6](#ex_annotate_gpu)所示。
 - en: Example 10-5\. Submitting a task asking for a GPU
+  id: totrans-43
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 10-5\. 提交一个请求使用 GPU 的任务
 - en: '[PRE4]'
+  id: totrans-44
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE4]'
 - en: Example 10-6\. Annotating a group of operations as needing a GPU
+  id: totrans-45
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 10-6\. 注释需要 GPU 的一组操作
 - en: '[PRE5]'
+  id: totrans-46
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE5]'
 - en: If you move from a cluster with GPU resources to a cluster without, this code
     will hang indefinitely. The CPU Fallback design pattern covered later can mitigate
     this.
+  id: totrans-47
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果从具有 GPU 资源的集群迁移到没有 GPU 资源的集群，则此代码将无限期挂起。后面将介绍的 CPU 回退设计模式可以缓解这个问题。
 - en: Decorators (Including Numba)
+  id: totrans-48
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 装饰器（包括 Numba）
 - en: Numba is a popular high-performance JIT compilation library for Python, which
     also has support for various accelerators. Most JIT code, as well as many decorator
     functions, is generally not directly serializable, so attempting to directly Numba
     it with `dask.submit`, as seen in [Example 10-7](#ex_dask_submit_numba_incorrect),
     does not work. Instead, the correct way is to wrap the function, as shown in [Example 10-8](#ex_dask_submit_numba_correct).
+  id: totrans-49
   prefs: []
   type: TYPE_NORMAL
+  zh: Numba是一个流行的高性能JIT编译库，也支持各种加速器。 大多数JIT代码以及许多装饰器函数通常不会直接序列化，因此尝试直接使用`dask.submit`
+    Numba（如[示例 10-7](#ex_dask_submit_numba_incorrect)所示）不起作用。 相反，正确的方法是像[示例 10-8](#ex_dask_submit_numba_correct)中所示那样包装函数。
 - en: Example 10-7\. Decorator difficulty
+  id: totrans-50
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 10-7\. 装饰器难度
 - en: '[PRE6]'
+  id: totrans-51
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE6]'
 - en: Example 10-8\. Decorator hack
+  id: totrans-52
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 10-8\. 装饰器技巧
 - en: '[PRE7]'
+  id: totrans-53
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE7]'
 - en: Note
+  id: totrans-54
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 注意
 - en: '[Example 10-7](#ex_dask_submit_numba_incorrect) will work in local mode—but
     not when you go to scale.'
+  id: totrans-55
   prefs: []
   type: TYPE_NORMAL
+  zh: '[示例 10-7](#ex_dask_submit_numba_incorrect) 在本地模式下可以工作，但在扩展时不能工作。'
 - en: GPUs
+  id: totrans-56
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: GPU
 - en: Like most tasks in Python, there are many different libraries for working with
     GPUs. Many of these libraries support NVIDIA’s Compute Unified Device Architecture
     (CUDA) with experimental support for AMD’s new open HIP/Radeon Open Compute module
     (ROCm) interfaces. NVIDIA and CUDA were the first on the scene and have a much
     larger adoption than AMD’s Radeon Open Compute module—so much so that ROCm has
     a large focus on supporting ports of CUDA software to the ROCm platform.
+  id: totrans-57
   prefs: []
   type: TYPE_NORMAL
+  zh: 像Python中的大多数任务一样，有许多不同的库可用于处理GPU。 这些库中的许多支持NVIDIA的计算统一设备架构（CUDA），并试验性地支持AMD的新开放HIP
+    / Radeon Open Compute模块（ROCm）接口。 NVIDIA和CUDA是第一个出现的，并且比AMD的Radeon Open Compute模块采用得多，以至于ROCm主要集中于支持将CUDA软件移植到ROCm平台上。
 - en: We won’t dive deep into the world of Python GPU libraries, but you may want
     to check out [Numba for GPUs](https://oreil.ly/i-FVO), [TensorFlow GPU support](https://oreil.ly/vChSG),
     and [PyTorch’s GPU support](https://oreil.ly/sdLjo).
+  id: totrans-58
   prefs: []
   type: TYPE_NORMAL
+  zh: 我们不会深入探讨Python GPU库的世界，但您可能想查看[Numba的GPU支持](https://oreil.ly/i-FVO)、[TensorFlow的GPU支持](https://oreil.ly/vChSG)和[PyTorch的GPU支持](https://oreil.ly/sdLjo)。
 - en: Most of the libraries that have some form of GPU support require compiling large
     amounts of non-Python code. As such, it’s often best to install these libraries
     with conda, which frequently has more complete binary packaging, allowing you
     to skip the compile step.
+  id: totrans-59
   prefs: []
   type: TYPE_NORMAL
+  zh: 大多数具有某种形式GPU支持的库都需要编译大量非Python代码。 因此，通常最好使用conda安装这些库，因为conda通常具有更完整的二进制包装，允许您跳过编译步骤。
 - en: GPU Acceleration Built on Top of Dask
+  id: totrans-60
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 构建在Dask之上的GPU加速
 - en: The three main CUDA libraries extending Dask are cuDF (previously called dask-cudf),
     BlazingSQL, and cuML.^([2](ch10.xhtml#id801)) Currently these libraries are focused
     on NVIDIA GPUs.
+  id: totrans-61
   prefs: []
   type: TYPE_NORMAL
+  zh: 扩展Dask的三个主要CUDA库是cuDF（之前称为dask-cudf）、BlazingSQL和cuML。^([2](ch10.xhtml#id801))
+    目前这些库主要关注的是NVIDIA GPU。
 - en: Note
+  id: totrans-62
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 注意
 - en: Dask does not currently have any libraries powering integrations with OpenCL
     or HIP. This does not preclude you in any way from using GPUs with libraries that
     support them, like TensorFlow, as previously illustrated.
+  id: totrans-63
   prefs: []
   type: TYPE_NORMAL
+  zh: Dask目前没有任何库来支持与OpenCL或HIP的集成。 这并不妨碍您使用支持它们的库（如TensorFlow）来使用GPU，正如前面所示。
 - en: cuDF
+  id: totrans-64
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: cuDF
 - en: '[cuDF](https://oreil.ly/BZ9x2) is a GPU-accelerated version of Dask’s DataFrame
     library. Some [benchmarking shows performance speed-ups of 7x~50x](https://oreil.ly/unpvl).
     Not all DataFrame operations will have this same speed-up. For example, if you
     are operating row-by-row instead of in vectorized type operations, you may experience
     slower performance when using cuDF over Dask’s DataFrame library. cuDF supports
     most of the common data types you are likely to use, but not all.'
+  id: totrans-65
   prefs: []
   type: TYPE_NORMAL
+  zh: '[cuDF](https://oreil.ly/BZ9x2)是Dask的DataFrame库的GPU加速版本。 一些[基准测试显示性能提升了7倍到50倍](https://oreil.ly/unpvl)。
+    并非所有的DataFrame操作都会有相同的速度提升。 例如，如果您是逐行操作而不是矢量化操作，那么使用cuDF而不是Dask的DataFrame库时可能会导致性能较慢。
+    cuDF支持您可能使用的大多数常见数据类型，但并非所有数据类型都支持。'
 - en: Note
+  id: totrans-66
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 注意
 - en: Under the hood, cuDF frequently delegates work to the cuPY library, but since
     it is created by NVIDIA employees and their focus is on supporting NVIDIA hardware,
     cuDF does not have direct support for ROCm.
+  id: totrans-67
   prefs: []
   type: TYPE_NORMAL
+  zh: 在内部，cuDF经常将工作委托给cuPY库，但由于它是由NVIDIA员工创建的，并且他们的重点是支持NVIDIA硬件，因此cuDF不直接支持ROCm。
 - en: BlazingSQL
+  id: totrans-68
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: BlazingSQL
 - en: BlazingSQL uses GPU acceleration to provide super-fast SQL queries. BlazingSQL
     operates on top of cuDF.
+  id: totrans-69
   prefs: []
   type: TYPE_NORMAL
+  zh: BlazingSQL使用GPU加速来提供超快的SQL查询。 BlazingSQL在cuDF之上运行。
 - en: Note
+  id: totrans-70
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 注意
 - en: While BlazingSQL is a wonderful tool, much of its documentation is broken. For
     example, at the time of this writing, none of the examples linked in the main
     README resolve correctly, and the documentation site is entirely offline.
+  id: totrans-71
   prefs: []
   type: TYPE_NORMAL
+  zh: 虽然 BlazingSQL 是一个很棒的工具，但它的大部分文档都有问题。例如，在撰写本文时，主 README 中链接的所有示例都无法正确解析，而且文档站点完全处于离线状态。
 - en: cuStreamz
+  id: totrans-72
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: cuStreamz
 - en: Another GPU-accelerated library for streaming on GPUs is cuStreamz, which is
     basically a combination of Dask streaming and cuDF; we cover it more in [Appendix D](app04.xhtml#appD).
+  id: totrans-73
   prefs: []
   type: TYPE_NORMAL
+  zh: 另一个 GPU 加速的流式处理库是 cuStreamz，它基本上是 Dask 流式处理和 cuDF 的组合；我们在[附录 D](app04.xhtml#appD)中对其进行了更详细的介绍。
 - en: Freeing Accelerator Resources
+  id: totrans-74
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 释放加速器资源
 - en: Allocating memory on GPUs tends to be slow, so many libraries hold on to these
     resources. In most situations, if the Python VM exits, the resources will be cleared
     up. An option of last resort is to bounce all of the workers using `client.restart`.
     When possible, you will be best served by manually managing resources—which is
     library-dependent. For example, cuPY users can free the blocks once used by calling
     `free_all_blocks()`, as per the [memory management documentation](https://oreil.ly/hpxkg).
+  id: totrans-75
   prefs: []
   type: TYPE_NORMAL
+  zh: 在 GPU 上分配内存往往很慢，因此许多库会保留这些资源。在大多数情况下，如果 Python VM 退出，资源将被清理。最后的选择是使用 `client.restart`
+    弹出所有工作进程。在可能的情况下，手动管理资源是最好的选择，这取决于库。例如，cuPY 用户可以通过调用 `free_all_blocks()` 来释放所使用的块，如[内存管理文档](https://oreil.ly/hpxkg)所述。
 - en: 'Design Patterns: CPU Fallback'
+  id: totrans-76
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 设计模式：CPU 回退
 - en: CPU Fallback refers to attempting to use an accelerator, like GPU or TPU, and
     falling back to the regular CPU code path if the accelerator is unavailable. In
     most cases, this is a good design pattern to follow, as accelerators (like GPUs)
@@ -389,29 +565,42 @@
     difference between CPU and GPU performance is so large that falling back to the
     CPU is unlikely to be able to succeed in a practical amount of time; this occurs
     most often with deep learning algorithms.
+  id: totrans-77
   prefs: []
   type: TYPE_NORMAL
+  zh: CPU 回退是指尝试使用加速器，如 GPU 或 TPU，如果加速器不可用，则回退到常规 CPU 代码路径。在大多数情况下，这是一个好的设计模式，因为加速器（如
+    GPU）可能很昂贵，并且可能不总是可用。然而，在某些情况下，CPU 和 GPU 性能之间的差异是如此之大，以至于回退到 CPU 很难在实际时间内成功；这在深度学习算法中最常发生。
 - en: Object-oriented programming and duck-typing are somewhat well suited to this
     design pattern, since, provided that two classes implement the same parts of the
     interface you are using, you can swap them around. However, much like swapping
     in Dask DataFrames for pandas DataFrames, it is imperfect, especially when it
     comes to performance.
+  id: totrans-78
   prefs: []
   type: TYPE_NORMAL
+  zh: 面向对象编程和鸭子类型在这种设计模式下有些适合，因为只要两个类实现了您正在使用的相同接口的部分，您就可以交换它们。然而，就像在 Dask DataFrames
+    中替换 pandas DataFrames 一样，它并不完美，特别是在性能方面。
 - en: Warning
+  id: totrans-79
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 警告
 - en: In a better world, we could submit a task requesting GPU resources, and if that
     does not get scheduled, we could switch back to CPU-only resources. Unfortunately,
     Dask’s resources scheduling is closer to “best effort,”^([3](ch10.xhtml#id810))
     so we may be scheduled on nodes without the resources we request.
+  id: totrans-80
   prefs: []
   type: TYPE_NORMAL
+  zh: 在一个更好的世界里，我们可以提交一个请求 GPU 资源的任务，如果没有被调度，我们可以切换回 CPU-only 资源。不幸的是，Dask 的资源调度更接近于“尽力而为”，^([3](ch10.xhtml#id810))
+    因此我们可能被调度到没有我们请求的资源的节点上。
 - en: Conclusion
+  id: totrans-81
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 结论
 - en: Specialized accelerators, like GPUs, can make large differences in your workflows.
     Picking the right accelerator for your workflow is important, and some workflows
     are not well suited to acceleration. Dask does not automate the usage of any accelerators,
@@ -419,18 +608,28 @@
     these libraries were not created with the idea of shared computation in mind,
     so it’s important to be on the lookout for accidental resource leaks, especially
     since GPU resources tend to be more expensive.
+  id: totrans-82
   prefs: []
   type: TYPE_NORMAL
+  zh: 专用加速器，如 GPU，可能会对您的工作流程产生很大影响。选择适合您工作流程的正确加速器很重要，有些工作流程不太适合加速。Dask 不会自动使用任何加速器，但有各种库可用于
+    GPU 计算。许多这些库创建时并没有考虑到共享计算的概念，因此要特别注意意外资源泄漏，特别是由于 GPU 资源往往更昂贵。
 - en: ^([1](ch10.xhtml#id778-marker)) Assuming Shakespeare were still alive, which
     he is not.
+  id: totrans-83
   prefs: []
   type: TYPE_NORMAL
+  zh: ^([1](ch10.xhtml#id778-marker)) 假设莎士比亚仍然活着，但事实并非如此。
 - en: ^([2](ch10.xhtml#id801-marker)) BlazingSQL may be at the end of its life; there
     has not been a commit for an extended period of time, and the website is just
     a hard hat, like those 1990s GeoCities websites.
+  id: totrans-84
   prefs: []
   type: TYPE_NORMAL
+  zh: ^([2](ch10.xhtml#id801-marker)) BlazingSQL 可能已接近其生命周期的尽头；已经有相当长一段时间没有提交更新，而且其网站看起来就像那些上世纪90年代的
+    GeoCities 网站一样简陋。
 - en: ^([3](ch10.xhtml#id810-marker)) This is not as [documented](https://oreil.ly/p1Ldf),
     and so may change in the future.
+  id: totrans-85
   prefs: []
   type: TYPE_NORMAL
+  zh: ^([3](ch10.xhtml#id810-marker)) 这并没有像[文档中](https://oreil.ly/p1Ldf)描述的那样详细，因此可能在未来发生变化。
