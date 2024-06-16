@@ -1,0 +1,629 @@
+<html><head></head><body>
+<div id="sbo-rt-content"><section data-pdf-bookmark="Chapter 2. Getting Started With Ray Core" data-type="chapter" epub:type="chapter"><div class="chapter" id="chapter_02">
+<h1><span class="label">Chapter 2. </span>Getting Started With Ray Core</h1>
+<aside data-type="sidebar" epub:type="sidebar"><div class="sidebar" id="idm44990033922624">
+<h5>A Note for Early Release Readers</h5>
+<p>With Early Release ebooks, you get books in their earliest form—the author’s raw and unedited content as they write—so you can take advantage of these technologies long before the official release of these titles.</p>
+</div></aside>
+<p>For a book on distributed Python, it’s not without a certain irony that Python on its own is largely ineffective for distributed computing.
+Its interpreter is effectively single threaded which makes it difficult to, for example, leverage multiple CPUs on the same machine, let alone a whole cluster of machines, using plain Python.
+That means you need extra tooling, and luckily the Python ecosystem has some options for you.
+For instance, libraries like <code>multiprocessing</code> can help you distribute work on a single machine, but not beyond.</p>
+<p>In this chapter you’ll understand how Ray core handles distributed computing by spinning up a local cluster, and you’ll learn how to use Ray’s lean and powerful API to parallelize some interesting computations.
+For instance, you’ll build an example that runs a data-parallel task efficiently and asynchronously on Ray, in a convenient way that’s not easily replicable with other tooling.
+We discuss how <em>tasks</em> and <em>actors</em> work as distributed versions of functions and classes in Python.
+You’ll also learn about all the fundamental concepts underlying Ray and what its architecture looks like.
+In other words, we’ll give you a look under the hood of Ray’s engine.</p>
+<section data-pdf-bookmark="An Introduction To Ray Core" data-type="sect1"><div class="sect1" id="idm44990033919312">
+<h1>An Introduction To Ray Core</h1>
+<p>The bulk of this chapter is an extended Ray core example that we’ll build together.
+Many of Ray’s concepts can be explained with a good example, so that’s exactly what we’ll do.
+As before, you can follow this example by typing the code yourself (which is highly recommended), or by following the <a href="https://github.com/maxpumperla/learning_ray/blob/main/notebooks/ch_02_ray_core.ipynb">notebook for this chapter</a>.</p>
+<p>In <a data-type="xref" href="ch01.xhtml#chapter_01">Chapter 1</a> we’ve introduced you to the very basics of Ray clusters and showed you how start a local cluster simply by typing</p>
+<div data-type="example">
+<h5><span class="label">Example 2-1. </span></h5>
+<pre data-code-language="python" data-type="programlisting"><code class="kn">import</code> <code class="nn">ray</code>
+<code class="n">ray</code><code class="o">.</code><code class="n">init</code><code class="p">()</code></pre></div>
+<p>You’ll need a running Ray cluster to run the examples in this chapter, so make sure you’ve started one before continuing.
+The goal of this section is to give you a quick introduction to the Ray Core API, which we’ll simply refer to as the Ray API from now on.</p>
+<p>As a Python programmer, the great thing about the Ray API is that it hits so close to home.
+It uses familiar concepts such as decorators, functions and classes to provide you with a fast learning experience.
+The Ray API aims to provide a universal programming interface for distributed computing.
+That’s certainly no easy feat, but I think Ray succeeds in this respect, as it provides you with good abstractions that are intuitive to learn and use.
+Ray’s engine does all the heavy lifting for you in the background.
+This design philosophy is what enables Ray to be used with existing Python libraries and systems.</p>
+<section data-pdf-bookmark="A First Example Using the Ray API" data-type="sect2"><div class="sect2" id="idm44990033908560">
+<h2>A First Example Using the Ray API</h2>
+<p>To give you an example, take the following function which retrieves and processes data from a database.
+Our dummy <code>database</code> is a plain Python list containing the words of the title of this book.
+We act as if retrieving an individual <code>item</code> from this database and further processing it is expensive by letting Python <code>sleep</code>.</p>
+<div data-type="example">
+<h5><span class="label">Example 2-2. </span></h5>
+<pre data-code-language="python" data-type="programlisting"><code class="kn">import</code><code> </code><code class="nn">time</code><code>
+</code><code>
+</code><code class="n">database</code><code> </code><code class="o">=</code><code> </code><code class="p">[</code><code>  </code><a class="co" href="#callout_getting_started_with_ray_core_CO1-1" id="co_getting_started_with_ray_core_CO1-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a><code>
+</code><code>    </code><code class="s2">"</code><code class="s2">Learning</code><code class="s2">"</code><code class="p">,</code><code> </code><code class="s2">"</code><code class="s2">Ray</code><code class="s2">"</code><code class="p">,</code><code>
+</code><code>    </code><code class="s2">"</code><code class="s2">Flexible</code><code class="s2">"</code><code class="p">,</code><code> </code><code class="s2">"</code><code class="s2">Distributed</code><code class="s2">"</code><code class="p">,</code><code> </code><code class="s2">"</code><code class="s2">Python</code><code class="s2">"</code><code class="p">,</code><code> </code><code class="s2">"</code><code class="s2">for</code><code class="s2">"</code><code class="p">,</code><code> </code><code class="s2">"</code><code class="s2">Data</code><code class="s2">"</code><code class="p">,</code><code> </code><code class="s2">"</code><code class="s2">Science</code><code class="s2">"</code><code>
+</code><code class="p">]</code><code>
+</code><code>
+</code><code>
+</code><code class="k">def</code><code> </code><code class="nf">retrieve</code><code class="p">(</code><code class="n">item</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>    </code><code class="n">time</code><code class="o">.</code><code class="n">sleep</code><code class="p">(</code><code class="n">item</code><code> </code><code class="o">/</code><code> </code><code class="mf">10.</code><code class="p">)</code><code>  </code><a class="co" href="#callout_getting_started_with_ray_core_CO1-2" id="co_getting_started_with_ray_core_CO1-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a><code>
+</code><code>    </code><code class="k">return</code><code> </code><code class="n">item</code><code class="p">,</code><code> </code><code class="n">database</code><code class="p">[</code><code class="n">item</code><code class="p">]</code></pre>
+<dl class="calloutlist">
+<dt><a class="co" href="#co_getting_started_with_ray_core_CO1-1" id="callout_getting_started_with_ray_core_CO1-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a></dt>
+<dd><p>A dummy database containing string data with the title of this book.</p></dd>
+<dt><a class="co" href="#co_getting_started_with_ray_core_CO1-2" id="callout_getting_started_with_ray_core_CO1-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a></dt>
+<dd><p>We emulate a data-crunching operation that takes a long time.</p></dd>
+</dl></div>
+<p>Our database has eight items, from <code>database[0]</code> for “Learning” to <code>database[7]</code> for “Science”.
+If we were to retrieve all items sequentially, how long should that take?
+For the item with index <code>5</code> we wait for half a second (<code>5 / 10.</code>) and so on.
+In total, we can expect a runtime of around <code>(0+1+2+3+4+5+6+7)/10. = 2.8</code> seconds.
+Let’s see if that’s what we actually get:</p>
+<div data-type="example">
+<h5><span class="label">Example 2-3. </span></h5>
+<pre data-code-language="python" data-type="programlisting"><code class="k">def</code><code> </code><code class="nf">print_runtime</code><code class="p">(</code><code class="n">input_data</code><code class="p">,</code><code> </code><code class="n">start_time</code><code class="p">,</code><code> </code><code class="n">decimals</code><code class="o">=</code><code class="mi">1</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>    </code><code class="nb">print</code><code class="p">(</code><code class="sa">f</code><code class="s1">'</code><code class="s1">Runtime: </code><code class="si">{</code><code class="n">time</code><code class="o">.</code><code class="n">time</code><code class="p">(</code><code class="p">)</code><code> </code><code class="o">-</code><code> </code><code class="n">start_time</code><code class="si">:</code><code class="s1">.</code><code class="si">{</code><code class="n">decimals</code><code class="si">}</code><code class="s1">f</code><code class="si">}</code><code class="s1"> seconds, data:</code><code class="s1">'</code><code class="p">)</code><code>
+</code><code>    </code><code class="nb">print</code><code class="p">(</code><code class="o">*</code><code class="n">input_data</code><code class="p">,</code><code> </code><code class="n">sep</code><code class="o">=</code><code class="s2">"</code><code class="se">\n</code><code class="s2">"</code><code class="p">)</code><code>
+</code><code>
+</code><code>
+</code><code class="n">start</code><code> </code><code class="o">=</code><code> </code><code class="n">time</code><code class="o">.</code><code class="n">time</code><code class="p">(</code><code class="p">)</code><code>
+</code><code class="n">data</code><code> </code><code class="o">=</code><code> </code><code class="p">[</code><code class="n">retrieve</code><code class="p">(</code><code class="n">item</code><code class="p">)</code><code> </code><code class="k">for</code><code> </code><code class="n">item</code><code> </code><code class="ow">in</code><code> </code><code class="nb">range</code><code class="p">(</code><code class="mi">8</code><code class="p">)</code><code class="p">]</code><code>  </code><a class="co" href="#callout_getting_started_with_ray_core_CO2-1" id="co_getting_started_with_ray_core_CO2-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a><code>
+</code><code class="n">print_runtime</code><code class="p">(</code><code class="n">data</code><code class="p">,</code><code> </code><code class="n">start</code><code class="p">)</code><code>  </code><a class="co" href="#callout_getting_started_with_ray_core_CO2-2" id="co_getting_started_with_ray_core_CO2-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a></pre>
+<dl class="calloutlist">
+<dt><a class="co" href="#co_getting_started_with_ray_core_CO2-1" id="callout_getting_started_with_ray_core_CO2-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a></dt>
+<dd><p>We use a list comprehension to retrieve all eight items.</p></dd>
+<dt><a class="co" href="#co_getting_started_with_ray_core_CO2-2" id="callout_getting_started_with_ray_core_CO2-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a></dt>
+<dd><p>Then we unpack the data to print each item on its own line.</p></dd>
+</dl></div>
+<p>If you run this code, you should see the following output:</p>
+<pre data-type="programlisting">Runtime: 2.8 seconds, data:
+(0, 'Learning')
+(1, 'Ray')
+(2, 'Flexible')
+(3, 'Distributed')
+(4, 'Python')
+(5, 'for')
+(6, 'Data')
+(7, 'Science')</pre>
+<p>We cut off the output of the program after one decimal number.
+There’s a little overhead that brings the total closer to <code>2.82</code> seconds.
+On your end this might be slightly less, or much more, depending on your computer.
+The important take-away is that our naive Python implementation is not able to run this function in parallel.
+This may not come as a surprise to you, but you could have at least suspected that Python list comprehensions are more efficient in that regard.
+The runtime we got is pretty much the worst case scenario, namely the <code>2.8</code> seconds we calculated prior to running the code.
+If you think about it, it might even be a bit frustrating to see that a program that essentially sleeps most of its runtime is that slow overall.
+Ultimately you can blame the <em>Global Interpreter Lock</em> (GIL) for that, but it gets enough of it already.</p>
+<aside data-type="sidebar" epub:type="sidebar"><div class="sidebar" id="idm44990033685760">
+<h5>Python’s Global Interpreter Lock</h5>
+<p>The Global Interpreter Lock or GIL<sup><a data-type="noteref" href="ch02.xhtml#idm44990033684416" id="idm44990033684416-marker">1</a></sup> is undoubtedly one of the most infamous features of the Python language.
+In a nutshell it’s a lock that makes sure only one thread on your computer can ever execute your Python code at a time.
+If you use multi-threading, the threads need to take turns controlling the Python interpreter.</p>
+<p>The GIL has been implemented for good reasons.
+For one, it makes memory management that much easier in Python.
+Another key advantage is that it makes single-threaded programs quite fast.
+Programs that primarily use lots of system input and output (we say they are I/O-bound), like reading files or databases, benefit as well.
+One of the major downsides is that CPU-bound programs are essentially single-threaded.
+In fact, CPU-bound tasks might even run <em>faster</em> when not using multi-threading, as the latter incurs write-lock overheads on top of the GIL.</p>
+<p>Given all that, the GIL might somewhat paradoxically be one of the reasons for Python’s popularity, if you believe <a href="https://www.youtube.com/watch?v=KVKufdTphKs&amp;t=731s">Larry Hastings</a>.
+Interestingly, Hastings also led (unsuccessful) efforts to remove it in a project called <em>GILectomy</em>, which is exactly the kind of complicated surgery that it sounds like.
+The jury is still out, but <a href="https://lukasz.langa.pl/5d044f91-49c1-4170-aed1-62b6763e6ad0/">Sam Gross</a> might just have found a way to remove the GIL in his <code>nogil</code> branch of Python 3.9.
+For now, if you absolutely have to work around the GIL, consider using an implementation different from CPython.
+CPython is Python’s standard implementation, and if you don’t know that you’re using it, you’re definitely using it.
+Implementations like Jython, IronPython or PyPy don’t have a GIL, but come with their own drawbacks.</p>
+</div></aside>
+<section data-pdf-bookmark="Functions and Remote Ray Tasks" data-type="sect3"><div class="sect3" id="idm44990033638288">
+<h3>Functions and Remote Ray Tasks</h3>
+<p>It’s reasonable to assume that such a task can benefit from parallelization.
+Perfectly distributed, the runtime should not take much longer than the longest subtask, namely <code>7/10. = 0.7</code> seconds.
+So, let’s see how you can extend this example to run on Ray.
+To do so, you start by using the <code>@ray.remote</code> decorator as follows:</p>
+<div data-type="example">
+<h5><span class="label">Example 2-4. </span></h5>
+<pre data-code-language="python" data-type="programlisting"><code class="nd">@ray</code><code class="o">.</code><code class="n">remote</code><code>  </code><a class="co" href="#callout_getting_started_with_ray_core_CO3-1" id="co_getting_started_with_ray_core_CO3-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a><code>
+</code><code class="k">def</code><code> </code><code class="nf">retrieve_task</code><code class="p">(</code><code class="n">item</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>    </code><code class="k">return</code><code> </code><code class="n">retrieve</code><code class="p">(</code><code class="n">item</code><code class="p">)</code><code>  </code><a class="co" href="#callout_getting_started_with_ray_core_CO3-2" id="co_getting_started_with_ray_core_CO3-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a></pre>
+<dl class="calloutlist">
+<dt><a class="co" href="#co_getting_started_with_ray_core_CO3-1" id="callout_getting_started_with_ray_core_CO3-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a></dt>
+<dd><p>With just this decorator we make any Python function a Ray task.</p></dd>
+<dt><a class="co" href="#co_getting_started_with_ray_core_CO3-2" id="callout_getting_started_with_ray_core_CO3-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a></dt>
+<dd><p>All else remains unchanged. <code>retrieve_task</code> just passes through to <code>retrieve</code>.</p></dd>
+</dl></div>
+<p>In this way, the function <code>retrieve_task</code> becomes a so-called Ray task.
+That’s an extremely convenient design choice, as you can focus on your Python code first, and don’t have to completely change your mindset or programming paradigm to use Ray.
+Note that in practice you would have simply added the <code>@ray.remote</code> decorator to your original <code>retrieve</code> function (after all, that’s the intended use of decorators), but we didn’t want to touch previous code to keep things as clear as possible.</p>
+<p>Easy enough, so what do you have to change in the code that retrieves the data and measures performance?
+It turns out, not much.
+Let’s have a look at how you’d do that:</p>
+<div data-type="example" id="code_duration_remote">
+<h5><span class="label">Example 2-5. </span>Measuring performance of your Ray task.</h5>
+<pre data-code-language="python" data-type="programlisting"><code class="n">start</code><code> </code><code class="o">=</code><code> </code><code class="n">time</code><code class="o">.</code><code class="n">time</code><code class="p">(</code><code class="p">)</code><code>
+</code><code class="n">data_references</code><code> </code><code class="o">=</code><code> </code><code class="p">[</code><code class="n">retrieve_task</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="n">item</code><code class="p">)</code><code> </code><code class="k">for</code><code> </code><code class="n">item</code><code> </code><code class="ow">in</code><code> </code><code class="nb">range</code><code class="p">(</code><code class="mi">8</code><code class="p">)</code><code class="p">]</code><code>  </code><a class="co" href="#callout_getting_started_with_ray_core_CO4-1" id="co_getting_started_with_ray_core_CO4-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a><code>
+</code><code class="n">data</code><code> </code><code class="o">=</code><code> </code><code class="n">ray</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="n">data_references</code><code class="p">)</code><code>  </code><a class="co" href="#callout_getting_started_with_ray_core_CO4-2" id="co_getting_started_with_ray_core_CO4-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a><code>
+</code><code class="n">print_runtime</code><code class="p">(</code><code class="n">data</code><code class="p">,</code><code> </code><code class="n">start</code><code class="p">,</code><code> </code><code class="mi">2</code><code class="p">)</code></pre>
+<dl class="calloutlist">
+<dt><a class="co" href="#co_getting_started_with_ray_core_CO4-1" id="callout_getting_started_with_ray_core_CO4-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a></dt>
+<dd><p>To run <code>retrieve_task</code> on your local Ray cluster, you use <code>.remote()</code> and pass in your data as before. You’ll get a list of object references.</p></dd>
+<dt><a class="co" href="#co_getting_started_with_ray_core_CO4-2" id="callout_getting_started_with_ray_core_CO4-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a></dt>
+<dd><p>To get back data, and not just Ray object references, you use <code>ray.get</code>.</p></dd>
+</dl></div>
+<p>Did you spot the differences?
+You have to execute your Ray task remotely using the <code>remote</code> function.
+When tasks get executed remotely, even on your local cluster, Ray does so <em>asynchronously</em>.
+The list items in <code>data_references</code> in the last code snippet do not contain the results directly.
+In fact, if you check the Python type of the first item with <code>type(data_references[0])</code> you’ll see that it’s in fact an <code>ObjectRef</code>.
+These object references correspond to <em>futures</em> which you need to ask the result of.
+This is what the call to <code>ray.get(...)</code> is for.</p>
+<p>We still want to work more on this example<sup><a data-type="noteref" href="ch02.xhtml#idm44990033491152" id="idm44990033491152-marker">2</a></sup>, but let’s take a step back here and recap what we did so far.
+You started with a Python function and decorated it with <code>@ray.remote</code>.
+This made your function a Ray task.
+Then, instead of calling the original function in your code straight-up, you called <code>.remote(...)</code> on the Ray task.
+The last step was to <code>.get(...)</code> the results back from your Ray cluster.
+I think this procedure is so intuitive that I’d bet you could already create your own Ray task from another function without having to look back at this example.
+Why don’t you give it a try right now?</p>
+<p>Coming back to our example, by using Ray tasks, what did we gain in terms of performance?
+On my machine the runtime clocks in at <code>0.71</code> seconds, which is just slightly more than the longest subtask, which comes in at <code>0.7</code> seconds.
+That’s great and much better than before, but we can further improve our program by leveraging more of Ray’s API.</p>
+</div></section>
+<section data-pdf-bookmark="Using the object store with put and get" data-type="sect3"><div class="sect3" id="idm44990033486960">
+<h3>Using the object store with put and get</h3>
+<p>One thing you might have noticed is that in the definition of <code>retrieve</code> we <em>directly</em> accessed items from our <code>database</code>.
+Working on a local Ray cluster this is fine, but imagine you’re running on an actual cluster comprising several computers.
+How would all those computers access the same data?
+Remember from <a data-type="xref" href="ch01.xhtml#chapter_01">Chapter 1</a> that in a Ray cluster there is one head node with a driver process (running <code>ray.init()</code>) and many worker nodes with worker processes executing your tasks.
+My laptop has a total of 8 CPU cores, so Ray will create 8 worker processes on my one-node local cluster.
+Our <code>database</code> is currently defined on the driver only, but the workers running your tasks need to have access to it to run the <code>retrieve</code> task.
+Luckily, Ray provides an easy way to share data between the driver and workers (or between workers).
+You can simply use <code>put</code> to place your data into Ray’s <em>distributed object store</em> and then use <code>get</code> on the workers to retrieve it as follows.</p>
+<div data-type="example">
+<h5><span class="label">Example 2-6. </span></h5>
+<pre data-code-language="python" data-type="programlisting"><code class="n">database_object_ref</code><code> </code><code class="o">=</code><code> </code><code class="n">ray</code><code class="o">.</code><code class="n">put</code><code class="p">(</code><code class="n">database</code><code class="p">)</code><code>  </code><a class="co" href="#callout_getting_started_with_ray_core_CO5-1" id="co_getting_started_with_ray_core_CO5-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a><code>
+</code><code>
+</code><code>
+</code><code class="nd">@ray</code><code class="o">.</code><code class="n">remote</code><code>
+</code><code class="k">def</code><code> </code><code class="nf">retrieve_task</code><code class="p">(</code><code class="n">item</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>    </code><code class="n">obj_store_data</code><code> </code><code class="o">=</code><code> </code><code class="n">ray</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="n">database_object_ref</code><code class="p">)</code><code>  </code><a class="co" href="#callout_getting_started_with_ray_core_CO5-2" id="co_getting_started_with_ray_core_CO5-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a><code>
+</code><code>    </code><code class="n">time</code><code class="o">.</code><code class="n">sleep</code><code class="p">(</code><code class="n">item</code><code> </code><code class="o">/</code><code> </code><code class="mf">10.</code><code class="p">)</code><code>
+</code><code>    </code><code class="k">return</code><code> </code><code class="n">item</code><code class="p">,</code><code> </code><code class="n">obj_store_data</code><code class="p">[</code><code class="n">item</code><code class="p">]</code></pre>
+<dl class="calloutlist">
+<dt><a class="co" href="#co_getting_started_with_ray_core_CO5-1" id="callout_getting_started_with_ray_core_CO5-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a></dt>
+<dd><p><code>put</code> your <code>database</code> into the object store and receive a reference to it.</p></dd>
+<dt><a class="co" href="#co_getting_started_with_ray_core_CO5-2" id="callout_getting_started_with_ray_core_CO5-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a></dt>
+<dd><p>This allows your workers to <code>get</code> the data, no matter where they are located in the cluster.</p></dd>
+</dl></div>
+<p>By using the object store this way, you can let Ray handle data access across the whole cluster.
+We’ll talk about how exactly data is passed between nodes and within workers when talking about Ray’s infrastructure.
+While the interaction with the object store requires some overhead, Ray is really smart about storing the data, which gives you performance gains when working with larger, more realistic datasets.
+For now, the important part is that this step is essential in a truly distributed setting.
+If you like, try to re-run <a data-type="xref" href="#code_duration_remote">Example 2-5</a> with this new <code>retrieve_task</code> function and confirm that it still runs, as expected.</p>
+</div></section>
+<section data-pdf-bookmark="Using Ray’s wait function for non-blocking calls" data-type="sect3"><div class="sect3" id="idm44990033423408">
+<h3>Using Ray’s wait function for non-blocking calls</h3>
+<p>Note how in <a data-type="xref" href="#code_duration_remote">Example 2-5</a> we used <code>ray.get(data_references)</code> to access results.
+This call is <em>blocking</em>, which means that our driver has to wait for all the results to be available.
+That’s not a big deal in our case, the program now finishes in under a second.
+But imagine processing of each data item would take several minutes.
+In that case you would want to free up the driver process for other tasks, instead of sitting idly by.
+Also, it would be great to process results as they come in (some finish much quicker than others), rather than waiting for all data to be processed.
+One more question to keep in mind is what happens if one of the data items can’t be retrieved as expected?
+Let’s say there’s a deadlock somewhere in the database connection.
+In that case, the driver will simply hang and never retrieve all items.
+For that reason it’s a good idea to work with reasonable timeouts.
+In our scenario, we should not wait longer than 10 times the longest data retrieval task before stopping the task.
+Here’s how you can do that with Ray by using <code>wait</code>:</p>
+<div data-type="example">
+<h5><span class="label">Example 2-7. </span></h5>
+<pre data-code-language="python" data-type="programlisting"><code class="n">start</code><code> </code><code class="o">=</code><code> </code><code class="n">time</code><code class="o">.</code><code class="n">time</code><code class="p">(</code><code class="p">)</code><code>
+</code><code class="n">data_references</code><code> </code><code class="o">=</code><code> </code><code class="p">[</code><code class="n">retrieve_task</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="n">item</code><code class="p">)</code><code> </code><code class="k">for</code><code> </code><code class="n">item</code><code> </code><code class="ow">in</code><code> </code><code class="nb">range</code><code class="p">(</code><code class="mi">8</code><code class="p">)</code><code class="p">]</code><code>
+</code><code class="n">all_data</code><code> </code><code class="o">=</code><code> </code><code class="p">[</code><code class="p">]</code><code>
+</code><code>
+</code><code class="k">while</code><code> </code><code class="nb">len</code><code class="p">(</code><code class="n">data_references</code><code class="p">)</code><code> </code><code class="o">&gt;</code><code> </code><code class="mi">0</code><code class="p">:</code><code>  </code><a class="co" href="#callout_getting_started_with_ray_core_CO6-1" id="co_getting_started_with_ray_core_CO6-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a><code>
+</code><code>    </code><code class="n">finished</code><code class="p">,</code><code> </code><code class="n">data_references</code><code> </code><code class="o">=</code><code> </code><code class="n">ray</code><code class="o">.</code><code class="n">wait</code><code class="p">(</code><code class="n">data_references</code><code class="p">,</code><code> </code><code class="n">num_returns</code><code class="o">=</code><code class="mi">2</code><code class="p">,</code><code> </code><code class="n">timeout</code><code class="o">=</code><code class="mf">7.0</code><code class="p">)</code><code>  </code><a class="co" href="#callout_getting_started_with_ray_core_CO6-2" id="co_getting_started_with_ray_core_CO6-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a><code>
+</code><code>    </code><code class="n">data</code><code> </code><code class="o">=</code><code> </code><code class="n">ray</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="n">finished</code><code class="p">)</code><code>
+</code><code>    </code><code class="n">print_runtime</code><code class="p">(</code><code class="n">data</code><code class="p">,</code><code> </code><code class="n">start</code><code class="p">,</code><code> </code><code class="mi">3</code><code class="p">)</code><code>  </code><a class="co" href="#callout_getting_started_with_ray_core_CO6-3" id="co_getting_started_with_ray_core_CO6-3"><img alt="3" height="12" src="assets/3.png" width="12"/></a><code>
+</code><code>    </code><code class="n">all_data</code><code class="o">.</code><code class="n">extend</code><code class="p">(</code><code class="n">data</code><code class="p">)</code><code>  </code><a class="co" href="#callout_getting_started_with_ray_core_CO6-4" id="co_getting_started_with_ray_core_CO6-4"><img alt="4" height="12" src="assets/4.png" width="12"/></a></pre>
+<dl class="calloutlist">
+<dt><a class="co" href="#co_getting_started_with_ray_core_CO6-1" id="callout_getting_started_with_ray_core_CO6-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a></dt>
+<dd><p>Instead of blocking, we loop through unfinished <code>data_references</code>.</p></dd>
+<dt><a class="co" href="#co_getting_started_with_ray_core_CO6-2" id="callout_getting_started_with_ray_core_CO6-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a></dt>
+<dd><p>We asynchronously <code>wait</code> for finished data with a reasonable <code>timeout</code>. <code>data_references</code> gets overridden here, to prevent an infinite loop.</p></dd>
+<dt><a class="co" href="#co_getting_started_with_ray_core_CO6-3" id="callout_getting_started_with_ray_core_CO6-3"><img alt="3" height="12" src="assets/3.png" width="12"/></a></dt>
+<dd><p>We print results as they come in, namely in blocks of two.</p></dd>
+<dt><a class="co" href="#co_getting_started_with_ray_core_CO6-4" id="callout_getting_started_with_ray_core_CO6-4"><img alt="4" height="12" src="assets/4.png" width="12"/></a></dt>
+<dd><p>Then we <code>append</code> new <code>data</code> to the <code>all_data</code> until finished.</p></dd>
+</dl></div>
+<p>As you can see <code>ray.wait</code> returns two arguments, namely finished data and futures that still need to be processed.
+We use the <code>num_returns</code> argument, which defaults to <code>1</code>, to let <code>wait</code> return whenever a new pair of data items is available.
+On my laptop this results in the following output:</p>
+<pre data-type="programlisting">Runtime: 0.108 seconds, data:
+(0, 'Learning')
+(1, 'Ray')
+Runtime: 0.308 seconds, data:
+(2, 'Flexible')
+(3, 'Distributed')
+Runtime: 0.508 seconds, data:
+(4, 'Python')
+(5, 'for')
+Runtime: 0.709 seconds, data:
+(6, 'Data')
+(7, 'Science')</pre>
+<p>Note how in the <code>while</code> loop, instead of just printing results, we could have done many other things, like starting entirely new tasks on other workers with the data already retrieved up to this point.</p>
+</div></section>
+<section data-pdf-bookmark="Handling task dependencies" data-type="sect3"><div class="sect3" id="idm44990033230720">
+<h3>Handling task dependencies</h3>
+<p>So far our example program has been fairly easy on a conceptual level.
+It consists of a single step, namely retrieving a bunch of data.
+Now, imagine that once your data is loaded you want to run a follow-up processing
+task on it.
+To be more concrete, let’s say we want to use the result of our first retrieve task to query other, related data (pretend that you’re querying data from a different table in the same database).
+The following code sets up such a task and runs both our <code>retrieve_task</code> and <code>follow_up_task</code> consecutively.</p>
+<div data-type="example" id="code_task_dependency">
+<h5><span class="label">Example 2-8. </span>Running a follow-up task that depends on another Ray task</h5>
+<pre data-code-language="python" data-type="programlisting"><code class="nd">@ray</code><code class="o">.</code><code class="n">remote</code><code>
+</code><code class="k">def</code><code> </code><code class="nf">follow_up_task</code><code class="p">(</code><code class="n">retrieve_result</code><code class="p">)</code><code class="p">:</code><code>  </code><a class="co" href="#callout_getting_started_with_ray_core_CO7-1" id="co_getting_started_with_ray_core_CO7-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a><code>
+</code><code>    </code><code class="n">original_item</code><code class="p">,</code><code> </code><code class="n">_</code><code> </code><code class="o">=</code><code> </code><code class="n">retrieve_result</code><code>
+</code><code>    </code><code class="n">follow_up_result</code><code> </code><code class="o">=</code><code> </code><code class="n">retrieve</code><code class="p">(</code><code class="n">original_item</code><code> </code><code class="o">+</code><code> </code><code class="mi">1</code><code class="p">)</code><code>  </code><a class="co" href="#callout_getting_started_with_ray_core_CO7-2" id="co_getting_started_with_ray_core_CO7-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a><code>
+</code><code>    </code><code class="k">return</code><code> </code><code class="n">retrieve_result</code><code class="p">,</code><code> </code><code class="n">follow_up_result</code><code>  </code><a class="co" href="#callout_getting_started_with_ray_core_CO7-3" id="co_getting_started_with_ray_core_CO7-3"><img alt="3" height="12" src="assets/3.png" width="12"/></a><code>
+</code><code>
+</code><code>
+</code><code class="n">retrieve_refs</code><code> </code><code class="o">=</code><code> </code><code class="p">[</code><code class="n">retrieve_task</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="n">item</code><code class="p">)</code><code> </code><code class="k">for</code><code> </code><code class="n">item</code><code> </code><code class="ow">in</code><code> </code><code class="p">[</code><code class="mi">0</code><code class="p">,</code><code> </code><code class="mi">2</code><code class="p">,</code><code> </code><code class="mi">4</code><code class="p">,</code><code> </code><code class="mi">6</code><code class="p">]</code><code class="p">]</code><code>
+</code><code class="n">follow_up_refs</code><code> </code><code class="o">=</code><code> </code><code class="p">[</code><code class="n">follow_up_task</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="n">ref</code><code class="p">)</code><code> </code><code class="k">for</code><code> </code><code class="n">ref</code><code> </code><code class="ow">in</code><code> </code><code class="n">retrieve_refs</code><code class="p">]</code><code>  </code><a class="co" href="#callout_getting_started_with_ray_core_CO7-4" id="co_getting_started_with_ray_core_CO7-4"><img alt="4" height="12" src="assets/4.png" width="12"/></a><code>
+</code><code>
+</code><code class="n">result</code><code> </code><code class="o">=</code><code> </code><code class="p">[</code><code class="nb">print</code><code class="p">(</code><code class="n">data</code><code class="p">)</code><code> </code><code class="k">for</code><code> </code><code class="n">data</code><code> </code><code class="ow">in</code><code> </code><code class="n">ray</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="n">follow_up_refs</code><code class="p">)</code><code class="p">]</code></pre>
+<dl class="calloutlist">
+<dt><a class="co" href="#co_getting_started_with_ray_core_CO7-1" id="callout_getting_started_with_ray_core_CO7-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a></dt>
+<dd><p>Using the result of <code>retrieve_task</code> we compute another Ray task on top of it.</p></dd>
+<dt><a class="co" href="#co_getting_started_with_ray_core_CO7-2" id="callout_getting_started_with_ray_core_CO7-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a></dt>
+<dd><p>Leveraging the <code>original_item</code> from the first task, we <code>retrieve</code> more data.</p></dd>
+<dt><a class="co" href="#co_getting_started_with_ray_core_CO7-3" id="callout_getting_started_with_ray_core_CO7-3"><img alt="3" height="12" src="assets/3.png" width="12"/></a></dt>
+<dd><p>Then we return both the original and the follow-up data.</p></dd>
+<dt><a class="co" href="#co_getting_started_with_ray_core_CO7-4" id="callout_getting_started_with_ray_core_CO7-4"><img alt="4" height="12" src="assets/4.png" width="12"/></a></dt>
+<dd><p>We pass the object references from the first task into the second task.</p></dd>
+</dl></div>
+<p>Running this code results in the following output.</p>
+<pre data-type="programlisting">((0, 'Learning'), (1, 'Ray'))
+((2, 'Flexible'), (3, 'Distributed'))
+((4, 'Python'), (5, 'for'))
+((6, 'Data'), (7, 'Science'))</pre>
+<p>If you don’t have a lot of experience with asynchronous programming, you might not be impressed by <a data-type="xref" href="#code_task_dependency">Example 2-8</a>.
+But I hope to convince you that it’s at least a bit surprising<sup><a data-type="noteref" href="ch02.xhtml#idm44990033068688" id="idm44990033068688-marker">3</a></sup> that this code snippet runs at all.
+So, what’s the big deal?
+After all, the code reads like regular Python - a function definition and a few list comprehensions.
+The point is that the function body of <code>follow_up_task</code> expects a Python <code>tuple</code> for its input argument <code>retrieve_result</code>, which we unpack in the first line of the function definition.</p>
+<p>But by invoking <code>[follow_up_task.remote(ref) for ref in retrieve_refs]</code> we do <em>not</em> pass in tuples to the follow-up task at all.
+Instead, we pass in Ray <em>object references</em> with <code>retrieve_refs</code>.
+What happens under the hood is that Ray knows that <code>follow_up_task</code> requires actual values, so internally in this task it will call <code>ray.get</code> to resolve the futures.
+Ray builds a dependency graph for all tasks and executes them in an order that respects the dependencies.
+You do not have to tell Ray explicitly when to wait for a previous task to finish, it will infer that information for you.</p>
+<p>The follow-up tasks will only be scheduled, once the individual retrieve tasks have finished.
+If you ask me, that’s an incredible feature.
+In fact, if I had called <code>retrieve_refs</code> something like <code>retrieve_result</code>, you may not even have noticed this important detail.
+That’s by design.
+Ray wants you to focus on your work, not on the details of cluster computing.
+In figure <a data-type="xref" href="#fig_task_dependency">Figure 2-1</a> you can see the dependency graph for the two tasks visualized.</p>
+<figure><div class="figure" id="fig_task_dependency">
+<img alt="Task Dependency" height="250" src="assets/task_dependency.png"/>
+<h6><span class="label">Figure 2-1. </span>Running two dependent tasks asynchronously and in parallel with Ray</h6>
+</div></figure>
+<p>If you feel like it, try to rewrite <a data-type="xref" href="#code_task_dependency">Example 2-8</a> so that it explicitly uses <code>get</code> on the first task before passing values into the follow-up task.
+That does not only introduce more boilerplate code, but it’s also a bit less intuitive to write and understand.</p>
+</div></section>
+<section data-pdf-bookmark="From classes to actors" data-type="sect3"><div class="sect3" id="idm44990033230128">
+<h3>From classes to actors</h3>
+<p>Before wrapping up this example, let’s discuss one more important concept of Ray Core.
+Notice how in our example everything is essentially a function.
+We just used the <code>ray.remote</code> decorator to make some of them remote functions, and other than that simply used plain Python.
+Let’s say we wanted to track how often our <code>database</code> has been queried?
+Sure, we could simply count the results of our retrieve tasks, but is there a better way to do this?
+We want to track this in a “distributed” way that will scale.
+For that, Ray has the concept of <em>actors</em>.
+Actors allow you to run <em>stateful</em> computations on your cluster.
+They can also communicate between each other<sup><a data-type="noteref" href="ch02.xhtml#idm44990033053088" id="idm44990033053088-marker">4</a></sup>.
+Much like Ray tasks were simply decorated functions, Ray actors are decorated Python classes.
+Let’s write a simple counter to track our database calls.</p>
+<div data-type="example">
+<h5><span class="label">Example 2-9. </span></h5>
+<pre data-code-language="python" data-type="programlisting"><code class="nd">@ray</code><code class="o">.</code><code class="n">remote</code><code>  </code><a class="co" href="#callout_getting_started_with_ray_core_CO8-1" id="co_getting_started_with_ray_core_CO8-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a><code>
+</code><code class="k">class</code><code> </code><code class="nc">DataTracker</code><code class="p">:</code><code>
+</code><code>    </code><code class="k">def</code><code> </code><code class="fm">__init__</code><code class="p">(</code><code class="bp">self</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>        </code><code class="bp">self</code><code class="o">.</code><code class="n">_counts</code><code> </code><code class="o">=</code><code> </code><code class="mi">0</code><code>
+</code><code>
+</code><code>    </code><code class="k">def</code><code> </code><code class="nf">increment</code><code class="p">(</code><code class="bp">self</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>        </code><code class="bp">self</code><code class="o">.</code><code class="n">_counts</code><code> </code><code class="o">+</code><code class="o">=</code><code> </code><code class="mi">1</code><code>
+</code><code>
+</code><code>    </code><code class="k">def</code><code> </code><code class="nf">counts</code><code class="p">(</code><code class="bp">self</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>        </code><code class="k">return</code><code> </code><code class="bp">self</code><code class="o">.</code><code class="n">_counts</code></pre>
+<dl class="calloutlist">
+<dt><a class="co" href="#co_getting_started_with_ray_core_CO8-1" id="callout_getting_started_with_ray_core_CO8-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a></dt>
+<dd><p>We can make any Python class a Ray actor by using the same <code>ray.remote</code> decorator as before.</p></dd>
+</dl></div>
+<p>This <code>DataTracker</code> class is already an actor, since we equipped it with the <code>ray.remote</code> decorator.
+This actor can track state, here just a simple counter, and its methods are Ray tasks that get invoked precisely like we did with functions before, namely using <code>.remote()</code>.
+Let’s see how we can modify our existing <code>retrieve_task</code> to incorporate this new actor.</p>
+<div data-type="example">
+<h5><span class="label">Example 2-10. </span></h5>
+<pre data-code-language="python" data-type="programlisting"><code class="nd">@ray</code><code class="o">.</code><code class="n">remote</code><code>
+</code><code class="k">def</code><code> </code><code class="nf">retrieve_tracker_task</code><code class="p">(</code><code class="n">item</code><code class="p">,</code><code> </code><code class="n">tracker</code><code class="p">)</code><code class="p">:</code><code>  </code><a class="co" href="#callout_getting_started_with_ray_core_CO9-1" id="co_getting_started_with_ray_core_CO9-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a><code>
+</code><code>    </code><code class="n">obj_store_data</code><code> </code><code class="o">=</code><code> </code><code class="n">ray</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="n">database_object_ref</code><code class="p">)</code><code>
+</code><code>    </code><code class="n">time</code><code class="o">.</code><code class="n">sleep</code><code class="p">(</code><code class="n">item</code><code> </code><code class="o">/</code><code> </code><code class="mf">10.</code><code class="p">)</code><code>
+</code><code>    </code><code class="n">tracker</code><code class="o">.</code><code class="n">increment</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="p">)</code><code>  </code><a class="co" href="#callout_getting_started_with_ray_core_CO9-2" id="co_getting_started_with_ray_core_CO9-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a><code>
+</code><code>    </code><code class="k">return</code><code> </code><code class="n">item</code><code class="p">,</code><code> </code><code class="n">obj_store_data</code><code class="p">[</code><code class="n">item</code><code class="p">]</code><code>
+</code><code>
+</code><code>
+</code><code class="n">tracker</code><code> </code><code class="o">=</code><code> </code><code class="n">DataTracker</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="p">)</code><code>  </code><a class="co" href="#callout_getting_started_with_ray_core_CO9-3" id="co_getting_started_with_ray_core_CO9-3"><img alt="3" height="12" src="assets/3.png" width="12"/></a><code>
+</code><code>
+</code><code class="n">data_references</code><code> </code><code class="o">=</code><code> </code><code class="p">[</code><code class="n">retrieve_tracker_task</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="n">item</code><code class="p">,</code><code> </code><code class="n">tracker</code><code class="p">)</code><code> </code><code class="k">for</code><code> </code><code class="n">item</code><code> </code><code class="ow">in</code><code> </code><code class="nb">range</code><code class="p">(</code><code class="mi">8</code><code class="p">)</code><code class="p">]</code><code>  </code><a class="co" href="#callout_getting_started_with_ray_core_CO9-4" id="co_getting_started_with_ray_core_CO9-4"><img alt="4" height="12" src="assets/4.png" width="12"/></a><code>
+</code><code class="n">data</code><code> </code><code class="o">=</code><code> </code><code class="n">ray</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="n">data_references</code><code class="p">)</code><code>
+</code><code class="nb">print</code><code class="p">(</code><code class="n">ray</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="n">tracker</code><code class="o">.</code><code class="n">counts</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="p">)</code><code class="p">)</code><code class="p">)</code><code>  </code><a class="co" href="#callout_getting_started_with_ray_core_CO9-5" id="co_getting_started_with_ray_core_CO9-5"><img alt="5" height="12" src="assets/5.png" width="12"/></a></pre>
+<dl class="calloutlist">
+<dt><a class="co" href="#co_getting_started_with_ray_core_CO9-1" id="callout_getting_started_with_ray_core_CO9-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a></dt>
+<dd><p>We pass in the <code>tracker</code> actor into this task.</p></dd>
+<dt><a class="co" href="#co_getting_started_with_ray_core_CO9-2" id="callout_getting_started_with_ray_core_CO9-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a></dt>
+<dd><p>The <code>tracker</code> receives an <code>increment</code> for each call.</p></dd>
+<dt><a class="co" href="#co_getting_started_with_ray_core_CO9-3" id="callout_getting_started_with_ray_core_CO9-3"><img alt="3" height="12" src="assets/3.png" width="12"/></a></dt>
+<dd><p>We instantiate our <code>DataTracker</code> actor by calling <code>.remote()</code> on the class.</p></dd>
+<dt><a class="co" href="#co_getting_started_with_ray_core_CO9-4" id="callout_getting_started_with_ray_core_CO9-4"><img alt="4" height="12" src="assets/4.png" width="12"/></a></dt>
+<dd><p>The actor gets passed into the retrieve task.</p></dd>
+<dt><a class="co" href="#co_getting_started_with_ray_core_CO9-5" id="callout_getting_started_with_ray_core_CO9-5"><img alt="5" height="12" src="assets/5.png" width="12"/></a></dt>
+<dd><p>Afterwards we can get the <code>counts</code> state from our <code>tracker</code> from another remote invocation.</p></dd>
+</dl></div>
+<p>Unsurprisingly, the result of this computation is in fact <code>8</code>.
+We didn’t need actors to compute this, but I hope you can see how useful it can be to have a mechanism to track state across the cluster, potentially spanning multiple tasks.
+In fact, we could pass our actor into any dependent task, or even pass it into the constructor of yet another actor.
+There is no limitation to what you can do, and it’s this flexibility that makes the Ray API so powerful.
+It’s also worth mentioning that it’s not very common for distributed Python tools to allow for stateful computations like this.
+This feature can come in very handy, especially when running complex distributed algorithms, for instance when using reinforcement learning.
+This completes our extensive first Ray API example.
+Let’s see if we can concisely summarize the Ray API next.</p>
+</div></section>
+</div></section>
+<section data-pdf-bookmark="An Overview of the Ray Core API" data-type="sect2"><div class="sect2" id="idm44990033907968">
+<h2>An Overview of the Ray Core API</h2>
+<p>If you recall what exactly we did in the previous example, you’ll notice that we used a total of just six API methods<sup><a data-type="noteref" href="ch02.xhtml#idm44990032795376" id="idm44990032795376-marker">5</a></sup>.
+You used <code>ray.init()</code> to start the cluster and <code>@ray.remote</code> to turn functions and classes into tasks and actors.
+Then we used <code>ray.put()</code> to pass data into Ray’s object store and <code>ray.get()</code> to retrieve data from the cluster.
+Finally, we used <code>.remote()</code> on actor methods or tasks to run code on our cluster, and <code>ray.wait</code> to avoid blocking calls.</p>
+<p>While six API methods might not seem like much, those are the only ones you’ll likely ever care about when using the Ray API<sup><a data-type="noteref" href="ch02.xhtml#idm44990032790816" id="idm44990032790816-marker">6</a></sup>.
+Let’s briefly summarize them in a table, so you can easily reference them in the future.</p>
+<table>
+<caption><span class="label">Table 2-1. </span>The six major API methods of Ray Core</caption>
+<thead>
+<tr>
+<th>API call</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><p><code>ray.init()</code></p></td>
+<td><p>Initializes your Ray cluster. Pass in an <code>address</code> to connect to an existing cluster.</p></td>
+</tr>
+<tr>
+<td><p><code>@ray.remote</code></p></td>
+<td><p>Turns functions into tasks and classes into actors.</p></td>
+</tr>
+<tr>
+<td><p><code>ray.put()</code></p></td>
+<td><p>Puts data into Ray’s object store.</p></td>
+</tr>
+<tr>
+<td><p><code>ray.get()</code></p></td>
+<td><p>Gets data from the object store. Returns data you’ve <code>put</code> there or that was computed by a task or actor.</p></td>
+</tr>
+<tr>
+<td><p><code>.remote()</code></p></td>
+<td><p>Runs actor methods or tasks on your Ray cluster and is used to instantiate actors.</p></td>
+</tr>
+<tr>
+<td><p><code>ray.wait()</code></p></td>
+<td><p>Returns two lists of object references, one with finished tasks we’re waiting for and one with unfinished tasks.</p></td>
+</tr>
+</tbody>
+</table>
+<p>Now that you’ve seen the Ray API in action, let’s quickly discuss Ray’s design philosophy, before moving on to discussing its system architecture.</p>
+</div></section>
+<section data-pdf-bookmark="Design Principles" data-type="sect2"><div class="sect2" id="design_principles">
+<h2>Design Principles</h2>
+<p>Ray is built with several design principles in mind, most of which you’ve got a taste of already.
+Its API is designed for simplicity and generality.
+Its compute model banks on flexibility.
+And its system architecture is designed for performance and scalability.
+Let’s look at each of these in more detail.</p>
+<section data-pdf-bookmark="Simplicity and abstraction" data-type="sect3"><div class="sect3" id="idm44990032770992">
+<h3>Simplicity and abstraction</h3>
+<p>As you’ve seen, Ray’s API does not only bank on simplicity, it’s also intuitive to pick up.
+It doesn’t matter whether you just want to use all the CPU cores on your laptop or leverage all the machines in your cluster.
+You might have to change a line of code or two, but the Ray code you use stays essentially the same.
+And as with any good distributed system, Ray manages task distribution and coordination under the hood.
+That’s great, because you’re not bogged down by reasoning about the mechanics of distributed computing.
+A good abstraction layer allows you to focus on your work, and I think Ray has done a great job of giving you one.</p>
+<p>Since Ray’s API is so generally applicable and pythonic, it’s easy to integrate with other tools.
+For instance, Ray actors can call into or be called by existing distributed Python workloads.
+In that sense Ray makes for good “glue code” for distributed workloads, too, as its performant and flexible enough to communicate between different systems and frameworks.</p>
+</div></section>
+<section data-pdf-bookmark="Flexibility" data-type="sect3"><div class="sect3" id="idm44990032769024">
+<h3>Flexibility</h3>
+<p>For AI workloads, in particular when dealing with paradigms like reinforcement learning, you need a flexible programming model.
+Ray’s API is designed to make it easy to write flexible and composable code.
+Simply put, if you can express your workload in Python, you can distribute it with Ray.
+Of course, you still need to make sure you have enough resources available and be mindful of what you want to distribute.
+But Ray doesn’t limit you in what you can do with it.</p>
+<p>Ray is also flexible when it comes to <em>heterogenity</em> of computations.
+For instance, let’s say you work on a complex simulation.
+Simulations can usually be decomposed into several tasks or steps.
+Some of these steps might take hours to run, others just a few milliseconds, but they always need to be scheduled and executed quickly.
+Sometimes a single task in a simulation can take a long time, but other, smaller tasks should be able to run in parallel without blocking it.
+Also, subsequent tasks may depend on the outcome of an upstream task, so you need a framework to allow for <em>dynamic execution</em> that deals well with task dependencies.
+In the example we discussed in this chapter you’ve seen that Ray’s API is built for that.</p>
+<p>You also need to ensure you are flexible in your resource usage.
+For instance, some tasks might have to run on a GPU, while others run best on a couple of CPU cores.
+Ray provides you with that flexibility.</p>
+</div></section>
+<section data-pdf-bookmark="Speed and scalability" data-type="sect3"><div class="sect3" id="idm44990032765584">
+<h3>Speed and scalability</h3>
+<p>Another of Ray’s design principles is the speed at which Ray executes its heterogeneous tasks.
+It can handle millions of tasks per second.
+What’s more is that you only incur very low latencies with Ray.
+It’s build to execute its tasks with just milliseconds of latency.</p>
+<p>For a distributed system to be fast, it also needs to scale well.
+Ray is efficient at distributing and scheduling your tasks across your compute cluster.
+And it does so in a fault tolerant way, too.
+In distributed systems it’s not a question of if, but when things go wrong.
+A machine might have an outage, abort a task or simply go up in flames.<sup><a data-type="noteref" href="ch02.xhtml#idm44990032763840" id="idm44990032763840-marker">7</a></sup>
+In any case, Ray is built to recover quickly from failures, which contributes to its overall speed.</p>
+</div></section>
+</div></section>
+</div></section>
+<section data-pdf-bookmark="Understanding Ray System Components" data-type="sect1"><div class="sect1" id="idm44990032762128">
+<h1>Understanding Ray System Components</h1>
+<p>You’ve seen how the Ray API can be used and understand the design philosophy behind Ray.
+Now it’s time to get a better understanding of the underlying system components.
+In other words, how does Ray work and how does it achieve what it does?</p>
+<section data-pdf-bookmark="Scheduling and Executing Work on a Node" data-type="sect2"><div class="sect2" id="idm44990032760208">
+<h2>Scheduling and Executing Work on a Node</h2>
+<p>You know that Ray clusters consist of nodes.
+We’ll first look at what happens on individual nodes, before we zoom out and discuss how the whole cluster interoperates.</p>
+<p>As we’ve already discussed, a worker node consists of several worker processes or simply workers.
+Each worker has a unique ID, an IP address and a port by which they can be referenced.
+Workers are called as they are for a reason, they’re components that blindly execute the work you give them.
+But who tells them what to do and when?
+A worker might be busy already, it may not have the proper resources to run a task (e.g. access to a GPU), and it might not even have the data it needs to run a given task.
+On top of that, workers have no knowledge of what happens before or after they’ve executed their workload, there’s no coordination.</p>
+<p>To address these issues, each worker node has a component called <em>Raylet</em>.
+Think of Raylets as the smart components of a node, which manage the worker processes.
+Raylets are shared between jobs and consist of two components, namely a task scheduler and an object store.</p>
+<p>Let’s talk about object stores first.
+In the running example in this chapter we’ve already used the concept of an object store loosely, without really specifying it.
+Each node of a Ray cluster is equipped with an object store, within that node’s Raylet, and all object stored collectively form the distributed object store of a cluster.
+An object store has <em>shared memory</em> across the node, so that each worker process has easy access to it.
+The object store is implemented in <a href="https://arrow.apache.org/docs/python/plasma.xhtml">Plasma</a>, which now belongs to the Apache Arrow project.
+Functionally, the object store takes care of memory management and ultimately makes sure workers have access to the data they need.</p>
+<p>The second component of a Raylet is its scheduler.
+The scheduler takes care of resource management, among other things.
+For instance, if a task requires access to 4 CPUs, the scheduler needs to make sure it can find a free worker process that it can <em>grant access</em> to said resources.
+By default, the scheduler knows about and acquires information about the number of CPUs and GPUs and the amount of memory available on its node, but you can register custom resources, if you want to.
+If it can’t provide the required resources, it can’t schedule execution of a task.</p>
+<p>Apart from resources, the other requirement the scheduler takes care of is <em>dependency resolution</em>.
+That means it needs to ensure that each worker has all the input data it needs to execute a task.
+For that to work, the scheduler will first resolve local dependencies by looking up data in its object store.
+If the required data is not available on this node’s object store, the scheduler will have to communicate with other nodes (we’ll tell you how in a bit) and pull in remote dependencies.
+Once the scheduler has ensured enough resources for a task, resolved all needed dependencies, and found a worker for a task, it can schedule said task for execution.</p>
+<p>Task scheduling is a very difficult topic, even if we’re only talking about single nodes.
+I think you can easily imagine scenarios in which an incorrectly or naively planned task execution can “block” downstream tasks because there are not enough resources left.
+Especially in a distributed context assigning work like this can be become very tricky very quickly.</p>
+<p>Now that you know about Raylets, let’s briefly come back to worker processes, so that we can wrap up the discussion around worker nodes.
+An important concept that contributed to the performance or Ray overall is that of <em>ownership</em>.</p>
+<p>Ownership means that a process that runs something is responsible for it.
+This makes for a decentralized overall design, since individual tasks have a unique owner.
+In concrete terms this means that each worker process owns the tasks it submits, which includes proper execution and availability of results (i.e., correct resolution of object references).
+Also, anything that gets registered through <code>ray.put()</code> is owned by the caller.
+You should understand ownership in contrast to dependency, which we’ve already covered by example when discussing task dependencies.</p>
+<p>To give you a concrete example, let’s say we have a program that starts a <code>task</code> which takes an input value <code>val</code> and internally calls another task. That could look as follows:</p>
+<div data-type="example">
+<h5><span class="label">Example 2-11. </span></h5>
+<pre data-code-language="python" data-type="programlisting"><code class="nd">@ray</code><code class="o">.</code><code class="n">remote</code>
+<code class="k">def</code> <code class="nf">task_owned</code><code class="p">():</code>
+    <code class="k">return</code>
+
+
+<code class="nd">@ray</code><code class="o">.</code><code class="n">remote</code>
+<code class="k">def</code> <code class="nf">task</code><code class="p">(</code><code class="n">dependency</code><code class="p">):</code>
+    <code class="n">res_owned</code> <code class="o">=</code> <code class="n">task_owned</code><code class="o">.</code><code class="n">remote</code><code class="p">()</code>
+    <code class="k">return</code>
+
+
+<code class="n">val</code> <code class="o">=</code> <code class="n">ray</code><code class="o">.</code><code class="n">put</code><code class="p">(</code><code class="s2">"value"</code><code class="p">)</code>
+<code class="n">res</code> <code class="o">=</code> <code class="n">task</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="n">dependency</code><code class="o">=</code><code class="n">val</code><code class="p">)</code></pre></div>
+<p>From this point on we won’t mention it again, but this example assumes that you have a running Ray cluster started with <code>ray.init()</code>.
+Let’s quickly analyse ownership and dependency for this example.
+We defined two tasks in <code>task</code> and <code>task_owned</code>, and we have three variables in total, namely <code>val</code>, <code>res</code> and <code>rew_owned</code>.
+Our main program defines both <code>val</code> (which puts <code>"value"</code> into the object store) and <code>res</code>, the final result of th whole program, and it also calls <code>task</code>.
+In other words, the driver <em>owns</em> <code>task</code>, <code>val</code> and <code>res</code> according to Ray’s ownership definition.
+In contrast, <code>res</code> depends on <code>task</code>, but there’s no ownership relationship between the two.
+When <code>task</code> gets called, it takes <code>val</code> as a dependency.
+It then calls <code>task_owned</code> and assigns <code>res_owned</code>, and hence owns them both.
+Lastly, <code>task_owned</code> itself does not own anything, but certainly <code>rew_owned</code> depends on it.</p>
+<p>Ownership is important to know about, but it’s not a concept you encounter all that often when working with Ray.
+The reason we brought it up in this context is that worker processes need to track what they own.
+In fact, they possess a so-called <em>ownership table</em> exactly for that reason.
+If a task fails and needs to be recomputed, the worker already owns all the information it needs to do so.
+On top of that, workers also have an in-process store for small objects, which has a default limit of 100KB.
+Workers have that store so that small data can be directly accessed and stored without incurring communication overhead with the Raylet object store, which is reserved for large objects.</p>
+<p>To sum up this discussion about worker nodes, figure <a data-type="xref" href="#fig_workers">Figure 2-2</a> gives you an overview of all involved components.</p>
+<figure><div class="figure" id="fig_workers">
+<img alt="Worker" height="300" src="assets/worker_node.png"/>
+<h6><span class="label">Figure 2-2. </span>The system components comprising a Ray worker node</h6>
+</div></figure>
+</div></section>
+<section data-pdf-bookmark="The Head Node" data-type="sect2"><div class="sect2" id="idm44990032759584">
+<h2>The Head Node</h2>
+<p>We’ve already indicated in <a data-type="xref" href="ch01.xhtml#chapter_01">Chapter 1</a> that each Ray cluster has one special node called head node.
+So far you know that this is the node that has the driver process<sup><a data-type="noteref" href="ch02.xhtml#idm44990032658080" id="idm44990032658080-marker">8</a></sup>.
+Drivers can submit tasks themselves, but can’t execute them.
+You also know that the head node can have some worker processes, which is important to be able to run local clusters constisting of a single node.
+In other words, the head node has everything a worker node has (including a Raylet), but it also has a driver process.</p>
+<p>Additionally, the head node comes with a component called <em>Global Control Store</em> (GCS).
+The GCS is a key-value store currently implemented in Redis.
+It’s an important component that carries global information about the cluster, such as system-level metadata.
+For instance, it has a table with heart beat signals for each Raylet, to ensure they are still reachable.
+Raylets, in turn, send heart beat signals to the GCS to indicate that they are alive.
+The GCS also stores the locations of Ray actors and large objects in respective tables, and knows about the dependencies between objects.</p>
+</div></section>
+<section data-pdf-bookmark="Distributed Scheduling and Execution" data-type="sect2"><div class="sect2" id="idm44990032656368">
+<h2>Distributed Scheduling and Execution</h2>
+<p>Let’s briefly talk about cluster orchestration and how nodes manage, plan and execute tasks.
+When talking about worker nodes, we’ve indicated that there are several components to distributing workloads with Ray.
+Here’s an overview of the steps and intricacies involved in this process.</p>
+<p>Distributed memory: The object stores of individual Raylets share their memory on a node. But sometimes data needs to be transferred between nodes, which is called <em>distributed object transfer</em>. This is needed for remote dependency resolution, so that workers have the data they need to run tasks.</p>
+<dl>
+<dt>Communication</dt>
+<dd>
+<p>Most of the communication in a Ray cluster, such as object transfer, takes place via the <a href="https://grpc.io/"><em>gRPC</em></a> protocol.</p>
+</dd>
+<dt>Resource management and fulfillment</dt>
+<dd>
+<p>On a node, Raylets are responsible to grant resources and <em>lease</em> worker processes to task owners. All schedulers across nodes form the distributed scheduler. Through communication with the GCS, local schedulers know about other nodes’ resources.</p>
+</dd>
+<dt>Task execution</dt>
+<dd>
+<p>Once a task has been submitted for execution, all its dependencies (local and remote data) need to be resolved, e.g. by retrieving large data from the object store, before execution can begin.</p>
+</dd>
+</dl>
+<p>If the last few sections seem a bit involved technically, that’s because they are.
+In my view it’s important to understand the basic patterns and ideas of the software you’re using, but I’ll admit that the details of Ray’s architecture can be a bit tough to wrap your head around in the beginning.
+In fact, it’s one of Ray’s design principles to trade-off usability for architectural complexity.
+If you want to delve deeper into Ray’s architecture, a good place to start is <a href="https://docs.google.com/document/d/1lAy0Owi-vPz2jEqBSaHNQcy2IBSDEHyXNOQZlGuj93c/preview">their architecture white paper</a>.</p>
+<p>To wrap things up, let’s summarize all we know in a concise architecture overview with figure <a data-type="xref" href="#fig_architecture">Figure 2-3</a>:</p>
+<figure><div class="figure" id="fig_architecture">
+<img alt="Architecture" height="800" src="assets/architecture.png" width="953"/>
+<h6><span class="label">Figure 2-3. </span>An overview of Ray’s architectural components</h6>
+</div></figure>
+<aside data-type="sidebar" epub:type="sidebar"><div class="sidebar" id="idm44990032643248">
+<h5>Systems Related to Ray</h5>
+<p>With the architecture and functionality of it in mind, how does Ray relate to other systems?
+We’re not going into the details here, but just touch on the most important topics in broad strokes.
+Ray can be used as a parallelization framework for Python, and shares properties with tools like <code>celery</code> or <code>multiprocessing</code>.
+In fact, there’s a <a href="https://docs.ray.io/en/latest/multiprocessing.xhtml">drop-in replacement</a> for the latter implemented in Ray.
+Ray is also related to data processing frameworks such as Spark, Dask, Flink or MARS.
+We’ll explore this relationship in [Link to Come], when talking about Ray’s ecosystem.</p>
+<p>As a distributed computing tool, Ray also has to deal with the problems of cluster management and orchestration, and we’ll see how Ray does that in relation to tools like Kubernetes in <a data-type="xref" href="ch08.xhtml#chapter_08">Chapter 8</a>.
+Since Ray is implementing the actor model of concurrency, it’s also interesting to explore its relationship with frameworks like Akka.
+Lastly, since Ray banks on a performant, low-level API for communication, there’s a certain relationship with high-performance computing (HPC) frameworks and communication protocols like the message passing interface (MPI).</p>
+</div></aside>
+</div></section>
+</div></section>
+<section data-pdf-bookmark="Summary" data-type="sect1"><div class="sect1" id="idm44990032637760">
+<h1>Summary</h1>
+<p>You’ve seen the basics of the Ray API in action in this chapter.
+You know how to <code>put</code> data to the object store, and how to <code>get</code> it back.
+Also, you’re familiar with declaring Python functions as Ray tasks with the <code>@ray.remote</code> decorator, and you know how to run them on a Ray cluster with the <code>.remote()</code> call.
+In much the same way, you understand how to declare a Ray actor from a Python class, how to instantiate it and leverage it for stateful, distributed computations.</p>
+<p>On top of that, you also know the basics of Ray clusters.
+After starting them with <code>ray.init(...)</code> you know that you can submit jobs consisting of tasks to your cluster.
+The driver process, sitting on the head node, will then distribute the tasks to the worker nodes.
+Raylets on each node will schedule the tasks and worker processes will execute them.
+This quick tour through Ray core should get you started with writing your own distributed programs,
+and in the next chapter we’ll test your knowledge by implementing a basic machine learning application together.</p>
+</div></section>
+<div data-type="footnotes"><p data-type="footnote" id="idm44990033684416"><sup><a href="ch02.xhtml#idm44990033684416-marker">1</a></sup> I still don’t know how to pronounce this acronym, but I get the feeling that the same people who pronounce GIF like “giraffe” also say GIL like “guitar”. Just pick one, or spell it out, if you feel insecure.</p><p data-type="footnote" id="idm44990033491152"><sup><a href="ch02.xhtml#idm44990033491152-marker">2</a></sup> This example has been adapted from Dean Wampler’s fantastic report <a href="https://www.oreilly.com/library/view/what-is-ray/9781492085768/">“What is Ray?”</a>.</p><p data-type="footnote" id="idm44990033068688"><sup><a href="ch02.xhtml#idm44990033068688-marker">3</a></sup> According to <a href="https://en.wikipedia.org/wiki/Clarke%27s_three_laws">Clarke’s third law</a> any sufficiently advanced technology is indistinguishable from magic. For me, this example has a bit of magic to it.</p><p data-type="footnote" id="idm44990033053088"><sup><a href="ch02.xhtml#idm44990033053088-marker">4</a></sup> The actor model is an established concept in computer science, which you can find implemented e.g. in Akka or Erlang. However, the history and specifics of actors are not relevant to our discussion.</p><p data-type="footnote" id="idm44990032795376"><sup><a href="ch02.xhtml#idm44990032795376-marker">5</a></sup> To paraphrase <a href="https://www.youtube.com/watch?v=NdSD07U5uBs">Alan Kay</a>, to get simplicity, you need to find slightly more sophisticated building blocks. In my eyes, the Ray API does just that for distributed Python.</p><p data-type="footnote" id="idm44990032790816"><sup><a href="ch02.xhtml#idm44990032790816-marker">6</a></sup> You can check out the <a href="https://docs.ray.io/en/latest/package-ref.xhtml">API reference</a> to see that there are in fact quite a bit more methods available. At some point you should invest in understanding the arguments of <code>init</code>, but all other methods likely won’t be of interest to you, if you’re not an administrator of your Ray cluster.</p><p data-type="footnote" id="idm44990032763840"><sup><a href="ch02.xhtml#idm44990032763840-marker">7</a></sup> This might sound drastic, but it’s not a joke. To name just one example, in March 2021 a French data center powering millions of websites burnt down completely, which you can read about <a href="https://www.reuters.com/article/us-france-ovh-fire-idUSKBN2B20NU">in this article</a>. If your whole cluster burns down, I’m afraid Ray can’t help you.</p><p data-type="footnote" id="idm44990032658080"><sup><a href="ch02.xhtml#idm44990032658080-marker">8</a></sup> In fact, it could have multiple drivers, but this is inessential for our discussion.</p></div></div></section></div></body></html>

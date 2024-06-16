@@ -1,0 +1,996 @@
+<html><head></head><body>
+<div id="sbo-rt-content"><section data-pdf-bookmark="Chapter 4. Reinforcement Learning with Ray RLlib" data-type="chapter" epub:type="chapter"><div class="chapter" id="chapter_04">
+<h1><span class="label">Chapter 4. </span>Reinforcement Learning with Ray RLlib</h1>
+<aside data-type="sidebar" epub:type="sidebar"><div class="sidebar" id="idm44990030108080">
+<h5>A Note for Early Release Readers</h5>
+<p>With Early Release ebooks, you get books in their earliest form—the author’s raw and unedited content as they write—so you can take advantage of these technologies long before the official release of these titles.</p>
+</div></aside>
+<p>In the last chapter you’ve built a Reinforcement Learning (RL) environment, a simulation to play out some games,
+an RL algorithm, and the code to parallelize the training of the algorithm - all completely from scratch.
+It’s good to know how to do all that, but in practice the only thing you really want to do when training RL algorithms
+is the first part, namely specifying your custom environment, the “game”<sup><a data-type="noteref" href="ch04.xhtml#idm44990030106000" id="idm44990030106000-marker">1</a></sup> you want to play.
+Most of your efforts will then go into selecting the right algorithm, setting it up, finding the best parameters for
+the problem, and generally focusing on training a well-performing algorithm.</p>
+<p>Ray RLlib is an industry-grade library for building RL algorithms at scale.
+You’ve seen a first example of the RLlib in <a data-type="xref" href="ch01.xhtml#chapter_01">Chapter 1</a> already, but in this chapter we’ll go into much more depth.
+The great thing about RLlib is that it’s a mature library for developers and comes with good abstractions to work with.
+As you will see, many of these abstractions you already know from the last chapter.</p>
+<p>We start out this chapter by first giving you an overview of RLlib’s capabilities.
+Then we quickly revisit the maze game from <a data-type="xref" href="ch03.xhtml#chapter_03">Chapter 3</a> and show you how to tackle it both with the RLlib
+command line interface (CLI) and the RLlib Python API in a few lines of code.
+You’ll see how easy RLlib is to get started with before learning about its key concepts, such as RLlib environments, algorithms, and trainers.</p>
+<p>We’ll also take a closer look at some advanced RL topics that are extremely useful in practice, but are
+not often properly supported in other RL libraries.
+For instance, you will learn how to create a learning curriculum for
+your RL agents so that they can learn simple scenarios first, before moving on to more complex ones.
+You will also see how RLlib deals with having multiple agents in a single environment, and how to leverage experience data
+that you’ve collected outside your current application to improve your agent’s performance.</p>
+<section data-pdf-bookmark="An Overview of RLlib" data-type="sect1"><div class="sect1" id="idm44990030101696">
+<h1>An Overview of RLlib</h1>
+<p>Before we dive into some examples, let’s take a quick overview of what RLlib is and what it can do.
+As part of the Ray ecosystem, RLlib inherits all the performance and scalability benefits of Ray.
+In particular, RLlib is distributed by default, so you can scale out your RL training to as many nodes as you want.
+Other RL libraries can potentially scale out experiments, but it’s usually not straightforward to do so.</p>
+<p>Another benefit of being built on top of Ray is that RLlib integrates tightly with other Ray libraries.
+For instance, all RLlib algorithms can be tuned with Ray Tune, as we will see in <a data-type="xref" href="ch05.xhtml#chapter_05">Chapter 5</a>, and you can
+seamlessly deploy your RLlib models with Ray Serve, as we will discuss in <a data-type="xref" href="ch08.xhtml#chapter_08">Chapter 8</a>.</p>
+<p>What’s extremely useful is that RLlib works with both of the predominant deep learning frameworks at the time of this writing, namely PyTorch and TensorFlow.
+You can use either one of them as your backend and can easily switch between them, often by just changing one line of code.
+That’s a huge benefit, as companies are often locked into their underlying deep learning framework and can’t afford
+to switch to another system and rewrite their code.</p>
+<p>RLlib also has a track record of solving real-world problems and is a mature library used by many companies to bring their RL workloads to production.
+I often recommend RLlib to engineers, because its API tends to appeal to them.
+One of the reasons for that is that the RLlib API offers the right level of abstraction for many applications,
+while still being flexible enough to be extended, if necessary.</p>
+<p>Apart from these more general benefits, RLlib has a lot of RL specific features that we will cover in this chapter.
+In fact, RLlib is so feature rich that it would deserve a book on its own, so we can only touch on some aspects of it here.
+For instance, RLlib has a rich library of advanced RL algorithms to choose from.
+In this chapter we will only focus on a few select ones, but you can track the growing list of options on the <a href="https://docs.ray.io/en/latest/rllib-algorithms.xhtml">RLlib algorithms page</a>.
+RLlib also has many options for specifying RL environments and is very flexible in handling them during training, see <a href="https://docs.ray.io/en/latest/rllib-env.xhtml">for an overview of RLlib environments</a>.</p>
+</div></section>
+<section data-pdf-bookmark="Getting Started With RLlib" data-type="sect1"><div class="sect1" id="idm44990030094976">
+<h1>Getting Started With RLlib</h1>
+<p>To use RLlib, make sure you have installed it on your computer:</p>
+<pre data-type="programlisting">pip install "ray[rllib]"==1.9.0</pre>
+<p>As with every chapter in this book, if you don’t feel like following along by typing the code yourself,
+you can check out the accompanying <a href="https://github.com/maxpumperla/learning_ray/blob/main/notebooks/ch_04_rllib.ipynb">notebook for this chapter</a>.</p>
+<p>Every RL problem starts with having an interesting environment to investigate.
+In <a data-type="xref" href="ch01.xhtml#chapter_01">Chapter 1</a> we already looked at the classical pendulum balancing problem.
+Recall that we didn’t implement this pendulum environment, it came out of the box with RLlib.</p>
+<p>In contrast, in <a data-type="xref" href="ch03.xhtml#chapter_03">Chapter 3</a> we implemented a simple maze game on our own.
+The problem with this implementation is that we can’t directly use it with RLlib, or any other RL library for that matter.
+The reason is that in RL you have ubiquitous standards for environments.
+Your environments need to implement certain interfaces.
+The best known and most widely used library for RL environments is <code>gym</code>, an <a href="https://gym.openai.com/">open-source Python project</a> from OpenAI.</p>
+<p>Let’s have a look at what <code>gym</code> is and how to make our maze <code>Environment</code> from the last chapter a <code>gym</code> environment compatible with RLlib.</p>
+<section data-pdf-bookmark="Building A Gym Environment" data-type="sect2"><div class="sect2" id="idm44990030085856">
+<h2>Building A Gym Environment</h2>
+<p>If you look at the well-documented and easy to read <code>gym.Env</code> environment interface <a href="https://github.com/openai/gym/blob/master/gym/core.py#L17">on GitHub</a>,
+you’ll notice that an implementation of this interface has two mandatory class variables and three methods that subclasses need to implement.
+You don’t have to check the source code, but I do encourage you to have a look.
+You might just be surprised by how much you already know about <code>gym</code> environments.</p>
+<p>In short, the interface of a gym environment looks like the following pseudo-code:</p>
+<pre data-code-language="python" data-type="programlisting"><code class="kn">import</code><code> </code><code class="nn">gym</code><code>
+</code><code>
+</code><code>
+</code><code class="k">class</code><code> </code><code class="nc">Env</code><code class="p">:</code><code>
+</code><code>
+</code><code>    </code><code class="n">action_space</code><code class="p">:</code><code> </code><code class="n">gym</code><code class="o">.</code><code class="n">spaces</code><code class="o">.</code><code class="n">Space</code><code>
+</code><code>    </code><code class="n">observation_space</code><code class="p">:</code><code> </code><code class="n">gym</code><code class="o">.</code><code class="n">spaces</code><code class="o">.</code><code class="n">Space</code><code>  </code><a class="co" href="#callout_reinforcement_learning_with_ray_rllib_CO1-1" id="co_reinforcement_learning_with_ray_rllib_CO1-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a><code>
+</code><code>
+</code><code>    </code><code class="k">def</code><code> </code><code class="nf">step</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code><code> </code><code class="n">action</code><code class="p">)</code><code class="p">:</code><code>  </code><a class="co" href="#callout_reinforcement_learning_with_ray_rllib_CO1-2" id="co_reinforcement_learning_with_ray_rllib_CO1-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a><code>
+</code><code>        </code><code class="o">.</code><code class="o">.</code><code class="o">.</code><code>
+</code><code>
+</code><code>    </code><code class="k">def</code><code> </code><code class="nf">reset</code><code class="p">(</code><code class="bp">self</code><code class="p">)</code><code class="p">:</code><code>  </code><a class="co" href="#callout_reinforcement_learning_with_ray_rllib_CO1-3" id="co_reinforcement_learning_with_ray_rllib_CO1-3"><img alt="3" height="12" src="assets/3.png" width="12"/></a><code>
+</code><code>        </code><code class="o">.</code><code class="o">.</code><code class="o">.</code><code>
+</code><code>
+</code><code>    </code><code class="k">def</code><code> </code><code class="nf">render</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code><code> </code><code class="n">mode</code><code class="o">=</code><code class="s2">"</code><code class="s2">human</code><code class="s2">"</code><code class="p">)</code><code class="p">:</code><code>  </code><a class="co" href="#callout_reinforcement_learning_with_ray_rllib_CO1-4" id="co_reinforcement_learning_with_ray_rllib_CO1-4"><img alt="4" height="12" src="assets/4.png" width="12"/></a><code>
+</code><code>        </code><code class="o">.</code><code class="o">.</code><code class="o">.</code></pre>
+<dl class="calloutlist">
+<dt><a class="co" href="#co_reinforcement_learning_with_ray_rllib_CO1-1" id="callout_reinforcement_learning_with_ray_rllib_CO1-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a></dt>
+<dd><p>The <code>gym.Env</code> interface has an action and an observation space.</p></dd>
+<dt><a class="co" href="#co_reinforcement_learning_with_ray_rllib_CO1-2" id="callout_reinforcement_learning_with_ray_rllib_CO1-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a></dt>
+<dd><p>The <code>Env</code> can run a <code>step</code> and returns a tuple of observations, reward, done condition, and further info.</p></dd>
+<dt><a class="co" href="#co_reinforcement_learning_with_ray_rllib_CO1-3" id="callout_reinforcement_learning_with_ray_rllib_CO1-3"><img alt="3" height="12" src="assets/3.png" width="12"/></a></dt>
+<dd><p>An <code>Env</code> can <code>reset</code> itself, which will return the current observations</p></dd>
+<dt><a class="co" href="#co_reinforcement_learning_with_ray_rllib_CO1-4" id="callout_reinforcement_learning_with_ray_rllib_CO1-4"><img alt="4" height="12" src="assets/4.png" width="12"/></a></dt>
+<dd><p>We can <code>render</code> an <code>Env</code> for different purposes, like for human display or as string representation.</p></dd>
+</dl>
+<p>If you’ve read <a data-type="xref" href="ch03.xhtml#chapter_03">Chapter 3</a> carefully, you’ll notice that this is very similar to the interface of the maze <code>Environment</code> we built there.
+In fact, <code>gym</code> has a so-called <code>Discrete</code> space implemented in <code>gym.spaces</code>, which means that we can make our maze <code>Environment</code> a <code>gym.Env</code> as follows.
+We assume that you store this code in a file called <code>maze_gym_env.py</code> and that the code for the <code>Discrete</code> space and the <code>Environment</code> from <a data-type="xref" href="ch03.xhtml#chapter_03">Chapter 3</a> is either located at the top of that file (or is imported there).</p>
+<pre data-code-language="python" data-type="programlisting"><code class="c1"># Original definition of `Environment` and `Discrete` go here.</code><code>
+</code><code>
+</code><code class="kn">import</code><code> </code><code class="nn">gym</code><code>
+</code><code class="kn">from</code><code> </code><code class="nn">gym</code><code class="nn">.</code><code class="nn">spaces</code><code> </code><code class="kn">import</code><code> </code><code class="n">Discrete</code><code>  </code><a class="co" href="#callout_reinforcement_learning_with_ray_rllib_CO2-1" id="co_reinforcement_learning_with_ray_rllib_CO2-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a><code>
+</code><code>
+</code><code>
+</code><code class="k">class</code><code> </code><code class="nc">GymEnvironment</code><code class="p">(</code><code class="n">Environment</code><code class="p">,</code><code> </code><code class="n">gym</code><code class="o">.</code><code class="n">Env</code><code class="p">)</code><code class="p">:</code><code>  </code><a class="co" href="#callout_reinforcement_learning_with_ray_rllib_CO2-2" id="co_reinforcement_learning_with_ray_rllib_CO2-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a><code>
+</code><code>    </code><code class="k">def</code><code> </code><code class="fm">__init__</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code><code> </code><code class="o">*</code><code class="n">args</code><code class="p">,</code><code> </code><code class="o">*</code><code class="o">*</code><code class="n">kwargs</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>        </code><code class="sd">"""Make our original `Environment` a gym `Env`."""</code><code>
+</code><code>        </code><code class="nb">super</code><code class="p">(</code><code class="p">)</code><code class="o">.</code><code class="fm">__init__</code><code class="p">(</code><code class="o">*</code><code class="n">args</code><code class="p">,</code><code> </code><code class="o">*</code><code class="o">*</code><code class="n">kwargs</code><code class="p">)</code><code>
+</code><code>
+</code><code>
+</code><code class="n">gym_env</code><code> </code><code class="o">=</code><code> </code><code class="n">GymEnvironment</code><code class="p">(</code><code class="p">)</code></pre>
+<dl class="calloutlist">
+<dt><a class="co" href="#co_reinforcement_learning_with_ray_rllib_CO2-1" id="callout_reinforcement_learning_with_ray_rllib_CO2-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a></dt>
+<dd><p>We override our own <code>Discrete</code> implementation with that of <code>gym</code>.</p></dd>
+<dt><a class="co" href="#co_reinforcement_learning_with_ray_rllib_CO2-2" id="callout_reinforcement_learning_with_ray_rllib_CO2-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a></dt>
+<dd><p>We then simply make our <code>GymEnvironment</code> implement a <code>gym.Env</code>. The interface is essentially the same as before.</p></dd>
+</dl>
+<p>Of course, we could have made our original <code>Environment</code> implement <code>gym.Env</code> by simply inheriting from it in the first place.
+But the point is that the <code>gym.Env</code> interface comes up so naturally in the context of RL that it
+is a good exercise to implement it without having to resort to external libraries.</p>
+<p>Notably, the <code>gym.Env</code> interface also comes with helpful utility functionality and many interesting example implementations.
+For instance, the <code>Pendulum-v1</code> environment we used in <a data-type="xref" href="ch01.xhtml#chapter_01">Chapter 1</a> is an example from <code>gym</code>,
+and there are <a href="https://gym.openai.com/envs">many other environments</a> available to test your RL algorithms.</p>
+</div></section>
+<section data-pdf-bookmark="Running the RLlib CLI" data-type="sect2"><div class="sect2" id="idm44990030085232">
+<h2>Running the RLlib CLI</h2>
+<p>Now that we have our <code>GymEnvironment</code> implemented as a <code>gym.Env</code>, here’s how you can use it with RLlib.
+You’ve seen the RLlib CLI in action in <a data-type="xref" href="ch01.xhtml#chapter_01">Chapter 1</a> before, but this time the situation is a bit different.
+In the first chapter we simply referenced the <code>Pendulum-v1</code> environment from by <em>name</em> in a YAML file, along with other RL training configuration.
+This time around we want to bring our own <code>gym</code> environment class, namely the class <code>GymEnvironment</code> that we defined in <code>maze_gym_env.py</code>.
+To specify this class in Ray RLlib, you use the full qualifying name of the class from where you’re referencing it, i.e. in our case <code>maze_gym_env.GymEnvironment</code>.
+If you had a more complicated Python project and your environment is stored in another module, you’d simply add the module name accordingly.</p>
+<p>The following YAML file specifies the minimal configuration needed to train an RLlib algorithm on the <code>GymEnvironment</code> class.
+To align as closely as possible with our experiment from <a data-type="xref" href="ch03.xhtml#chapter_03">Chapter 3</a>, in which we used Q-learning, we use <code>DQN</code> as the algorithm for our training <code>run</code>.
+Also, to make sure we can control the time of training, we set an explicit <code>stop</code> condition,
+namely by setting <code>timesteps_total</code> to <code>10000</code>.</p>
+<pre data-code-language="yaml" data-type="programlisting"><code class="c1"># maze.yml</code><code class="w">
+</code><code class="nt">maze_env</code><code class="p">:</code><code class="w">
+</code><code class="w">    </code><code class="nt">env</code><code class="p">:</code><code class="w"> </code><code class="l-Scalar-Plain">maze_gym_env.GymEnvironment</code><code class="w">  </code><a class="co" href="#callout_reinforcement_learning_with_ray_rllib_CO3-1" id="co_reinforcement_learning_with_ray_rllib_CO3-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a><code class="w">
+</code><code class="w">    </code><code class="nt">run</code><code class="p">:</code><code class="w"> </code><code class="l-Scalar-Plain">DQN</code><code class="w">
+</code><code class="w">    </code><code class="nt">checkpoint_freq</code><code class="p">:</code><code class="w"> </code><code class="l-Scalar-Plain">1</code><code class="w"> </code><a class="co" href="#callout_reinforcement_learning_with_ray_rllib_CO3-2" id="co_reinforcement_learning_with_ray_rllib_CO3-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a><code class="w">
+</code><code class="w">    </code><code class="nt">stop</code><code class="p">:</code><code class="w">
+</code><code class="w">        </code><code class="nt">timesteps_total</code><code class="p">:</code><code class="w"> </code><code class="l-Scalar-Plain">10000</code><code class="w">  </code><a class="co" href="#callout_reinforcement_learning_with_ray_rllib_CO3-3" id="co_reinforcement_learning_with_ray_rllib_CO3-3"><img alt="3" height="12" src="assets/3.png" width="12"/></a></pre>
+<dl class="calloutlist">
+<dt><a class="co" href="#co_reinforcement_learning_with_ray_rllib_CO3-1" id="callout_reinforcement_learning_with_ray_rllib_CO3-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a></dt>
+<dd><p>We specify the relative Python path to our environment class here.</p></dd>
+<dt><a class="co" href="#co_reinforcement_learning_with_ray_rllib_CO3-2" id="callout_reinforcement_learning_with_ray_rllib_CO3-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a></dt>
+<dd><p>We store checkpoints of our model after each training iteration.</p></dd>
+<dt><a class="co" href="#co_reinforcement_learning_with_ray_rllib_CO3-3" id="callout_reinforcement_learning_with_ray_rllib_CO3-3"><img alt="3" height="12" src="assets/3.png" width="12"/></a></dt>
+<dd><p>We can also specify a stopping condition for training, here a maximum of 10000 steps.</p></dd>
+</dl>
+<p>Assuming you store this configuration in a file called <code>maze.yml</code> you can now kick off an RLlib training run by running the following <code>train</code> command:</p>
+<pre data-code-language="bash" data-type="programlisting"> rllib train -f maze.yml</pre>
+<p>This single line of code basically takes care of everything we did in <a data-type="xref" href="ch03.xhtml#chapter_03">Chapter 3</a>, but better.
+It runs a more sophisticated version of Q-Learning for us (DQN), takes care of scaling out to multiple workers under the hood, and even creates checkpoints of the algorithm automatically for us.</p>
+<p>From the output of that training script you should see that Ray will write training results to a <code>logdir</code> directory located at <code>~/ray_results/maze_env</code>.
+Within that folder you’ll find another directory that starts with <code>DQN_maze_gym_env.GymEnvironment_</code> and contains both an identifier for this experiment (<code>0ae8d</code> in my case) and the current date and time.
+Within that directory you should find several other subdirectories starting with a <code>checkpoint</code> prefix.
+For the training run on my computer there are a total of <code>10</code> checkpoints available and we’re using the last one (<code>checkpoint_000010/checkpoint-10</code>) to evaluate our trained RLlib algorithm with it.
+With the folders and checkpoints generated on my machine the <code>rllib evaluate</code> command you can use reads as follows (adapt the checkpoint path to what you see on your machine):</p>
+<pre data-code-language="bash" data-type="programlisting">rllib evaluate ~/ray_results/maze_env/DQN_maze_gym_env.Environment_0ae8d_00000_
+0_2022-02-08_13-52-59/checkpoint_000010/checkpoint-10<code class="se">\</code>
+  --run DQN<code class="se">\</code>
+  --env maze_gym_env.Environment<code class="se">\</code>
+  --steps <code class="m">100</code></pre>
+<p>The algorithm used in <code>--run</code> and the environment specified with <code>--env</code> have to match the ones used in the training run, and we evaluate the trained algorithm for a total of 100 <code>steps</code>. This should lead to output of the following form:</p>
+<pre data-code-language="text" data-type="programlisting">Episode #1: reward: 1.0
+Episode #2: reward: 1.0
+Episode #3: reward: 1.0
+...
+Episode #13: reward: 1.0</pre>
+<p>It should not come as a big surprise that the <code>DQN</code> algorithm from RLlib gets the maximum reward of <code>1</code> for the simple maze environment we tasked it with every single time.</p>
+<p>Before moving on to the Python API of RLlib, it should be noted that the <code>train</code> and <code>evaluate</code> CLI commands can come in handy even for more complex environments.
+The YAML configuration can take any parameter the Python API would, so in that sense there is no limit for training your experiments on the command line<sup><a data-type="noteref" href="ch04.xhtml#idm44990029718176" id="idm44990029718176-marker">2</a></sup>.</p>
+</div></section>
+<section data-pdf-bookmark="Using the RLlib Python API" data-type="sect2"><div class="sect2" id="idm44990029841728">
+<h2>Using the RLlib Python API</h2>
+<p>Having said that, you will likely spend most of your time coding your reinforcement learning experiments in Python.
+In the end the RLlib CLI is merely a wrapper around the underlying Python library that we’re going to look at now.</p>
+<p>To run RL workloads with RLlib from Python, your main entrypoint is that of the <code>Trainer</code> class.
+Specifically, for the algorithm of your choice you want to use the corresponding <code>Trainer</code> of it.
+In our case, since we decided to use Deep Q-Learning (DQN) for demonstration purposes, we’ll use the <code>DQNTrainer</code> class.</p>
+<section data-pdf-bookmark="Training RLlib models" data-type="sect3"><div class="sect3" id="idm44990029689856">
+<h3>Training RLlib models</h3>
+<p>RLlib has good defaults for all its <code>Trainer</code> implementations, meaning that you can initialize them without having to tweak any configuration parameters for these trainers<sup><a data-type="noteref" href="ch04.xhtml#idm44990029687616" id="idm44990029687616-marker">3</a></sup>.
+For instance, to generate a DQN trainer you can simply use <code>DQNTrainer(env=GymEnvironment)</code>.
+That said, it’s worth noting that RLlib trainers are highly configurable, as you will see in the following example.
+Specifically, we pass a <code>config</code> dictionary to the <code>Trainer</code> constructor and tell it to use four workers in total.
+What that means is that the <code>DQNTrainer</code> will spawn four Ray actors, each using a CPU kernel, to train our DQN algorithm in parallel.</p>
+<p>After you’ve initialized your trainer with the <code>env</code> you want to train on, and pass in the <code>config</code> you want, you can simply call the <code>train</code> method.
+Let’s use this method to train the algorithm for ten iterations in total:</p>
+<pre data-code-language="python" data-type="programlisting"><code class="kn">from</code><code> </code><code class="nn">ray</code><code class="nn">.</code><code class="nn">tune</code><code class="nn">.</code><code class="nn">logger</code><code> </code><code class="kn">import</code><code> </code><code class="n">pretty_print</code><code>
+</code><code class="kn">from</code><code> </code><code class="nn">maze_gym_env</code><code> </code><code class="kn">import</code><code> </code><code class="n">GymEnvironment</code><code>
+</code><code class="kn">from</code><code> </code><code class="nn">ray</code><code class="nn">.</code><code class="nn">rllib</code><code class="nn">.</code><code class="nn">agents</code><code class="nn">.</code><code class="nn">dqn</code><code> </code><code class="kn">import</code><code> </code><code class="n">DQNTrainer</code><code>
+</code><code>
+</code><code class="n">trainer</code><code> </code><code class="o">=</code><code> </code><code class="n">DQNTrainer</code><code class="p">(</code><code class="n">env</code><code class="o">=</code><code class="n">GymEnvironment</code><code class="p">,</code><code> </code><code class="n">config</code><code class="o">=</code><code class="p">{</code><code class="s2">"</code><code class="s2">num_workers</code><code class="s2">"</code><code class="p">:</code><code> </code><code class="mi">4</code><code class="p">}</code><code class="p">)</code><code>  </code><a class="co" href="#callout_reinforcement_learning_with_ray_rllib_CO4-1" id="co_reinforcement_learning_with_ray_rllib_CO4-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a><code>
+</code><code>
+</code><code class="n">config</code><code> </code><code class="o">=</code><code> </code><code class="n">trainer</code><code class="o">.</code><code class="n">get_config</code><code class="p">(</code><code class="p">)</code><code>  </code><a class="co" href="#callout_reinforcement_learning_with_ray_rllib_CO4-2" id="co_reinforcement_learning_with_ray_rllib_CO4-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a><code>
+</code><code class="nb">print</code><code class="p">(</code><code class="n">pretty_print</code><code class="p">(</code><code class="n">config</code><code class="p">)</code><code class="p">)</code><code>
+</code><code>
+</code><code class="k">for</code><code> </code><code class="n">i</code><code> </code><code class="ow">in</code><code> </code><code class="nb">range</code><code class="p">(</code><code class="mi">10</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>    </code><code class="n">result</code><code> </code><code class="o">=</code><code> </code><code class="n">trainer</code><code class="o">.</code><code class="n">train</code><code class="p">(</code><code class="p">)</code><code>  </code><a class="co" href="#callout_reinforcement_learning_with_ray_rllib_CO4-3" id="co_reinforcement_learning_with_ray_rllib_CO4-3"><img alt="3" height="12" src="assets/3.png" width="12"/></a><code>
+</code><code>
+</code><code class="nb">print</code><code class="p">(</code><code class="n">pretty_print</code><code class="p">(</code><code class="n">result</code><code class="p">)</code><code class="p">)</code><code>  </code><a class="co" href="#callout_reinforcement_learning_with_ray_rllib_CO4-4" id="co_reinforcement_learning_with_ray_rllib_CO4-4"><img alt="4" height="12" src="assets/4.png" width="12"/></a></pre>
+<dl class="calloutlist">
+<dt><a class="co" href="#co_reinforcement_learning_with_ray_rllib_CO4-1" id="callout_reinforcement_learning_with_ray_rllib_CO4-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a></dt>
+<dd><p>We use the <code>DQNTrainer</code> from RLlib to use Deep-Q-Networks (DQN) for training, using 4 parallel workers (Ray actors).</p></dd>
+<dt><a class="co" href="#co_reinforcement_learning_with_ray_rllib_CO4-2" id="callout_reinforcement_learning_with_ray_rllib_CO4-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a></dt>
+<dd><p>Each <code>Trainer</code> has a complex default configuration.</p></dd>
+<dt><a class="co" href="#co_reinforcement_learning_with_ray_rllib_CO4-3" id="callout_reinforcement_learning_with_ray_rllib_CO4-3"><img alt="3" height="12" src="assets/3.png" width="12"/></a></dt>
+<dd><p>We can then simply call the <code>train</code> method to train the agent for ten iterations.</p></dd>
+<dt><a class="co" href="#co_reinforcement_learning_with_ray_rllib_CO4-4" id="callout_reinforcement_learning_with_ray_rllib_CO4-4"><img alt="4" height="12" src="assets/4.png" width="12"/></a></dt>
+<dd><p>With the <code>pretty_print</code> utility we can generate human-readable output of the training results.</p></dd>
+</dl>
+<p>Note that the number <code>10</code> training iterations has no special meaning, but it should be enough for the algorithm to learn to solve the maze problem adequately.
+The example just goes to show you that you have full control over the training process.</p>
+<p>From printing the <code>config</code> dictionary, you can verify that the <code>num_workers</code> parameter is set to 4<sup><a data-type="noteref" href="ch04.xhtml#idm44990029518816" id="idm44990029518816-marker">4</a></sup>.
+Similarly, If you run this training script, the <code>result</code> contains detailed information about the state of the <code>Trainer</code> and the training results that’s too verbose to put here.
+The part that’s most relevant for us right now is information about the reward of the algorithm, which hopefully indicates that the algorithm learned to solve the maze problem.
+You should see output of the following form:</p>
+<pre data-code-language="text" data-type="programlisting">...
+episode_reward_max: 1.0
+episode_reward_mean: 1.0
+episode_reward_min: 1.0
+episodes_this_iter: 15
+episodes_total: 19
+...
+timesteps_total: 10000
+training_iteration: 10
+...</pre>
+<p>In particular, this output shows that the minimum reward attained on average per episode is <code>1.0</code>, which in turn means that the agent always reached the goal and collected the maximum reward (<code>1.0</code>).</p>
+</div></section>
+<section data-pdf-bookmark="Saving, loading, and evaluating RLlib models" data-type="sect3"><div class="sect3" id="idm44990029515312">
+<h3>Saving, loading, and evaluating RLlib models</h3>
+<p>Reaching the goal for this simple example isn’t too hard, but let’s see if evaluating the trained algorithm confirms that
+the agent can also do so in an optimal way, namely by only taking the minimum number of eight steps to reach the goal.</p>
+<p>To do so, we utilize another mechanism that you’ve already seen from the RLlib CLI, namely <em>checkpointing</em>.
+Creating model checkpoints is very useful to ensure you can recover your work in case of a crash, or simply to track training progress persistently.
+You can simply create a checkpoint of your RLlib trainers at any point in the training process by calling <code>trainer.save()</code>.
+Once you have a checkpoint, you can easily <code>restore</code> your <code>Trainer</code> with it.
+And evaluating a model is as simple as calling <code>trainer.evaluate(checkpoint)</code> with the checkpoint you created.
+Here’s how that looks like if you put it all together:</p>
+<pre data-code-language="python" data-type="programlisting"><code class="n">checkpoint</code><code> </code><code class="o">=</code><code> </code><code class="n">trainer</code><code class="o">.</code><code class="n">save</code><code class="p">(</code><code class="p">)</code><code>  </code><a class="co" href="#callout_reinforcement_learning_with_ray_rllib_CO5-1" id="co_reinforcement_learning_with_ray_rllib_CO5-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a><code>
+</code><code class="nb">print</code><code class="p">(</code><code class="n">checkpoint</code><code class="p">)</code><code>
+</code><code>
+</code><code class="n">evaluation</code><code> </code><code class="o">=</code><code> </code><code class="n">trainer</code><code class="o">.</code><code class="n">evaluate</code><code class="p">(</code><code class="n">checkpoint</code><code class="p">)</code><code>  </code><a class="co" href="#callout_reinforcement_learning_with_ray_rllib_CO5-2" id="co_reinforcement_learning_with_ray_rllib_CO5-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a><code>
+</code><code class="nb">print</code><code class="p">(</code><code class="n">pretty_print</code><code class="p">(</code><code class="n">evaluation</code><code class="p">)</code><code class="p">)</code><code>
+</code><code>
+</code><code class="n">restored_trainer</code><code> </code><code class="o">=</code><code> </code><code class="n">DQNTrainer</code><code class="p">(</code><code class="n">env</code><code class="o">=</code><code class="n">GymEnvironment</code><code class="p">)</code><code>
+</code><code class="n">restored_trainer</code><code class="o">.</code><code class="n">restore</code><code class="p">(</code><code class="n">checkpoint</code><code class="p">)</code><code>  </code><a class="co" href="#callout_reinforcement_learning_with_ray_rllib_CO5-3" id="co_reinforcement_learning_with_ray_rllib_CO5-3"><img alt="3" height="12" src="assets/3.png" width="12"/></a></pre>
+<dl class="calloutlist">
+<dt><a class="co" href="#co_reinforcement_learning_with_ray_rllib_CO5-1" id="callout_reinforcement_learning_with_ray_rllib_CO5-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a></dt>
+<dd><p>You can <code>save</code> trainers to create checkpoints.</p></dd>
+<dt><a class="co" href="#co_reinforcement_learning_with_ray_rllib_CO5-2" id="callout_reinforcement_learning_with_ray_rllib_CO5-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a></dt>
+<dd><p>RLlib trainers can be evaluated at your checkpoints.</p></dd>
+<dt><a class="co" href="#co_reinforcement_learning_with_ray_rllib_CO5-3" id="callout_reinforcement_learning_with_ray_rllib_CO5-3"><img alt="3" height="12" src="assets/3.png" width="12"/></a></dt>
+<dd><p>And you can also <code>restore</code> any <code>Trainer</code> from a given checkpoint.</p></dd>
+</dl>
+<p>I should mention that you can also just call <code>trainer.evaluate()</code> without creating a checkpoint first, but it’s usually good practice to use checkpoints anyway.
+Looking at the output, we can now confirm that the trained RLlib algorithm did indeed converge to a good solution for the maze problem, as indicated by episodes of length <code>8</code> in evaluation:</p>
+<pre data-code-language="text" data-type="programlisting">~/ray_results/DQN_GymEnvironment_2022-02-09_10-19-301o3m9r6d/checkpoint_000010/
+checkpoint-10 evaluation:
+  ...
+  episodes_this_iter: 5
+  hist_stats:
+    episode_lengths:
+    - 8
+    - 8
+    ...</pre>
+</div></section>
+<section data-pdf-bookmark="Computing actions" data-type="sect3"><div class="sect3" id="idm44990029396224">
+<h3>Computing actions</h3>
+<p>RLlib trainers have much more functionality than just the <code>train</code>, <code>evaluate</code>, <code>save</code> and <code>restore</code> methods we’ve seen so far.
+For example, you can directly compute actions given the current state of an environment.
+In <a data-type="xref" href="ch03.xhtml#chapter_03">Chapter 3</a> we implemented episode rollouts by stepping through an environment and collecting rewards.
+We can easily do the same with RLlib for our <code>GymEnvironment</code> as follows:</p>
+<pre data-code-language="python" data-type="programlisting"><code class="n">env</code><code> </code><code class="o">=</code><code> </code><code class="n">GymEnvironment</code><code class="p">(</code><code class="p">)</code><code>
+</code><code class="n">done</code><code> </code><code class="o">=</code><code> </code><code class="kc">False</code><code>
+</code><code class="n">total_reward</code><code> </code><code class="o">=</code><code> </code><code class="mi">0</code><code>
+</code><code class="n">observations</code><code> </code><code class="o">=</code><code> </code><code class="n">env</code><code class="o">.</code><code class="n">reset</code><code class="p">(</code><code class="p">)</code><code>
+</code><code>
+</code><code class="k">while</code><code> </code><code class="ow">not</code><code> </code><code class="n">done</code><code class="p">:</code><code>
+</code><code>    </code><code class="n">action</code><code> </code><code class="o">=</code><code> </code><code class="n">trainer</code><code class="o">.</code><code class="n">compute_single_action</code><code class="p">(</code><code class="n">observations</code><code class="p">)</code><code>  </code><a class="co" href="#callout_reinforcement_learning_with_ray_rllib_CO6-1" id="co_reinforcement_learning_with_ray_rllib_CO6-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a><code>
+</code><code>    </code><code class="n">observations</code><code class="p">,</code><code> </code><code class="n">reward</code><code class="p">,</code><code> </code><code class="n">done</code><code class="p">,</code><code> </code><code class="n">info</code><code> </code><code class="o">=</code><code> </code><code class="n">env</code><code class="o">.</code><code class="n">step</code><code class="p">(</code><code class="n">action</code><code class="p">)</code><code>
+</code><code>    </code><code class="n">total_reward</code><code> </code><code class="o">+</code><code class="o">=</code><code> </code><code class="n">reward</code></pre>
+<dl class="calloutlist">
+<dt><a class="co" href="#co_reinforcement_learning_with_ray_rllib_CO6-1" id="callout_reinforcement_learning_with_ray_rllib_CO6-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a></dt>
+<dd><p>To compute actions for given <code>observations</code> use <code>compute_single_action</code>.</p></dd>
+</dl>
+<p>In case you should need to compute many actions at once, not just a single one, you can use the <code>compute_actions</code> method instead, which takes dictionaries of observations as input and produces dictionaries of actions with the same dictionary keys as output.</p>
+<pre data-code-language="python" data-type="programlisting"><code class="n">action</code> <code class="o">=</code> <code class="n">trainer</code><code class="o">.</code><code class="n">compute_actions</code><code class="p">({</code><code class="s2">"obs_1"</code><code class="p">:</code> <code class="n">observations</code><code class="p">,</code> <code class="s2">"obs_2"</code><code class="p">:</code> <code class="n">observations</code><code class="p">})</code>
+<code class="nb">print</code><code class="p">(</code><code class="n">action</code><code class="p">)</code>
+<code class="c1"># {'obs_1': 0, 'obs_2': 1}</code></pre>
+</div></section>
+<section data-pdf-bookmark="Accessing policy and model states" data-type="sect3"><div class="sect3" id="idm44990029263440">
+<h3>Accessing policy and model states</h3>
+<p>Remember that each reinforcement learning algorithm is based on a <em>policy</em> that chooses next actions given the current observations the agent has of the environment.
+Each policy is in turn based on an underlying <em>model</em>.</p>
+<p>In the case of vanilla Q-Learning that we discussed in <a data-type="xref" href="ch03.xhtml#chapter_03">Chapter 3</a> the model was a simple look-up table of state-action values, also called Q-values.
+And that policy used this model for predicting next actions in case it decided to <em>exploit</em> what the model had learned so far, or to <em>explore</em> the environment with random actions otherwise.</p>
+<p>When using Deep Q-Learning, the underlying model of the policy is a neural network that, loosely speaking, maps observations to actions.
+Note that for choosing next actions in an environment, we’re ultimately we’re not interested in the concrete values of the approximated Q-values, but rather in the <em>probabilities</em> of taking each action.
+The probability distribution over all possible actions is called an <em>action distribution</em>.
+In the maze example we’re using here as a running examples we can move up, right, down or left, so in that case an action distribution is a vector of four probabilities, one for each action.</p>
+<p>To make things concrete, let’s have a look at how you access policies and models in RLlib:</p>
+<pre data-code-language="python" data-type="programlisting"><code class="n">policy</code> <code class="o">=</code> <code class="n">trainer</code><code class="o">.</code><code class="n">get_policy</code><code class="p">()</code>
+<code class="nb">print</code><code class="p">(</code><code class="n">policy</code><code class="o">.</code><code class="n">get_weights</code><code class="p">())</code>
+
+<code class="n">model</code> <code class="o">=</code> <code class="n">policy</code><code class="o">.</code><code class="n">model</code></pre>
+<p>Both <code>policy</code> and <code>model</code> have many useful methods to explore.
+In this example we use <code>get_weights</code> to inspect the parameters of the model underlying the policy (which are called “weights” by standard convention).</p>
+<p>To convince you that there is in fact not just one model at play here, but in fact a collection of four models that we trained on separate Ray workers, we can access all the workers we used in training - and then ask each worker’s policy for their weights like this:</p>
+<pre data-code-language="python" data-type="programlisting"><code class="n">workers</code> <code class="o">=</code> <code class="n">trainer</code><code class="o">.</code><code class="n">workers</code>
+<code class="n">workers</code><code class="o">.</code><code class="n">foreach_worker</code><code class="p">(</code><code class="k">lambda</code> <code class="n">remote_trainer</code><code class="p">:</code> <code class="n">remote_trainer</code><code class="o">.</code><code class="n">get_policy</code><code class="p">()</code><code class="o">.</code><code class="n">get_weights</code><code class="p">())</code></pre>
+<p>In this way, you can access every method available on a <code>Trainer</code> instance on each of your workers.
+In principle, you can use this to <em>set</em> model parameters as well, or otherwise configure your workers.
+RLlib workers are ultimately Ray actors, so you can alter and manipulate them in almost any way you like.</p>
+<p>We haven’t talked about the specific implementation of Deep Q-Learning used in <code>DQNTrainer</code>, but the <code>model</code> used is in fact a bit more complex than what I’ve described so far.
+Every RLlib <code>model</code> obtained from a policy has a <code>base_model</code> that has a neat <code>summary</code> method to describe itself:</p>
+<pre data-code-language="python" data-type="programlisting"><code class="n">model</code><code class="o">.</code><code class="n">base_model</code><code class="o">.</code><code class="n">summary</code><code class="p">()</code></pre>
+<p>As you can see from the output below, this model takes in our <code>observations</code>.
+The shape of these <code>observations</code> is a bit strangely annotated as <code>[(None, 25)]</code>, but essentially this just means we have the expected <code>5*5</code> maze grid values correctly encoded.
+The model follows up with two so-called <code>Dense</code> layers and predicts a single value at the end.</p>
+<pre data-code-language="text" data-type="programlisting">Model: "model"
+____________________________________________________________________________________
+Layer (type)                    Output Shape         Param #     Connected to
+====================================================================================
+observations (InputLayer)       [(None, 25)]         0
+____________________________________________________________________________________
+fc_1 (Dense)                    (None, 256)          6656        observations[0][0]
+____________________________________________________________________________________
+fc_out (Dense)                  (None, 256)          65792       fc_1[0][0]
+____________________________________________________________________________________
+value_out (Dense)               (None, 1)            257         fc_1[0][0]
+====================================================================================
+Total params: 72,705
+Trainable params: 72,705
+Non-trainable params: 0
+____________________________________________________________________________________</pre>
+<p>Note that it’s perfectly possible to customize this model for your RLlib experiments.
+If your environment is quite complex and has a big observation space, for instance, you might need a bigger model to capture that complexity.
+However, doing so requires in-depth knowledge of the underlying neural network framework (in this case TensorFlow), which we don’t assume you have<sup><a data-type="noteref" href="ch04.xhtml#idm44990029092880" id="idm44990029092880-marker">5</a></sup>.</p>
+<aside data-type="sidebar" epub:type="sidebar"><div class="sidebar" id="idm44990029147920">
+<h5>State-Action Values and State-Value Functions</h5>
+<p>So far we’ve been concerned with the concept of state-action values a lot, since this concept takes center stage in the formulation of Q-Learning, which we’ve been using extensively in this and the last chapter.</p>
+<p>The <code>model</code> we’ve just had a look at has a dedicated output, in deep learning terms called a <em>head</em>, for predicting Q-values.
+You can access and summarize this part of the model through <code>model.q_value_head.summary()</code>.</p>
+<p>In contrast to that, it’s also possible to ask of how valuable a particular <em>state</em> is, without specifying an action that pairs with it.
+This leads to the concept of state-value functions, or simply value functions, that are very important in the RL literature.
+We can’t go into more detail in this RLlib introduction, but note that you have access to a <em>value function head</em> as well through <code>model.state_value_head.summary()</code>.</p>
+</div></aside>
+<p>Next, let’s see if we can take some observations from our environment and pass them to the <code>model</code> we just extracted from our <code>policy</code>.
+This part is a bit technically involved, because models are a bit more difficult to access directly in RLlib.
+The reason is that normally you would only interface with a <code>model</code> through your <code>policy</code>, which takes care of preprocessing the observations and passing them to the model (among other things).</p>
+<p>Luckily, we can simply access the preprocessor used by the policy, <code>transform</code> the observations from our environment, and then pass them to the model:</p>
+<pre data-code-language="python" data-type="programlisting"><code class="kn">from</code><code> </code><code class="nn">ray</code><code class="nn">.</code><code class="nn">rllib</code><code class="nn">.</code><code class="nn">models</code><code class="nn">.</code><code class="nn">preprocessors</code><code> </code><code class="kn">import</code><code> </code><code class="n">get_preprocessor</code><code>
+</code><code class="n">env</code><code> </code><code class="o">=</code><code> </code><code class="n">GymEnvironment</code><code class="p">(</code><code class="p">)</code><code>
+</code><code class="n">obs_space</code><code> </code><code class="o">=</code><code> </code><code class="n">env</code><code class="o">.</code><code class="n">observation_space</code><code>
+</code><code class="n">preprocessor</code><code> </code><code class="o">=</code><code> </code><code class="n">get_preprocessor</code><code class="p">(</code><code class="n">obs_space</code><code class="p">)</code><code class="p">(</code><code class="n">obs_space</code><code class="p">)</code><code>  </code><a class="co" href="#callout_reinforcement_learning_with_ray_rllib_CO7-1" id="co_reinforcement_learning_with_ray_rllib_CO7-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a><code>
+</code><code>
+</code><code class="n">observations</code><code> </code><code class="o">=</code><code> </code><code class="n">env</code><code class="o">.</code><code class="n">reset</code><code class="p">(</code><code class="p">)</code><code>
+</code><code class="n">transformed</code><code> </code><code class="o">=</code><code> </code><code class="n">preprocessor</code><code class="o">.</code><code class="n">transform</code><code class="p">(</code><code class="n">observations</code><code class="p">)</code><code class="o">.</code><code class="n">reshape</code><code class="p">(</code><code class="mi">1</code><code class="p">,</code><code> </code><code class="o">-</code><code class="mi">1</code><code class="p">)</code><code>  </code><a class="co" href="#callout_reinforcement_learning_with_ray_rllib_CO7-2" id="co_reinforcement_learning_with_ray_rllib_CO7-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a><code>
+</code><code>
+</code><code class="n">model_output</code><code class="p">,</code><code> </code><code class="n">_</code><code> </code><code class="o">=</code><code> </code><code class="n">model</code><code class="o">.</code><code class="n">from_batch</code><code class="p">(</code><code class="p">{</code><code class="s2">"</code><code class="s2">obs</code><code class="s2">"</code><code class="p">:</code><code> </code><code class="n">transformed</code><code class="p">}</code><code class="p">)</code><code>  </code><a class="co" href="#callout_reinforcement_learning_with_ray_rllib_CO7-3" id="co_reinforcement_learning_with_ray_rllib_CO7-3"><img alt="3" height="12" src="assets/3.png" width="12"/></a></pre>
+<dl class="calloutlist">
+<dt><a class="co" href="#co_reinforcement_learning_with_ray_rllib_CO7-1" id="callout_reinforcement_learning_with_ray_rllib_CO7-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a></dt>
+<dd><p>You can use <code>get_processor</code> to access the preprocessor used by the policy.</p></dd>
+<dt><a class="co" href="#co_reinforcement_learning_with_ray_rllib_CO7-2" id="callout_reinforcement_learning_with_ray_rllib_CO7-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a></dt>
+<dd><p>For any <code>observations</code> obtained from your <code>env</code> you can use <code>transform</code> them to the format expected by the model. Note that we need to reshape the observations, too.</p></dd>
+<dt><a class="co" href="#co_reinforcement_learning_with_ray_rllib_CO7-3" id="callout_reinforcement_learning_with_ray_rllib_CO7-3"><img alt="3" height="12" src="assets/3.png" width="12"/></a></dt>
+<dd><p>You get the model output by using the <code>from_batch</code> method of the model on a preprocessed observation dictionary.</p></dd>
+</dl>
+<p>Having computed our <code>model_output</code>, we can now both access the Q-values, as well as the action distribution of the model for this output like this:</p>
+<pre data-code-language="python" data-type="programlisting"><code class="n">q_values</code><code> </code><code class="o">=</code><code> </code><code class="n">model</code><code class="o">.</code><code class="n">get_q_value_distributions</code><code class="p">(</code><code class="n">model_output</code><code class="p">)</code><code>  </code><a class="co" href="#callout_reinforcement_learning_with_ray_rllib_CO8-1" id="co_reinforcement_learning_with_ray_rllib_CO8-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a><code>
+</code><code class="nb">print</code><code class="p">(</code><code class="n">q_values</code><code class="p">)</code><code>
+</code><code>
+</code><code class="n">action_distribution</code><code> </code><code class="o">=</code><code> </code><code class="n">policy</code><code class="o">.</code><code class="n">dist_class</code><code class="p">(</code><code class="n">model_output</code><code class="p">,</code><code> </code><code class="n">model</code><code class="p">)</code><code>  </code><a class="co" href="#callout_reinforcement_learning_with_ray_rllib_CO8-2" id="co_reinforcement_learning_with_ray_rllib_CO8-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a><code>
+</code><code class="n">sample</code><code> </code><code class="o">=</code><code> </code><code class="n">action_distribution</code><code class="o">.</code><code class="n">sample</code><code class="p">(</code><code class="p">)</code><code>  </code><a class="co" href="#callout_reinforcement_learning_with_ray_rllib_CO8-3" id="co_reinforcement_learning_with_ray_rllib_CO8-3"><img alt="3" height="12" src="assets/3.png" width="12"/></a><code>
+</code><code class="nb">print</code><code class="p">(</code><code class="n">sample</code><code class="p">)</code></pre>
+<dl class="calloutlist">
+<dt><a class="co" href="#co_reinforcement_learning_with_ray_rllib_CO8-1" id="callout_reinforcement_learning_with_ray_rllib_CO8-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a></dt>
+<dd><p>The <code>get_q_value_distributions</code> method is specific to <code>DQN</code> models only.</p></dd>
+<dt><a class="co" href="#co_reinforcement_learning_with_ray_rllib_CO8-2" id="callout_reinforcement_learning_with_ray_rllib_CO8-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a></dt>
+<dd><p>By accessing <code>dist_class</code> we get the policy’s action distribution class.</p></dd>
+<dt><a class="co" href="#co_reinforcement_learning_with_ray_rllib_CO8-3" id="callout_reinforcement_learning_with_ray_rllib_CO8-3"><img alt="3" height="12" src="assets/3.png" width="12"/></a></dt>
+<dd><p>Action distributions can be sampled from.</p></dd>
+</dl>
+</div></section>
+</div></section>
+</div></section>
+<section data-pdf-bookmark="Configuring RLlib Experiments" data-type="sect1"><div class="sect1" id="idm44990030094384">
+<h1>Configuring RLlib Experiments</h1>
+<p>Now that you’ve seen the basic Python training API of RLlib in an example, let’s take a step back and discuss in more depth how to configure and run RLlib experiments.
+By now you know that your <code>Trainer</code> takes a <code>config</code> argument, which so far we’ve only used to set the number of Ray workers to 4.</p>
+<p>If you want to alter the behaviour of your RLlib training run, the way to do this is to change the  <code>config</code> argument of your <code>Trainer</code>.
+This is at the same time relatively simple, as you can add configuration properties quickly, and a bit tricky, as you have to know which key-words the <code>config</code> dictionary expects.
+Finding and tweaking the right configuration properties becomes easier once you have a good grasp of what’s available and what to expect.</p>
+<p>RLlib configuration splits in two parts, namely algorithm-specific and common configuration.
+We’ve used <code>DQN</code> as our algorithm in the examples so far, which has certain properties that are only available to this choice<sup><a data-type="noteref" href="ch04.xhtml#idm44990028855872" id="idm44990028855872-marker">6</a></sup>.
+Algorithm-specific configuration only becomes more relevant once you’ve settled on an algorithm and want to squeeze it for performance, but in practice RLlib provides you with good defaults to get started.
+You can look up configuration arguments in the <a href="https://docs.ray.io/en/latest/rllib-algorithms.xhtml">API reference for RLlib algorithms</a>.</p>
+<p>The common configuration of algorithms can be further split into the following types.</p>
+<section data-pdf-bookmark="Resource Configuration" data-type="sect2"><div class="sect2" id="idm44990028853024">
+<h2>Resource Configuration</h2>
+<p>Whether you use Ray RLlib locally or on a cluster, you can specify the resources used for the training process.
+Here are the most important options to consider:</p>
+<dl>
+<dt><code>num_gpus</code></dt>
+<dd>
+<p>Specify the number of GPUs to use for training. It’s important to check whether your algorithm of choice supports GPUs first. This value can also be fractional. For example, if using four rollout workers in <code>DQN</code> (<code>num_workers</code> = 4), you can set <code>num_gpus=0.25</code> to pack all four workers on the same GPU, so that all trainers benefit from the potential speedup.</p>
+</dd>
+<dt><code>num_cpus_per_worker</code></dt>
+<dd>
+<p>Set the number of CPUs to use for each worker.</p>
+</dd>
+</dl>
+</div></section>
+<section data-pdf-bookmark="Debugging and Logging Configuration" data-type="sect2"><div class="sect2" id="idm44990028846400">
+<h2>Debugging and Logging Configuration</h2>
+<p>Debugging your applications is crucial for any project, and machine learning is no exception.
+RLlib allows you to configure the way it logs information and how you can access it.</p>
+<dl>
+<dt><code>log_level</code></dt>
+<dd>
+<p>Set the level of logging to use. This can be either <code>DEBUG</code>, <code>INFO</code>, <code>WARN</code>, or <code>ERROR</code> and defaults to <code>WARN</code>. You should experiment with the different levels to see what suits your needs best in practice.</p>
+</dd>
+<dt><code>callbacks</code></dt>
+<dd>
+<p>You can specify custom <em>callback functions</em> to be called at various points during training. We will take a closer look at this topic in <a data-type="xref" href="ch05.xhtml#chapter_05">Chapter 5</a>.</p>
+</dd>
+<dt><code>ignore_worker_failures</code></dt>
+<dd>
+<p>For testing it might be useful to ignore worker failures by setting this property to <code>True</code> (defaults to <code>False</code>).</p>
+</dd>
+<dt><code>logger_config</code></dt>
+<dd>
+<p>You can specify a custom logger configuration, passed in as a nested dictionary.</p>
+</dd>
+</dl>
+</div></section>
+<section data-pdf-bookmark="Rollout Worker and Evaluation Configuration" data-type="sect2"><div class="sect2" id="idm44990028833392">
+<h2>Rollout Worker and Evaluation Configuration</h2>
+<p>Of course, you can also specify how many workers are used for rollouts during training and evaluation.</p>
+<dl>
+<dt><code>num_workers</code></dt>
+<dd>
+<p>You’ve seen this one already. It’s used to specify the number of Ray workers to use.</p>
+</dd>
+<dt><code>num_envs_per_worker</code></dt>
+<dd>
+<p>Specify the number of environments to evaluate per worker. This setting allows you to “batch” evaluation of environments. In particular, if your models take a long time to evaluate, grouping environments like this can speed up training.</p>
+</dd>
+<dt><code>create_env_on_driver</code></dt>
+<dd>
+<p>If you’ve set <code>num_workers</code> at least to 1, then the driver process does not need to create an environment, since there are rollout workers for that. If you set this property to <code>True</code> you create an additional environment on the driver.</p>
+</dd>
+<dt><code>explore</code></dt>
+<dd>
+<p>Set to <code>True</code> by default, this property allows you to turn off exploration, for instance during evaluation of your algorithms.</p>
+</dd>
+<dt><code>evaluation_num_workers</code></dt>
+<dd>
+<p>Specify the number of parallel evaluation workers to use, which defaults to 0.</p>
+</dd>
+</dl>
+</div></section>
+<section data-pdf-bookmark="Environment Configuration" data-type="sect2"><div class="sect2" id="idm44990028821760">
+<h2>Environment Configuration</h2>
+<dl>
+<dt><code>env</code></dt>
+<dd>
+<p>Specify the environment you want to use for training. This can either be a string of an environment known to Ray RLlib, such as any <code>gym</code> environment, or the class name of a custom environment you’ve implemented. There’s also a way to <em>register</em> your environments so that you can refer to them by name, but this requires using Ray Tune. We will learn about this feature in <a data-type="xref" href="ch05.xhtml#chapter_05">Chapter 5</a>.</p>
+</dd>
+<dt><code>observation_space</code> and <code>action_space</code></dt>
+<dd>
+<p>You can specify the observation and action spaces of your environment. If you don’t specify them, they will be inferred from the environment.</p>
+</dd>
+<dt><code>env_config</code></dt>
+<dd>
+<p>You can optionally specify a dictionary of configuration options for your environment that will be passed to the environment constructor.</p>
+</dd>
+<dt><code>render_env</code></dt>
+<dd>
+<p><code>False</code> by default, this property allows you to turn on rendering of the environment, which requires you to implement the <code>render</code> method of your environment.</p>
+</dd>
+</dl>
+<p>Note that we left out many available configuration options for each of the types we listed.
+On top of that, there’s a class of common configuration options to modify the behavior of the RL training procedure,
+like modifying the underlying model to use.
+These properties are the most important in a sense, while at the same time require the most specific knowledge of reinforcement learning.
+For this introduction to RLlib, we can’t go into any more details.
+But the good news is that if you’re a regular user of RL software, you will have no trouble identifying the relevant training configuration options.</p>
+</div></section>
+</div></section>
+<section data-pdf-bookmark="Working With RLlib Environments" data-type="sect1"><div class="sect1" id="idm44990028810528">
+<h1>Working With RLlib Environments</h1>
+<p>So far we’ve only introduced you to <code>gym</code> environments, but RLlib supports a wide variety of environments.
+After giving you a quick overview of all available options, we’ll show you two concrete examples of advanced RLlib environments in action.</p>
+<section data-pdf-bookmark="An Overview of RLlib Environments" data-type="sect2"><div class="sect2" id="idm44990028808512">
+<h2>An Overview of RLlib Environments</h2>
+<p>All available RLlib Environments extend a common <code>BaseEnv</code> class.
+If you want to work with several copies of the same <code>gym.Env</code> environment, you can use RLlib’s <code>VectorEnv</code> wrapper.
+Vectorized environments are useful, but also straightforward generalizations of what you’ve seen already.
+The two other types of environments available in RLlib are more interesting and deserve more attention.</p>
+<p>The first is called <code>MultiAgentEnv</code>, which allows you to train a model with <em>multiple agents</em>.
+Working with multiple agents can be tricky, because you have to take care of defining your agents within your environment with a suitable interface and account for the fact that each agent might have a completely different way of interacting with its environment.
+What’s more is that agents might interact with each other, and have to respect each other’s actions.
+In more advanced setting there might even be a <em>hierarchy</em> of agents, which explicitly depend on each other.
+In short, running multi-agent RL experiments is difficult, and we’ll see how RLlib handles this in the next example.</p>
+<p>The other type of environment we will look at is called <code>ExternalEnv</code>, which can be used to connect external simulators to RLlib.
+For instance, imagine our simple maze problem from earlier was a simulation of an actual robot navigating a maze.
+It might not be suitable in such scenarios to co-locate the robot (or its simulation, implemented in a different software stack) with RLlib’s learning agents.
+To account for that, RLlib provides you with a simple client-server architecture for communicating with external simulators, which allows communication over a REST API.</p>
+<p>In figure <a data-type="xref" href="#fig_envs">Figure 4-1</a> we summarize all available RLlib environments for you:</p>
+<figure><div class="figure" id="fig_envs">
+<img alt="RLlib envs" height="300" src="assets/rllib_envs.png"/>
+<h6><span class="label">Figure 4-1. </span>An overview of all available RLlib environments</h6>
+</div></figure>
+</div></section>
+<section data-pdf-bookmark="Working with Multiple Agents" data-type="sect2"><div class="sect2" id="idm44990028799056">
+<h2>Working with Multiple Agents</h2>
+<p>The basic idea of defining multi-agent environments in RLlib is simple.
+Whatever you define as a single value in a gym environment, you now define as a dictionary with values for each agent, and each agent has its unique key.
+Of course, the details are a little more complicated than that in practice.
+But once you have defined an environment hosting several agents, what’s necessary is to define how these agents should learn.</p>
+<p>In a single-agent environment there’s one agent and one policy to learn.
+In a multi-agent environment there are multiple agents that might map to one or several policies.
+For instance, if you have a group of homogenous agents in your environment, then you could define a single policy for all of them.
+If they all <em>act</em> the same way, then their behavior can be learnt the same way.
+In contrast, you might have situations with heterogeneous agents in which each of them has to learn a separate policy.
+Between these two extremes, there’s a spectrum of possibilities displayed in figure <a data-type="xref" href="#fig_policy_mapping">Figure 4-2</a>:</p>
+<figure><div class="figure" id="fig_policy_mapping">
+<img alt="Mapping envs" height="300" src="assets/mapping_envs.png"/>
+<h6><span class="label">Figure 4-2. </span>Mapping agents to policies in multi-agent reinforcement learning problems</h6>
+</div></figure>
+<p>We continue to use our maze game as a running example for this chapter.
+This way you can check for yourself how the interfaces differ in practice.
+So, to put the ideas we just outlined into code, let’s define a multi-agent version of the <code>GymEnvironment</code> class.
+Our <code>MultiAgentEnv</code> class will have precisely two agents, which we encode in a Python dictionary called <code>agents</code>, but in principle this works with any number of agents.
+We start be initializing and resetting our new environment:</p>
+<pre data-code-language="python" data-type="programlisting"><code class="kn">from</code><code> </code><code class="nn">ray</code><code class="nn">.</code><code class="nn">rllib</code><code class="nn">.</code><code class="nn">env</code><code class="nn">.</code><code class="nn">multi_agent_env</code><code> </code><code class="kn">import</code><code> </code><code class="n">MultiAgentEnv</code><code>
+</code><code class="kn">from</code><code> </code><code class="nn">gym</code><code class="nn">.</code><code class="nn">spaces</code><code> </code><code class="kn">import</code><code> </code><code class="n">Discrete</code><code>
+</code><code class="kn">import</code><code> </code><code class="nn">os</code><code>
+</code><code>
+</code><code>
+</code><code class="k">class</code><code> </code><code class="nc">MultiAgentMaze</code><code class="p">(</code><code class="n">MultiAgentEnv</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>
+</code><code>    </code><code class="n">agents</code><code> </code><code class="o">=</code><code> </code><code class="p">{</code><code class="mi">1</code><code class="p">:</code><code> </code><code class="p">(</code><code class="mi">4</code><code class="p">,</code><code> </code><code class="mi">0</code><code class="p">)</code><code class="p">,</code><code> </code><code class="mi">2</code><code class="p">:</code><code> </code><code class="p">(</code><code class="mi">0</code><code class="p">,</code><code> </code><code class="mi">4</code><code class="p">)</code><code class="p">}</code><code>  </code><a class="co" href="#callout_reinforcement_learning_with_ray_rllib_CO9-1" id="co_reinforcement_learning_with_ray_rllib_CO9-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a><code>
+</code><code>    </code><code class="n">goal</code><code> </code><code class="o">=</code><code> </code><code class="p">(</code><code class="mi">4</code><code class="p">,</code><code> </code><code class="mi">4</code><code class="p">)</code><code>
+</code><code>    </code><code class="n">info</code><code> </code><code class="o">=</code><code> </code><code class="p">{</code><code class="mi">1</code><code class="p">:</code><code> </code><code class="p">{</code><code class="s1">'</code><code class="s1">obs</code><code class="s1">'</code><code class="p">:</code><code> </code><code class="n">agents</code><code class="p">[</code><code class="mi">1</code><code class="p">]</code><code class="p">}</code><code class="p">,</code><code> </code><code class="mi">2</code><code class="p">:</code><code> </code><code class="p">{</code><code class="s1">'</code><code class="s1">obs</code><code class="s1">'</code><code class="p">:</code><code> </code><code class="n">agents</code><code class="p">[</code><code class="mi">2</code><code class="p">]</code><code class="p">}</code><code class="p">}</code><code>  </code><a class="co" href="#callout_reinforcement_learning_with_ray_rllib_CO9-2" id="co_reinforcement_learning_with_ray_rllib_CO9-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a><code>
+</code><code>
+</code><code>    </code><code class="k">def</code><code> </code><code class="fm">__init__</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code><code>  </code><code class="o">*</code><code class="n">args</code><code class="p">,</code><code> </code><code class="o">*</code><code class="o">*</code><code class="n">kwargs</code><code class="p">)</code><code class="p">:</code><code>  </code><a class="co" href="#callout_reinforcement_learning_with_ray_rllib_CO9-3" id="co_reinforcement_learning_with_ray_rllib_CO9-3"><img alt="3" height="12" src="assets/3.png" width="12"/></a><code>
+</code><code>        </code><code class="bp">self</code><code class="o">.</code><code class="n">action_space</code><code> </code><code class="o">=</code><code> </code><code class="n">Discrete</code><code class="p">(</code><code class="mi">4</code><code class="p">)</code><code>
+</code><code>        </code><code class="bp">self</code><code class="o">.</code><code class="n">observation_space</code><code> </code><code class="o">=</code><code> </code><code class="n">Discrete</code><code class="p">(</code><code class="mi">5</code><code class="o">*</code><code class="mi">5</code><code class="p">)</code><code>
+</code><code>
+</code><code>    </code><code class="k">def</code><code> </code><code class="nf">reset</code><code class="p">(</code><code class="bp">self</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>        </code><code class="bp">self</code><code class="o">.</code><code class="n">agents</code><code> </code><code class="o">=</code><code> </code><code class="p">{</code><code class="mi">1</code><code class="p">:</code><code> </code><code class="p">(</code><code class="mi">4</code><code class="p">,</code><code> </code><code class="mi">0</code><code class="p">)</code><code class="p">,</code><code> </code><code class="mi">2</code><code class="p">:</code><code> </code><code class="p">(</code><code class="mi">0</code><code class="p">,</code><code> </code><code class="mi">4</code><code class="p">)</code><code class="p">}</code><code>
+</code><code>
+</code><code>        </code><code class="k">return</code><code> </code><code class="p">{</code><code class="mi">1</code><code class="p">:</code><code> </code><code class="bp">self</code><code class="o">.</code><code class="n">get_observation</code><code class="p">(</code><code class="mi">1</code><code class="p">)</code><code class="p">,</code><code> </code><code class="mi">2</code><code class="p">:</code><code> </code><code class="bp">self</code><code class="o">.</code><code class="n">get_observation</code><code class="p">(</code><code class="mi">2</code><code class="p">)</code><code class="p">}</code><code>  </code><a class="co" href="#callout_reinforcement_learning_with_ray_rllib_CO9-4" id="co_reinforcement_learning_with_ray_rllib_CO9-4"><img alt="4" height="12" src="assets/4.png" width="12"/></a></pre>
+<dl class="calloutlist">
+<dt><a class="co" href="#co_reinforcement_learning_with_ray_rllib_CO9-1" id="callout_reinforcement_learning_with_ray_rllib_CO9-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a></dt>
+<dd><p>We now have two seekers with <code>(0, 4)</code> and <code>(4, 0)</code> starting positions in an <code>agents</code> dictionary.</p></dd>
+<dt><a class="co" href="#co_reinforcement_learning_with_ray_rllib_CO9-2" id="callout_reinforcement_learning_with_ray_rllib_CO9-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a></dt>
+<dd><p>For the <code>info</code> object we’re using agent IDs as keys.</p></dd>
+<dt><a class="co" href="#co_reinforcement_learning_with_ray_rllib_CO9-3" id="callout_reinforcement_learning_with_ray_rllib_CO9-3"><img alt="3" height="12" src="assets/3.png" width="12"/></a></dt>
+<dd><p>Action and observation spaces stay exactly the same as before.</p></dd>
+<dt><a class="co" href="#co_reinforcement_learning_with_ray_rllib_CO9-4" id="callout_reinforcement_learning_with_ray_rllib_CO9-4"><img alt="4" height="12" src="assets/4.png" width="12"/></a></dt>
+<dd><p>Observations are now per-agent dictionaries.</p></dd>
+</dl>
+<p>Notice that compared to the single-agent situation we had to modify neither action nor observation spaces, since we’re using two essentially identical agents here that can use the same spaces.
+In more complex situations you’d have to account for the fact that the actions and observations might look different for some agents.</p>
+<p>To continue, let’s generalize our helper methods <code>get_observation</code>, <code>get_reward</code>, and <code>is_done</code> to work with multiple agents.
+We do this by passing in an <code>action_id</code> to their signatures and handling each agent the same way as before.</p>
+<pre data-code-language="python" data-type="programlisting"><code>    </code><code class="k">def</code><code> </code><code class="nf">get_observation</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code><code> </code><code class="n">agent_id</code><code class="p">)</code><code class="p">:</code><code>  </code><a class="co" href="#callout_reinforcement_learning_with_ray_rllib_CO10-1" id="co_reinforcement_learning_with_ray_rllib_CO10-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a><a class="co" href="#callout_reinforcement_learning_with_ray_rllib_CO10-2" id="co_reinforcement_learning_with_ray_rllib_CO10-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a><code>
+</code><code>        </code><code class="n">seeker</code><code> </code><code class="o">=</code><code> </code><code class="bp">self</code><code class="o">.</code><code class="n">agents</code><code class="p">[</code><code class="n">agent_id</code><code class="p">]</code><code>
+</code><code>        </code><code class="k">return</code><code> </code><code class="mi">5</code><code> </code><code class="o">*</code><code> </code><code class="n">seeker</code><code class="p">[</code><code class="mi">0</code><code class="p">]</code><code> </code><code class="o">+</code><code> </code><code class="n">seeker</code><code class="p">[</code><code class="mi">1</code><code class="p">]</code><code>
+</code><code>
+</code><code>    </code><code class="k">def</code><code> </code><code class="nf">get_reward</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code><code> </code><code class="n">agent_id</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>        </code><code class="k">return</code><code> </code><code class="mi">1</code><code> </code><code class="k">if</code><code> </code><code class="bp">self</code><code class="o">.</code><code class="n">agents</code><code class="p">[</code><code class="n">agent_id</code><code class="p">]</code><code> </code><code class="o">==</code><code> </code><code class="bp">self</code><code class="o">.</code><code class="n">goal</code><code> </code><code class="k">else</code><code> </code><code class="mi">0</code><code>
+</code><code>
+</code><code>    </code><code class="k">def</code><code> </code><code class="nf">is_done</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code><code> </code><code class="n">agent_id</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>        </code><code class="k">return</code><code> </code><code class="bp">self</code><code class="o">.</code><code class="n">agents</code><code class="p">[</code><code class="n">agent_id</code><code class="p">]</code><code> </code><code class="o">==</code><code> </code><code class="bp">self</code><code class="o">.</code><code class="n">goal</code></pre>
+<dl class="calloutlist">
+<dt><a class="co" href="#co_reinforcement_learning_with_ray_rllib_CO10-1" id="callout_reinforcement_learning_with_ray_rllib_CO10-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a></dt>
+<dd><p>Getting a specific agent from its ID.</p></dd>
+<dt><a class="co" href="#co_reinforcement_learning_with_ray_rllib_CO10-2" id="callout_reinforcement_learning_with_ray_rllib_CO10-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a></dt>
+<dd><p>Redefining each helper method to work per-agent.</p></dd>
+</dl>
+<p>Next, to port the <code>step</code> method to our multi-agent setup, you have to know that <code>MultiAgentEnv</code> now expects the <code>action</code> passed to a <code>step</code> to be a dictionary with keys corresponding to the agent IDs, too.
+We define a step by looping through all available agents and acting on their behalf<sup><a data-type="noteref" href="ch04.xhtml#idm44990028443184" id="idm44990028443184-marker">7</a></sup>.</p>
+<pre data-code-language="python" data-type="programlisting"><code>    </code><code class="k">def</code><code> </code><code class="nf">step</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code><code> </code><code class="n">action</code><code class="p">)</code><code class="p">:</code><code>  </code><a class="co" href="#callout_reinforcement_learning_with_ray_rllib_CO11-1" id="co_reinforcement_learning_with_ray_rllib_CO11-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a><code>
+</code><code>        </code><code class="n">agent_ids</code><code> </code><code class="o">=</code><code> </code><code class="n">action</code><code class="o">.</code><code class="n">keys</code><code class="p">(</code><code class="p">)</code><code>
+</code><code>
+</code><code>        </code><code class="k">for</code><code> </code><code class="n">agent_id</code><code> </code><code class="ow">in</code><code> </code><code class="n">agent_ids</code><code class="p">:</code><code>
+</code><code>            </code><code class="n">seeker</code><code> </code><code class="o">=</code><code> </code><code class="bp">self</code><code class="o">.</code><code class="n">agents</code><code class="p">[</code><code class="n">agent_id</code><code class="p">]</code><code>
+</code><code>            </code><code class="k">if</code><code> </code><code class="n">action</code><code class="p">[</code><code class="n">agent_id</code><code class="p">]</code><code> </code><code class="o">==</code><code> </code><code class="mi">0</code><code class="p">:</code><code>  </code><code class="c1"># move down</code><code>
+</code><code>                </code><code class="n">seeker</code><code> </code><code class="o">=</code><code> </code><code class="p">(</code><code class="nb">min</code><code class="p">(</code><code class="n">seeker</code><code class="p">[</code><code class="mi">0</code><code class="p">]</code><code> </code><code class="o">+</code><code> </code><code class="mi">1</code><code class="p">,</code><code> </code><code class="mi">4</code><code class="p">)</code><code class="p">,</code><code> </code><code class="n">seeker</code><code class="p">[</code><code class="mi">1</code><code class="p">]</code><code class="p">)</code><code>
+</code><code>            </code><code class="k">elif</code><code> </code><code class="n">action</code><code class="p">[</code><code class="n">agent_id</code><code class="p">]</code><code> </code><code class="o">==</code><code> </code><code class="mi">1</code><code class="p">:</code><code>  </code><code class="c1"># move left</code><code>
+</code><code>                </code><code class="n">seeker</code><code> </code><code class="o">=</code><code> </code><code class="p">(</code><code class="n">seeker</code><code class="p">[</code><code class="mi">0</code><code class="p">]</code><code class="p">,</code><code> </code><code class="nb">max</code><code class="p">(</code><code class="n">seeker</code><code class="p">[</code><code class="mi">1</code><code class="p">]</code><code> </code><code class="o">-</code><code> </code><code class="mi">1</code><code class="p">,</code><code> </code><code class="mi">0</code><code class="p">)</code><code class="p">)</code><code>
+</code><code>            </code><code class="k">elif</code><code> </code><code class="n">action</code><code class="p">[</code><code class="n">agent_id</code><code class="p">]</code><code> </code><code class="o">==</code><code> </code><code class="mi">2</code><code class="p">:</code><code>  </code><code class="c1"># move up</code><code>
+</code><code>                </code><code class="n">seeker</code><code> </code><code class="o">=</code><code> </code><code class="p">(</code><code class="nb">max</code><code class="p">(</code><code class="n">seeker</code><code class="p">[</code><code class="mi">0</code><code class="p">]</code><code> </code><code class="o">-</code><code> </code><code class="mi">1</code><code class="p">,</code><code> </code><code class="mi">0</code><code class="p">)</code><code class="p">,</code><code> </code><code class="n">seeker</code><code class="p">[</code><code class="mi">1</code><code class="p">]</code><code class="p">)</code><code>
+</code><code>            </code><code class="k">elif</code><code> </code><code class="n">action</code><code class="p">[</code><code class="n">agent_id</code><code class="p">]</code><code> </code><code class="o">==</code><code> </code><code class="mi">3</code><code class="p">:</code><code>  </code><code class="c1"># move right</code><code>
+</code><code>                </code><code class="n">seeker</code><code> </code><code class="o">=</code><code> </code><code class="p">(</code><code class="n">seeker</code><code class="p">[</code><code class="mi">0</code><code class="p">]</code><code class="p">,</code><code> </code><code class="nb">min</code><code class="p">(</code><code class="n">seeker</code><code class="p">[</code><code class="mi">1</code><code class="p">]</code><code> </code><code class="o">+</code><code> </code><code class="mi">1</code><code class="p">,</code><code> </code><code class="mi">4</code><code class="p">)</code><code class="p">)</code><code>
+</code><code>            </code><code class="k">else</code><code class="p">:</code><code>
+</code><code>                </code><code class="k">raise</code><code> </code><code class="ne">ValueError</code><code class="p">(</code><code class="s2">"</code><code class="s2">Invalid action</code><code class="s2">"</code><code class="p">)</code><code>
+</code><code>            </code><code class="bp">self</code><code class="o">.</code><code class="n">agents</code><code class="p">[</code><code class="n">agent_id</code><code class="p">]</code><code> </code><code class="o">=</code><code> </code><code class="n">seeker</code><code>  </code><a class="co" href="#callout_reinforcement_learning_with_ray_rllib_CO11-2" id="co_reinforcement_learning_with_ray_rllib_CO11-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a><code>
+</code><code>
+</code><code>        </code><code class="n">observations</code><code> </code><code class="o">=</code><code> </code><code class="p">{</code><code class="n">i</code><code class="p">:</code><code> </code><code class="bp">self</code><code class="o">.</code><code class="n">get_observation</code><code class="p">(</code><code class="n">i</code><code class="p">)</code><code> </code><code class="k">for</code><code> </code><code class="n">i</code><code> </code><code class="ow">in</code><code> </code><code class="n">agent_ids</code><code class="p">}</code><code>  </code><a class="co" href="#callout_reinforcement_learning_with_ray_rllib_CO11-3" id="co_reinforcement_learning_with_ray_rllib_CO11-3"><img alt="3" height="12" src="assets/3.png" width="12"/></a><code>
+</code><code>        </code><code class="n">rewards</code><code> </code><code class="o">=</code><code> </code><code class="p">{</code><code class="n">i</code><code class="p">:</code><code> </code><code class="bp">self</code><code class="o">.</code><code class="n">get_reward</code><code class="p">(</code><code class="n">i</code><code class="p">)</code><code> </code><code class="k">for</code><code> </code><code class="n">i</code><code> </code><code class="ow">in</code><code> </code><code class="n">agent_ids</code><code class="p">}</code><code>
+</code><code>        </code><code class="n">done</code><code> </code><code class="o">=</code><code> </code><code class="p">{</code><code class="n">i</code><code class="p">:</code><code> </code><code class="bp">self</code><code class="o">.</code><code class="n">is_done</code><code class="p">(</code><code class="n">i</code><code class="p">)</code><code> </code><code class="k">for</code><code> </code><code class="n">i</code><code> </code><code class="ow">in</code><code> </code><code class="n">agent_ids</code><code class="p">}</code><code>
+</code><code>
+</code><code>        </code><code class="n">done</code><code class="p">[</code><code class="s2">"</code><code class="s2">__all__</code><code class="s2">"</code><code class="p">]</code><code> </code><code class="o">=</code><code> </code><code class="nb">all</code><code class="p">(</code><code class="n">done</code><code class="o">.</code><code class="n">values</code><code class="p">(</code><code class="p">)</code><code class="p">)</code><code>  </code><a class="co" href="#callout_reinforcement_learning_with_ray_rllib_CO11-4" id="co_reinforcement_learning_with_ray_rllib_CO11-4"><img alt="4" height="12" src="assets/4.png" width="12"/></a><code>
+</code><code>
+</code><code>        </code><code class="k">return</code><code> </code><code class="n">observations</code><code class="p">,</code><code> </code><code class="n">rewards</code><code class="p">,</code><code> </code><code class="n">done</code><code class="p">,</code><code> </code><code class="bp">self</code><code class="o">.</code><code class="n">info</code></pre>
+<dl class="calloutlist">
+<dt><a class="co" href="#co_reinforcement_learning_with_ray_rllib_CO11-1" id="callout_reinforcement_learning_with_ray_rllib_CO11-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a></dt>
+<dd><p>Actions in a <code>step</code> are now per-agent dictionaries.</p></dd>
+<dt><a class="co" href="#co_reinforcement_learning_with_ray_rllib_CO11-2" id="callout_reinforcement_learning_with_ray_rllib_CO11-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a></dt>
+<dd><p>After applying the correct action for each seeker, we set the correct states of all <code>agents</code>.</p></dd>
+<dt><a class="co" href="#co_reinforcement_learning_with_ray_rllib_CO11-3" id="callout_reinforcement_learning_with_ray_rllib_CO11-3"><img alt="3" height="12" src="assets/3.png" width="12"/></a></dt>
+<dd><p><code>observations</code>, <code>rewards</code>, and <code>dones</code> are also dictionaries with agent IDs as keys.</p></dd>
+<dt><a class="co" href="#co_reinforcement_learning_with_ray_rllib_CO11-4" id="callout_reinforcement_learning_with_ray_rllib_CO11-4"><img alt="4" height="12" src="assets/4.png" width="12"/></a></dt>
+<dd><p>Additionally, RLlib needs to know when all agents are done.</p></dd>
+</dl>
+<p>The last step is to modify rendering the environment, which we do by denoting each agent by its ID when printing the maze to the screen.</p>
+<pre data-code-language="python" data-type="programlisting">    <code class="k">def</code> <code class="nf">render</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code> <code class="o">*</code><code class="n">args</code><code class="p">,</code> <code class="o">**</code><code class="n">kwargs</code><code class="p">):</code>
+        <code class="n">os</code><code class="o">.</code><code class="n">system</code><code class="p">(</code><code class="s1">'cls'</code> <code class="k">if</code> <code class="n">os</code><code class="o">.</code><code class="n">name</code> <code class="o">==</code> <code class="s1">'nt'</code> <code class="k">else</code> <code class="s1">'clear'</code><code class="p">)</code>
+        <code class="n">grid</code> <code class="o">=</code> <code class="p">[[</code><code class="s1">'| '</code> <code class="k">for</code> <code class="n">_</code> <code class="ow">in</code> <code class="nb">range</code><code class="p">(</code><code class="mi">5</code><code class="p">)]</code> <code class="o">+</code> <code class="p">[</code><code class="s2">"|</code><code class="se">\n</code><code class="s2">"</code><code class="p">]</code> <code class="k">for</code> <code class="n">_</code> <code class="ow">in</code> <code class="nb">range</code><code class="p">(</code><code class="mi">5</code><code class="p">)]</code>
+        <code class="n">grid</code><code class="p">[</code><code class="bp">self</code><code class="o">.</code><code class="n">goal</code><code class="p">[</code><code class="mi">0</code><code class="p">]][</code><code class="bp">self</code><code class="o">.</code><code class="n">goal</code><code class="p">[</code><code class="mi">1</code><code class="p">]]</code> <code class="o">=</code> <code class="s1">'|G'</code>
+        <code class="n">grid</code><code class="p">[</code><code class="bp">self</code><code class="o">.</code><code class="n">agents</code><code class="p">[</code><code class="mi">1</code><code class="p">][</code><code class="mi">0</code><code class="p">]][</code><code class="bp">self</code><code class="o">.</code><code class="n">agents</code><code class="p">[</code><code class="mi">1</code><code class="p">][</code><code class="mi">1</code><code class="p">]]</code> <code class="o">=</code> <code class="s1">'|1'</code>
+        <code class="n">grid</code><code class="p">[</code><code class="bp">self</code><code class="o">.</code><code class="n">agents</code><code class="p">[</code><code class="mi">2</code><code class="p">][</code><code class="mi">0</code><code class="p">]][</code><code class="bp">self</code><code class="o">.</code><code class="n">agents</code><code class="p">[</code><code class="mi">2</code><code class="p">][</code><code class="mi">1</code><code class="p">]]</code> <code class="o">=</code> <code class="s1">'|2'</code>
+        <code class="nb">print</code><code class="p">(</code><code class="s1">''</code><code class="o">.</code><code class="n">join</code><code class="p">([</code><code class="s1">''</code><code class="o">.</code><code class="n">join</code><code class="p">(</code><code class="n">grid_row</code><code class="p">)</code> <code class="k">for</code> <code class="n">grid_row</code> <code class="ow">in</code> <code class="n">grid</code><code class="p">]))</code></pre>
+<p>Randomly rolling out an episode until <em>one</em> of the agents reaches the goal can for instance be done by the following code:</p>
+<pre data-code-language="python" data-type="programlisting"><code class="kn">import</code> <code class="nn">time</code>
+
+<code class="n">env</code> <code class="o">=</code> <code class="n">MultiAgentMaze</code><code class="p">()</code>
+
+<code class="k">while</code> <code class="kc">True</code><code class="p">:</code>
+    <code class="n">obs</code><code class="p">,</code> <code class="n">rew</code><code class="p">,</code> <code class="n">done</code><code class="p">,</code> <code class="n">info</code> <code class="o">=</code> <code class="n">env</code><code class="o">.</code><code class="n">step</code><code class="p">(</code>
+        <code class="p">{</code><code class="mi">1</code><code class="p">:</code> <code class="n">env</code><code class="o">.</code><code class="n">action_space</code><code class="o">.</code><code class="n">sample</code><code class="p">(),</code> <code class="mi">2</code><code class="p">:</code> <code class="n">env</code><code class="o">.</code><code class="n">action_space</code><code class="o">.</code><code class="n">sample</code><code class="p">()}</code>
+    <code class="p">)</code>
+    <code class="n">time</code><code class="o">.</code><code class="n">sleep</code><code class="p">(</code><code class="mf">0.1</code><code class="p">)</code>
+    <code class="n">env</code><code class="o">.</code><code class="n">render</code><code class="p">()</code>
+    <code class="k">if</code> <code class="nb">any</code><code class="p">(</code><code class="n">done</code><code class="o">.</code><code class="n">values</code><code class="p">()):</code>
+        <code class="k">break</code></pre>
+<p>Note how we have to make sure to pass two random samples by means of a Python dictionary into the <code>step</code> method,
+and how we check if any of the agents are <code>done</code> yet.
+We use this <code>break</code> condition for simplicity, as it’s highly unlikely that both seekers find their way to the goal at the same time by chance.
+But of course we’d like both agents to complete the maze eventually.</p>
+<p>In any case, equipped with our <code>MultiAgentMaze</code>, training an RLlib <code>Trainer</code> works <em>exactly</em> the same way as before.</p>
+<pre data-code-language="python" data-type="programlisting"><code class="kn">from</code> <code class="nn">ray.rllib.agents.dqn</code> <code class="kn">import</code> <code class="n">DQNTrainer</code>
+
+<code class="n">simple_trainer</code> <code class="o">=</code> <code class="n">DQNTrainer</code><code class="p">(</code><code class="n">env</code><code class="o">=</code><code class="n">MultiAgentMaze</code><code class="p">)</code>
+<code class="n">simple_trainer</code><code class="o">.</code><code class="n">train</code><code class="p">()</code></pre>
+<p>This covers the most simple case of training a multi-agent reinforcement learning (MARL) problem.
+But if you remember what we said earlier, when using multiple agents there’s always a mapping between agents and policies.
+By not specifying such a mapping, both of our seekers were implicitly assigned to the same policy.
+This can be changed by modifying the <code>multiagent</code> dictionary in our trainer <code>config</code> as follows:</p>
+<div data-type="example">
+<h5><span class="label">Example 4-1. </span></h5>
+<pre data-code-language="python" data-type="programlisting"><code class="n">trainer</code><code> </code><code class="o">=</code><code> </code><code class="n">DQNTrainer</code><code class="p">(</code><code class="n">env</code><code class="o">=</code><code class="n">MultiAgentMaze</code><code class="p">,</code><code> </code><code class="n">config</code><code class="o">=</code><code class="p">{</code><code>
+</code><code>    </code><code class="s2">"</code><code class="s2">multiagent</code><code class="s2">"</code><code class="p">:</code><code> </code><code class="p">{</code><code>
+</code><code>        </code><code class="s2">"</code><code class="s2">policies</code><code class="s2">"</code><code class="p">:</code><code> </code><code class="p">{</code><code>  </code><a class="co" href="#callout_reinforcement_learning_with_ray_rllib_CO12-1" id="co_reinforcement_learning_with_ray_rllib_CO12-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a><code>
+</code><code>            </code><code class="s2">"</code><code class="s2">policy_1</code><code class="s2">"</code><code class="p">:</code><code> </code><code class="p">(</code><code class="kc">None</code><code class="p">,</code><code> </code><code class="n">env</code><code class="o">.</code><code class="n">observation_space</code><code class="p">,</code><code> </code><code class="n">env</code><code class="o">.</code><code class="n">action_space</code><code class="p">,</code><code> </code><code class="p">{</code><code class="s2">"</code><code class="s2">gamma</code><code class="s2">"</code><code class="p">:</code><code> </code><code class="mf">0.80</code><code class="p">}</code><code class="p">)</code><code class="p">,</code><code>
+</code><code>            </code><code class="s2">"</code><code class="s2">policy_2</code><code class="s2">"</code><code class="p">:</code><code> </code><code class="p">(</code><code class="kc">None</code><code class="p">,</code><code> </code><code class="n">env</code><code class="o">.</code><code class="n">observation_space</code><code class="p">,</code><code> </code><code class="n">env</code><code class="o">.</code><code class="n">action_space</code><code class="p">,</code><code> </code><code class="p">{</code><code class="s2">"</code><code class="s2">gamma</code><code class="s2">"</code><code class="p">:</code><code> </code><code class="mf">0.95</code><code class="p">}</code><code class="p">)</code><code class="p">,</code><code>
+</code><code>        </code><code class="p">}</code><code class="p">,</code><code>
+</code><code>        </code><code class="s2">"</code><code class="s2">policy_mapping_fn</code><code class="s2">"</code><code class="p">:</code><code> </code><code class="k">lambda</code><code> </code><code class="n">agent_id</code><code class="p">:</code><code> </code><code class="sa">f</code><code class="s2">"</code><code class="s2">policy_</code><code class="si">{</code><code class="n">agent_id</code><code class="si">}</code><code class="s2">"</code><code class="p">,</code><code>  </code><a class="co" href="#callout_reinforcement_learning_with_ray_rllib_CO12-2" id="co_reinforcement_learning_with_ray_rllib_CO12-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a><code>
+</code><code>    </code><code class="p">}</code><code class="p">,</code><code>
+</code><code class="p">}</code><code class="p">)</code><code>
+</code><code>
+</code><code class="nb">print</code><code class="p">(</code><code class="n">trainer</code><code class="o">.</code><code class="n">train</code><code class="p">(</code><code class="p">)</code><code class="p">)</code></pre>
+<dl class="calloutlist">
+<dt><a class="co" href="#co_reinforcement_learning_with_ray_rllib_CO12-1" id="callout_reinforcement_learning_with_ray_rllib_CO12-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a></dt>
+<dd><p>We first define multiple policies for our agents.</p></dd>
+<dt><a class="co" href="#co_reinforcement_learning_with_ray_rllib_CO12-2" id="callout_reinforcement_learning_with_ray_rllib_CO12-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a></dt>
+<dd><p>Each agent can then be mapped to a policy with a custom <code>policy_mapping_fn</code>.</p></dd>
+</dl></div>
+<p>As you can see, running multi-agent RL experiments is a first-class citizen of RLlib,
+and there’s a lot more that could be said about it.
+The support of MARL problems is one of RLlib’s strongest features.</p>
+</div></section>
+<section data-pdf-bookmark="Working with Policy Servers and Clients" data-type="sect2"><div class="sect2" id="idm44990028798144">
+<h2>Working with Policy Servers and Clients</h2>
+<p>For the last example in this section on environments, let’s assume our original <code>GymEnvironment</code> can only be simulated on a machine that can’t run RLlib, for instance because it doesn’t have enough resources available.
+We can run the environment on a <code>PolicyClient</code> that can ask a respective <em>server</em> for suitable next actions to apply to the environment.
+The server, in turn, does not know about the environment.
+It only knows how to ingest input data from a <code>PolicyClient</code>, and it is responsible for running all RL related code, in particular it defines an RLlib <code>config</code> object and trains a <code>Trainer</code>.</p>
+<section data-pdf-bookmark="Defining a server" data-type="sect3"><div class="sect3" id="idm44990027601904">
+<h3>Defining a server</h3>
+<p>Let’s start by defining the server-side of such an application first.
+We define a so-called <code>PolicyServerInput</code> that runs on <code>localhost</code> on port <code>9900</code>.
+This policy input is what the client will provide later on.
+With this <code>policy_input</code> defined as <code>input</code> to our trainer configuration, we can define yet another <code>DQNTrainer</code> to run on the server:</p>
+<pre data-code-language="python" data-type="programlisting"><code class="c1"># policy_server.py</code><code>
+</code><code class="kn">import</code><code> </code><code class="nn">ray</code><code>
+</code><code class="kn">from</code><code> </code><code class="nn">ray</code><code class="nn">.</code><code class="nn">rllib</code><code class="nn">.</code><code class="nn">agents</code><code class="nn">.</code><code class="nn">dqn</code><code> </code><code class="kn">import</code><code> </code><code class="n">DQNTrainer</code><code>
+</code><code class="kn">from</code><code> </code><code class="nn">ray</code><code class="nn">.</code><code class="nn">rllib</code><code class="nn">.</code><code class="nn">env</code><code class="nn">.</code><code class="nn">policy_server_input</code><code> </code><code class="kn">import</code><code> </code><code class="n">PolicyServerInput</code><code>
+</code><code class="kn">import</code><code> </code><code class="nn">gym</code><code>
+</code><code>
+</code><code>
+</code><code class="n">ray</code><code class="o">.</code><code class="n">init</code><code class="p">(</code><code class="p">)</code><code>
+</code><code>
+</code><code>
+</code><code class="k">def</code><code> </code><code class="nf">policy_input</code><code class="p">(</code><code class="n">context</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>    </code><code class="k">return</code><code> </code><code class="n">PolicyServerInput</code><code class="p">(</code><code class="n">context</code><code class="p">,</code><code> </code><code class="s2">"</code><code class="s2">localhost</code><code class="s2">"</code><code class="p">,</code><code> </code><code class="mi">9900</code><code class="p">)</code><code>  </code><a class="co" href="#callout_reinforcement_learning_with_ray_rllib_CO13-1" id="co_reinforcement_learning_with_ray_rllib_CO13-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a><code>
+</code><code>
+</code><code>
+</code><code class="n">config</code><code> </code><code class="o">=</code><code> </code><code class="p">{</code><code>
+</code><code>    </code><code class="s2">"</code><code class="s2">env</code><code class="s2">"</code><code class="p">:</code><code> </code><code class="kc">None</code><code class="p">,</code><code>  </code><a class="co" href="#callout_reinforcement_learning_with_ray_rllib_CO13-2" id="co_reinforcement_learning_with_ray_rllib_CO13-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a><code>
+</code><code>    </code><code class="s2">"</code><code class="s2">observation_space</code><code class="s2">"</code><code class="p">:</code><code> </code><code class="n">gym</code><code class="o">.</code><code class="n">spaces</code><code class="o">.</code><code class="n">Discrete</code><code class="p">(</code><code class="mi">5</code><code class="o">*</code><code class="mi">5</code><code class="p">)</code><code class="p">,</code><code>
+</code><code>    </code><code class="s2">"</code><code class="s2">action_space</code><code class="s2">"</code><code class="p">:</code><code> </code><code class="n">gym</code><code class="o">.</code><code class="n">spaces</code><code class="o">.</code><code class="n">Discrete</code><code class="p">(</code><code class="mi">4</code><code class="p">)</code><code class="p">,</code><code>
+</code><code>    </code><code class="s2">"</code><code class="s2">input</code><code class="s2">"</code><code class="p">:</code><code> </code><code class="n">policy_input</code><code class="p">,</code><code>  </code><a class="co" href="#callout_reinforcement_learning_with_ray_rllib_CO13-3" id="co_reinforcement_learning_with_ray_rllib_CO13-3"><img alt="3" height="12" src="assets/3.png" width="12"/></a><code>
+</code><code>    </code><code class="s2">"</code><code class="s2">num_workers</code><code class="s2">"</code><code class="p">:</code><code> </code><code class="mi">0</code><code class="p">,</code><code>
+</code><code>    </code><code class="s2">"</code><code class="s2">input_evaluation</code><code class="s2">"</code><code class="p">:</code><code> </code><code class="p">[</code><code class="p">]</code><code class="p">,</code><code>
+</code><code>    </code><code class="s2">"</code><code class="s2">log_level</code><code class="s2">"</code><code class="p">:</code><code> </code><code class="s2">"</code><code class="s2">INFO</code><code class="s2">"</code><code class="p">,</code><code>
+</code><code class="p">}</code><code>
+</code><code>
+</code><code class="n">trainer</code><code> </code><code class="o">=</code><code> </code><code class="n">DQNTrainer</code><code class="p">(</code><code class="n">config</code><code class="o">=</code><code class="n">config</code><code class="p">)</code></pre>
+<dl class="calloutlist">
+<dt><a class="co" href="#co_reinforcement_learning_with_ray_rllib_CO13-1" id="callout_reinforcement_learning_with_ray_rllib_CO13-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a></dt>
+<dd><p>The <code>policy_input</code> function returns a <code>PolicyServerInput</code> object running on localhost on port 9900.</p></dd>
+<dt><a class="co" href="#co_reinforcement_learning_with_ray_rllib_CO13-2" id="callout_reinforcement_learning_with_ray_rllib_CO13-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a></dt>
+<dd><p>We explicitly set the <code>env</code> to <code>None</code> because this server does not need one.</p></dd>
+<dt><a class="co" href="#co_reinforcement_learning_with_ray_rllib_CO13-3" id="callout_reinforcement_learning_with_ray_rllib_CO13-3"><img alt="3" height="12" src="assets/3.png" width="12"/></a></dt>
+<dd><p>To make this work, we need to feed our <code>policy_input</code> into the experiment’s <code>input</code>.</p></dd>
+</dl>
+<p>With this <code>trainer</code> defined <sup><a data-type="noteref" href="ch04.xhtml#idm44990027406144" id="idm44990027406144-marker">8</a></sup>, we can now start a training session on the server like so:</p>
+<pre data-code-language="python" data-type="programlisting"><code class="c1"># policy_server.py</code><code>
+</code><code class="k">if</code><code> </code><code class="vm">__name__</code><code> </code><code class="o">==</code><code> </code><code class="s2">"</code><code class="s2">__main__</code><code class="s2">"</code><code class="p">:</code><code>
+</code><code>
+</code><code>    </code><code class="n">time_steps</code><code> </code><code class="o">=</code><code> </code><code class="mi">0</code><code>
+</code><code>    </code><code class="k">for</code><code> </code><code class="n">_</code><code> </code><code class="ow">in</code><code> </code><code class="nb">range</code><code class="p">(</code><code class="mi">100</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>        </code><code class="n">results</code><code> </code><code class="o">=</code><code> </code><code class="n">trainer</code><code class="o">.</code><code class="n">train</code><code class="p">(</code><code class="p">)</code><code>
+</code><code>        </code><code class="n">checkpoint</code><code> </code><code class="o">=</code><code> </code><code class="n">trainer</code><code class="o">.</code><code class="n">save</code><code class="p">(</code><code class="p">)</code><code>  </code><a class="co" href="#callout_reinforcement_learning_with_ray_rllib_CO14-1" id="co_reinforcement_learning_with_ray_rllib_CO14-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a><code>
+</code><code>        </code><code class="k">if</code><code> </code><code class="n">time_steps</code><code> </code><code class="o">&gt;</code><code class="o">=</code><code> </code><code class="mf">10.000</code><code class="p">:</code><code>  </code><a class="co" href="#callout_reinforcement_learning_with_ray_rllib_CO14-2" id="co_reinforcement_learning_with_ray_rllib_CO14-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a><code>
+</code><code>            </code><code class="k">break</code><code>
+</code><code>        </code><code class="n">time_steps</code><code> </code><code class="o">+</code><code class="o">=</code><code> </code><code class="n">results</code><code class="p">[</code><code class="s2">"</code><code class="s2">timesteps_total</code><code class="s2">"</code><code class="p">]</code></pre>
+<dl class="calloutlist">
+<dt><a class="co" href="#co_reinforcement_learning_with_ray_rllib_CO14-1" id="callout_reinforcement_learning_with_ray_rllib_CO14-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a></dt>
+<dd><p>We train for a maximum of 100 iterations and store checkpoints after each iteration.</p></dd>
+<dt><a class="co" href="#co_reinforcement_learning_with_ray_rllib_CO14-2" id="callout_reinforcement_learning_with_ray_rllib_CO14-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a></dt>
+<dd><p>If training surpasses 10.000 time steps, we stop the training.</p></dd>
+</dl>
+<p>In what follows we assume that you store the last two code snippets in a file called <code>policy_server.py</code>.
+If you want to, you can now start this policy server on your local machine by running <code>python policy_server.py</code> in a terminal.</p>
+</div></section>
+<section data-pdf-bookmark="Defining a client" data-type="sect3"><div class="sect3" id="idm44990027279040">
+<h3>Defining a client</h3>
+<p>Next, to define the corresponding client-side of the application, we define a <code>PolicyClient</code> that connects to the server we just started.
+Since we can’t assume that you have several computers at home (or available in the cloud), contrary to what we said prior, we will start this client on the same machine.
+In other words, the client will connect to <code>http://localhost:9900</code>, but if you can run the server on different machine, you could replace <code>localhost</code> with the IP address of that machine, provided it’s available in the network.</p>
+<p>Policy clients have a fairly lean interface.
+They can trigger the server to start or end an episode, get next actions from it, and log reward information to it (that it would otherwise not have).
+With that said, here’s how you define such a client.</p>
+<pre data-code-language="python" data-type="programlisting"><code class="c1"># policy_client.py</code><code>
+</code><code class="kn">import</code><code> </code><code class="nn">gym</code><code>
+</code><code class="kn">from</code><code> </code><code class="nn">ray</code><code class="nn">.</code><code class="nn">rllib</code><code class="nn">.</code><code class="nn">env</code><code class="nn">.</code><code class="nn">policy_client</code><code> </code><code class="kn">import</code><code> </code><code class="n">PolicyClient</code><code>
+</code><code class="kn">from</code><code> </code><code class="nn">maze_gym_env</code><code> </code><code class="kn">import</code><code> </code><code class="n">GymEnvironment</code><code>
+</code><code>
+</code><code class="k">if</code><code> </code><code class="vm">__name__</code><code> </code><code class="o">==</code><code> </code><code class="s2">"</code><code class="s2">__main__</code><code class="s2">"</code><code class="p">:</code><code>
+</code><code>    </code><code class="n">env</code><code> </code><code class="o">=</code><code> </code><code class="n">GymEnvironment</code><code class="p">(</code><code class="p">)</code><code>
+</code><code>    </code><code class="n">client</code><code> </code><code class="o">=</code><code> </code><code class="n">PolicyClient</code><code class="p">(</code><code class="s2">"</code><code class="s2">http://localhost:9900</code><code class="s2">"</code><code class="p">,</code><code> </code><code class="n">inference_mode</code><code class="o">=</code><code class="s2">"</code><code class="s2">remote</code><code class="s2">"</code><code class="p">)</code><code>  </code><a class="co" href="#callout_reinforcement_learning_with_ray_rllib_CO15-1" id="co_reinforcement_learning_with_ray_rllib_CO15-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a><code>
+</code><code>
+</code><code>    </code><code class="n">obs</code><code> </code><code class="o">=</code><code> </code><code class="n">env</code><code class="o">.</code><code class="n">reset</code><code class="p">(</code><code class="p">)</code><code>
+</code><code>    </code><code class="n">episode_id</code><code> </code><code class="o">=</code><code> </code><code class="n">client</code><code class="o">.</code><code class="n">start_episode</code><code class="p">(</code><code class="n">training_enabled</code><code class="o">=</code><code class="kc">True</code><code class="p">)</code><code>  </code><a class="co" href="#callout_reinforcement_learning_with_ray_rllib_CO15-2" id="co_reinforcement_learning_with_ray_rllib_CO15-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a><code>
+</code><code>
+</code><code>    </code><code class="k">while</code><code> </code><code class="kc">True</code><code class="p">:</code><code>
+</code><code>        </code><code class="n">action</code><code> </code><code class="o">=</code><code> </code><code class="n">client</code><code class="o">.</code><code class="n">get_action</code><code class="p">(</code><code class="n">episode_id</code><code class="p">,</code><code> </code><code class="n">obs</code><code class="p">)</code><code>  </code><a class="co" href="#callout_reinforcement_learning_with_ray_rllib_CO15-3" id="co_reinforcement_learning_with_ray_rllib_CO15-3"><img alt="3" height="12" src="assets/3.png" width="12"/></a><code>
+</code><code>
+</code><code>        </code><code class="n">obs</code><code class="p">,</code><code> </code><code class="n">reward</code><code class="p">,</code><code> </code><code class="n">done</code><code class="p">,</code><code> </code><code class="n">info</code><code> </code><code class="o">=</code><code> </code><code class="n">env</code><code class="o">.</code><code class="n">step</code><code class="p">(</code><code class="n">action</code><code class="p">)</code><code>
+</code><code>
+</code><code>        </code><code class="n">client</code><code class="o">.</code><code class="n">log_returns</code><code class="p">(</code><code class="n">episode_id</code><code class="p">,</code><code> </code><code class="n">reward</code><code class="p">,</code><code> </code><code class="n">info</code><code class="o">=</code><code class="n">info</code><code class="p">)</code><code>  </code><a class="co" href="#callout_reinforcement_learning_with_ray_rllib_CO15-4" id="co_reinforcement_learning_with_ray_rllib_CO15-4"><img alt="4" height="12" src="assets/4.png" width="12"/></a><code>
+</code><code>
+</code><code>        </code><code class="k">if</code><code> </code><code class="n">done</code><code class="p">:</code><code>
+</code><code>            </code><code class="n">client</code><code class="o">.</code><code class="n">end_episode</code><code class="p">(</code><code class="n">episode_id</code><code class="p">,</code><code> </code><code class="n">obs</code><code class="p">)</code><code>  </code><a class="co" href="#callout_reinforcement_learning_with_ray_rllib_CO15-5" id="co_reinforcement_learning_with_ray_rllib_CO15-5"><img alt="5" height="12" src="assets/5.png" width="12"/></a><code>
+</code><code>            </code><code class="n">obs</code><code> </code><code class="o">=</code><code> </code><code class="n">env</code><code class="o">.</code><code class="n">reset</code><code class="p">(</code><code class="p">)</code><code>
+</code><code>
+</code><code>            </code><code class="n">exit</code><code class="p">(</code><code class="mi">0</code><code class="p">)</code><code>  </code><a class="co" href="#callout_reinforcement_learning_with_ray_rllib_CO15-6" id="co_reinforcement_learning_with_ray_rllib_CO15-6"><img alt="6" height="12" src="assets/6.png" width="12"/></a></pre>
+<dl class="calloutlist">
+<dt><a class="co" href="#co_reinforcement_learning_with_ray_rllib_CO15-1" id="callout_reinforcement_learning_with_ray_rllib_CO15-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a></dt>
+<dd><p>We start a policy client on the server address with <code>remote</code> inference mode.</p></dd>
+<dt><a class="co" href="#co_reinforcement_learning_with_ray_rllib_CO15-2" id="callout_reinforcement_learning_with_ray_rllib_CO15-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a></dt>
+<dd><p>Then we tell the server to start an episode.</p></dd>
+<dt><a class="co" href="#co_reinforcement_learning_with_ray_rllib_CO15-3" id="callout_reinforcement_learning_with_ray_rllib_CO15-3"><img alt="3" height="12" src="assets/3.png" width="12"/></a></dt>
+<dd><p>For given environment observations, we can get the next action from the server.</p></dd>
+<dt><a class="co" href="#co_reinforcement_learning_with_ray_rllib_CO15-4" id="callout_reinforcement_learning_with_ray_rllib_CO15-4"><img alt="4" height="12" src="assets/4.png" width="12"/></a></dt>
+<dd><p>It’s mandatory for the <code>client</code> to log reward information to the server.</p></dd>
+<dt><a class="co" href="#co_reinforcement_learning_with_ray_rllib_CO15-5" id="callout_reinforcement_learning_with_ray_rllib_CO15-5"><img alt="5" height="12" src="assets/5.png" width="12"/></a></dt>
+<dd><p>If a certain condition is reached, we can stop the client process.</p></dd>
+<dt><a class="co" href="#co_reinforcement_learning_with_ray_rllib_CO15-6" id="callout_reinforcement_learning_with_ray_rllib_CO15-6"><img alt="6" height="12" src="assets/6.png" width="12"/></a></dt>
+<dd><p>If the environment is <code>done</code>, we have to inform the server about episode completion.</p></dd>
+</dl>
+<p>Assuming you store this code under <code>policy_client.py</code> and start it by running <code>python policy_client.py</code>, then the server that we started earlier will start learning with environment information solely obtained from the client.</p>
+</div></section>
+</div></section>
+</div></section>
+<section data-pdf-bookmark="Advanced Concepts" data-type="sect1"><div class="sect1" id="idm44990027012240">
+<h1>Advanced Concepts</h1>
+<p>So far we’ve been working with simple environments that were easy enough to tackle with the most basic RL algorithm settings in RLlib.
+Of course, in practice you’re not always that lucky and might have to come up with other ideas to tackle harder environments.
+In this section we’re going to introduce a slightly harder version of the maze environment and discuss some advanced concepts that help you solve this environment.</p>
+<section data-pdf-bookmark="Building an Advanced Environment" data-type="sect2"><div class="sect2" id="idm44990027010736">
+<h2>Building an Advanced Environment</h2>
+<p>Let’s make our maze <code>GymEnvironment</code> a bit more challenging.
+First, we increase its size from a <code>5x5</code> to a <code>11x11</code> grid.
+Then we introduce obstacles in the maze that the agent can pass through, but only by incurring a penalty, a negative reward of <code>-1</code>.
+This way our seeker agent will have to learn to avoid obstacles, while still finding the goal.
+Also, we randomize the starting position of the agent.
+All of this makes the RL problem harder to solve.
+Let’s have a look at the initialization of this new <code>AdvancedEnv</code> first:</p>
+<pre data-code-language="python" data-type="programlisting"><code class="kn">from</code><code> </code><code class="nn">gym</code><code class="nn">.</code><code class="nn">spaces</code><code> </code><code class="kn">import</code><code> </code><code class="n">Discrete</code><code>
+</code><code class="kn">import</code><code> </code><code class="nn">random</code><code>
+</code><code class="kn">import</code><code> </code><code class="nn">os</code><code>
+</code><code>
+</code><code>
+</code><code class="k">class</code><code> </code><code class="nc">AdvancedEnv</code><code class="p">(</code><code class="n">GymEnvironment</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>
+</code><code>    </code><code class="k">def</code><code> </code><code class="fm">__init__</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code><code> </code><code class="n">seeker</code><code class="o">=</code><code class="kc">None</code><code class="p">,</code><code> </code><code class="o">*</code><code class="n">args</code><code class="p">,</code><code> </code><code class="o">*</code><code class="o">*</code><code class="n">kwargs</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>        </code><code class="nb">super</code><code class="p">(</code><code class="p">)</code><code class="o">.</code><code class="fm">__init__</code><code class="p">(</code><code class="o">*</code><code class="n">args</code><code class="p">,</code><code> </code><code class="o">*</code><code class="o">*</code><code class="n">kwargs</code><code class="p">)</code><code>
+</code><code>        </code><code class="bp">self</code><code class="o">.</code><code class="n">maze_len</code><code> </code><code class="o">=</code><code> </code><code class="mi">11</code><code>
+</code><code>        </code><code class="bp">self</code><code class="o">.</code><code class="n">action_space</code><code> </code><code class="o">=</code><code> </code><code class="n">Discrete</code><code class="p">(</code><code class="mi">4</code><code class="p">)</code><code>
+</code><code>        </code><code class="bp">self</code><code class="o">.</code><code class="n">observation_space</code><code> </code><code class="o">=</code><code> </code><code class="n">Discrete</code><code class="p">(</code><code class="bp">self</code><code class="o">.</code><code class="n">maze_len</code><code> </code><code class="o">*</code><code> </code><code class="bp">self</code><code class="o">.</code><code class="n">maze_len</code><code class="p">)</code><code>
+</code><code>
+</code><code>        </code><code class="k">if</code><code> </code><code class="n">seeker</code><code class="p">:</code><code>  </code><a class="co" href="#callout_reinforcement_learning_with_ray_rllib_CO16-1" id="co_reinforcement_learning_with_ray_rllib_CO16-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a><code>
+</code><code>            </code><code class="k">assert</code><code> </code><code class="mi">0</code><code> </code><code class="o">&lt;</code><code class="o">=</code><code> </code><code class="n">seeker</code><code class="p">[</code><code class="mi">0</code><code class="p">]</code><code> </code><code class="o">&lt;</code><code> </code><code class="bp">self</code><code class="o">.</code><code class="n">maze_len</code><code> </code><code class="ow">and</code><code> </code><code class="mi">0</code><code> </code><code class="o">&lt;</code><code class="o">=</code><code> </code><code class="n">seeker</code><code class="p">[</code><code class="mi">1</code><code class="p">]</code><code> </code><code class="o">&lt;</code><code> </code><code class="bp">self</code><code class="o">.</code><code class="n">maze_len</code><code>
+</code><code>            </code><code class="bp">self</code><code class="o">.</code><code class="n">seeker</code><code> </code><code class="o">=</code><code> </code><code class="n">seeker</code><code>
+</code><code>        </code><code class="k">else</code><code class="p">:</code><code>
+</code><code>            </code><code class="bp">self</code><code class="o">.</code><code class="n">reset</code><code class="p">(</code><code class="p">)</code><code>
+</code><code>
+</code><code>        </code><code class="bp">self</code><code class="o">.</code><code class="n">goal</code><code> </code><code class="o">=</code><code> </code><code class="p">(</code><code class="bp">self</code><code class="o">.</code><code class="n">maze_len</code><code class="o">-</code><code class="mi">1</code><code class="p">,</code><code> </code><code class="bp">self</code><code class="o">.</code><code class="n">maze_len</code><code class="o">-</code><code class="mi">1</code><code class="p">)</code><code>
+</code><code>        </code><code class="bp">self</code><code class="o">.</code><code class="n">info</code><code> </code><code class="o">=</code><code> </code><code class="p">{</code><code class="s1">'</code><code class="s1">seeker</code><code class="s1">'</code><code class="p">:</code><code> </code><code class="bp">self</code><code class="o">.</code><code class="n">seeker</code><code class="p">,</code><code> </code><code class="s1">'</code><code class="s1">goal</code><code class="s1">'</code><code class="p">:</code><code> </code><code class="bp">self</code><code class="o">.</code><code class="n">goal</code><code class="p">}</code><code>
+</code><code>
+</code><code>        </code><code class="bp">self</code><code class="o">.</code><code class="n">punish_states</code><code> </code><code class="o">=</code><code> </code><code class="p">[</code><code>  </code><a class="co" href="#callout_reinforcement_learning_with_ray_rllib_CO16-2" id="co_reinforcement_learning_with_ray_rllib_CO16-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a><code>
+</code><code>            </code><code class="p">(</code><code class="n">i</code><code class="p">,</code><code> </code><code class="n">j</code><code class="p">)</code><code> </code><code class="k">for</code><code> </code><code class="n">i</code><code> </code><code class="ow">in</code><code> </code><code class="nb">range</code><code class="p">(</code><code class="bp">self</code><code class="o">.</code><code class="n">maze_len</code><code class="p">)</code><code> </code><code class="k">for</code><code> </code><code class="n">j</code><code> </code><code class="ow">in</code><code> </code><code class="nb">range</code><code class="p">(</code><code class="bp">self</code><code class="o">.</code><code class="n">maze_len</code><code class="p">)</code><code>
+</code><code>            </code><code class="k">if</code><code> </code><code class="n">i</code><code> </code><code class="o">%</code><code> </code><code class="mi">2</code><code> </code><code class="o">==</code><code> </code><code class="mi">1</code><code> </code><code class="ow">and</code><code> </code><code class="n">j</code><code> </code><code class="o">%</code><code> </code><code class="mi">2</code><code> </code><code class="o">==</code><code> </code><code class="mi">0</code><code>
+</code><code>        </code><code class="p">]</code></pre>
+<dl class="calloutlist">
+<dt><a class="co" href="#co_reinforcement_learning_with_ray_rllib_CO16-1" id="callout_reinforcement_learning_with_ray_rllib_CO16-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a></dt>
+<dd><p>We can now set the <code>seeker</code> position upon initialization.</p></dd>
+<dt><a class="co" href="#co_reinforcement_learning_with_ray_rllib_CO16-2" id="callout_reinforcement_learning_with_ray_rllib_CO16-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a></dt>
+<dd><p>We introduce <code>punish_states</code> as obstacles for the agent.</p></dd>
+</dl>
+<p>Next, when resetting the environment, we want to make sure to reset the agent’s position to a random state.
+We also increase the positive reward for reaching the goal to <code>5</code>, to offset the negative reward for passing through an obstacle (which will happen a lot before the RL trainer picks up on the obstacle locations).
+Balancing rewards like this is a crucial task in calibrating your RL experiments.</p>
+<pre data-code-language="python" data-type="programlisting">    <code class="k">def</code> <code class="nf">reset</code><code class="p">(</code><code class="bp">self</code><code class="p">):</code>
+        <code class="sd">"""Reset seeker position randomly, return observations."""</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">seeker</code> <code class="o">=</code> <code class="p">(</code><code class="n">random</code><code class="o">.</code><code class="n">randint</code><code class="p">(</code><code class="mi">0</code><code class="p">,</code> <code class="bp">self</code><code class="o">.</code><code class="n">maze_len</code> <code class="o">-</code> <code class="mi">1</code><code class="p">),</code> <code class="n">random</code><code class="o">.</code><code class="n">randint</code><code class="p">(</code><code class="mi">0</code><code class="p">,</code> <code class="bp">self</code><code class="o">.</code><code class="n">maze_len</code> <code class="o">-</code> <code class="mi">1</code><code class="p">))</code>
+        <code class="k">return</code> <code class="bp">self</code><code class="o">.</code><code class="n">get_observation</code><code class="p">()</code>
+
+    <code class="k">def</code> <code class="nf">get_observation</code><code class="p">(</code><code class="bp">self</code><code class="p">):</code>
+        <code class="sd">"""Encode the seeker position as integer"""</code>
+        <code class="k">return</code> <code class="bp">self</code><code class="o">.</code><code class="n">maze_len</code> <code class="o">*</code> <code class="bp">self</code><code class="o">.</code><code class="n">seeker</code><code class="p">[</code><code class="mi">0</code><code class="p">]</code> <code class="o">+</code> <code class="bp">self</code><code class="o">.</code><code class="n">seeker</code><code class="p">[</code><code class="mi">1</code><code class="p">]</code>
+
+    <code class="k">def</code> <code class="nf">get_reward</code><code class="p">(</code><code class="bp">self</code><code class="p">):</code>
+        <code class="sd">"""Reward finding the goal and punish forbidden states"""</code>
+        <code class="n">reward</code> <code class="o">=</code> <code class="o">-</code><code class="mi">1</code> <code class="k">if</code> <code class="bp">self</code><code class="o">.</code><code class="n">seeker</code> <code class="ow">in</code> <code class="bp">self</code><code class="o">.</code><code class="n">punish_states</code> <code class="k">else</code> <code class="mi">0</code>
+        <code class="n">reward</code> <code class="o">+=</code> <code class="mi">5</code> <code class="k">if</code> <code class="bp">self</code><code class="o">.</code><code class="n">seeker</code> <code class="o">==</code> <code class="bp">self</code><code class="o">.</code><code class="n">goal</code> <code class="k">else</code> <code class="mi">0</code>
+        <code class="k">return</code> <code class="n">reward</code>
+
+    <code class="k">def</code> <code class="nf">render</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code> <code class="o">*</code><code class="n">args</code><code class="p">,</code> <code class="o">**</code><code class="n">kwargs</code><code class="p">):</code>
+        <code class="sd">"""Render the environment, e.g. by printing its representation."""</code>
+        <code class="n">os</code><code class="o">.</code><code class="n">system</code><code class="p">(</code><code class="s1">'cls'</code> <code class="k">if</code> <code class="n">os</code><code class="o">.</code><code class="n">name</code> <code class="o">==</code> <code class="s1">'nt'</code> <code class="k">else</code> <code class="s1">'clear'</code><code class="p">)</code>
+        <code class="n">grid</code> <code class="o">=</code> <code class="p">[[</code><code class="s1">'| '</code> <code class="k">for</code> <code class="n">_</code> <code class="ow">in</code> <code class="nb">range</code><code class="p">(</code><code class="bp">self</code><code class="o">.</code><code class="n">maze_len</code><code class="p">)]</code> <code class="o">+</code> <code class="p">[</code><code class="s2">"|</code><code class="se">\n</code><code class="s2">"</code><code class="p">]</code> <code class="k">for</code> <code class="n">_</code> <code class="ow">in</code> <code class="nb">range</code><code class="p">(</code><code class="bp">self</code><code class="o">.</code><code class="n">maze_len</code><code class="p">)]</code>
+        <code class="k">for</code> <code class="n">punish</code> <code class="ow">in</code> <code class="bp">self</code><code class="o">.</code><code class="n">punish_states</code><code class="p">:</code>
+            <code class="n">grid</code><code class="p">[</code><code class="n">punish</code><code class="p">[</code><code class="mi">0</code><code class="p">]][</code><code class="n">punish</code><code class="p">[</code><code class="mi">1</code><code class="p">]]</code> <code class="o">=</code> <code class="s1">'|X'</code>
+        <code class="n">grid</code><code class="p">[</code><code class="bp">self</code><code class="o">.</code><code class="n">goal</code><code class="p">[</code><code class="mi">0</code><code class="p">]][</code><code class="bp">self</code><code class="o">.</code><code class="n">goal</code><code class="p">[</code><code class="mi">1</code><code class="p">]]</code> <code class="o">=</code> <code class="s1">'|G'</code>
+        <code class="n">grid</code><code class="p">[</code><code class="bp">self</code><code class="o">.</code><code class="n">seeker</code><code class="p">[</code><code class="mi">0</code><code class="p">]][</code><code class="bp">self</code><code class="o">.</code><code class="n">seeker</code><code class="p">[</code><code class="mi">1</code><code class="p">]]</code> <code class="o">=</code> <code class="s1">'|S'</code>
+        <code class="nb">print</code><code class="p">(</code><code class="s1">''</code><code class="o">.</code><code class="n">join</code><code class="p">([</code><code class="s1">''</code><code class="o">.</code><code class="n">join</code><code class="p">(</code><code class="n">grid_row</code><code class="p">)</code> <code class="k">for</code> <code class="n">grid_row</code> <code class="ow">in</code> <code class="n">grid</code><code class="p">]))</code></pre>
+<p>There are many other ways you could make this environment harder, like making it much bigger, introducing a negative reward for every step the agent takes in a certain direction, or punishing the agent for trying to walk off the grid.
+By now you should understand the problem setting well enough to customize the maze yourself further.</p>
+<p>While you might have success training this environment, this is a good opportunity to introduce some advanced concepts that you can apply to other RL problems.</p>
+</div></section>
+<section data-pdf-bookmark="Applying Curriculum Learning" data-type="sect2"><div class="sect2" id="idm44990026693408">
+<h2>Applying Curriculum Learning</h2>
+<p>One of the most interesting features of RLlib is to provide a <code>Trainer</code> with a <em>curriculum</em> to learn from.
+What that means is that, instead of letting the trainer learn from arbitrary environment setups, we cherry pick states that are much easier to learn from and then slowly but surely introduce more difficult states.
+Building a learning curriculum this way is a great way to make your experiments converge on solutions quicker.
+The only thing you need to apply curriculum learning is a view on which starting states are easier than others.
+For many environments that can actually be a challenge, but it’s easy to come up with a simple curriculum for our advanced maze.
+Namely, the distance of the seeker from the goal can be used as a measure of difficulty.
+The distance measure we’ll use for simplicity is the sum of the absolute distance of both seeker coordinates from the goal to define a <code>difficulty</code>.</p>
+<p>To run curriculum learning with RLlib, we define a <code>CurriculumEnv</code> that extends both our <code>AdvancedEnv</code> and a so-called <code>TaskSettableEnv</code> from RLLib.
+The interface of <code>TaskSettableEnv</code> is very simple, in that you only have to define how get the current difficulty (<code>get_task</code>) and how to set a required difficulty (<code>set_task</code>).
+Here’s the full definition of this <code>CurriculumEnv</code>:</p>
+<pre data-code-language="python" data-type="programlisting"><code class="kn">from</code> <code class="nn">ray.rllib.env.apis.task_settable_env</code> <code class="kn">import</code> <code class="n">TaskSettableEnv</code>
+
+
+<code class="k">class</code> <code class="nc">CurriculumEnv</code><code class="p">(</code><code class="n">AdvancedEnv</code><code class="p">,</code> <code class="n">TaskSettableEnv</code><code class="p">):</code>
+
+    <code class="k">def</code> <code class="fm">__init__</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code> <code class="o">*</code><code class="n">args</code><code class="p">,</code> <code class="o">**</code><code class="n">kwargs</code><code class="p">):</code>
+        <code class="n">AdvancedEnv</code><code class="o">.</code><code class="fm">__init__</code><code class="p">(</code><code class="bp">self</code><code class="p">)</code>
+
+    <code class="k">def</code> <code class="nf">difficulty</code><code class="p">(</code><code class="bp">self</code><code class="p">):</code>
+        <code class="k">return</code> <code class="nb">abs</code><code class="p">(</code><code class="bp">self</code><code class="o">.</code><code class="n">seeker</code><code class="p">[</code><code class="mi">0</code><code class="p">]</code> <code class="o">-</code> <code class="bp">self</code><code class="o">.</code><code class="n">goal</code><code class="p">[</code><code class="mi">0</code><code class="p">])</code> <code class="o">+</code> <code class="nb">abs</code><code class="p">(</code><code class="bp">self</code><code class="o">.</code><code class="n">seeker</code><code class="p">[</code><code class="mi">1</code><code class="p">]</code> <code class="o">-</code> <code class="bp">self</code><code class="o">.</code><code class="n">goal</code><code class="p">[</code><code class="mi">1</code><code class="p">])</code>
+
+    <code class="k">def</code> <code class="nf">get_task</code><code class="p">(</code><code class="bp">self</code><code class="p">):</code>
+        <code class="k">return</code> <code class="bp">self</code><code class="o">.</code><code class="n">difficulty</code><code class="p">()</code>
+
+    <code class="k">def</code> <code class="nf">set_task</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code> <code class="n">task_difficulty</code><code class="p">):</code>
+        <code class="k">while</code> <code class="ow">not</code> <code class="bp">self</code><code class="o">.</code><code class="n">difficulty</code><code class="p">()</code> <code class="o">&lt;=</code> <code class="n">task_difficulty</code><code class="p">:</code>
+            <code class="bp">self</code><code class="o">.</code><code class="n">reset</code><code class="p">()</code></pre>
+<p>To use this environment for curriculum learning, we need to define a curriculum function that tells the trainer when and how to set the task difficulty.
+We have many options here, but we use a schedule that simply increases the difficulty by one every <code>1000</code> time steps trained:</p>
+<pre data-code-language="python" data-type="programlisting"><code class="k">def</code> <code class="nf">curriculum_fn</code><code class="p">(</code><code class="n">train_results</code><code class="p">,</code> <code class="n">task_settable_env</code><code class="p">,</code> <code class="n">env_ctx</code><code class="p">):</code>
+    <code class="n">time_steps</code> <code class="o">=</code> <code class="n">train_results</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="s2">"timesteps_total"</code><code class="p">)</code>
+    <code class="n">difficulty</code> <code class="o">=</code> <code class="n">time_steps</code> <code class="o">//</code> <code class="mi">1000</code>
+    <code class="nb">print</code><code class="p">(</code><code class="sa">f</code><code class="s2">"Current difficulty: </code><code class="si">{</code><code class="n">difficulty</code><code class="si">}</code><code class="s2">"</code><code class="p">)</code>
+    <code class="k">return</code> <code class="n">difficulty</code></pre>
+<p>To test this curriculum function, we need to add it to our RLlib trainer <code>config</code>, namely by setting the <code>env_task_fn</code> property to our <code>curriculum_fn</code>.
+Note that before training a <code>DQNTrainer</code> for <code>15</code> iterations, we also set an <code>output</code> folder in our config.
+This will store experience data of our training run to the specified temp folder.</p>
+<pre data-code-language="python" data-type="programlisting"><code class="n">config</code> <code class="o">=</code> <code class="p">{</code>
+    <code class="s2">"env"</code><code class="p">:</code> <code class="n">CurriculumEnv</code><code class="p">,</code>
+    <code class="s2">"env_task_fn"</code><code class="p">:</code> <code class="n">curriculum_fn</code><code class="p">,</code>
+    <code class="s2">"output"</code><code class="p">:</code> <code class="s2">"/tmp/env-out"</code><code class="p">,</code>
+<code class="p">}</code>
+
+<code class="kn">from</code> <code class="nn">ray.rllib.agents.dqn</code> <code class="kn">import</code> <code class="n">DQNTrainer</code>
+
+<code class="n">trainer</code> <code class="o">=</code> <code class="n">DQNTrainer</code><code class="p">(</code><code class="n">env</code><code class="o">=</code><code class="n">CurriculumEnv</code><code class="p">,</code> <code class="n">config</code><code class="o">=</code><code class="n">config</code><code class="p">)</code>
+
+<code class="k">for</code> <code class="n">i</code> <code class="ow">in</code> <code class="nb">range</code><code class="p">(</code><code class="mi">15</code><code class="p">):</code>
+    <code class="n">trainer</code><code class="o">.</code><code class="n">train</code><code class="p">()</code></pre>
+<p>Running this trainer, you should see how the task difficulty increases over time, thereby giving the trainer easy examples to start with so that in can learn from them and progress to more difficult tasks as it progresses.</p>
+<p>Curriculum learning is a great technique to be aware of and RLlib allows you to easily incorporate it into your experiments through the curriculum API we just discussed.</p>
+</div></section>
+<section data-pdf-bookmark="Working with Offline Data" data-type="sect2"><div class="sect2" id="idm44990026692816">
+<h2>Working with Offline Data</h2>
+<p>In our previous curriculum learning example we stored training data to a temporary folder.
+What’s interesting is that you already know from <a data-type="xref" href="ch03.xhtml#chapter_03">Chapter 3</a> that in Q-learning you can collect experience data first, and decide when to use it in a training step later.
+This separation of data collection and training opens up many possibilities.
+For instance, maybe you have a good heuristic that can solve your problem in an imperfect, yet reasonable manner.
+Or you have records of human interaction with your environment, demonstrating how to solve the problem by example.</p>
+<p>The topic of collecting experience data for later training is often discussed as working with <em>offline data</em>.
+It’s called offline, as it’s not directly generated by a policy interacting online with the environment.
+Algorithms that don’t rely on training on their own policy output are called off-policy algorithms, and Q-Learning, respectively DQN, is just one such example.
+Algorithms that don’t share this property are accordingly called on-policy algorithms.
+In other words, off-policy algorithms can be used to train on offline data<sup><a data-type="noteref" href="ch04.xhtml#idm44990026103120" id="idm44990026103120-marker">9</a></sup>.</p>
+<p>To use the data we stored in the <code>/tmp/env-out</code> folder before, we can create a new training configuration that takes this folder as <code>input</code>.
+Note how we set <code>exploration</code> to <code>False</code> in the following configuration, since we simply want to exploit the data previously collected for training - the algorithm will not explore according to its own policy.</p>
+<pre data-code-language="python" data-type="programlisting"><code class="n">input_config</code> <code class="o">=</code> <code class="p">{</code>
+    <code class="s2">"input"</code><code class="p">:</code> <code class="s2">"/tmp/env-out"</code><code class="p">,</code>
+    <code class="s2">"input_evaluation"</code><code class="p">:</code> <code class="p">[],</code>
+    <code class="s2">"explore"</code><code class="p">:</code> <code class="kc">False</code>
+<code class="p">}</code></pre>
+<p>Using this <code>input_config</code> for training works exactly as before, which we demonstrate by training an agent for <code>10</code> iterations and evaluating it:</p>
+<pre data-code-language="python" data-type="programlisting"><code class="n">imitation_trainer</code> <code class="o">=</code> <code class="n">DQNTrainer</code><code class="p">(</code><code class="n">env</code><code class="o">=</code><code class="n">AdvancedEnv</code><code class="p">,</code> <code class="n">config</code><code class="o">=</code><code class="n">input_config</code><code class="p">)</code>
+<code class="k">for</code> <code class="n">i</code> <code class="ow">in</code> <code class="nb">range</code><code class="p">(</code><code class="mi">10</code><code class="p">):</code>
+    <code class="n">imitation_trainer</code><code class="o">.</code><code class="n">train</code><code class="p">()</code>
+
+<code class="n">imitation_trainer</code><code class="o">.</code><code class="n">evaluate</code><code class="p">()</code></pre>
+<p>Note that we called the trainer <code>imitation_trainer</code>.
+That’s because this training procedure intends to <em>imitate</em> the behavior reflected in the data we collected before.
+This type of learning by demonstration in RL is therefore often called <em>imitation learning</em> or <em>behavior cloning</em>.</p>
+</div></section>
+<section data-pdf-bookmark="Other Advanced Topics" data-type="sect2"><div class="sect2" id="idm44990026030208">
+<h2>Other Advanced Topics</h2>
+<p>Before concluding this chapter, let’s have a look at a few other advanced topics that RLlib has to offer.
+You’ve already seen how flexible RLlib is, from working with a range of different environments, to configuring your experiments, training on a curriculum, or running imitation learning.
+To give you a taste of what else is possible, you can also do the following things with RLlib:</p>
+<ul>
+<li>
+<p>You can completely customize the models and policies used under the hood. If you’ve worked with deep learning before, you know how important it can be to have a good model architecture in place. In RL this is often not as crucial as in supervised learning, but still a vital part of running advanced experiments successfully.</p>
+</li>
+<li>
+<p>You can change the way your observations are preprocessed by providing custom preprocessors. For our simple maze examples there was nothing to preprocess, but when working with image or video data, preprocessing is often a crucial step.</p>
+</li>
+<li>
+<p>In our <code>AdvancedEnv</code> we introduced states to avoid. Our agents had to learn to do this, but RLlib has a feature to automatically avoid them through so-called <em>parametric action spaces</em>. Loosely speaking, what you can do is to “mask out” all undesired actions from the action space for each point in time.</p>
+</li>
+<li>
+<p>In some cases it can also be necessary to have variable observation spaces, which is also fully supported by RLlib.</p>
+</li>
+<li>
+<p>We only briefly touched on the topic of offline data. Rllib has a full-fledged Python API for reading and writing experience data that can be used in various situation.</p>
+</li>
+<li>
+<p>Lastly, I want to stress again that we have solely worked with <code>DQNTrainer</code> here for simplicity, but RLlib has an impressive range of training algorithms. To name just one, the MARWIL algorithm is a complex hybrid algorithm with which you can run imitation learning from offline data, while also mixing in regular training on data generated “online”.</p>
+</li>
+</ul>
+</div></section>
+</div></section>
+<section data-pdf-bookmark="Summary" data-type="sect1"><div class="sect1" id="idm44990026021008">
+<h1>Summary</h1>
+<p>To summarize, you’ve seen a selection of interesting features of RLlib in this chapter.
+We covered training multi-agent environments, working with offline data generated by another agent, setting up a client-server architecture to split simulations from RL training, and using curriculum learning to specify increasingly difficult tasks.</p>
+<p>We’ve also given you a quick overview of the main concepts underlying RLlib, and how to use its CLI and Python API.
+In particular, we’ve shown how to configure your RLlib trainers and environments to your needs.
+As we’ve only covered a small part of the possibilities of RLlib, we encourage you to read its <a href="https://docs.ray.io/en/master/rllib/index.xhtml">documentation and explore its API</a>.</p>
+<p>In the next chapter you’re going to learn how to tune the hyperparameters of your RLlib models and policies with Ray Tune.</p>
+</div></section>
+<div data-type="footnotes"><p data-type="footnote" id="idm44990030106000"><sup><a href="ch04.xhtml#idm44990030106000-marker">1</a></sup> We simply used a simple game to illustrate the process of RL. There is a multitude of interesting industry applications of RL that are not games.</p><p data-type="footnote" id="idm44990029718176"><sup><a href="ch04.xhtml#idm44990029718176-marker">2</a></sup> We should mention that the RLlib CLI uses Ray Tune under the hood, among many other things for checkpointing models. You will learn more about this integration in <a data-type="xref" href="ch05.xhtml#chapter_05">Chapter 5</a></p><p data-type="footnote" id="idm44990029687616"><sup><a href="ch04.xhtml#idm44990029687616-marker">3</a></sup> Of course, configuring your models is a crucial part of RL experiments. We will discuss configuration of RLlib trainers in more detail in the next section.</p><p data-type="footnote" id="idm44990029518816"><sup><a href="ch04.xhtml#idm44990029518816-marker">4</a></sup> If you set <code>num_workers</code> to <code>0</code>, only the local worker on the head node will be created, and all training is done there. This is particularly useful for debugging, as no additional Ray actor processes are spawned.</p><p data-type="footnote" id="idm44990029092880"><sup><a href="ch04.xhtml#idm44990029092880-marker">5</a></sup> If you want to learn more about customizing your RLlib models, check out <a href="https://docs.ray.io/en/latest/rllib-models.xhtml#custom-models-implementing-your-own-forward-logic">the guide to custom models</a> on the Ray documentation.</p><p data-type="footnote" id="idm44990028855872"><sup><a href="ch04.xhtml#idm44990028855872-marker">6</a></sup> For the experts, our DQNs are dueling double Q-learning models via the <code>"dueling": True</code> and <code>"double_q": True</code> default arguments, for example.</p><p data-type="footnote" id="idm44990028443184"><sup><a href="ch04.xhtml#idm44990028443184-marker">7</a></sup> Note how this can lead to issues like deciding which agent gets to act first. In our simple maze problem the order of actions is irrelevant, but in more complex scenarios this becomes a crucial part of modeling the RL problem correctly.</p><p data-type="footnote" id="idm44990027406144"><sup><a href="ch04.xhtml#idm44990027406144-marker">8</a></sup> For technical reasons we do have to specify observation and action spaces here, which might not be necessary in future iterations of this project, as it leaks environment information. Also note that we need to set <code>input_evaluation</code> to an empty list to make this server work.</p><p data-type="footnote" id="idm44990026103120"><sup><a href="ch04.xhtml#idm44990026103120-marker">9</a></sup> Note that RLlib has a wide range of on-policy algorithms like <code>PPO</code> as well.</p></div></div></section></div></body></html>

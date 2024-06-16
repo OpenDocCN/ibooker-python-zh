@@ -1,0 +1,620 @@
+<html><head></head><body>
+<div id="sbo-rt-content"><section data-pdf-bookmark="Chapter 6. Distributed Training with Ray Train" data-type="chapter" epub:type="chapter"><div class="chapter" id="chapter_06">
+<h1><span class="label">Chapter 6. </span>Distributed Training with Ray Train</h1>
+<p class="byline">Richard Liaw</p>
+<aside data-type="sidebar" epub:type="sidebar"><div class="sidebar" id="idm44990023982288">
+<h5>A Note for Early Release Readers</h5>
+<p>With Early Release ebooks, you get books in their earliest form—the author’s raw and unedited content as they write—so you can take advantage of these technologies long before the official release of these titles.</p>
+</div></aside>
+<p>In previous chapters, you’ve learned how to build and scale reinforcement learning applications with Ray, and how to optimize hyperparameters for such applications.
+As we indicated in <a data-type="xref" href="ch01.xhtml#chapter_01">Chapter 1</a>, Ray also comes with the Ray Train library, which provides an extensive suite of machine learning training integrations and allows them to scale seamlessly.</p>
+<p>We will start this chapter by providing context about why you might need to scale out your machine learning training.
+Then we’ll cover some key concepts you need to know in order to use Ray Train.
+Finally, we’ll cover some of the more advanced functionality that Ray Train provides.</p>
+<p>As always, you can follow along using the <a href="https://github.com/maxpumperla/learning_ray/blob/main/notebooks/ch_06_train.ipynb">notebook for this chapter</a>.</p>
+<section data-pdf-bookmark="The Basics of Distributed Model Training" data-type="sect1"><div class="sect1" id="idm44990023978032">
+<h1>The Basics of Distributed Model Training</h1>
+<p>Machine learning often requires a lot of heavy computation.
+Depending on the type of model that you’re training, whether it be a gradient boosted tree or a neural network, you may face a couple common problems with training machine learning models causing you to investigate distributed training solutions:</p>
+<ol>
+<li>
+<p>The time it takes to finish training is too long.</p>
+</li>
+<li>
+<p>The size of data is too large to fit into one machine.</p>
+</li>
+<li>
+<p>The model itself is too large to fit into a single machine.</p>
+</li>
+</ol>
+<p>For the first case, training can be accelerated by processing data with increased throughput.
+Some machine learning algorithms, such as neural networks, can parallelize parts of the computation to speed up training<sup><a data-type="noteref" href="ch06.xhtml#idm44990023972608" id="idm44990023972608-marker">1</a></sup>.</p>
+<p>In the second case, your choice of algorithm may require you to fit all the available data from a dataset into memory, but the given single node memory may not be sufficient.
+In this case, you will need to split the data across multiple nodes and train in a distributed manner.
+On the other hand, sometimes your algorithm may not require data to be distributed, but if you’re using a distributed database system to begin with, you still want a training framework that can leverage your distributed data.</p>
+<p>In the third case, when your model doesn’t fit into a single machine, you may need to split up the model into multiple parts, spread across multiple machines.
+The approach of splitting models across multiple machines is called model parallelism.
+To run into this issue, you first need a model that is large enough to not fit into a single machine anymore.
+Usually, large companies like Google or Facebook tend to have the need for model-parallelism, and also rely on in-house solutions to handle the distributed training.</p>
+<p>In contrast, the first two problems often arise much earlier in the journey to machine learning practitioners.
+The solutions we just sketched for these problems fall under the umbrella of data-parallel training.
+Instead of splitting up the model across multiple machines, you instead rely on distributed data to speed up training.</p>
+<p>Specifically for the first problem, if you can speed up your training process, hopefully with minimal or no loss in accuracy, and you can do so cost-efficiently, why not go for it?
+And if you have distributed data, whether by necessity of your algorithm or the way you store your data, you need a training solution to deal with it.
+As you will see, Ray Train is built for efficient, data-parallel training.</p>
+</div></section>
+<section data-pdf-bookmark="Introduction to Ray Train" data-type="sect1"><div class="sect1" id="idm44990023970128">
+<h1>Introduction to Ray Train</h1>
+<p>Ray Train is a library for distributed training on Ray.
+It offers key tools for different parts of the training workflow, from feature processing, to scalable training, to integrations with ML tracking tools, to export mechanisms for models.</p>
+<p>In a typical ML training pipeline you will use the following key components of Ray Train:</p>
+<dl>
+<dt>Preprocessors</dt>
+<dd>
+<p>Ray Train provides several common preprocessor objects and utilities to process dataset objects into consumable features for Trainers.</p>
+</dd>
+<dt>Trainers</dt>
+<dd>
+<p>Ray Train has several Trainer classes that make it possible to do distributed training. Trainers are wrapper classes around third-party training frameworks like XGBoost, providing integration with core Ray actors (for distribution), Tune, and Datasets.</p>
+</dd>
+<dt>Models</dt>
+<dd>
+<p>Each trainer can produce a model. The model can be used in serving.</p>
+</dd>
+</dl>
+<p>Let’s see how to put these concepts in practice by computing a first example with Ray Train.</p>
+<section data-pdf-bookmark="Creating an End-To-End Example for Ray Train" data-type="sect2"><div class="sect2" id="idm44990023963024">
+<h2>Creating an End-To-End Example for Ray Train</h2>
+<p>In the below example, we demonstrate the ability to load, process, and train a machine learning model using Ray Train.</p>
+<p>We’ll be using a simple dataset for this example, using the <code>load_breast_cancer</code> function from the scikit-learn <code>datasets</code> package<sup><a data-type="noteref" href="ch06.xhtml#idm44990023959856" id="idm44990023959856-marker">2</a></sup>.
+We load the data into a Pandas DataFrame first and then convert it into a so-called Ray <code>Dataset</code>.
+<a data-type="xref" href="ch07.xhtml#chapter_07">Chapter 7</a> is entirely devoted to the Ray Data library, we just use it here to illustrate the Ray Train API.</p>
+<div data-type="example">
+<h5><span class="label">Example 6-1. </span></h5>
+<pre data-code-language="python" data-type="programlisting"><code class="kn">from</code><code> </code><code class="nn">ray</code><code class="nn">.</code><code class="nn">data</code><code> </code><code class="kn">import</code><code> </code><code class="n">from_pandas</code><code>
+</code><code class="kn">import</code><code> </code><code class="nn">sklearn</code><code class="nn">.</code><code class="nn">datasets</code><code>
+</code><code>
+</code><code>
+</code><code class="n">data_raw</code><code> </code><code class="o">=</code><code> </code><code class="n">sklearn</code><code class="o">.</code><code class="n">datasets</code><code class="o">.</code><code class="n">load_breast_cancer</code><code class="p">(</code><code class="n">as_frame</code><code class="o">=</code><code class="kc">True</code><code class="p">)</code><code>  </code><a class="co" href="#callout_distributed_training_with_ray_train_CO1-1" id="co_distributed_training_with_ray_train_CO1-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a><code>
+</code><code>
+</code><code class="n">dataset_df</code><code> </code><code class="o">=</code><code> </code><code class="n">data_raw</code><code class="p">[</code><code class="s2">"</code><code class="s2">data</code><code class="s2">"</code><code class="p">]</code><code>
+</code><code class="n">predict_ds</code><code> </code><code class="o">=</code><code> </code><code class="n">from_pandas</code><code class="p">(</code><code class="n">dataset_df</code><code class="p">)</code><code>  </code><a class="co" href="#callout_distributed_training_with_ray_train_CO1-2" id="co_distributed_training_with_ray_train_CO1-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a><code>
+</code><code>
+</code><code class="n">dataset_df</code><code class="p">[</code><code class="s2">"</code><code class="s2">target</code><code class="s2">"</code><code class="p">]</code><code> </code><code class="o">=</code><code> </code><code class="n">data_raw</code><code class="p">[</code><code class="s2">"</code><code class="s2">target</code><code class="s2">"</code><code class="p">]</code><code>
+</code><code class="n">dataset</code><code> </code><code class="o">=</code><code> </code><code class="n">from_pandas</code><code class="p">(</code><code class="n">dataset_df</code><code class="p">)</code></pre>
+<dl class="calloutlist">
+<dt><a class="co" href="#co_distributed_training_with_ray_train_CO1-1" id="callout_distributed_training_with_ray_train_CO1-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a></dt>
+<dd><p>Load breast cancer data into a Pandas DataFrame.</p></dd>
+<dt><a class="co" href="#co_distributed_training_with_ray_train_CO1-2" id="callout_distributed_training_with_ray_train_CO1-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a></dt>
+<dd><p>Create a Ray Dataset from the DataFrame.</p></dd>
+</dl></div>
+<p>Next, let’s specify a preprocessing function.
+In this case, we’ll be using three key preprocessors: a <code>Scaler</code>, a <code>Repartitioner</code>, and a <code>Chain</code> object to chain the first two.</p>
+<div data-type="example">
+<h5><span class="label">Example 6-2. </span></h5>
+<pre data-code-language="python" data-type="programlisting"><code class="n">preprocessor</code><code> </code><code class="o">=</code><code> </code><code class="n">Chain</code><code class="p">(</code><code>  </code><a class="co" href="#callout_distributed_training_with_ray_train_CO2-1" id="co_distributed_training_with_ray_train_CO2-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a><code>
+</code><code>    </code><code class="n">Scaler</code><code class="p">(</code><code class="p">[</code><code class="s2">"</code><code class="s2">worst radius</code><code class="s2">"</code><code class="p">,</code><code> </code><code class="s2">"</code><code class="s2">worst area</code><code class="s2">"</code><code class="p">]</code><code class="p">)</code><code class="p">,</code><code>  </code><a class="co" href="#callout_distributed_training_with_ray_train_CO2-2" id="co_distributed_training_with_ray_train_CO2-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a><code>
+</code><code>    </code><code class="n">Repartitioner</code><code class="p">(</code><code class="n">num_partitions</code><code class="o">=</code><code class="mi">2</code><code class="p">)</code><code>  </code><a class="co" href="#callout_distributed_training_with_ray_train_CO2-3" id="co_distributed_training_with_ray_train_CO2-3"><img alt="3" height="12" src="assets/3.png" width="12"/></a><code>
+</code><code class="p">)</code></pre>
+<dl class="calloutlist">
+<dt><a class="co" href="#co_distributed_training_with_ray_train_CO2-1" id="callout_distributed_training_with_ray_train_CO2-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a></dt>
+<dd><p>Create a pre-processing <code>Chain</code>.</p></dd>
+<dt><a class="co" href="#co_distributed_training_with_ray_train_CO2-2" id="callout_distributed_training_with_ray_train_CO2-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a></dt>
+<dd><p>Scale two specific data columns.</p></dd>
+<dt><a class="co" href="#co_distributed_training_with_ray_train_CO2-3" id="callout_distributed_training_with_ray_train_CO2-3"><img alt="3" height="12" src="assets/3.png" width="12"/></a></dt>
+<dd><p>Repartition the data into two partitions.</p></dd>
+</dl></div>
+<p>Our entrypoint for doing distributed training is the Trainer object.
+There are specific Trainers for different frameworks, and each are configured with some framework-specific parameters.</p>
+<p>To give you an example, let’s have a look at the <code>XGBoostTrainer</code> class, which implements distributed training for <a href="https://xgboost.readthedocs.io/en/stable/">XGBoost</a>.</p>
+<div data-type="example">
+<h5><span class="label">Example 6-3. </span></h5>
+<pre data-code-language="python" data-type="programlisting"><code class="n">trainer</code><code> </code><code class="o">=</code><code> </code><code class="n">XGBoostTrainer</code><code class="p">(</code><code>
+</code><code>    </code><code class="n">scaling_config</code><code class="o">=</code><code class="p">{</code><code>  </code><a class="co" href="#callout_distributed_training_with_ray_train_CO3-1" id="co_distributed_training_with_ray_train_CO3-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a><code>
+</code><code>        </code><code class="s2">"</code><code class="s2">num_actors</code><code class="s2">"</code><code class="p">:</code><code> </code><code class="mi">2</code><code class="p">,</code><code>
+</code><code>        </code><code class="s2">"</code><code class="s2">gpus_per_actor</code><code class="s2">"</code><code class="p">:</code><code> </code><code class="mi">0</code><code class="p">,</code><code>
+</code><code>        </code><code class="s2">"</code><code class="s2">cpus_per_actor</code><code class="s2">"</code><code class="p">:</code><code> </code><code class="mi">2</code><code class="p">,</code><code>
+</code><code>    </code><code class="p">}</code><code class="p">,</code><code>
+</code><code>    </code><code class="n">label</code><code class="o">=</code><code class="s2">"</code><code class="s2">target</code><code class="s2">"</code><code class="p">,</code><code>  </code><a class="co" href="#callout_distributed_training_with_ray_train_CO3-2" id="co_distributed_training_with_ray_train_CO3-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a><code>
+</code><code>    </code><code class="n">params</code><code class="o">=</code><code class="p">{</code><code>  </code><a class="co" href="#callout_distributed_training_with_ray_train_CO3-3" id="co_distributed_training_with_ray_train_CO3-3"><img alt="3" height="12" src="assets/3.png" width="12"/></a><code>
+</code><code>        </code><code class="s2">"</code><code class="s2">tree_method</code><code class="s2">"</code><code class="p">:</code><code> </code><code class="s2">"</code><code class="s2">approx</code><code class="s2">"</code><code class="p">,</code><code>
+</code><code>        </code><code class="s2">"</code><code class="s2">objective</code><code class="s2">"</code><code class="p">:</code><code> </code><code class="s2">"</code><code class="s2">binary:logistic</code><code class="s2">"</code><code class="p">,</code><code>
+</code><code>        </code><code class="s2">"</code><code class="s2">eval_metric</code><code class="s2">"</code><code class="p">:</code><code> </code><code class="p">[</code><code class="s2">"</code><code class="s2">logloss</code><code class="s2">"</code><code class="p">,</code><code> </code><code class="s2">"</code><code class="s2">error</code><code class="s2">"</code><code class="p">]</code><code class="p">,</code><code>
+</code><code>    </code><code class="p">}</code><code class="p">,</code><code>
+</code><code class="p">)</code><code>
+</code><code>
+</code><code class="n">result</code><code> </code><code class="o">=</code><code> </code><code class="n">trainer</code><code class="o">.</code><code class="n">fit</code><code class="p">(</code><code class="n">dataset</code><code class="o">=</code><code class="n">dataset</code><code class="p">,</code><code> </code><code class="n">preprocessor</code><code class="o">=</code><code class="n">preprocessor</code><code class="p">)</code><code>  </code><a class="co" href="#callout_distributed_training_with_ray_train_CO3-4" id="co_distributed_training_with_ray_train_CO3-4"><img alt="4" height="12" src="assets/4.png" width="12"/></a><code>
+</code><code>
+</code><code class="nb">print</code><code class="p">(</code><code class="n">result</code><code class="p">)</code></pre>
+<dl class="calloutlist">
+<dt><a class="co" href="#co_distributed_training_with_ray_train_CO3-1" id="callout_distributed_training_with_ray_train_CO3-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a></dt>
+<dd><p>Specify the scaling configuration.</p></dd>
+<dt><a class="co" href="#co_distributed_training_with_ray_train_CO3-2" id="callout_distributed_training_with_ray_train_CO3-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a></dt>
+<dd><p>Set the label column.</p></dd>
+<dt><a class="co" href="#co_distributed_training_with_ray_train_CO3-3" id="callout_distributed_training_with_ray_train_CO3-3"><img alt="3" height="12" src="assets/3.png" width="12"/></a></dt>
+<dd><p>Specify XGBoost-specific parameters.</p></dd>
+<dt><a class="co" href="#co_distributed_training_with_ray_train_CO3-4" id="callout_distributed_training_with_ray_train_CO3-4"><img alt="4" height="12" src="assets/4.png" width="12"/></a></dt>
+<dd><p>Train the model by calling <code>fit</code>.</p></dd>
+</dl></div>
+</div></section>
+</div></section>
+<section data-pdf-bookmark="Preprocessors in Ray Train" data-type="sect1"><div class="sect1" id="idm44990023666816">
+<h1>Preprocessors in Ray Train</h1>
+<p>The Preprocessor is the core class for handling data preprocessing.
+Each preprocessor has the following APIs:</p>
+<table>
+<tbody>
+<tr>
+<td><p>transform</p></td>
+<td><p>Used to process and apply a processing transformation to a Dataset.</p></td>
+</tr>
+<tr>
+<td><p>fit</p></td>
+<td><p>Used to calculate and store aggregate state about the Dataset on Preprocessor. Returns self for chaining.</p></td>
+</tr>
+<tr>
+<td><p>fit_transform</p></td>
+<td><p>Syntactic sugar for performing transformations that require aggregate state. May be optimized at the implementation level for specific Preprocessors.</p></td>
+</tr>
+<tr>
+<td><p>transform_batch</p></td>
+<td><p>Used to apply the same transformation on batches for prediction.</p></td>
+</tr>
+</tbody>
+</table>
+<p>Currently, Ray Train offers the following encoders</p>
+<table>
+<tbody>
+<tr>
+<td><p>FunctionTransformer</p></td>
+<td><p>Custom Transformers</p></td>
+</tr>
+<tr>
+<td><p>Pipeline</p></td>
+<td><p>Sequential Preprocessing</p></td>
+</tr>
+<tr>
+<td><p>StandardScaler</p></td>
+<td><p>Standardization</p></td>
+</tr>
+<tr>
+<td><p>MinMaxScaler</p></td>
+<td><p>Standardization</p></td>
+</tr>
+<tr>
+<td><p>OrdinalEncoder</p></td>
+<td><p>Encoding Categorical Features</p></td>
+</tr>
+<tr>
+<td><p>OneHotEncoder</p></td>
+<td><p>Encoding Categorical Features</p></td>
+</tr>
+<tr>
+<td><p>SimpleImputer</p></td>
+<td><p>Missing Value Imputation</p></td>
+</tr>
+<tr>
+<td><p>LabelEncoder</p></td>
+<td><p>Label Encoding</p></td>
+</tr>
+</tbody>
+</table>
+<p>You will often want to make sure you can use the same data preprocessing operations at training time and at serving time.</p>
+<section data-pdf-bookmark="Usage of Preprocessors" data-type="sect2"><div class="sect2" id="idm44990023594544">
+<h2>Usage of Preprocessors</h2>
+<p>You can use these preprocessors by passing them to a trainer. Ray Train will take care of applying the preprocessor to the dataset in a distributed fashion.</p>
+<div data-type="example">
+<h5><span class="label">Example 6-4. </span></h5>
+<pre data-code-language="python" data-type="programlisting"><code class="n">result</code> <code class="o">=</code> <code class="n">trainer</code><code class="o">.</code><code class="n">fit</code><code class="p">(</code><code class="n">dataset</code><code class="o">=</code><code class="n">dataset</code><code class="p">,</code> <code class="n">preprocessor</code><code class="o">=</code><code class="n">preprocessor</code><code class="p">)</code></pre></div>
+</div></section>
+<section data-pdf-bookmark="Serialization of Preprocessors" data-type="sect2"><div class="sect2" id="idm44990023586624">
+<h2>Serialization of Preprocessors</h2>
+<p>Now, some preprocessing operators such as one-hot encoders are easy to run in training and transfer to serving.
+However, other operators such as those that do standardization are a bit trickier, since you don’t want to do large data crunching (to find the mean of a particular column) during serving time.</p>
+<p>The nice thing about the Ray Train preprocessors is that they’re serializable.
+This makes it so that you can easily get consistency from training to serving just by serializing these operators.</p>
+<div data-type="example">
+<h5><span class="label">Example 6-5. </span></h5>
+<pre data-code-language="python" data-type="programlisting"><code class="n">pickle</code><code class="o">.</code><code class="n">dumps</code><code class="p">(</code><code class="n">prep</code><code class="p">)</code><code>  </code><a class="co" href="#callout_distributed_training_with_ray_train_CO4-1" id="co_distributed_training_with_ray_train_CO4-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a></pre>
+<dl class="calloutlist">
+<dt><a class="co" href="#co_distributed_training_with_ray_train_CO4-1" id="callout_distributed_training_with_ray_train_CO4-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a></dt>
+<dd><p>We can serialize and save preprocessors.</p></dd>
+</dl></div>
+</div></section>
+</div></section>
+<section data-pdf-bookmark="Trainers in Ray Train" data-type="sect1"><div class="sect1" id="idm44990023561488">
+<h1>Trainers in Ray Train</h1>
+<p>Trainers are framework-specific classes that run model training in a distributed fashion.
+Trainers all share a common interface:</p>
+<table>
+<tbody>
+<tr>
+<td><p>fit(self)</p></td>
+<td><p>Fit this trainer with the given dataset.</p></td>
+</tr>
+<tr>
+<td><p>get_checkpoints(self)</p></td>
+<td><p>Return list of recent model checkpoints.</p></td>
+</tr>
+<tr>
+<td><p>as_trainable(self)</p></td>
+<td><p>Get a wrapper of this as a Tune trainable class.</p></td>
+</tr>
+</tbody>
+</table>
+<p>Ray Train supports a variety of different trainers on a variety of frameworks, namely XGBoost, LightGBM, Pytorch, HuggingFace, Tensorflow, Horovod, Scikit-learn, RLlib, and more.</p>
+<p>Next, we’ll dive into two specific classes of Trainers: Gradient Boosted Tree Framework Trainers, and Deep Learning Framework Trainers.</p>
+<section data-pdf-bookmark="Distributed Training for Gradient Boosted Trees" data-type="sect2"><div class="sect2" id="idm44990023512032">
+<h2>Distributed Training for Gradient Boosted Trees</h2>
+<p>Ray Train offers Trainers for LightGBM and XGBoost.</p>
+<p>XGBoost is an optimized distributed gradient boosting library designed to be highly efficient, flexible and portable.
+It implements machine learning algorithms under the Gradient Boosting framework. XGBoost provides a parallel tree boosting (also known as GBDT, GBM) that solve many data science problems in a fast and accurate way.</p>
+<p>LightGBM is a gradient boosting framework based on tree-based learning algorithms. Compared to XGBoost, it is a relatively new framework, but one that is quickly becoming popular in both academic and production use cases.</p>
+<p>By leveraging Ray Train’s XGBoost or LightGBM trainer, you can take a large dataset and train a XGBoost Booster across multiple machines.</p>
+</div></section>
+<section data-pdf-bookmark="Distributed Training for Deep Learning" data-type="sect2"><div class="sect2" id="idm44990023508896">
+<h2>Distributed Training for Deep Learning</h2>
+<p>Ray Train offers Deep Learning Trainers, for instance supporting frameworks such as Tensorflow, Horovod, and Pytorch.</p>
+<p>Unlike Gradient Boosted Trees Trainers, these Deep Learning frameworks often give more control to the user.
+For example, Pytorch provides a set of primitives that the user can use to construct their training loop.</p>
+<p>As such, the Deep Learning Trainer API allows the user to pass in a training function and provides callback functions for the user to report metrics and checkpoint.
+Let’s take a look at an example Pytorch training script.</p>
+<p>Below, we construct a standard training function:</p>
+<div data-type="example">
+<h5><span class="label">Example 6-6. </span></h5>
+<pre data-code-language="python" data-type="programlisting"><code class="kn">import</code><code> </code><code class="nn">torch</code><code>
+</code><code class="kn">import</code><code> </code><code class="nn">torch</code><code class="nn">.</code><code class="nn">nn</code><code> </code><code class="k">as</code><code> </code><code class="nn">nn</code><code>
+</code><code>
+</code><code>
+</code><code class="n">num_samples</code><code> </code><code class="o">=</code><code> </code><code class="mi">20</code><code>
+</code><code class="n">input_size</code><code> </code><code class="o">=</code><code> </code><code class="mi">10</code><code>
+</code><code class="n">layer_size</code><code> </code><code class="o">=</code><code> </code><code class="mi">15</code><code>
+</code><code class="n">output_size</code><code> </code><code class="o">=</code><code> </code><code class="mi">5</code><code>
+</code><code>
+</code><code>
+</code><code class="k">class</code><code> </code><code class="nc">NeuralNetwork</code><code class="p">(</code><code class="n">nn</code><code class="o">.</code><code class="n">Module</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>    </code><code class="k">def</code><code> </code><code class="fm">__init__</code><code class="p">(</code><code class="bp">self</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>        </code><code class="nb">super</code><code class="p">(</code><code class="n">NeuralNetwork</code><code class="p">,</code><code> </code><code class="bp">self</code><code class="p">)</code><code class="o">.</code><code class="fm">__init__</code><code class="p">(</code><code class="p">)</code><code>
+</code><code>        </code><code class="bp">self</code><code class="o">.</code><code class="n">layer1</code><code> </code><code class="o">=</code><code> </code><code class="n">nn</code><code class="o">.</code><code class="n">Linear</code><code class="p">(</code><code class="n">input_size</code><code class="p">,</code><code> </code><code class="n">layer_size</code><code class="p">)</code><code>
+</code><code>        </code><code class="bp">self</code><code class="o">.</code><code class="n">relu</code><code> </code><code class="o">=</code><code> </code><code class="n">nn</code><code class="o">.</code><code class="n">ReLU</code><code class="p">(</code><code class="p">)</code><code>
+</code><code>        </code><code class="bp">self</code><code class="o">.</code><code class="n">layer2</code><code> </code><code class="o">=</code><code> </code><code class="n">nn</code><code class="o">.</code><code class="n">Linear</code><code class="p">(</code><code class="n">layer_size</code><code class="p">,</code><code> </code><code class="n">output_size</code><code class="p">)</code><code>
+</code><code>
+</code><code>    </code><code class="k">def</code><code> </code><code class="nf">forward</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code><code> </code><code class="n">input_data</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>        </code><code class="k">return</code><code> </code><code class="bp">self</code><code class="o">.</code><code class="n">layer2</code><code class="p">(</code><code class="bp">self</code><code class="o">.</code><code class="n">relu</code><code class="p">(</code><code class="bp">self</code><code class="o">.</code><code class="n">layer1</code><code class="p">(</code><code class="n">input_data</code><code class="p">)</code><code class="p">)</code><code class="p">)</code><code>
+</code><code>
+</code><code>
+</code><code class="nb">input</code><code> </code><code class="o">=</code><code> </code><code class="n">torch</code><code class="o">.</code><code class="n">randn</code><code class="p">(</code><code class="n">num_samples</code><code class="p">,</code><code> </code><code class="n">input_size</code><code class="p">)</code><code>  </code><a class="co" href="#callout_distributed_training_with_ray_train_CO5-1" id="co_distributed_training_with_ray_train_CO5-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a><code>
+</code><code class="n">labels</code><code> </code><code class="o">=</code><code> </code><code class="n">torch</code><code class="o">.</code><code class="n">randn</code><code class="p">(</code><code class="n">num_samples</code><code class="p">,</code><code> </code><code class="n">output_size</code><code class="p">)</code><code>
+</code><code>
+</code><code>
+</code><code class="k">def</code><code> </code><code class="nf">train_func</code><code class="p">(</code><code class="p">)</code><code class="p">:</code><code>  </code><a class="co" href="#callout_distributed_training_with_ray_train_CO5-2" id="co_distributed_training_with_ray_train_CO5-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a><code>
+</code><code>    </code><code class="n">num_epochs</code><code> </code><code class="o">=</code><code> </code><code class="mi">3</code><code>
+</code><code>    </code><code class="n">model</code><code> </code><code class="o">=</code><code> </code><code class="n">NeuralNetwork</code><code class="p">(</code><code class="p">)</code><code>
+</code><code>    </code><code class="n">loss_fn</code><code> </code><code class="o">=</code><code> </code><code class="n">nn</code><code class="o">.</code><code class="n">MSELoss</code><code class="p">(</code><code class="p">)</code><code>
+</code><code>    </code><code class="n">optimizer</code><code> </code><code class="o">=</code><code> </code><code class="n">optim</code><code class="o">.</code><code class="n">SGD</code><code class="p">(</code><code class="n">model</code><code class="o">.</code><code class="n">parameters</code><code class="p">(</code><code class="p">)</code><code class="p">,</code><code> </code><code class="n">lr</code><code class="o">=</code><code class="mf">0.1</code><code class="p">)</code><code>
+</code><code>    </code><code class="k">for</code><code> </code><code class="n">epoch</code><code> </code><code class="ow">in</code><code> </code><code class="nb">range</code><code class="p">(</code><code class="n">num_epochs</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>        </code><code class="n">output</code><code> </code><code class="o">=</code><code> </code><code class="n">model</code><code class="p">(</code><code class="nb">input</code><code class="p">)</code><code>
+</code><code>        </code><code class="n">loss</code><code> </code><code class="o">=</code><code> </code><code class="n">loss_fn</code><code class="p">(</code><code class="n">output</code><code class="p">,</code><code> </code><code class="n">labels</code><code class="p">)</code><code>
+</code><code>        </code><code class="n">optimizer</code><code class="o">.</code><code class="n">zero_grad</code><code class="p">(</code><code class="p">)</code><code>
+</code><code>        </code><code class="n">loss</code><code class="o">.</code><code class="n">backward</code><code class="p">(</code><code class="p">)</code><code>
+</code><code>        </code><code class="n">optimizer</code><code class="o">.</code><code class="n">step</code><code class="p">(</code><code class="p">)</code></pre>
+<dl class="calloutlist">
+<dt><a class="co" href="#co_distributed_training_with_ray_train_CO5-1" id="callout_distributed_training_with_ray_train_CO5-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a></dt>
+<dd><p>In this example we use a randomly generated dataset.</p></dd>
+<dt><a class="co" href="#co_distributed_training_with_ray_train_CO5-2" id="callout_distributed_training_with_ray_train_CO5-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a></dt>
+<dd><p>Define a training function.</p></dd>
+</dl></div>
+<p>We construct a training script for Pytorch, where we create a small neural network and use a Mean Squared Error (<code>MSELoss</code>) objective to optimize the model.
+The input to the model here is random noise, but you can imagine that to be generated from a Torch Dataset.</p>
+<p>Now, there are two key things that Ray Train will take care of for you.</p>
+<ol>
+<li>
+<p>The establishment of a backend that coordinates interprocess communication.</p>
+</li>
+<li>
+<p>Instantiation of multiple parallel processes.</p>
+</li>
+</ol>
+<p>So, in short, you just need to make a one-line change to your code:</p>
+<div data-type="example">
+<h5><span class="label">Example 6-7. </span></h5>
+<pre data-code-language="python" data-type="programlisting"><code class="kn">import</code><code> </code><code class="nn">ray</code><code class="nn">.</code><code class="nn">train</code><code class="nn">.</code><code class="nn">torch</code><code>
+</code><code>
+</code><code>
+</code><code class="k">def</code><code> </code><code class="nf">train_func_distributed</code><code class="p">(</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>    </code><code class="n">num_epochs</code><code> </code><code class="o">=</code><code> </code><code class="mi">3</code><code>
+</code><code>    </code><code class="n">model</code><code> </code><code class="o">=</code><code> </code><code class="n">NeuralNetwork</code><code class="p">(</code><code class="p">)</code><code>
+</code><code>    </code><code class="n">model</code><code> </code><code class="o">=</code><code> </code><code class="n">train</code><code class="o">.</code><code class="n">torch</code><code class="o">.</code><code class="n">prepare_model</code><code class="p">(</code><code class="n">model</code><code class="p">)</code><code>  </code><a class="co" href="#callout_distributed_training_with_ray_train_CO6-1" id="co_distributed_training_with_ray_train_CO6-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a><code>
+</code><code>    </code><code class="n">loss_fn</code><code> </code><code class="o">=</code><code> </code><code class="n">nn</code><code class="o">.</code><code class="n">MSELoss</code><code class="p">(</code><code class="p">)</code><code>
+</code><code>    </code><code class="n">optimizer</code><code> </code><code class="o">=</code><code> </code><code class="n">optim</code><code class="o">.</code><code class="n">SGD</code><code class="p">(</code><code class="n">model</code><code class="o">.</code><code class="n">parameters</code><code class="p">(</code><code class="p">)</code><code class="p">,</code><code> </code><code class="n">lr</code><code class="o">=</code><code class="mf">0.1</code><code class="p">)</code><code>
+</code><code>    </code><code class="k">for</code><code> </code><code class="n">epoch</code><code> </code><code class="ow">in</code><code> </code><code class="nb">range</code><code class="p">(</code><code class="n">num_epochs</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>        </code><code class="n">output</code><code> </code><code class="o">=</code><code> </code><code class="n">model</code><code class="p">(</code><code class="nb">input</code><code class="p">)</code><code>
+</code><code>        </code><code class="n">loss</code><code> </code><code class="o">=</code><code> </code><code class="n">loss_fn</code><code class="p">(</code><code class="n">output</code><code class="p">,</code><code> </code><code class="n">labels</code><code class="p">)</code><code>
+</code><code>        </code><code class="n">optimizer</code><code class="o">.</code><code class="n">zero_grad</code><code class="p">(</code><code class="p">)</code><code>
+</code><code>        </code><code class="n">loss</code><code class="o">.</code><code class="n">backward</code><code class="p">(</code><code class="p">)</code><code>
+</code><code>        </code><code class="n">optimizer</code><code class="o">.</code><code class="n">step</code><code class="p">(</code><code class="p">)</code></pre>
+<dl class="calloutlist">
+<dt><a class="co" href="#co_distributed_training_with_ray_train_CO6-1" id="callout_distributed_training_with_ray_train_CO6-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a></dt>
+<dd><p>Prepare the model for distributed training.</p></dd>
+</dl></div>
+<p>Then, you can plug this into Ray Train:</p>
+<div data-type="example">
+<h5><span class="label">Example 6-8. </span></h5>
+<pre data-code-language="python" data-type="programlisting"><code class="kn">from</code><code> </code><code class="nn">ray</code><code class="nn">.</code><code class="nn">train</code><code> </code><code class="kn">import</code><code> </code><code class="n">Trainer</code><code>
+</code><code>
+</code><code>
+</code><code class="n">trainer</code><code> </code><code class="o">=</code><code> </code><code class="n">Trainer</code><code class="p">(</code><code class="n">backend</code><code class="o">=</code><code class="s2">"</code><code class="s2">torch</code><code class="s2">"</code><code class="p">,</code><code> </code><code class="n">num_workers</code><code class="o">=</code><code class="mi">4</code><code class="p">,</code><code> </code><code class="n">use_gpu</code><code class="o">=</code><code class="kc">False</code><code class="p">)</code><code>  </code><a class="co" href="#callout_distributed_training_with_ray_train_CO7-1" id="co_distributed_training_with_ray_train_CO7-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a><code>
+</code><code class="n">trainer</code><code class="o">.</code><code class="n">start</code><code class="p">(</code><code class="p">)</code><code>
+</code><code class="n">results</code><code> </code><code class="o">=</code><code> </code><code class="n">trainer</code><code class="o">.</code><code class="n">run</code><code class="p">(</code><code class="n">train_func_distributed</code><code class="p">)</code><code>
+</code><code class="n">trainer</code><code class="o">.</code><code class="n">shutdown</code><code class="p">(</code><code class="p">)</code></pre>
+<dl class="calloutlist">
+<dt><a class="co" href="#co_distributed_training_with_ray_train_CO7-1" id="callout_distributed_training_with_ray_train_CO7-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a></dt>
+<dd><p>Create a trainer. For GPU Training, set <code>use_gpu</code> to True.</p></dd>
+</dl></div>
+<p>This code will work on both a single machine or a distributed cluster.</p>
+</div></section>
+<section data-pdf-bookmark="Scaling Out Training with Ray Train Trainers" data-type="sect2"><div class="sect2" id="idm44990023508304">
+<h2>Scaling Out Training with Ray Train Trainers</h2>
+<p>The general philosphy of Ray Train is that the user should not need to think about <strong>how</strong> to parallelize their code.</p>
+<p>With Ray Train Trainers, you can specify a <code>scaling_config</code> which allows you to scale out your training without writing distributed logic.
+The <code>scaling_config</code> allows you to declaratively specify the <em>compute resources</em> used by a Trainer.</p>
+<p>In particular, you can specify the amount of parallelism that the Trainer should use by providing the number of workers, along with the type of device that each worker should use:</p>
+<div data-type="example">
+<h5><span class="label">Example 6-9. </span></h5>
+<pre data-code-language="python" data-type="programlisting"><code class="n">scaling_config</code> <code class="o">=</code> <code class="p">{</code><code class="s2">"num_workers"</code><code class="p">:</code> <code class="mi">10</code><code class="p">,</code> <code class="s2">"use_gpu"</code><code class="p">:</code> <code class="kc">True</code><code class="p">}</code>
+
+<code class="n">trainer</code> <code class="o">=</code> <code class="n">ray</code><code class="o">.</code><code class="n">train</code><code class="o">.</code><code class="n">integrations</code><code class="o">.</code><code class="n">XGBoostTrainer</code><code class="p">(</code>
+    <code class="n">scaling_config</code><code class="o">=</code><code class="n">scaling_config</code><code class="p">,</code>
+    <code class="c1"># ...</code>
+<code class="p">)</code></pre></div>
+<p>Note that scaling configuration arguments depend on the Trainer type.</p>
+<p>The nice thing about this specification is that you don’t need to think about the underlying hardware.
+In particular, you can specify to use hundreds of workers and Ray Train will automatically leverage all the nodes within your Ray cluster:</p>
+<div data-type="example">
+<h5><span class="label">Example 6-10. </span></h5>
+<pre data-code-language="python" data-type="programlisting"><code class="c1"># Connect to a large Ray cluster</code>
+<code class="n">ray</code><code class="o">.</code><code class="n">init</code><code class="p">(</code><code class="n">address</code><code class="o">=</code><code class="s2">"auto"</code><code class="p">)</code>
+
+<code class="n">scaling_config</code> <code class="o">=</code> <code class="p">{</code><code class="s2">"num_workers"</code><code class="p">:</code> <code class="mi">200</code><code class="p">,</code> <code class="s2">"use_gpu"</code><code class="p">:</code> <code class="kc">True</code><code class="p">}</code>
+
+<code class="n">trainer</code> <code class="o">=</code> <code class="n">ray</code><code class="o">.</code><code class="n">train</code><code class="o">.</code><code class="n">integrations</code><code class="o">.</code><code class="n">XGBoostTrainer</code><code class="p">(</code>
+    <code class="n">scaling_config</code><code class="o">=</code><code class="n">scaling_config</code><code class="p">,</code>
+    <code class="c1"># ...</code>
+<code class="p">)</code></pre></div>
+</div></section>
+<section data-pdf-bookmark="Connecting Data to Distributed Training" data-type="sect2"><div class="sect2" id="idm44990022894320">
+<h2>Connecting Data to Distributed Training</h2>
+<p>Ray Train provides utilities to train on large datasets.</p>
+<p>Along the same philosophy that the user should not need to think about <strong>how</strong> to parallelize their code, you can simply “connect” your large dataset to Ray Train without thinking about how to ingest and feed your data into different parallel workers.</p>
+<p>Here, we create a dataset from random data.
+However, you can use other data APIs to read a large amount of data (with <code>read_parquet</code>, which reads data from the <a href="https://parquet.apache.org/">Parquet format</a>).</p>
+<div data-type="example">
+<h5><span class="label">Example 6-11. </span></h5>
+<pre data-code-language="python" data-type="programlisting"><code class="kn">from</code> <code class="nn">typing</code> <code class="kn">import</code> <code class="n">Dict</code>
+<code class="kn">import</code> <code class="nn">torch</code>
+<code class="kn">import</code> <code class="nn">torch.nn</code> <code class="k">as</code> <code class="nn">nn</code>
+
+<code class="kn">import</code> <code class="nn">ray</code>
+<code class="kn">import</code> <code class="nn">ray.train</code> <code class="k">as</code> <code class="nn">train</code>
+<code class="kn">from</code> <code class="nn">ray.train</code> <code class="kn">import</code> <code class="n">Trainer</code>
+
+
+<code class="k">def</code> <code class="nf">get_datasets</code><code class="p">(</code><code class="n">a</code><code class="o">=</code><code class="mi">5</code><code class="p">,</code> <code class="n">b</code><code class="o">=</code><code class="mi">10</code><code class="p">,</code> <code class="n">size</code><code class="o">=</code><code class="mi">1000</code><code class="p">,</code> <code class="n">split</code><code class="o">=</code><code class="mf">0.8</code><code class="p">):</code>
+
+    <code class="k">def</code> <code class="nf">get_dataset</code><code class="p">(</code><code class="n">a</code><code class="p">,</code> <code class="n">b</code><code class="p">,</code> <code class="n">size</code><code class="p">):</code>
+        <code class="n">items</code> <code class="o">=</code> <code class="p">[</code><code class="n">i</code> <code class="o">/</code> <code class="n">size</code> <code class="k">for</code> <code class="n">i</code> <code class="ow">in</code> <code class="nb">range</code><code class="p">(</code><code class="n">size</code><code class="p">)]</code>
+        <code class="n">dataset</code> <code class="o">=</code> <code class="n">ray</code><code class="o">.</code><code class="n">data</code><code class="o">.</code><code class="n">from_items</code><code class="p">([{</code><code class="s2">"x"</code><code class="p">:</code> <code class="n">x</code><code class="p">,</code> <code class="s2">"y"</code><code class="p">:</code> <code class="n">a</code> <code class="o">*</code> <code class="n">x</code> <code class="o">+</code> <code class="n">b</code><code class="p">}</code> <code class="k">for</code> <code class="n">x</code> <code class="ow">in</code> <code class="n">items</code><code class="p">])</code>
+        <code class="k">return</code> <code class="n">dataset</code>
+
+    <code class="n">dataset</code> <code class="o">=</code> <code class="n">get_dataset</code><code class="p">(</code><code class="n">a</code><code class="p">,</code> <code class="n">b</code><code class="p">,</code> <code class="n">size</code><code class="p">)</code>
+    <code class="n">split_index</code> <code class="o">=</code> <code class="nb">int</code><code class="p">(</code><code class="n">dataset</code><code class="o">.</code><code class="n">count</code><code class="p">()</code> <code class="o">*</code> <code class="n">split</code><code class="p">)</code>
+    <code class="n">train_dataset</code><code class="p">,</code> <code class="n">validation_dataset</code> <code class="o">=</code> <code class="n">dataset</code><code class="o">.</code><code class="n">random_shuffle</code><code class="p">()</code><code class="o">.</code><code class="n">split_at_indices</code><code class="p">(</code>
+        <code class="p">[</code><code class="n">split_index</code><code class="p">]</code>
+    <code class="p">)</code>
+    <code class="n">train_dataset_pipeline</code> <code class="o">=</code> <code class="n">train_dataset</code><code class="o">.</code><code class="n">repeat</code><code class="p">()</code><code class="o">.</code><code class="n">random_shuffle_each_window</code><code class="p">()</code>
+    <code class="n">validation_dataset_pipeline</code> <code class="o">=</code> <code class="n">validation_dataset</code><code class="o">.</code><code class="n">repeat</code><code class="p">()</code>
+    <code class="n">datasets</code> <code class="o">=</code> <code class="p">{</code>
+        <code class="s2">"train"</code><code class="p">:</code> <code class="n">train_dataset_pipeline</code><code class="p">,</code>
+        <code class="s2">"validation"</code><code class="p">:</code> <code class="n">validation_dataset_pipeline</code><code class="p">,</code>
+    <code class="p">}</code>
+    <code class="k">return</code> <code class="n">datasets</code></pre></div>
+<p>You can then specify a training function that accesses these datapoints.
+Note that we use a specific <code>get_dataset_shard</code> function here.
+Under the hood, Ray Train will automatically shard the provided dataset so that individual workers can train on a different subset of the data at once.
+This avoids training on duplicate data within the same epoch.
+The <code>get_dataset_shard</code> function passes a subset of the data from the data source to each individual parallel training worker.</p>
+<p>Next, we make a <code>iter_epochs</code> and <code>to_torch</code> call on each shard.
+<code>iter_epochs</code> will produce an iterator.
+This iterator will produce Dataset objects that will possess 1 shard of the entire epoch (named <code>train_dataset_iterator</code> and <code>validation_dataset_iterator</code>).</p>
+<p><code>to_torch</code> will convert the Dataset object into a Pytorch iterator. There is an equivalent <code>to_tf</code> function that converts it to a Tensorflow Data iterator.</p>
+<p>When the epoch is finished, the Pytorch iterator will raise a <code>StopIteration</code>, and the <code>train_dataset_iterator</code> will be queried again for a new shard on a new epoch.</p>
+<div data-type="example">
+<h5><span class="label">Example 6-12. </span></h5>
+<pre data-code-language="python" data-type="programlisting"><code class="k">def</code> <code class="nf">train_func</code><code class="p">(</code><code class="n">config</code><code class="p">):</code>
+    <code class="n">batch_size</code> <code class="o">=</code> <code class="n">config</code><code class="p">[</code><code class="s2">"batch_size"</code><code class="p">]</code>
+    <code class="c1"># hidden_size = config["hidden_size"]</code>
+    <code class="c1"># lr = config.get("lr", 1e-2)</code>
+    <code class="n">epochs</code> <code class="o">=</code> <code class="n">config</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="s2">"epochs"</code><code class="p">,</code> <code class="mi">3</code><code class="p">)</code>
+
+    <code class="n">train_dataset_pipeline_shard</code> <code class="o">=</code> <code class="n">train</code><code class="o">.</code><code class="n">get_dataset_shard</code><code class="p">(</code><code class="s2">"train"</code><code class="p">)</code>
+    <code class="n">validation_dataset_pipeline_shard</code> <code class="o">=</code> <code class="n">train</code><code class="o">.</code><code class="n">get_dataset_shard</code><code class="p">(</code><code class="s2">"validation"</code><code class="p">)</code>
+    <code class="n">train_dataset_iterator</code> <code class="o">=</code> <code class="n">train_dataset_pipeline_shard</code><code class="o">.</code><code class="n">iter_epochs</code><code class="p">()</code>
+    <code class="n">validation_dataset_iterator</code> <code class="o">=</code> <code class="n">validation_dataset_pipeline_shard</code><code class="o">.</code><code class="n">iter_epochs</code><code class="p">()</code>
+
+    <code class="k">for</code> <code class="n">_</code> <code class="ow">in</code> <code class="nb">range</code><code class="p">(</code><code class="n">epochs</code><code class="p">):</code>
+        <code class="n">train_dataset</code> <code class="o">=</code> <code class="nb">next</code><code class="p">(</code><code class="n">train_dataset_iterator</code><code class="p">)</code>
+        <code class="n">validation_dataset</code> <code class="o">=</code> <code class="nb">next</code><code class="p">(</code><code class="n">validation_dataset_iterator</code><code class="p">)</code>
+        <code class="n">train_torch_dataset</code> <code class="o">=</code> <code class="n">train_dataset</code><code class="o">.</code><code class="n">to_torch</code><code class="p">(</code>
+            <code class="n">label_column</code><code class="o">=</code><code class="s2">"y"</code><code class="p">,</code>
+            <code class="n">feature_columns</code><code class="o">=</code><code class="p">[</code><code class="s2">"x"</code><code class="p">],</code>
+            <code class="n">label_column_dtype</code><code class="o">=</code><code class="n">torch</code><code class="o">.</code><code class="n">float</code><code class="p">,</code>
+            <code class="n">feature_column_dtypes</code><code class="o">=</code><code class="n">torch</code><code class="o">.</code><code class="n">float</code><code class="p">,</code>
+            <code class="n">batch_size</code><code class="o">=</code><code class="n">batch_size</code><code class="p">,</code>
+        <code class="p">)</code>
+        <code class="n">validation_torch_dataset</code> <code class="o">=</code> <code class="n">validation_dataset</code><code class="o">.</code><code class="n">to_torch</code><code class="p">(</code>
+            <code class="n">label_column</code><code class="o">=</code><code class="s2">"y"</code><code class="p">,</code>
+            <code class="n">feature_columns</code><code class="o">=</code><code class="p">[</code><code class="s2">"x"</code><code class="p">],</code>
+            <code class="n">label_column_dtype</code><code class="o">=</code><code class="n">torch</code><code class="o">.</code><code class="n">float</code><code class="p">,</code>
+            <code class="n">feature_column_dtypes</code><code class="o">=</code><code class="n">torch</code><code class="o">.</code><code class="n">float</code><code class="p">,</code>
+            <code class="n">batch_size</code><code class="o">=</code><code class="n">batch_size</code><code class="p">,</code>
+        <code class="p">)</code>
+        <code class="c1"># ... training</code>
+
+    <code class="k">return</code> <code class="n">results</code></pre></div>
+<p>You can put things together by using the Trainer in the following way:</p>
+<div data-type="example">
+<h5><span class="label">Example 6-13. </span></h5>
+<pre data-code-language="python" data-type="programlisting"><code class="n">num_workers</code> <code class="o">=</code> <code class="mi">4</code>
+<code class="n">use_gpu</code> <code class="o">=</code> <code class="kc">False</code>
+
+
+<code class="n">datasets</code> <code class="o">=</code> <code class="n">get_datasets</code><code class="p">()</code>
+<code class="n">trainer</code> <code class="o">=</code> <code class="n">Trainer</code><code class="p">(</code><code class="s2">"torch"</code><code class="p">,</code> <code class="n">num_workers</code><code class="o">=</code><code class="n">num_workers</code><code class="p">,</code> <code class="n">use_gpu</code><code class="o">=</code><code class="n">use_gpu</code><code class="p">)</code>
+<code class="n">config</code> <code class="o">=</code> <code class="p">{</code><code class="s2">"lr"</code><code class="p">:</code> <code class="mf">1e-2</code><code class="p">,</code> <code class="s2">"hidden_size"</code><code class="p">:</code> <code class="mi">1</code><code class="p">,</code> <code class="s2">"batch_size"</code><code class="p">:</code> <code class="mi">4</code><code class="p">,</code> <code class="s2">"epochs"</code><code class="p">:</code> <code class="mi">3</code><code class="p">}</code>
+<code class="n">trainer</code><code class="o">.</code><code class="n">start</code><code class="p">()</code>
+<code class="n">results</code> <code class="o">=</code> <code class="n">trainer</code><code class="o">.</code><code class="n">run</code><code class="p">(</code>
+   <code class="n">train_func</code><code class="p">,</code>
+   <code class="n">config</code><code class="p">,</code>
+   <code class="n">dataset</code><code class="o">=</code><code class="n">datasets</code><code class="p">,</code>
+   <code class="n">callbacks</code><code class="o">=</code><code class="p">[</code><code class="n">JsonLoggerCallback</code><code class="p">(),</code> <code class="n">TBXLoggerCallback</code><code class="p">()],</code>
+<code class="p">)</code>
+<code class="n">trainer</code><code class="o">.</code><code class="n">shutdown</code><code class="p">()</code>
+<code class="nb">print</code><code class="p">(</code><code class="n">results</code><code class="p">)</code></pre></div>
+</div></section>
+</div></section>
+<section data-pdf-bookmark="Ray Train Features" data-type="sect1"><div class="sect1" id="idm44990022850096">
+<h1>Ray Train Features</h1>
+<section data-pdf-bookmark="Checkpoints" data-type="sect2"><div class="sect2" id="idm44990022436160">
+<h2>Checkpoints</h2>
+<p>Ray Train will generate <strong>model checkpoints</strong> to checkpoint intermediate state for training.
+These model checkpoints provide the trained model and fitted preprocessor for usage in downstream applications like serving and inference.</p>
+<div data-type="example">
+<h5><span class="label">Example 6-14. </span></h5>
+<pre data-code-language="python" data-type="programlisting"><code class="n">result</code> <code class="o">=</code> <code class="n">trainer</code><code class="o">.</code><code class="n">fit</code><code class="p">()</code>
+<code class="n">model</code><code class="p">:</code> <code class="n">ray</code><code class="o">.</code><code class="n">train</code><code class="o">.</code><code class="n">Model</code> <code class="o">=</code> <code class="n">result</code><code class="o">.</code><code class="n">checkpoint</code><code class="o">.</code><code class="n">load_model</code><code class="p">()</code></pre></div>
+<p>The goal of the model checkpoints is to abstract away the actual physical representation of the model and preprocessor. As a result, you should be able to generate a checkpoint from a cloud storage location, and convert it into an in-memory representation or on-disk representation, and vice versa.</p>
+<div data-type="example">
+<h5><span class="label">Example 6-15. </span></h5>
+<pre data-code-language="python" data-type="programlisting"><code class="n">chkpt</code> <code class="o">=</code> <code class="n">Checkpoint</code><code class="o">.</code><code class="n">from_directory</code><code class="p">(</code><code class="nb">dir</code><code class="p">)</code>
+<code class="n">chkpt</code><code class="o">.</code><code class="n">to_bytes</code><code class="p">()</code> <code class="o">-&gt;</code> <code class="nb">bytes</code></pre></div>
+</div></section>
+<section data-pdf-bookmark="Callbacks" data-type="sect2"><div class="sect2" id="idm44990022292048">
+<h2>Callbacks</h2>
+<p>You may want to plug in your training code with your favorite experiment management framework.
+Ray Train provides an interface to fetch intermediate results and callbacks to process, or log, your intermediate results (the values passed into <code>train.report(...)</code>).</p>
+<p>Ray Train contains built-in callbacks for popular tracking frameworks, or you can implement your own callback via the TrainingCallback interface.
+Available callbacks include:</p>
+<ul>
+<li>
+<p>Json Logging</p>
+</li>
+<li>
+<p>Tensorboard Logging</p>
+</li>
+<li>
+<p>MLflow Logging</p>
+</li>
+<li>
+<p>Torch Profiler</p>
+</li>
+</ul>
+<div data-type="example">
+<h5><span class="label">Example 6-16. </span></h5>
+<pre data-code-language="python" data-type="programlisting"><code class="c1"># Run the training function, logging all the intermediate results</code>
+<code class="c1"># to MLflow and Tensorboard.</code>
+
+<code class="n">result</code> <code class="o">=</code> <code class="n">trainer</code><code class="o">.</code><code class="n">run</code><code class="p">(</code>
+    <code class="n">train_func</code><code class="p">,</code>
+    <code class="n">callbacks</code><code class="o">=</code><code class="p">[</code>
+        <code class="n">MLflowLoggerCallback</code><code class="p">(</code><code class="n">experiment_name</code><code class="o">=</code><code class="s2">"train_experiment"</code><code class="p">),</code>
+        <code class="n">TBXLoggerCallback</code><code class="p">(),</code>
+    <code class="p">],</code>
+<code class="p">)</code></pre></div>
+</div></section>
+<section data-pdf-bookmark="Integration with Ray Tune" data-type="sect2"><div class="sect2" id="idm44990022182960">
+<h2>Integration with Ray Tune</h2>
+<p>Ray Train provides an integration with Ray Tune that allows you to perform hyperparameter optimization in just a few lines of code.
+Tune will create one Trial per hyperparameter configuration.
+In each Trial, a new Trainer will be initialized  and run the training function with its generated configuration.</p>
+<div data-type="example">
+<h5><span class="label">Example 6-17. </span></h5>
+<pre data-code-language="python" data-type="programlisting"><code class="kn">from</code> <code class="nn">ray</code> <code class="kn">import</code> <code class="n">tune</code>
+
+<code class="n">fail_after_finished</code> <code class="o">=</code> <code class="kc">True</code>
+<code class="n">prep_v1</code> <code class="o">=</code> <code class="n">preprocessor</code>
+<code class="n">prep_v2</code> <code class="o">=</code> <code class="n">preprocessor</code>
+
+<code class="n">param_space</code> <code class="o">=</code> <code class="p">{</code>
+    <code class="s2">"scaling_config"</code><code class="p">:</code> <code class="p">{</code>
+        <code class="s2">"num_actors"</code><code class="p">:</code> <code class="n">tune</code><code class="o">.</code><code class="n">grid_search</code><code class="p">([</code><code class="mi">2</code><code class="p">,</code> <code class="mi">4</code><code class="p">]),</code>
+        <code class="s2">"cpus_per_actor"</code><code class="p">:</code> <code class="mi">2</code><code class="p">,</code>
+        <code class="s2">"gpus_per_actor"</code><code class="p">:</code> <code class="mi">0</code><code class="p">,</code>
+    <code class="p">},</code>
+    <code class="s2">"preprocessor"</code><code class="p">:</code> <code class="n">tune</code><code class="o">.</code><code class="n">grid_search</code><code class="p">([</code><code class="n">prep_v1</code><code class="p">,</code> <code class="n">prep_v2</code><code class="p">]),</code>
+    <code class="c1"># "datasets": {</code>
+    <code class="c1">#     "train_dataset": tune.grid_search([dataset_v1, dataset_v2]),</code>
+    <code class="c1"># },</code>
+    <code class="s2">"params"</code><code class="p">:</code> <code class="p">{</code>
+        <code class="s2">"objective"</code><code class="p">:</code> <code class="s2">"binary:logistic"</code><code class="p">,</code>
+        <code class="s2">"tree_method"</code><code class="p">:</code> <code class="s2">"approx"</code><code class="p">,</code>
+        <code class="s2">"eval_metric"</code><code class="p">:</code> <code class="p">[</code><code class="s2">"logloss"</code><code class="p">,</code> <code class="s2">"error"</code><code class="p">],</code>
+        <code class="s2">"eta"</code><code class="p">:</code> <code class="n">tune</code><code class="o">.</code><code class="n">loguniform</code><code class="p">(</code><code class="mf">1e-4</code><code class="p">,</code> <code class="mf">1e-1</code><code class="p">),</code>
+        <code class="s2">"subsample"</code><code class="p">:</code> <code class="n">tune</code><code class="o">.</code><code class="n">uniform</code><code class="p">(</code><code class="mf">0.5</code><code class="p">,</code> <code class="mf">1.0</code><code class="p">),</code>
+        <code class="s2">"max_depth"</code><code class="p">:</code> <code class="n">tune</code><code class="o">.</code><code class="n">randint</code><code class="p">(</code><code class="mi">1</code><code class="p">,</code> <code class="mi">9</code><code class="p">),</code>
+    <code class="p">},</code>
+<code class="p">}</code>
+<code class="k">if</code> <code class="n">fail_after_finished</code> <code class="o">&gt;</code> <code class="mi">0</code><code class="p">:</code>
+    <code class="n">callbacks</code> <code class="o">=</code> <code class="p">[</code><code class="n">StopperCallback</code><code class="p">(</code><code class="n">fail_after_finished</code><code class="o">=</code><code class="n">fail_after_finished</code><code class="p">)]</code>
+<code class="k">else</code><code class="p">:</code>
+    <code class="n">callbacks</code> <code class="o">=</code> <code class="kc">None</code>
+<code class="n">tuner</code> <code class="o">=</code> <code class="n">tune</code><code class="o">.</code><code class="n">Tuner</code><code class="p">(</code>
+    <code class="n">XGBoostTrainer</code><code class="p">(</code>
+        <code class="n">run_config</code><code class="o">=</code><code class="p">{</code><code class="s2">"max_actor_restarts"</code><code class="p">:</code> <code class="mi">1</code><code class="p">},</code>
+        <code class="n">scaling_config</code><code class="o">=</code><code class="kc">None</code><code class="p">,</code>
+        <code class="n">resume_from_checkpoint</code><code class="o">=</code><code class="kc">None</code><code class="p">,</code>
+        <code class="n">label</code><code class="o">=</code><code class="s2">"target"</code><code class="p">,</code>
+    <code class="p">),</code>
+    <code class="n">run_config</code><code class="o">=</code><code class="p">{},</code>
+    <code class="n">param_space</code><code class="o">=</code><code class="n">param_space</code><code class="p">,</code>
+    <code class="n">name</code><code class="o">=</code><code class="s2">"tuner_resume"</code><code class="p">,</code>
+    <code class="n">callbacks</code><code class="o">=</code><code class="n">callbacks</code><code class="p">,</code>
+<code class="p">)</code>
+<code class="n">results</code> <code class="o">=</code> <code class="n">tuner</code><code class="o">.</code><code class="n">fit</code><code class="p">(</code><code class="n">datasets</code><code class="o">=</code><code class="p">{</code><code class="s2">"train_dataset"</code><code class="p">:</code> <code class="n">dataset</code><code class="p">})</code>
+<code class="nb">print</code><code class="p">(</code><code class="n">results</code><code class="o">.</code><code class="n">results</code><code class="p">)</code></pre></div>
+<p>Compared to other distributed hyperparameter tuning solutions, Ray Tune and Ray Train has a couple unique features:</p>
+<ul>
+<li>
+<p>Ability to specify the dataset and preprocessor as a parameter</p>
+</li>
+<li>
+<p>Fault tolerance</p>
+</li>
+<li>
+<p>Ability to adjust the number of workers during training time.</p>
+</li>
+</ul>
+</div></section>
+<section data-pdf-bookmark="Exporting Models" data-type="sect2"><div class="sect2" id="idm44990022061392">
+<h2>Exporting Models</h2>
+<p>You may want to export the model trained to Ray Serve or a model registry after you’ve trained it with Ray Train.</p>
+<p>To do so, you can fetch the model using a load_model API:</p>
+<div data-type="example">
+<h5><span class="label">Example 6-18. </span></h5>
+<pre data-code-language="python" data-type="programlisting"><code class="n">result</code> <code class="o">=</code> <code class="n">trainer</code><code class="o">.</code><code class="n">fit</code><code class="p">(</code><code class="n">dataset</code><code class="o">=</code><code class="n">dataset</code><code class="p">,</code> <code class="n">preprocessor</code><code class="o">=</code><code class="n">preprocessor</code><code class="p">)</code>
+<code class="nb">print</code><code class="p">(</code><code class="n">result</code><code class="p">)</code>
+
+<code class="n">this_checkpoint</code> <code class="o">=</code> <code class="n">result</code><code class="o">.</code><code class="n">checkpoint</code>
+<code class="n">this_model</code> <code class="o">=</code> <code class="n">this_checkpoint</code><code class="o">.</code><code class="n">load_model</code><code class="p">()</code>
+<code class="n">predicted</code> <code class="o">=</code> <code class="n">this_model</code><code class="o">.</code><code class="n">predict</code><code class="p">(</code><code class="n">predict_ds</code><code class="p">)</code>
+<code class="nb">print</code><code class="p">(</code><code class="n">predicted</code><code class="o">.</code><code class="n">to_pandas</code><code class="p">())</code></pre></div>
+</div></section>
+<section data-pdf-bookmark="Some Caveats" data-type="sect2"><div class="sect2" id="idm44990021863664">
+<h2>Some Caveats</h2>
+<p>In particular, recall that standard neural network training works by iterating through a dataset in separate batches of data (usually called minibatch gradient descent).</p>
+<p>To speed this up, you can parallelize the gradient computation of every minibatch update. This means that the batch should be split across multiple machines.</p>
+<p>One complication is that if you hold the size of the batch constant, the system utilization and efficiency reduces as you increase the number of workers.</p>
+<p>To compensate, practitioners typically increase the amount of data per batch.</p>
+<p>As a result, the time it takes to go through a single pass of the data (one epoch) should ideally reduce, since the number of total batches decreases.</p>
+</div></section>
+</div></section>
+<div data-type="footnotes"><p data-type="footnote" id="idm44990023972608"><sup><a href="ch06.xhtml#idm44990023972608-marker">1</a></sup> This applies specifically to the gradient computation in neural networks.</p><p data-type="footnote" id="idm44990023959856"><sup><a href="ch06.xhtml#idm44990023959856-marker">2</a></sup> Ray can handle much larger datasets than that. In <a data-type="xref" href="ch07.xhtml#chapter_07">Chapter 7</a> we’ll take a closer look at the Ray Data library to see how to handle huge datasets.</p></div></div></section></div></body></html>

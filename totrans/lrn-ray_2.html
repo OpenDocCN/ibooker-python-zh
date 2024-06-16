@@ -1,0 +1,685 @@
+<html><head></head><body>
+<div id="sbo-rt-content"><section data-pdf-bookmark="Chapter 3. Building Your First Distributed Application" data-type="chapter" epub:type="chapter"><div class="chapter" id="chapter_03">
+<h1><span class="label">Chapter 3. </span>Building Your First Distributed Application</h1>
+<aside data-type="sidebar" epub:type="sidebar"><div class="sidebar" id="idm44990032631872">
+<h5>A Note for Early Release Readers</h5>
+<p>With Early Release ebooks, you get books in their earliest form—the author’s raw and unedited content as they write—so you can take advantage of these technologies long before the official release of these titles.</p>
+</div></aside>
+<p>Now that you’ve seen the basics of the Ray API in action, let’s build something more realistic with it.
+By the end of this comparatively short chapter, you will have built a reinforcement learning (RL) problem from scratch, implemented your first algorithm to tackle it, and used Ray tasks and actors to parallelize this solution to a local cluster — all in less than 250 lines of code.</p>
+<p>This chapter is designed to work for readers who don’t have any experience with reinforcement learning.
+We’ll work on a straightforward problem and develop the necessary skills to tackle it hands-on.
+Since chapter <a data-type="xref" href="ch04.xhtml#chapter_04">Chapter 4</a> is devoted entirely to this topic, we’ll skip all advanced RL topics and language and just focus on the problem at hand.
+But even if you’re a quite advanced RL user, you’ll likely benefit from implementing a classical algorithm in a distributed setting.</p>
+<p>This is the last chapter working <em>only</em> with Ray Core.
+I hope you learn to appreciate how powerful and flexible it is, and how quickly you can implement distributed experiments, that would otherwise take considerable efforts to scale.</p>
+<section data-pdf-bookmark="Setting Up A Simple Maze Problem" data-type="sect1"><div class="sect1" id="idm44990032627568">
+<h1>Setting Up A Simple Maze Problem</h1>
+<p>As with the chapters before, I encourage you to code this chapter with me and build this application together as we go.
+In case you don’t want to do that, you can also simply follow <a href="https://github.com/maxpumperla/learning_ray/blob/main/notebooks/ch_03_core_app.ipynb">the notebook for this chapter</a>.</p>
+<p>To give you an idea, the app we’re building is structured as follows:</p>
+<ul>
+<li>
+<p>You implement a simple 2D-maze game in which a single player can move around in the four major directions.</p>
+</li>
+<li>
+<p>You initialize the maze as a <code>5x5</code> grid to which the player is confined.</p>
+</li>
+<li>
+<p>One of the <code>25</code> grid cells is the “goal” that a player called the “seeker” must reach.</p>
+</li>
+<li>
+<p>Instead of hard-coding a solution, you will employ a reinforcement learning algorithm, so that the seeker learns to find the goal.</p>
+</li>
+<li>
+<p>This is done by repeatedly running simulations of the maze, rewarding the seeker for finding the goal and smartly keeping track of which decisions of the seeker worked and which didn’t.</p>
+</li>
+<li>
+<p>As running simulations can be parallelized and our RL algorithm can also be trained in parallel, we utilize the Ray API to parallelize the whole process.</p>
+</li>
+</ul>
+<p>We’re not quite ready to deploy this application on an actual Ray cluster comprised of multiple nodes just yet, so for now we’ll continue to work with local clusters.
+If you’re interested in infrastructure topics and want to learn how to set up Ray clusters, jump ahead to [Link to Come], and to see a fully deployed Ray application you can go to [Link to Come].</p>
+<p>Let’s start by implementing the 2D maze we just sketched.
+The idea is to implement a simple grid in Python that spans a 5x5 grid starting at <code>(0, 0)</code> and ending at <code>(4, 4)</code> and properly define how a player can move around the grid.
+To do this, we first need an abstraction for moving in the four cardinal directions.
+These four actions, namely moving up, down, left, and right, can be encoded in Python as a class we call <code>Discrete</code>.
+The abstraction of moving in several discrete actions is so useful that we’ll generalize it to <code>n</code> directions, instead of just four.
+In case you’re worried, this is not premature - we’ll actually need a general <code>Discrete</code> class in a moment.</p>
+<div data-type="example">
+<h5><span class="label">Example 3-1. </span></h5>
+<pre data-code-language="python" data-type="programlisting"><code class="kn">import</code><code> </code><code class="nn">random</code><code>
+</code><code>
+</code><code>
+</code><code class="k">class</code><code> </code><code class="nc">Discrete</code><code class="p">:</code><code>
+</code><code>    </code><code class="k">def</code><code> </code><code class="fm">__init__</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code><code> </code><code class="n">num_actions</code><code class="p">:</code><code> </code><code class="nb">int</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>        </code><code class="sd">""" Discrete action space for num_actions.
+        Discrete(4) can be used as encoding moving in one of the cardinal directions.
+        """</code><code>
+</code><code>        </code><code class="bp">self</code><code class="o">.</code><code class="n">n</code><code> </code><code class="o">=</code><code> </code><code class="n">num_actions</code><code>
+</code><code>
+</code><code>    </code><code class="k">def</code><code> </code><code class="nf">sample</code><code class="p">(</code><code class="bp">self</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>        </code><code class="k">return</code><code> </code><code class="n">random</code><code class="o">.</code><code class="n">randint</code><code class="p">(</code><code class="mi">0</code><code class="p">,</code><code> </code><code class="bp">self</code><code class="o">.</code><code class="n">n</code><code> </code><code class="o">-</code><code> </code><code class="mi">1</code><code class="p">)</code><code>  </code><a class="co" href="#callout_building_your_first_distributed_application_CO1-1" id="co_building_your_first_distributed_application_CO1-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a><code>
+</code><code>
+</code><code>
+</code><code class="n">space</code><code> </code><code class="o">=</code><code> </code><code class="n">Discrete</code><code class="p">(</code><code class="mi">4</code><code class="p">)</code><code>
+</code><code class="nb">print</code><code class="p">(</code><code class="n">space</code><code class="o">.</code><code class="n">sample</code><code class="p">(</code><code class="p">)</code><code class="p">)</code><code>  </code><a class="co" href="#callout_building_your_first_distributed_application_CO1-2" id="co_building_your_first_distributed_application_CO1-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a></pre>
+<dl class="calloutlist">
+<dt><a class="co" href="#co_building_your_first_distributed_application_CO1-1" id="callout_building_your_first_distributed_application_CO1-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a></dt>
+<dd><p>A discrete action can be uniformly sampled between <code>0</code> and <code>n-1</code>.</p></dd>
+<dt><a class="co" href="#co_building_your_first_distributed_application_CO1-2" id="callout_building_your_first_distributed_application_CO1-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a></dt>
+<dd><p>For instance, a <code>Discrete(4)</code> sample will give you <code>0</code>, <code>1</code>, <code>2</code>, or <code>3</code>.</p></dd>
+</dl></div>
+<p>Sampling from a <code>Discrete(4)</code> like in this example will randomly return <code>0</code>, <code>1</code>, <code>2</code>, or <code>3</code>.
+How we interpret these numbers is up to us, so let’s say we go for “down”, “left”, “right”, and “up” in that order.</p>
+<p>Now that we know how to encode moving around the maze, let’s code the maze itself, including the <code>goal</code> cell and the position of the <code>seeker</code> player that tries to find the goal.
+To this end we’re going to implement a Python class called <code>Environment</code>.
+It’s called that, because the maze is the environment in which the player “lives”.
+To make matters easy, we’ll always put the <code>seeker</code> at <code>(0, 0)</code> and the <code>goal</code> at <code>(4, 4)</code>.
+To make the <code>seeker</code> move and find its goal, we initialize the <code>Environment</code> with an <code>action_space</code> of <code>Discrete(4)</code>.</p>
+<p>There is one last bit of information we need to set up for our maze environment, namely an encoding of the <code>seeker</code> position.
+The reason for that is that we’re going to implement an algorithm later that keeps track of which actions led to good results for which seeker positions.
+By encoding the seeker position as a <code>Discrete(5*5)</code>, it becomes a single number that’s much easier to work with.
+In RL lingo it is common to call the information of the game that is accessible to the player an <em>observation</em>.
+So, in analogy to the actions we can carry out for our <code>seeker</code>, we can also define an <code>observation_space</code> for it.
+Here’s the implementation of what we’ve just discussed:</p>
+<div data-type="example">
+<h5><span class="label">Example 3-2. </span></h5>
+<pre data-code-language="python" data-type="programlisting"><code class="kn">import</code><code> </code><code class="nn">os</code><code>
+</code><code>
+</code><code>
+</code><code class="k">class</code><code> </code><code class="nc">Environment</code><code class="p">:</code><code>
+</code><code>
+</code><code>    </code><code class="n">seeker</code><code class="p">,</code><code> </code><code class="n">goal</code><code> </code><code class="o">=</code><code> </code><code class="p">(</code><code class="mi">0</code><code class="p">,</code><code> </code><code class="mi">0</code><code class="p">)</code><code class="p">,</code><code> </code><code class="p">(</code><code class="mi">4</code><code class="p">,</code><code> </code><code class="mi">4</code><code class="p">)</code><code>  </code><a class="co" href="#callout_building_your_first_distributed_application_CO2-1" id="co_building_your_first_distributed_application_CO2-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a><code>
+</code><code>    </code><code class="n">info</code><code> </code><code class="o">=</code><code> </code><code class="p">{</code><code class="s1">'</code><code class="s1">seeker</code><code class="s1">'</code><code class="p">:</code><code> </code><code class="n">seeker</code><code class="p">,</code><code> </code><code class="s1">'</code><code class="s1">goal</code><code class="s1">'</code><code class="p">:</code><code> </code><code class="n">goal</code><code class="p">}</code><code>
+</code><code>
+</code><code>    </code><code class="k">def</code><code> </code><code class="fm">__init__</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code><code>  </code><code class="o">*</code><code class="n">args</code><code class="p">,</code><code> </code><code class="o">*</code><code class="o">*</code><code class="n">kwargs</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>        </code><code class="bp">self</code><code class="o">.</code><code class="n">action_space</code><code> </code><code class="o">=</code><code> </code><code class="n">Discrete</code><code class="p">(</code><code class="mi">4</code><code class="p">)</code><code>  </code><a class="co" href="#callout_building_your_first_distributed_application_CO2-2" id="co_building_your_first_distributed_application_CO2-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a><code>
+</code><code>        </code><code class="bp">self</code><code class="o">.</code><code class="n">observation_space</code><code> </code><code class="o">=</code><code> </code><code class="n">Discrete</code><code class="p">(</code><code class="mi">5</code><code class="o">*</code><code class="mi">5</code><code class="p">)</code><code>  </code><a class="co" href="#callout_building_your_first_distributed_application_CO2-3" id="co_building_your_first_distributed_application_CO2-3"><img alt="3" height="12" src="assets/3.png" width="12"/></a></pre>
+<dl class="calloutlist">
+<dt><a class="co" href="#co_building_your_first_distributed_application_CO2-1" id="callout_building_your_first_distributed_application_CO2-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a></dt>
+<dd><p>The <code>seeker</code> gets initialized in the top left, the <code>goal</code> in the bottom right of the maze.</p></dd>
+<dt><a class="co" href="#co_building_your_first_distributed_application_CO2-2" id="callout_building_your_first_distributed_application_CO2-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a></dt>
+<dd><p>Our <code>seeker</code> can move down, left, up and right.</p></dd>
+<dt><a class="co" href="#co_building_your_first_distributed_application_CO2-3" id="callout_building_your_first_distributed_application_CO2-3"><img alt="3" height="12" src="assets/3.png" width="12"/></a></dt>
+<dd><p>And it can be in a total of <code>25</code> states, one for each position on the grid.</p></dd>
+</dl></div>
+<p>Note that we defined an <code>info</code> variable as well, which can be used to print information about the current state of the maze, for instance for debugging purposes.
+To play an actual game of find-the-goal from the perspective of the seeker, we have to define a few helper methods.
+Clearly, the game should be considered “done” when the seeker finds the goal.
+Also, we should reward the seeker for finding the goal.
+And when the game is over, we should be able to reset it to its initial state, to play again.
+To round things off, we also define a <code>get_observation</code> method that returns the encoded <code>seeker</code> position.
+Continuing our implementation of the <code>Environment</code> class, this translates into the following four methods.</p>
+<div data-type="example">
+<h5><span class="label">Example 3-3. </span></h5>
+<pre data-code-language="python" data-type="programlisting"><code>    </code><code class="k">def</code><code> </code><code class="nf">reset</code><code class="p">(</code><code class="bp">self</code><code class="p">)</code><code class="p">:</code><code>  </code><a class="co" href="#callout_building_your_first_distributed_application_CO3-1" id="co_building_your_first_distributed_application_CO3-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a><code>
+</code><code>        </code><code class="sd">"""Reset seeker and goal positions, return observations."""</code><code>
+</code><code>        </code><code class="bp">self</code><code class="o">.</code><code class="n">seeker</code><code> </code><code class="o">=</code><code> </code><code class="p">(</code><code class="mi">0</code><code class="p">,</code><code> </code><code class="mi">0</code><code class="p">)</code><code>
+</code><code>        </code><code class="bp">self</code><code class="o">.</code><code class="n">goal</code><code> </code><code class="o">=</code><code> </code><code class="p">(</code><code class="mi">4</code><code class="p">,</code><code> </code><code class="mi">4</code><code class="p">)</code><code>
+</code><code>
+</code><code>        </code><code class="k">return</code><code> </code><code class="bp">self</code><code class="o">.</code><code class="n">get_observation</code><code class="p">(</code><code class="p">)</code><code>
+</code><code>
+</code><code>    </code><code class="k">def</code><code> </code><code class="nf">get_observation</code><code class="p">(</code><code class="bp">self</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>        </code><code class="sd">"""Encode the seeker position as integer"""</code><code>
+</code><code>        </code><code class="k">return</code><code> </code><code class="mi">5</code><code> </code><code class="o">*</code><code> </code><code class="bp">self</code><code class="o">.</code><code class="n">seeker</code><code class="p">[</code><code class="mi">0</code><code class="p">]</code><code> </code><code class="o">+</code><code> </code><code class="bp">self</code><code class="o">.</code><code class="n">seeker</code><code class="p">[</code><code class="mi">1</code><code class="p">]</code><code>  </code><a class="co" href="#callout_building_your_first_distributed_application_CO3-2" id="co_building_your_first_distributed_application_CO3-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a><code>
+</code><code>
+</code><code>    </code><code class="k">def</code><code> </code><code class="nf">get_reward</code><code class="p">(</code><code class="bp">self</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>        </code><code class="sd">"""Reward finding the goal"""</code><code>
+</code><code>        </code><code class="k">return</code><code> </code><code class="mi">1</code><code> </code><code class="k">if</code><code> </code><code class="bp">self</code><code class="o">.</code><code class="n">seeker</code><code> </code><code class="o">==</code><code> </code><code class="bp">self</code><code class="o">.</code><code class="n">goal</code><code> </code><code class="k">else</code><code> </code><code class="mi">0</code><code>  </code><a class="co" href="#callout_building_your_first_distributed_application_CO3-3" id="co_building_your_first_distributed_application_CO3-3"><img alt="3" height="12" src="assets/3.png" width="12"/></a><code>
+</code><code>
+</code><code>    </code><code class="k">def</code><code> </code><code class="nf">is_done</code><code class="p">(</code><code class="bp">self</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>        </code><code class="sd">"""We're done if we found the goal"""</code><code>
+</code><code>        </code><code class="k">return</code><code> </code><code class="bp">self</code><code class="o">.</code><code class="n">seeker</code><code> </code><code class="o">==</code><code> </code><code class="bp">self</code><code class="o">.</code><code class="n">goal</code><code>  </code><a class="co" href="#callout_building_your_first_distributed_application_CO3-4" id="co_building_your_first_distributed_application_CO3-4"><img alt="4" height="12" src="assets/4.png" width="12"/></a></pre>
+<dl class="calloutlist">
+<dt><a class="co" href="#co_building_your_first_distributed_application_CO3-1" id="callout_building_your_first_distributed_application_CO3-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a></dt>
+<dd><p>To play a new game, we’ll have to <code>reset</code> the grid to its original state.</p></dd>
+<dt><a class="co" href="#co_building_your_first_distributed_application_CO3-2" id="callout_building_your_first_distributed_application_CO3-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a></dt>
+<dd><p>Converting the seeker tuple to a value from the environment’s <code>observation_space</code>.</p></dd>
+<dt><a class="co" href="#co_building_your_first_distributed_application_CO3-3" id="callout_building_your_first_distributed_application_CO3-3"><img alt="3" height="12" src="assets/3.png" width="12"/></a></dt>
+<dd><p>The seeker is only rewarded when reaching the goal.</p></dd>
+<dt><a class="co" href="#co_building_your_first_distributed_application_CO3-4" id="callout_building_your_first_distributed_application_CO3-4"><img alt="4" height="12" src="assets/4.png" width="12"/></a></dt>
+<dd><p>If the seeker is at the goal, the game is over.</p></dd>
+</dl></div>
+<p>The last essential method to implement is the <code>step</code> method.
+Imagine you’re playing our maze game and decide to go right as your next move.
+The <code>step</code> method will take this action (namely <code>3</code>, the encoding of “right”) and apply it to the internal state of the game.
+To reflect what changed, the <code>step</code> method will then return the seeker’s observations, its reward, whether the game is over, and the <code>info</code> value of the game.
+Here’s how the <code>step</code> method works:</p>
+<div data-type="example">
+<h5><span class="label">Example 3-4. </span></h5>
+<pre data-code-language="python" data-type="programlisting"><code>    </code><code class="k">def</code><code> </code><code class="nf">step</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code><code> </code><code class="n">action</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>        </code><code class="sd">"""Take a step in a direction and return all available information."""</code><code>
+</code><code>        </code><code class="k">if</code><code> </code><code class="n">action</code><code> </code><code class="o">==</code><code> </code><code class="mi">0</code><code class="p">:</code><code>  </code><code class="c1"># move down</code><code>
+</code><code>            </code><code class="bp">self</code><code class="o">.</code><code class="n">seeker</code><code> </code><code class="o">=</code><code> </code><code class="p">(</code><code class="nb">min</code><code class="p">(</code><code class="bp">self</code><code class="o">.</code><code class="n">seeker</code><code class="p">[</code><code class="mi">0</code><code class="p">]</code><code> </code><code class="o">+</code><code> </code><code class="mi">1</code><code class="p">,</code><code> </code><code class="mi">4</code><code class="p">)</code><code class="p">,</code><code> </code><code class="bp">self</code><code class="o">.</code><code class="n">seeker</code><code class="p">[</code><code class="mi">1</code><code class="p">]</code><code class="p">)</code><code>
+</code><code>        </code><code class="k">elif</code><code> </code><code class="n">action</code><code> </code><code class="o">==</code><code> </code><code class="mi">1</code><code class="p">:</code><code>  </code><code class="c1"># move left</code><code>
+</code><code>            </code><code class="bp">self</code><code class="o">.</code><code class="n">seeker</code><code> </code><code class="o">=</code><code> </code><code class="p">(</code><code class="bp">self</code><code class="o">.</code><code class="n">seeker</code><code class="p">[</code><code class="mi">0</code><code class="p">]</code><code class="p">,</code><code> </code><code class="nb">max</code><code class="p">(</code><code class="bp">self</code><code class="o">.</code><code class="n">seeker</code><code class="p">[</code><code class="mi">1</code><code class="p">]</code><code> </code><code class="o">-</code><code> </code><code class="mi">1</code><code class="p">,</code><code> </code><code class="mi">0</code><code class="p">)</code><code class="p">)</code><code>
+</code><code>        </code><code class="k">elif</code><code> </code><code class="n">action</code><code> </code><code class="o">==</code><code> </code><code class="mi">2</code><code class="p">:</code><code>  </code><code class="c1"># move up</code><code>
+</code><code>            </code><code class="bp">self</code><code class="o">.</code><code class="n">seeker</code><code> </code><code class="o">=</code><code> </code><code class="p">(</code><code class="nb">max</code><code class="p">(</code><code class="bp">self</code><code class="o">.</code><code class="n">seeker</code><code class="p">[</code><code class="mi">0</code><code class="p">]</code><code> </code><code class="o">-</code><code> </code><code class="mi">1</code><code class="p">,</code><code> </code><code class="mi">0</code><code class="p">)</code><code class="p">,</code><code> </code><code class="bp">self</code><code class="o">.</code><code class="n">seeker</code><code class="p">[</code><code class="mi">1</code><code class="p">]</code><code class="p">)</code><code>
+</code><code>        </code><code class="k">elif</code><code> </code><code class="n">action</code><code> </code><code class="o">==</code><code> </code><code class="mi">3</code><code class="p">:</code><code>  </code><code class="c1"># move right</code><code>
+</code><code>            </code><code class="bp">self</code><code class="o">.</code><code class="n">seeker</code><code> </code><code class="o">=</code><code> </code><code class="p">(</code><code class="bp">self</code><code class="o">.</code><code class="n">seeker</code><code class="p">[</code><code class="mi">0</code><code class="p">]</code><code class="p">,</code><code> </code><code class="nb">min</code><code class="p">(</code><code class="bp">self</code><code class="o">.</code><code class="n">seeker</code><code class="p">[</code><code class="mi">1</code><code class="p">]</code><code> </code><code class="o">+</code><code> </code><code class="mi">1</code><code class="p">,</code><code> </code><code class="mi">4</code><code class="p">)</code><code class="p">)</code><code>
+</code><code>        </code><code class="k">else</code><code class="p">:</code><code>
+</code><code>            </code><code class="k">raise</code><code> </code><code class="ne">ValueError</code><code class="p">(</code><code class="s2">"</code><code class="s2">Invalid action</code><code class="s2">"</code><code class="p">)</code><code>
+</code><code>
+</code><code>        </code><code class="k">return</code><code> </code><code class="bp">self</code><code class="o">.</code><code class="n">get_observation</code><code class="p">(</code><code class="p">)</code><code class="p">,</code><code> </code><code class="bp">self</code><code class="o">.</code><code class="n">get_reward</code><code class="p">(</code><code class="p">)</code><code class="p">,</code><code> </code><code class="bp">self</code><code class="o">.</code><code class="n">is_done</code><code class="p">(</code><code class="p">)</code><code class="p">,</code><code> </code><code class="bp">self</code><code class="o">.</code><code class="n">info</code><code>  </code><a class="co" href="#callout_building_your_first_distributed_application_CO4-1" id="co_building_your_first_distributed_application_CO4-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a></pre>
+<dl class="calloutlist">
+<dt><a class="co" href="#co_building_your_first_distributed_application_CO4-1" id="callout_building_your_first_distributed_application_CO4-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a></dt>
+<dd><p>After taking a step in the specified direction, we return observation, reward, whether we’re done, and any additional information we might find useful.</p></dd>
+</dl></div>
+<p>I said the <code>step</code> method was the last essential method, but we actually want to define one more helper method that’s extremely helpful to visualize the game and help us understand it.
+This <code>render</code> method will print the current state of the game to the command line.</p>
+<div data-type="example">
+<h5><span class="label">Example 3-5. </span></h5>
+<pre data-code-language="python" data-type="programlisting"><code>    </code><code class="k">def</code><code> </code><code class="nf">render</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code><code> </code><code class="o">*</code><code class="n">args</code><code class="p">,</code><code> </code><code class="o">*</code><code class="o">*</code><code class="n">kwargs</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>        </code><code class="sd">"""Render the environment, e.g. by printing its representation."""</code><code>
+</code><code>        </code><code class="n">os</code><code class="o">.</code><code class="n">system</code><code class="p">(</code><code class="s1">'</code><code class="s1">cls</code><code class="s1">'</code><code> </code><code class="k">if</code><code> </code><code class="n">os</code><code class="o">.</code><code class="n">name</code><code> </code><code class="o">==</code><code> </code><code class="s1">'</code><code class="s1">nt</code><code class="s1">'</code><code> </code><code class="k">else</code><code> </code><code class="s1">'</code><code class="s1">clear</code><code class="s1">'</code><code class="p">)</code><code>  </code><a class="co" href="#callout_building_your_first_distributed_application_CO5-1" id="co_building_your_first_distributed_application_CO5-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a><code>
+</code><code>        </code><code class="n">grid</code><code> </code><code class="o">=</code><code> </code><code class="p">[</code><code class="p">[</code><code class="s1">'</code><code class="s1">| </code><code class="s1">'</code><code> </code><code class="k">for</code><code> </code><code class="n">_</code><code> </code><code class="ow">in</code><code> </code><code class="nb">range</code><code class="p">(</code><code class="mi">5</code><code class="p">)</code><code class="p">]</code><code> </code><code class="o">+</code><code> </code><code class="p">[</code><code class="s2">"</code><code class="s2">|</code><code class="se">\n</code><code class="s2">"</code><code class="p">]</code><code> </code><code class="k">for</code><code> </code><code class="n">_</code><code> </code><code class="ow">in</code><code> </code><code class="nb">range</code><code class="p">(</code><code class="mi">5</code><code class="p">)</code><code class="p">]</code><code>
+</code><code>        </code><code class="n">grid</code><code class="p">[</code><code class="bp">self</code><code class="o">.</code><code class="n">goal</code><code class="p">[</code><code class="mi">0</code><code class="p">]</code><code class="p">]</code><code class="p">[</code><code class="bp">self</code><code class="o">.</code><code class="n">goal</code><code class="p">[</code><code class="mi">1</code><code class="p">]</code><code class="p">]</code><code> </code><code class="o">=</code><code> </code><code class="s1">'</code><code class="s1">|G</code><code class="s1">'</code><code>
+</code><code>        </code><code class="n">grid</code><code class="p">[</code><code class="bp">self</code><code class="o">.</code><code class="n">seeker</code><code class="p">[</code><code class="mi">0</code><code class="p">]</code><code class="p">]</code><code class="p">[</code><code class="bp">self</code><code class="o">.</code><code class="n">seeker</code><code class="p">[</code><code class="mi">1</code><code class="p">]</code><code class="p">]</code><code> </code><code class="o">=</code><code> </code><code class="s1">'</code><code class="s1">|S</code><code class="s1">'</code><code>  </code><a class="co" href="#callout_building_your_first_distributed_application_CO5-2" id="co_building_your_first_distributed_application_CO5-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a><code>
+</code><code>        </code><code class="nb">print</code><code class="p">(</code><code class="s1">'</code><code class="s1">'</code><code class="o">.</code><code class="n">join</code><code class="p">(</code><code class="p">[</code><code class="s1">'</code><code class="s1">'</code><code class="o">.</code><code class="n">join</code><code class="p">(</code><code class="n">grid_row</code><code class="p">)</code><code> </code><code class="k">for</code><code> </code><code class="n">grid_row</code><code> </code><code class="ow">in</code><code> </code><code class="n">grid</code><code class="p">]</code><code class="p">)</code><code class="p">)</code><code>  </code><a class="co" href="#callout_building_your_first_distributed_application_CO5-3" id="co_building_your_first_distributed_application_CO5-3"><img alt="3" height="12" src="assets/3.png" width="12"/></a></pre>
+<dl class="calloutlist">
+<dt><a class="co" href="#co_building_your_first_distributed_application_CO5-1" id="callout_building_your_first_distributed_application_CO5-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a></dt>
+<dd><p>First we clear the screen.</p></dd>
+<dt><a class="co" href="#co_building_your_first_distributed_application_CO5-2" id="callout_building_your_first_distributed_application_CO5-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a></dt>
+<dd><p>Then we draw the grid and mark the goal as <code>G</code> and the seeker as <code>S</code> on it.</p></dd>
+<dt><a class="co" href="#co_building_your_first_distributed_application_CO5-3" id="callout_building_your_first_distributed_application_CO5-3"><img alt="3" height="12" src="assets/3.png" width="12"/></a></dt>
+<dd><p>The grid then gets rendered by printing it to your screen.</p></dd>
+</dl></div>
+<p>Great, now we have completed the implementation of our <code>Environment</code> class that’s defining our 2D-maze game.
+We can <code>step</code> through this game, know when it’s <code>done</code> and <code>reset</code> it again.
+The player of the game, the <code>seeker</code>, can also observe its environment and gets rewarded for finding the goal.</p>
+<p>Let’s use this implementation to play a game of find-the-goal for a seeker that simply takes random actions.
+This can be done by creating a new <code>Environment</code>, sampling and applying actions to it, and rendering the environment until the game is over:</p>
+<div data-type="example">
+<h5><span class="label">Example 3-6. </span></h5>
+<pre data-code-language="python" data-type="programlisting"><code class="kn">import</code><code> </code><code class="nn">time</code><code>
+</code><code>
+</code><code class="n">environment</code><code> </code><code class="o">=</code><code> </code><code class="n">Environment</code><code class="p">(</code><code class="p">)</code><code>
+</code><code>
+</code><code class="k">while</code><code> </code><code class="ow">not</code><code> </code><code class="n">environment</code><code class="o">.</code><code class="n">is_done</code><code class="p">(</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>    </code><code class="n">random_action</code><code> </code><code class="o">=</code><code> </code><code class="n">environment</code><code class="o">.</code><code class="n">action_space</code><code class="o">.</code><code class="n">sample</code><code class="p">(</code><code class="p">)</code><code>  </code><a class="co" href="#callout_building_your_first_distributed_application_CO6-1" id="co_building_your_first_distributed_application_CO6-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a><code>
+</code><code>    </code><code class="n">environment</code><code class="o">.</code><code class="n">step</code><code class="p">(</code><code class="n">random_action</code><code class="p">)</code><code>
+</code><code>    </code><code class="n">time</code><code class="o">.</code><code class="n">sleep</code><code class="p">(</code><code class="mf">0.1</code><code class="p">)</code><code>
+</code><code>    </code><code class="n">environment</code><code class="o">.</code><code class="n">render</code><code class="p">(</code><code class="p">)</code><code>  </code><a class="co" href="#callout_building_your_first_distributed_application_CO6-2" id="co_building_your_first_distributed_application_CO6-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a></pre>
+<dl class="calloutlist">
+<dt><a class="co" href="#co_building_your_first_distributed_application_CO6-1" id="callout_building_your_first_distributed_application_CO6-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a></dt>
+<dd><p>We can test our environment by applying sampled actions until we’re done.</p></dd>
+<dt><a class="co" href="#co_building_your_first_distributed_application_CO6-2" id="callout_building_your_first_distributed_application_CO6-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a></dt>
+<dd><p>To visualize the environment we render it after waiting for a tenth of a second (otherwise the code runs too fast to follow).</p></dd>
+</dl></div>
+<p>If you run this on your computer, eventually you’ll see that the game is over and the seeker has found the goal.
+It might take a while if you’re unlucky.</p>
+<p>In case you’re objecting that this is an extremely simple problem, and to solve it all you have to do is take at total of
+8 steps, namely going right and down four times each in arbitrary order, I’m not arguing with you.
+The point is that we want to tackle this problem using machine learning, so that we can take on much harder problems later.
+Specifically, we want to implement an algorithm that figures out on its own how to play the game, merely by playing the game repeatedly: observing what’s happening, deciding what to do next, and getting rewarded for your actions.</p>
+<p>If you want to, now is a good time to make the game more complex yourself.
+As long as you do not change the interface we defined for the <code>Environment</code> class, you could modify this game in many ways.
+Here are a few suggestions:</p>
+<ul>
+<li>
+<p>Make it a 10x10 grid or randomize the initial position of the seeker.</p>
+</li>
+<li>
+<p>Make the outer walls of the grid dangerous. Whenever you try to touch them, you’ll incur a reward of -100, i.e a steep penalty.</p>
+</li>
+<li>
+<p>Introduce obstacles in the grid that the seeker cannot pass through.</p>
+</li>
+</ul>
+<p>If you’re feeling really adventurous, you could also randomize the goal position.
+This requires extra care, as currently the seeker has no information about the goal position in terms of the <code>get_observation</code> method.
+Maybe come back to tackling this last exercise after you’ve finished reading this chapter.</p>
+</div></section>
+<section data-pdf-bookmark="Building a Simulation" data-type="sect1"><div class="sect1" id="idm44990032626624">
+<h1>Building a Simulation</h1>
+<p>With the <code>Environment</code> class implemented, what does it take to tackle the problem of “teaching” the seeker to play the game well?
+How can it find the goal consistently in the minimum number of 8 steps necessary?
+We’ve equipped the maze environment with reward information, so that the seeker can use this signal to learn to play the game.
+In reinforcement learning, you play games repeatedly and learn from the experience you made in the process.
+The player of the game is often referred to as <em>agent</em> that takes <em>actions</em> in the environment, observes its <em>state</em> and receives a <em>reward</em>.<sup><a data-type="noteref" href="ch03.xhtml#idm44990031607120" id="idm44990031607120-marker">1</a></sup>
+The better an agent learns, the better it becomes at interpreting the current game state (observations) and finding actions that lead to more rewarding outcomes.</p>
+<p>Regardless of the RL algorithm you want to use (in case you know any), you need to have a way of simulating the game repeatedly, to collect experience data.
+For this reason we’re going to implement a simple <code>Simulation</code> class in just a bit.</p>
+<p>The other useful abstraction we need to proceed is that of a <code>Policy</code>, a way of specifying actions.
+Right now the only thing we can do to play the game is sampling random actions for our seeker.
+What a <code>Policy</code> allows us to do is to get better actions for the current state of the game.
+In fact, we define a <code>Policy</code> to be a class with a <code>get_action</code> method that takes a game state and returns an action.</p>
+<p>Remember that in our game the seeker has a total of <code>25</code> possible states on the grid, and can carry out <code>4</code> actions.
+A simple idea would be to look at pairs of states and actions and assign a high value to a pair if carrying out this action in this state will lead to a high reward, and a low value otherwise.
+For instance, from your intuition of the game it should be clear that going down or right is always a good idea, whereas going left or up is not.
+Then, create a <code>25x4</code> lookup table of all possible state-action pairs and store it in our <code>Policy</code>.
+Then we could simply ask our policy to return the highest value of any action given a state.
+Of course, implementing an algorithm that finds good values for these state-action pairs is the challenging part.
+Let’s implement this idea of a <code>Policy</code> in first and worry about a suitable algorithm later.</p>
+<div data-type="example">
+<h5><span class="label">Example 3-7. </span></h5>
+<pre data-code-language="python" data-type="programlisting"><code class="k">class</code><code> </code><code class="nc">Policy</code><code class="p">:</code><code>
+</code><code>
+</code><code>    </code><code class="k">def</code><code> </code><code class="fm">__init__</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code><code> </code><code class="n">env</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>        </code><code class="sd">"""A Policy suggests actions based on the current state.
+        We do this by tracking the value of each state-action pair.
+        """</code><code>
+</code><code>        </code><code class="bp">self</code><code class="o">.</code><code class="n">state_action_table</code><code> </code><code class="o">=</code><code> </code><code class="p">[</code><code>
+</code><code>            </code><code class="p">[</code><code class="mi">0</code><code> </code><code class="k">for</code><code> </code><code class="n">_</code><code> </code><code class="ow">in</code><code> </code><code class="nb">range</code><code class="p">(</code><code class="n">env</code><code class="o">.</code><code class="n">action_space</code><code class="o">.</code><code class="n">n</code><code class="p">)</code><code class="p">]</code><code class="k">for</code><code> </code><code class="n">_</code><code> </code><code class="ow">in</code><code> </code><code class="nb">range</code><code class="p">(</code><code class="n">env</code><code class="o">.</code><code class="n">observation_space</code><code class="o">.</code><code class="n">n</code><code class="p">)</code><code>  </code><a class="co" href="#callout_building_your_first_distributed_application_CO7-1" id="co_building_your_first_distributed_application_CO7-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a><code>
+</code><code>        </code><code class="p">]</code><code>
+</code><code>        </code><code class="bp">self</code><code class="o">.</code><code class="n">action_space</code><code> </code><code class="o">=</code><code> </code><code class="n">env</code><code class="o">.</code><code class="n">action_space</code><code>
+</code><code>
+</code><code>    </code><code class="k">def</code><code> </code><code class="nf">get_action</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code><code> </code><code class="n">state</code><code class="p">,</code><code> </code><code class="n">explore</code><code class="o">=</code><code class="kc">True</code><code class="p">,</code><code> </code><code class="n">epsilon</code><code class="o">=</code><code class="mf">0.1</code><code class="p">)</code><code class="p">:</code><code>  </code><a class="co" href="#callout_building_your_first_distributed_application_CO7-2" id="co_building_your_first_distributed_application_CO7-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a><code>
+</code><code>        </code><code class="sd">"""Explore randomly or exploit the best value currently available."""</code><code>
+</code><code>        </code><code class="k">if</code><code> </code><code class="n">explore</code><code> </code><code class="ow">and</code><code> </code><code class="n">random</code><code class="o">.</code><code class="n">uniform</code><code class="p">(</code><code class="mi">0</code><code class="p">,</code><code> </code><code class="mi">1</code><code class="p">)</code><code> </code><code class="o">&lt;</code><code> </code><code class="n">epsilon</code><code class="p">:</code><code>  </code><a class="co" href="#callout_building_your_first_distributed_application_CO7-3" id="co_building_your_first_distributed_application_CO7-3"><img alt="3" height="12" src="assets/3.png" width="12"/></a><code>
+</code><code>            </code><code class="k">return</code><code> </code><code class="bp">self</code><code class="o">.</code><code class="n">action_space</code><code class="o">.</code><code class="n">sample</code><code class="p">(</code><code class="p">)</code><code>
+</code><code>        </code><code class="k">return</code><code> </code><code class="n">np</code><code class="o">.</code><code class="n">argmax</code><code class="p">(</code><code class="bp">self</code><code class="o">.</code><code class="n">state_action_table</code><code class="p">[</code><code class="n">state</code><code class="p">]</code><code class="p">)</code></pre>
+<dl class="calloutlist">
+<dt><a class="co" href="#co_building_your_first_distributed_application_CO7-1" id="callout_building_your_first_distributed_application_CO7-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a></dt>
+<dd><p>We define a nested list of values for each state-action pair, initialized to zero.</p></dd>
+<dt><a class="co" href="#co_building_your_first_distributed_application_CO7-2" id="callout_building_your_first_distributed_application_CO7-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a></dt>
+<dd><p>On demand, we can <code>explore</code> random actions so that we don’t get stuck in suboptimal behavior.</p></dd>
+<dt><a class="co" href="#co_building_your_first_distributed_application_CO7-3" id="callout_building_your_first_distributed_application_CO7-3"><img alt="3" height="12" src="assets/3.png" width="12"/></a></dt>
+<dd><p>Sometimes we might want to randomly explore actions in the game, which is why we introduce an <code>explore</code> parameter to the <code>get_action</code> method. By default, this happens 10% of the time.</p></dd>
+</dl></div>
+<p>We return the action with the highest value in the lookup table, given the current state.</p>
+<p>I’ve snuck in a little implementation detail into the <code>Policy</code> definition that might be a bit confusing.
+The <code>get_action</code> method has an <code>explore</code> parameter.
+The reason for this is that if you learn an extremely poor policy, e.g. one that always wants you to move left, you have no chance of ever finding better solutions.
+In other words, sometimes you need to explore new ways, and not “exploit” your current understanding of the game.
+As indicated before, we haven’t discussed how to learn to improve the values in the <code>state_action_table</code> of our policy.
+For now, just keep in mind that the policy gives us the actions we want to follow when simulating the maze game.</p>
+<p>Moving on to the <code>Simulation</code> class we spoke about earlier, a simulation should take an <code>Environment</code> and compute actions of a given <code>Policy</code> until the goal is reached and the game ends.
+The data we observe when “rolling out” a full game like this is what we call the <em>experience</em> we gained.
+Accordingly, our <code>Simulation</code> class has a <code>rollout</code> method that computes <code>experiences</code> for a full game and returns them.
+Here’s what the implementation of the <code>Simulation</code> class looks like:</p>
+<div data-type="example">
+<h5><span class="label">Example 3-8. </span></h5>
+<pre data-code-language="python" data-type="programlisting"><code class="k">class</code><code> </code><code class="nc">Simulation</code><code class="p">(</code><code class="nb">object</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>    </code><code class="k">def</code><code> </code><code class="fm">__init__</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code><code> </code><code class="n">env</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>        </code><code class="sd">"""Simulates rollouts of an environment, given a policy to follow."""</code><code>
+</code><code>        </code><code class="bp">self</code><code class="o">.</code><code class="n">env</code><code> </code><code class="o">=</code><code> </code><code class="n">env</code><code>
+</code><code>
+</code><code>    </code><code class="k">def</code><code> </code><code class="nf">rollout</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code><code> </code><code class="n">policy</code><code class="p">,</code><code> </code><code class="n">render</code><code class="o">=</code><code class="kc">False</code><code class="p">,</code><code> </code><code class="n">explore</code><code class="o">=</code><code class="kc">True</code><code class="p">,</code><code> </code><code class="n">epsilon</code><code class="o">=</code><code class="mf">0.1</code><code class="p">)</code><code class="p">:</code><code>  </code><a class="co" href="#callout_building_your_first_distributed_application_CO8-1" id="co_building_your_first_distributed_application_CO8-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a><code>
+</code><code>        </code><code class="sd">"""Returns experiences for a policy rollout."""</code><code>
+</code><code>        </code><code class="n">experiences</code><code> </code><code class="o">=</code><code> </code><code class="p">[</code><code class="p">]</code><code>
+</code><code>        </code><code class="n">state</code><code> </code><code class="o">=</code><code> </code><code class="bp">self</code><code class="o">.</code><code class="n">env</code><code class="o">.</code><code class="n">reset</code><code class="p">(</code><code class="p">)</code><code>  </code><a class="co" href="#callout_building_your_first_distributed_application_CO8-2" id="co_building_your_first_distributed_application_CO8-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a><code>
+</code><code>        </code><code class="n">done</code><code> </code><code class="o">=</code><code> </code><code class="kc">False</code><code>
+</code><code>        </code><code class="k">while</code><code> </code><code class="ow">not</code><code> </code><code class="n">done</code><code class="p">:</code><code>
+</code><code>            </code><code class="n">action</code><code> </code><code class="o">=</code><code> </code><code class="n">policy</code><code class="o">.</code><code class="n">get_action</code><code class="p">(</code><code class="n">state</code><code class="p">,</code><code> </code><code class="n">explore</code><code class="p">,</code><code> </code><code class="n">epsilon</code><code class="p">)</code><code>  </code><a class="co" href="#callout_building_your_first_distributed_application_CO8-3" id="co_building_your_first_distributed_application_CO8-3"><img alt="3" height="12" src="assets/3.png" width="12"/></a><code>
+</code><code>            </code><code class="n">next_state</code><code class="p">,</code><code> </code><code class="n">reward</code><code class="p">,</code><code> </code><code class="n">done</code><code class="p">,</code><code> </code><code class="n">info</code><code> </code><code class="o">=</code><code> </code><code class="bp">self</code><code class="o">.</code><code class="n">env</code><code class="o">.</code><code class="n">step</code><code class="p">(</code><code class="n">action</code><code class="p">)</code><code>  </code><a class="co" href="#callout_building_your_first_distributed_application_CO8-4" id="co_building_your_first_distributed_application_CO8-4"><img alt="4" height="12" src="assets/4.png" width="12"/></a><code>
+</code><code>            </code><code class="n">experiences</code><code class="o">.</code><code class="n">append</code><code class="p">(</code><code class="p">[</code><code class="n">state</code><code class="p">,</code><code> </code><code class="n">action</code><code class="p">,</code><code> </code><code class="n">reward</code><code class="p">,</code><code> </code><code class="n">next_state</code><code class="p">]</code><code class="p">)</code><code>  </code><a class="co" href="#callout_building_your_first_distributed_application_CO8-5" id="co_building_your_first_distributed_application_CO8-5"><img alt="5" height="12" src="assets/5.png" width="12"/></a><code>
+</code><code>            </code><code class="n">state</code><code> </code><code class="o">=</code><code> </code><code class="n">next_state</code><code>
+</code><code>            </code><code class="k">if</code><code> </code><code class="n">render</code><code class="p">:</code><code>  </code><a class="co" href="#callout_building_your_first_distributed_application_CO8-6" id="co_building_your_first_distributed_application_CO8-6"><img alt="6" height="12" src="assets/6.png" width="12"/></a><code>
+</code><code>                </code><code class="n">time</code><code class="o">.</code><code class="n">sleep</code><code class="p">(</code><code class="mf">0.05</code><code class="p">)</code><code>
+</code><code>                </code><code class="bp">self</code><code class="o">.</code><code class="n">env</code><code class="o">.</code><code class="n">render</code><code class="p">(</code><code class="p">)</code><code>
+</code><code>
+</code><code>        </code><code class="k">return</code><code> </code><code class="n">experiences</code></pre>
+<dl class="calloutlist">
+<dt><a class="co" href="#co_building_your_first_distributed_application_CO8-1" id="callout_building_your_first_distributed_application_CO8-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a></dt>
+<dd><p>We compute a game “roll-out” by following the actions of a <code>policy</code>, and we can optionally render the simulation.</p></dd>
+<dt><a class="co" href="#co_building_your_first_distributed_application_CO8-2" id="callout_building_your_first_distributed_application_CO8-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a></dt>
+<dd><p>To be sure, we reset the environment before each rollout.</p></dd>
+<dt><a class="co" href="#co_building_your_first_distributed_application_CO8-3" id="callout_building_your_first_distributed_application_CO8-3"><img alt="3" height="12" src="assets/3.png" width="12"/></a></dt>
+<dd><p>The passed in <code>policy</code> drives the actions we take. The <code>explore</code> and <code>epsilon</code> parameters are passed through.</p></dd>
+<dt><a class="co" href="#co_building_your_first_distributed_application_CO8-4" id="callout_building_your_first_distributed_application_CO8-4"><img alt="4" height="12" src="assets/4.png" width="12"/></a></dt>
+<dd><p>We step through the environment by applying the policy’s <code>action</code>.</p></dd>
+<dt><a class="co" href="#co_building_your_first_distributed_application_CO8-5" id="callout_building_your_first_distributed_application_CO8-5"><img alt="5" height="12" src="assets/5.png" width="12"/></a></dt>
+<dd><p>We define an experience as a <code>(state, action, reward, next_state)</code> quadruple.</p></dd>
+<dt><a class="co" href="#co_building_your_first_distributed_application_CO8-6" id="callout_building_your_first_distributed_application_CO8-6"><img alt="6" height="12" src="assets/6.png" width="12"/></a></dt>
+<dd><p>Optionally render the environment at each step.</p></dd>
+</dl></div>
+<p>Note that each entry of the <code>experiences</code> we collect in a <code>rollout</code> consists of four values: the current state, the action taken, the reward received, and the next state.
+The algorithm we’re going to implement in a moment will use these experiences to learn from them.
+Other algorithms might use other experience values, but those are the ones we need to proceed.</p>
+<p>Now we have a policy that hasn’t learned anything just yet, but we can already test its interface to see if it works.
+Let’s try it out by initializing a <code>Simulation</code> object, calling its <code>rollout</code> method on a not-so-smart <code>Policy</code>, and then printing the <code>state_action_table</code> of it:</p>
+<div data-type="example">
+<h5><span class="label">Example 3-9. </span></h5>
+<pre data-code-language="python" data-type="programlisting"><code class="n">untrained_policy</code><code> </code><code class="o">=</code><code> </code><code class="n">Policy</code><code class="p">(</code><code class="n">environment</code><code class="p">)</code><code>
+</code><code class="n">sim</code><code> </code><code class="o">=</code><code> </code><code class="n">Simulation</code><code class="p">(</code><code class="n">environment</code><code class="p">)</code><code>
+</code><code>
+</code><code class="n">exp</code><code> </code><code class="o">=</code><code> </code><code class="n">sim</code><code class="o">.</code><code class="n">rollout</code><code class="p">(</code><code class="n">untrained_policy</code><code class="p">,</code><code> </code><code class="n">render</code><code class="o">=</code><code class="kc">True</code><code class="p">,</code><code> </code><code class="n">epsilon</code><code class="o">=</code><code class="mf">1.0</code><code class="p">)</code><code>  </code><a class="co" href="#callout_building_your_first_distributed_application_CO9-1" id="co_building_your_first_distributed_application_CO9-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a><code>
+</code><code class="k">for</code><code> </code><code class="n">row</code><code> </code><code class="ow">in</code><code> </code><code class="n">untrained_policy</code><code class="o">.</code><code class="n">state_action_table</code><code class="p">:</code><code>
+</code><code>    </code><code class="nb">print</code><code class="p">(</code><code class="n">row</code><code class="p">)</code><code>  </code><a class="co" href="#callout_building_your_first_distributed_application_CO9-2" id="co_building_your_first_distributed_application_CO9-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a></pre>
+<dl class="calloutlist">
+<dt><a class="co" href="#co_building_your_first_distributed_application_CO9-1" id="callout_building_your_first_distributed_application_CO9-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a></dt>
+<dd><p>We roll-out one full game with an “untrained” policy that we render.</p></dd>
+<dt><a class="co" href="#co_building_your_first_distributed_application_CO9-2" id="callout_building_your_first_distributed_application_CO9-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a></dt>
+<dd><p>The state-action values are currently all zero.</p></dd>
+</dl></div>
+<p>If you feel like we haven’t made much progress since the last section, I can promise you that things will come together in the next one.
+The prep work of setting up a <code>Simulation</code> and a <code>Policy</code> were necessary to frame the problem correctly.
+Now the only thing that’s left is to devise a smart way to update the internal state of the <code>Policy</code> based on the experiences we’ve collected, so that it actually learns to play the maze game.</p>
+</div></section>
+<section data-pdf-bookmark="Training a Reinforcement Learning Model" data-type="sect1"><div class="sect1" id="idm44990031610656">
+<h1>Training a Reinforcement Learning Model</h1>
+<p>Imagine we have a set of experiences that we’ve collected from a couple of games.
+What would be a smart way to update the values in the <code>state_action_table</code> of our <code>Policy</code>?
+Here’s one idea.
+Let’s say you’re sitting at position <code>(3,5)</code>, and you’ve decided to go right, which puts you at <code>(4,5)</code>, just one step away from the goal.
+Clearly you could then just go right and collect a reward of <code>1</code> in this scenario.
+That must mean the current state you’re in combined with an action of going “right” should have a high value.
+In other words, the value of this particular state-action pair should be high.
+In contrast, moving left in the same situation does not lead to anything, and the corresponding state-action pair should have a low value.</p>
+<p>More generally, let’s say you were in a given <code>state</code>, you’ve decided to take an <code>action</code>, leading to a <code>reward</code>, and you’re then in <code>next_state</code>.
+Remember that this is how we defined an experience.
+With our <code>policy.state_action_table</code> we can peek a little ahead and see if we can expect to gain anything from actions taken from <code>next_state</code>.
+That is, we can compute</p>
+<pre data-code-language="python" data-type="programlisting"><code class="n">next_max</code> <code class="o">=</code> <code class="n">np</code><code class="o">.</code><code class="n">max</code><code class="p">(</code><code class="n">policy</code><code class="o">.</code><code class="n">state_action_table</code><code class="p">[</code><code class="n">next_state</code><code class="p">])</code></pre>
+<p>How should we compare the knowledge of this value to the current state-action value, which is <code>value = policy.state_action_table[state][action]</code>?
+There are many ways to go about this, but we clearly can’t completely discard the current <code>value</code> and put too much trust in <code>next_max</code>.
+After all, this is just a single piece of experience we’re using here.
+So as a first approximation, why don’t we simply compute a weighted sum of the old and the expected value and go with <code>new_value = 0.9 * value + 0.1 * next_max</code>?
+Here, the values <code>0.9</code> and <code>0.1</code> have been chosen somewhat arbitrarily, the only important piece is that the first value is high enough to reflect our preference to keep the old value, and that both weights sum to <code>1</code>.
+That formula is a good starting point, but the problem is that we’re not at all factoring in the crucial information that we’re getting from the <code>reward</code>.
+In fact, we should put more trust in the current <code>reward</code> value than in the projected <code>next_max</code> value, so it’s a good idea to discount the latter a little, let’s say by 10%.
+Updating the state-action value would then look like this:</p>
+<pre data-code-language="python" data-type="programlisting"><code class="n">new_value</code> <code class="o">=</code> <code class="mf">0.9</code> <code class="o">*</code> <code class="n">value</code> <code class="o">+</code> <code class="mf">0.1</code> <code class="o">*</code> <code class="p">(</code><code class="n">reward</code> <code class="o">+</code> <code class="mf">0.9</code> <code class="o">*</code> <code class="n">next_max</code><code class="p">)</code></pre>
+<p>Depending on your level of experience with this kind of reasoning, the last few paragraphs might be a lot to digest.
+The good thing is that, if you’ve understood the explanations up to this point, the remainder of this chapter will likely come easy to you.
+Mathematically, this was the last (and only) hard part of this example.
+If you’ve worked with RL before, you will have noticed by now that this is an implementation of the so-called Q-Learning algorithm.
+It’s called that, because the state-action table can be described as a function <code>Q(state, action)</code> that returns values for these pairs.</p>
+<p>We’re almost there, so let’s formalize this procedure by implementing an <code>update_policy</code> function for a policy and collected experiences:</p>
+<div data-type="example">
+<h5><span class="label">Example 3-10. </span></h5>
+<pre data-code-language="python" data-type="programlisting"><code class="kn">import</code><code> </code><code class="nn">numpy</code><code> </code><code class="k">as</code><code> </code><code class="nn">np</code><code>
+</code><code>
+</code><code>
+</code><code class="k">def</code><code> </code><code class="nf">update_policy</code><code class="p">(</code><code class="n">policy</code><code class="p">,</code><code> </code><code class="n">experiences</code><code class="p">,</code><code> </code><code class="n">weight</code><code class="o">=</code><code class="mf">0.1</code><code class="p">,</code><code> </code><code class="n">discount_factor</code><code class="o">=</code><code class="mf">0.9</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>    </code><code class="sd">"""Updates a given policy with a list of (state, action, reward, state)
+    experiences."""</code><code>
+</code><code>    </code><code class="k">for</code><code> </code><code class="n">state</code><code class="p">,</code><code> </code><code class="n">action</code><code class="p">,</code><code> </code><code class="n">reward</code><code class="p">,</code><code> </code><code class="n">next_state</code><code> </code><code class="ow">in</code><code> </code><code class="n">experiences</code><code class="p">:</code><code>  </code><a class="co" href="#callout_building_your_first_distributed_application_CO10-1" id="co_building_your_first_distributed_application_CO10-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a><code>
+</code><code>        </code><code class="n">next_max</code><code> </code><code class="o">=</code><code> </code><code class="n">np</code><code class="o">.</code><code class="n">max</code><code class="p">(</code><code class="n">policy</code><code class="o">.</code><code class="n">state_action_table</code><code class="p">[</code><code class="n">next_state</code><code class="p">]</code><code class="p">)</code><code>  </code><a class="co" href="#callout_building_your_first_distributed_application_CO10-2" id="co_building_your_first_distributed_application_CO10-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a><code>
+</code><code>        </code><code class="n">value</code><code> </code><code class="o">=</code><code> </code><code class="n">policy</code><code class="o">.</code><code class="n">state_action_table</code><code class="p">[</code><code class="n">state</code><code class="p">]</code><code class="p">[</code><code class="n">action</code><code class="p">]</code><code>  </code><a class="co" href="#callout_building_your_first_distributed_application_CO10-3" id="co_building_your_first_distributed_application_CO10-3"><img alt="3" height="12" src="assets/3.png" width="12"/></a><code>
+</code><code>        </code><code class="n">new_value</code><code> </code><code class="o">=</code><code> </code><code class="p">(</code><code class="mi">1</code><code> </code><code class="o">-</code><code> </code><code class="n">weight</code><code class="p">)</code><code> </code><code class="o">*</code><code> </code><code class="n">value</code><code> </code><code class="o">+</code><code> </code><code class="n">weight</code><code> </code><code class="o">*</code><code> </code><code class="p">(</code><code class="n">reward</code><code> </code><code class="o">+</code><code> </code><code class="n">discount_factor</code><code> </code><code class="o">*</code><code> </code><code class="n">next_max</code><code class="p">)</code><code>  </code><a class="co" href="#callout_building_your_first_distributed_application_CO10-4" id="co_building_your_first_distributed_application_CO10-4"><img alt="4" height="12" src="assets/4.png" width="12"/></a><code>
+</code><code>        </code><code class="n">policy</code><code class="o">.</code><code class="n">state_action_table</code><code class="p">[</code><code class="n">state</code><code class="p">]</code><code class="p">[</code><code class="n">action</code><code class="p">]</code><code> </code><code class="o">=</code><code> </code><code class="n">new_value</code><code>  </code><a class="co" href="#callout_building_your_first_distributed_application_CO10-5" id="co_building_your_first_distributed_application_CO10-5"><img alt="5" height="12" src="assets/5.png" width="12"/></a></pre>
+<dl class="calloutlist">
+<dt><a class="co" href="#co_building_your_first_distributed_application_CO10-1" id="callout_building_your_first_distributed_application_CO10-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a></dt>
+<dd><p>We loop through all experiences in order.</p></dd>
+<dt><a class="co" href="#co_building_your_first_distributed_application_CO10-2" id="callout_building_your_first_distributed_application_CO10-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a></dt>
+<dd><p>Then we choose the maximum value among all possible actions in the next state.</p></dd>
+<dt><a class="co" href="#co_building_your_first_distributed_application_CO10-3" id="callout_building_your_first_distributed_application_CO10-3"><img alt="3" height="12" src="assets/3.png" width="12"/></a></dt>
+<dd><p>We then extract the current state-action value.</p></dd>
+<dt><a class="co" href="#co_building_your_first_distributed_application_CO10-4" id="callout_building_your_first_distributed_application_CO10-4"><img alt="4" height="12" src="assets/4.png" width="12"/></a></dt>
+<dd><p>The new value is the weighted sum of the old value and the expected value, which is the sum of the current reward and the discounted <code>next_max</code>.</p></dd>
+<dt><a class="co" href="#co_building_your_first_distributed_application_CO10-5" id="callout_building_your_first_distributed_application_CO10-5"><img alt="5" height="12" src="assets/5.png" width="12"/></a></dt>
+<dd><p>After updating, we set the new <code>state_action_table</code> value.</p></dd>
+</dl></div>
+<p>Having this function in place now makes it really simple to train a policy to make better decisions.
+We can use the following procedure:</p>
+<ul>
+<li>
+<p>Initialize a policy and a simulation.</p>
+</li>
+<li>
+<p>Run the simulation many times, let’s say for a total of <code>10000</code> runs.</p>
+</li>
+<li>
+<p>For each game, first collect the experiences by running a <code>rollout</code>.</p>
+</li>
+<li>
+<p>Then update the policy by calling <code>update_policy</code> on the collected experiences.</p>
+</li>
+</ul>
+<p>That’s it!
+The following <code>train_policy</code> function implements the above procedure straight up.</p>
+<div data-type="example">
+<h5><span class="label">Example 3-11. </span></h5>
+<pre data-code-language="python" data-type="programlisting"><code class="k">def</code><code> </code><code class="nf">train_policy</code><code class="p">(</code><code class="n">env</code><code class="p">,</code><code> </code><code class="n">num_episodes</code><code class="o">=</code><code class="mi">10000</code><code class="p">,</code><code> </code><code class="n">weight</code><code class="o">=</code><code class="mf">0.1</code><code class="p">,</code><code> </code><code class="n">discount_factor</code><code class="o">=</code><code class="mf">0.9</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>    </code><code class="sd">"""Training a policy by updating it with rollout experiences."""</code><code>
+</code><code>    </code><code class="n">policy</code><code> </code><code class="o">=</code><code> </code><code class="n">Policy</code><code class="p">(</code><code class="n">env</code><code class="p">)</code><code>
+</code><code>    </code><code class="n">sim</code><code> </code><code class="o">=</code><code> </code><code class="n">Simulation</code><code class="p">(</code><code class="n">env</code><code class="p">)</code><code>
+</code><code>    </code><code class="k">for</code><code> </code><code class="n">_</code><code> </code><code class="ow">in</code><code> </code><code class="nb">range</code><code class="p">(</code><code class="n">num_episodes</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>        </code><code class="n">experiences</code><code> </code><code class="o">=</code><code> </code><code class="n">sim</code><code class="o">.</code><code class="n">rollout</code><code class="p">(</code><code class="n">policy</code><code class="p">)</code><code>  </code><a class="co" href="#callout_building_your_first_distributed_application_CO11-1" id="co_building_your_first_distributed_application_CO11-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a><code>
+</code><code>        </code><code class="n">update_policy</code><code class="p">(</code><code class="n">policy</code><code class="p">,</code><code> </code><code class="n">experiences</code><code class="p">,</code><code> </code><code class="n">weight</code><code class="p">,</code><code> </code><code class="n">discount_factor</code><code class="p">)</code><code>  </code><a class="co" href="#callout_building_your_first_distributed_application_CO11-2" id="co_building_your_first_distributed_application_CO11-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a><code>
+</code><code>
+</code><code>    </code><code class="k">return</code><code> </code><code class="n">policy</code><code>
+</code><code>
+</code><code>
+</code><code class="n">trained_policy</code><code> </code><code class="o">=</code><code> </code><code class="n">train_policy</code><code class="p">(</code><code class="n">environment</code><code class="p">)</code><code>  </code><a class="co" href="#callout_building_your_first_distributed_application_CO11-3" id="co_building_your_first_distributed_application_CO11-3"><img alt="3" height="12" src="assets/3.png" width="12"/></a></pre>
+<dl class="calloutlist">
+<dt><a class="co" href="#co_building_your_first_distributed_application_CO11-1" id="callout_building_your_first_distributed_application_CO11-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a></dt>
+<dd><p>Collect experiences for each game.</p></dd>
+<dt><a class="co" href="#co_building_your_first_distributed_application_CO11-2" id="callout_building_your_first_distributed_application_CO11-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a></dt>
+<dd><p>Update our policy with those experiences.</p></dd>
+<dt><a class="co" href="#co_building_your_first_distributed_application_CO11-3" id="callout_building_your_first_distributed_application_CO11-3"><img alt="3" height="12" src="assets/3.png" width="12"/></a></dt>
+<dd><p>Finally, train and return a policy for our <code>enviroment</code> from before.</p></dd>
+</dl></div>
+<p>Note that the high-brow way of speaking of a full play-through of the maze game is an <em>episode</em> in the RL literature.
+That’s why we call the argument <code>num_episodes</code> in the <code>train_policy</code> function, rather than <code>num_games</code>.</p>
+<aside data-type="sidebar" epub:type="sidebar"><div class="sidebar" id="idm44990030732928">
+<h5>Q-Learning</h5>
+<p>The Q-Learning algorithm we just implemented is often the first algorithm taught in RL classes,
+mostly because it is relatively easy to reason about.
+You collect and tabulate experience data that shows you how well state-action pairs work, and update the table
+according to the Q-learning update rule.</p>
+<p>For RL problems that either have a huge number of states or actions, the Q-table can become excessively large.
+The algorithm then becomes inefficient, because it would take too much time to collect enough experience data for
+all (relevant) state-action pairs.</p>
+<p>One way to address this issue is to use a neural network to approximate the Q-table.
+By this we mean that you can employ a deep neural network to learn a function that maps states to actions.
+This approach is called Deep Q-Learning and the networks used for learning are called Deep Q-Networks (DQN).
+From <a data-type="xref" href="ch04.xhtml#chapter_04">Chapter 4</a> on out we will exclusively use deep learning to tackle RL problems in this book.</p>
+</div></aside>
+<p>Now that we have a trained policy, let’s see how well it performs.
+We’ve run random policies twice before in this chapter, just to get an idea of how well they work for the maze problem.
+But let’s now properly evaluate our trained policy on several games and see how it does on average.
+Specifically, we’ll run our simulation for a couple of episodes and count how many steps it took per episode to reach the goal.
+So, let’s implement an <code>evaluate_policy</code> function that does precisely that:</p>
+<div data-type="example">
+<h5><span class="label">Example 3-12. </span></h5>
+<pre data-code-language="python" data-type="programlisting"><code class="k">def</code><code> </code><code class="nf">evaluate_policy</code><code class="p">(</code><code class="n">env</code><code class="p">,</code><code> </code><code class="n">policy</code><code class="p">,</code><code> </code><code class="n">num_episodes</code><code class="o">=</code><code class="mi">10</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>    </code><code class="sd">"""Evaluate a trained policy through rollouts."""</code><code>
+</code><code>    </code><code class="n">simulation</code><code> </code><code class="o">=</code><code> </code><code class="n">Simulation</code><code class="p">(</code><code class="n">env</code><code class="p">)</code><code>
+</code><code>    </code><code class="n">steps</code><code> </code><code class="o">=</code><code> </code><code class="mi">0</code><code>
+</code><code>
+</code><code>    </code><code class="k">for</code><code> </code><code class="n">_</code><code> </code><code class="ow">in</code><code> </code><code class="nb">range</code><code class="p">(</code><code class="n">num_episodes</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>        </code><code class="n">experiences</code><code> </code><code class="o">=</code><code> </code><code class="n">simulation</code><code class="o">.</code><code class="n">rollout</code><code class="p">(</code><code class="n">policy</code><code class="p">,</code><code> </code><code class="n">render</code><code class="o">=</code><code class="kc">True</code><code class="p">,</code><code> </code><code class="n">explore</code><code class="o">=</code><code class="kc">False</code><code class="p">)</code><code>  </code><a class="co" href="#callout_building_your_first_distributed_application_CO12-1" id="co_building_your_first_distributed_application_CO12-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a><code>
+</code><code>        </code><code class="n">steps</code><code> </code><code class="o">+</code><code class="o">=</code><code> </code><code class="nb">len</code><code class="p">(</code><code class="n">experiences</code><code class="p">)</code><code>  </code><a class="co" href="#callout_building_your_first_distributed_application_CO12-2" id="co_building_your_first_distributed_application_CO12-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a><code>
+</code><code>
+</code><code>    </code><code class="nb">print</code><code class="p">(</code><code class="sa">f</code><code class="s2">"</code><code class="si">{</code><code class="n">steps</code><code> </code><code class="o">/</code><code> </code><code class="n">num_episodes</code><code class="si">}</code><code class="s2"> steps on average </code><code class="s2">"</code><code>
+</code><code>          </code><code class="sa">f</code><code class="s2">"</code><code class="s2">for a total of </code><code class="si">{</code><code class="n">num_episodes</code><code class="si">}</code><code class="s2"> episodes.</code><code class="s2">"</code><code class="p">)</code><code>
+</code><code>
+</code><code>    </code><code class="k">return</code><code> </code><code class="n">steps</code><code> </code><code class="o">/</code><code> </code><code class="n">num_episodes</code><code>
+</code><code>
+</code><code>
+</code><code class="n">evaluate_policy</code><code class="p">(</code><code class="n">environment</code><code class="p">,</code><code> </code><code class="n">trained_policy</code><code class="p">)</code></pre>
+<dl class="calloutlist">
+<dt><a class="co" href="#co_building_your_first_distributed_application_CO12-1" id="callout_building_your_first_distributed_application_CO12-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a></dt>
+<dd><p>This time we set <code>explore</code> to <code>False</code> to fully exploit the learnings of the trained policy.</p></dd>
+<dt><a class="co" href="#co_building_your_first_distributed_application_CO12-2" id="callout_building_your_first_distributed_application_CO12-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a></dt>
+<dd><p>The length of the <code>experiences</code> is the number of steps we took to finish the game.</p></dd>
+</dl></div>
+<p>Apart from seeing the trained policy crush the maze problem ten times in a row, as we hoped it would, you should also see the following prompt:</p>
+<pre data-type="programlisting">8.0 steps on average for a total of 10 episodes.</pre>
+<p>In other words, the trained policy is able to find optimal solutions for the maze game.
+That means you’ve successfully implemented your first RL algorithm from scratch!</p>
+<p>With the understanding you’ve built up by now, do you think placing the <code>seeker</code> into randomized starting positions and then running this evaluation function would still work?
+Why don’t you go ahead and make the changes necessary for that?</p>
+<p>Another interesting question to ask yourself is what assumptions went into the algorithm we used.
+For instance, it’s clearly a prerequisite for the algorithm that all state-action pairs can be tabulated.
+Do you think this would still work well if we had millions of states and thousands of actions?</p>
+</div></section>
+<section data-pdf-bookmark="Building a Distributed Ray App" data-type="sect1"><div class="sect1" id="idm44990031126960">
+<h1>Building a Distributed Ray App</h1>
+<p>Let’s take a step back here.
+If you’re an RL expert, you’ll know what we’ve been doing the whole time.
+If you’re completely new to RL, you might just be a little overwhelmed.
+If you’re somewhere in between, you hopefully like the example but might be wondering how what we’ve done so far relates to Ray.
+That’s a great question.
+As you’ll see shortly, all we need to make the above RL experiment a distributed Ray app is writing three short code snippets.
+This is what we’re going to do:</p>
+<ul>
+<li>
+<p>We create a Ray task that can initialize a <code>Policy</code> remotely.</p>
+</li>
+<li>
+<p>Then we make the <code>Simulation</code> a Ray actor in just a few lines of code.</p>
+</li>
+<li>
+<p>After that we wrap the <code>update_policy</code> function in a Ray task.</p>
+</li>
+<li>
+<p>Finally, we define a parallel version of <code>train_policy</code> that’s structurally identical to its original version.</p>
+</li>
+</ul>
+<p>Let’s tackle the first two steps of this plan by implementing a <code>create_policy</code> task and a Ray actor called <code>SimulationActor</code>:</p>
+<div data-type="example">
+<h5><span class="label">Example 3-13. </span></h5>
+<pre data-code-language="python" data-type="programlisting"><code class="kn">import</code><code> </code><code class="nn">ray</code><code>
+</code><code>
+</code><code class="n">ray</code><code class="o">.</code><code class="n">init</code><code class="p">(</code><code class="p">)</code><code>
+</code><code class="n">environment</code><code> </code><code class="o">=</code><code> </code><code class="n">Environment</code><code class="p">(</code><code class="p">)</code><code>
+</code><code class="n">env_ref</code><code> </code><code class="o">=</code><code> </code><code class="n">ray</code><code class="o">.</code><code class="n">put</code><code class="p">(</code><code class="n">environment</code><code class="p">)</code><code>  </code><a class="co" href="#callout_building_your_first_distributed_application_CO13-1" id="co_building_your_first_distributed_application_CO13-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a><code>
+</code><code>
+</code><code>
+</code><code class="nd">@ray</code><code class="o">.</code><code class="n">remote</code><code>
+</code><code class="k">def</code><code> </code><code class="nf">create_policy</code><code class="p">(</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>    </code><code class="n">env</code><code> </code><code class="o">=</code><code> </code><code class="n">ray</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="n">env_ref</code><code class="p">)</code><code>
+</code><code>    </code><code class="k">return</code><code> </code><code class="n">Policy</code><code class="p">(</code><code class="n">env</code><code class="p">)</code><code>  </code><a class="co" href="#callout_building_your_first_distributed_application_CO13-2" id="co_building_your_first_distributed_application_CO13-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a><code>
+</code><code>
+</code><code>
+</code><code class="nd">@ray</code><code class="o">.</code><code class="n">remote</code><code>
+</code><code class="k">class</code><code> </code><code class="nc">SimulationActor</code><code class="p">(</code><code class="n">Simulation</code><code class="p">)</code><code class="p">:</code><code>  </code><a class="co" href="#callout_building_your_first_distributed_application_CO13-3" id="co_building_your_first_distributed_application_CO13-3"><img alt="3" height="12" src="assets/3.png" width="12"/></a><code>
+</code><code>    </code><code class="sd">"""Ray actor for a Simulation."""</code><code>
+</code><code>    </code><code class="k">def</code><code> </code><code class="fm">__init__</code><code class="p">(</code><code class="bp">self</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>        </code><code class="n">env</code><code> </code><code class="o">=</code><code> </code><code class="n">ray</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="n">env_ref</code><code class="p">)</code><code>
+</code><code>        </code><code class="nb">super</code><code class="p">(</code><code class="p">)</code><code class="o">.</code><code class="fm">__init__</code><code class="p">(</code><code class="n">env</code><code class="p">)</code></pre>
+<dl class="calloutlist">
+<dt><a class="co" href="#co_building_your_first_distributed_application_CO13-1" id="callout_building_your_first_distributed_application_CO13-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a></dt>
+<dd><p>After initializing it, we put our <code>environment</code> into the Ray object store.</p></dd>
+<dt><a class="co" href="#co_building_your_first_distributed_application_CO13-2" id="callout_building_your_first_distributed_application_CO13-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a></dt>
+<dd><p>This remote task returns a new <code>Policy</code> object.</p></dd>
+<dt><a class="co" href="#co_building_your_first_distributed_application_CO13-3" id="callout_building_your_first_distributed_application_CO13-3"><img alt="3" height="12" src="assets/3.png" width="12"/></a></dt>
+<dd><p>This Ray actor wraps our <code>Simulation</code> class in a straightforward way.</p></dd>
+</dl></div>
+<p>With the foundations on Ray Core you’ve developed in chapter <a data-type="xref" href="ch02.xhtml#chapter_02">Chapter 2</a> you should have no problems reading this code.
+It might take some getting used to writing it yourself, but conceptually you should be on top of this example.</p>
+<p>Moving on, let’s define a distributed <code>update_policy_task</code> Ray task and then wrap everything (two tasks and one actor) in a <code>train_policy_parallel</code> function that distributes this RL workload on your local Ray cluster:</p>
+<div data-type="example">
+<h5><span class="label">Example 3-14. </span></h5>
+<pre data-code-language="python" data-type="programlisting"><code class="nd">@ray</code><code class="o">.</code><code class="n">remote</code><code>
+</code><code class="k">def</code><code> </code><code class="nf">update_policy_task</code><code class="p">(</code><code class="n">policy_ref</code><code class="p">,</code><code> </code><code class="n">experiences_list</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>    </code><code class="sd">"""Remote Ray task for updating a policy with experiences in parallel."""</code><code>
+</code><code>    </code><code class="p">[</code><code class="n">update_policy</code><code class="p">(</code><code class="n">policy_ref</code><code class="p">,</code><code> </code><code class="n">ray</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="n">xp</code><code class="p">)</code><code class="p">)</code><code> </code><code class="k">for</code><code> </code><code class="n">xp</code><code> </code><code class="ow">in</code><code> </code><code class="n">experiences_list</code><code class="p">]</code><code>  </code><a class="co" href="#callout_building_your_first_distributed_application_CO14-1" id="co_building_your_first_distributed_application_CO14-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a><code>
+</code><code>    </code><code class="k">return</code><code> </code><code class="n">policy_ref</code><code>
+</code><code>
+</code><code>
+</code><code class="k">def</code><code> </code><code class="nf">train_policy_parallel</code><code class="p">(</code><code class="n">num_episodes</code><code class="o">=</code><code class="mi">1000</code><code class="p">,</code><code> </code><code class="n">num_simulations</code><code class="o">=</code><code class="mi">4</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>    </code><code class="sd">"""Parallel policy training function."""</code><code>
+</code><code>    </code><code class="n">policy</code><code> </code><code class="o">=</code><code> </code><code class="n">create_policy</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="p">)</code><code>  </code><a class="co" href="#callout_building_your_first_distributed_application_CO14-2" id="co_building_your_first_distributed_application_CO14-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a><code>
+</code><code>    </code><code class="n">simulations</code><code> </code><code class="o">=</code><code> </code><code class="p">[</code><code class="n">SimulationActor</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="p">)</code><code> </code><code class="k">for</code><code> </code><code class="n">_</code><code> </code><code class="ow">in</code><code> </code><code class="nb">range</code><code class="p">(</code><code class="n">num_simulations</code><code class="p">)</code><code class="p">]</code><code>  </code><a class="co" href="#callout_building_your_first_distributed_application_CO14-3" id="co_building_your_first_distributed_application_CO14-3"><img alt="3" height="12" src="assets/3.png" width="12"/></a><code>
+</code><code>
+</code><code>    </code><code class="k">for</code><code> </code><code class="n">_</code><code> </code><code class="ow">in</code><code> </code><code class="nb">range</code><code class="p">(</code><code class="n">num_episodes</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>        </code><code class="n">experiences</code><code> </code><code class="o">=</code><code> </code><code class="p">[</code><code class="n">sim</code><code class="o">.</code><code class="n">rollout</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="n">policy</code><code class="p">)</code><code> </code><code class="k">for</code><code> </code><code class="n">sim</code><code> </code><code class="ow">in</code><code> </code><code class="n">simulations</code><code class="p">]</code><code>  </code><a class="co" href="#callout_building_your_first_distributed_application_CO14-4" id="co_building_your_first_distributed_application_CO14-4"><img alt="4" height="12" src="assets/4.png" width="12"/></a><code>
+</code><code>        </code><code class="n">policy</code><code> </code><code class="o">=</code><code> </code><code class="n">update_policy_task</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="n">policy</code><code class="p">,</code><code> </code><code class="n">experiences</code><code class="p">)</code><code>  </code><a class="co" href="#callout_building_your_first_distributed_application_CO14-5" id="co_building_your_first_distributed_application_CO14-5"><img alt="5" height="12" src="assets/5.png" width="12"/></a><code>
+</code><code>
+</code><code>    </code><code class="k">return</code><code> </code><code class="n">ray</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="n">policy</code><code class="p">)</code><code>  </code><a class="co" href="#callout_building_your_first_distributed_application_CO14-6" id="co_building_your_first_distributed_application_CO14-6"><img alt="6" height="12" src="assets/6.png" width="12"/></a></pre>
+<dl class="calloutlist">
+<dt><a class="co" href="#co_building_your_first_distributed_application_CO14-1" id="callout_building_your_first_distributed_application_CO14-1"><img alt="1" height="12" src="assets/1.png" width="12"/></a></dt>
+<dd><p>This task defers to the original <code>update_policy</code> function by passing a reference to a policy and experiences retrieved from the object store.</p></dd>
+<dt><a class="co" href="#co_building_your_first_distributed_application_CO14-2" id="callout_building_your_first_distributed_application_CO14-2"><img alt="2" height="12" src="assets/2.png" width="12"/></a></dt>
+<dd><p>To train in parallel, we first create a policy remotely, which returns a reference we call <code>policy</code>.</p></dd>
+<dt><a class="co" href="#co_building_your_first_distributed_application_CO14-3" id="callout_building_your_first_distributed_application_CO14-3"><img alt="3" height="12" src="assets/3.png" width="12"/></a></dt>
+<dd><p>Instead of one simulation, we create four simulation actors.</p></dd>
+<dt><a class="co" href="#co_building_your_first_distributed_application_CO14-4" id="callout_building_your_first_distributed_application_CO14-4"><img alt="4" height="12" src="assets/4.png" width="12"/></a></dt>
+<dd><p>Experiences now get collected from remote roll-outs on simulation actors.</p></dd>
+<dt><a class="co" href="#co_building_your_first_distributed_application_CO14-5" id="callout_building_your_first_distributed_application_CO14-5"><img alt="5" height="12" src="assets/5.png" width="12"/></a></dt>
+<dd><p>Then we can update our policy remotely. Note that <code>experiences</code> is a nested list of experiences.</p></dd>
+<dt><a class="co" href="#co_building_your_first_distributed_application_CO14-6" id="callout_building_your_first_distributed_application_CO14-6"><img alt="6" height="12" src="assets/6.png" width="12"/></a></dt>
+<dd><p>Finally, we return the trained policy by retrieving it from the object store again.</p></dd>
+</dl></div>
+<p>This allows us to take the last step and run the training procedure in parallel and then evaluate the resulting as before.</p>
+<div data-type="example">
+<h5><span class="label">Example 3-15. </span></h5>
+<pre data-code-language="python" data-type="programlisting"><code class="n">parallel_policy</code> <code class="o">=</code> <code class="n">train_policy_parallel</code><code class="p">()</code>
+<code class="n">evaluate_policy</code><code class="p">(</code><code class="n">environment</code><code class="p">,</code> <code class="n">parallel_policy</code><code class="p">)</code></pre></div>
+<p>The result of those two lines is the same as before, when we ran the serial version of the RL training for the maze.
+I hope you appreciate how <code>train_policy_parallel</code> has the exact same high-level structure as <code>train_policy</code>.
+It’s a good exercise to compare the two line-by-line.
+Essentially, all it took to parallelize the training process was to use the <code>ray.remote</code> decorator three times in a suitable way.
+Of course, you need some experience to get this right.
+But notice how little time we spent on thinking about distributed computing, and how much time we could spend on the actual application code.
+We didn’t need to adopt an entirely new programming paradigm and could simply approach the problem in the most natural way.
+Ultimately, that’s what you want — and Ray is great at giving you this kind of flexibility.</p>
+<p>To wrap things up, let’s have a quick look at the task execution graph of the Ray application that we’ve just built.
+To recap, what we did was:</p>
+<ul>
+<li>
+<p>The <code>train_policy_parallel</code> function creates several <code>SimulationActor</code> actors and a policy with <code>create_policy</code></p>
+</li>
+<li>
+<p>The simulation actors create roll-outs with the policy and thereby collect experiences that <code>update_policy_task</code> uses to update the policy.</p>
+</li>
+<li>
+<p>This works, because of the way updating the policy is designed. It doesn’t matter if the experiences were collected by one or multiple simulations.</p>
+</li>
+<li>
+<p>The rolling out and updating continues until we reached the number of episodes we wante to train for, then the final <code>trained_policy</code> is returned.</p>
+</li>
+</ul>
+<p>Figure <a data-type="xref" href="#fig_ray_train_policy">Figure 3-1</a> summarizes this task graph in a compact way:</p>
+<figure><div class="figure" id="fig_ray_train_policy">
+<img alt="Ray Training" height="1131" src="assets/train_policy.png" width="788"/>
+<h6><span class="label">Figure 3-1. </span>Parallel training of a reinforcement learning policy with Ray</h6>
+</div></figure>
+<p>An interesting side note about the running example of this chapter is that it’s an implementation of the pseudo-code example used to illustrate the flexibility of Ray in <a href="https://arxiv.org/abs/1712.05889">the initial paper</a> by its creators.
+That paper has a figure similar to <a data-type="xref" href="#fig_ray_train_policy">Figure 3-1</a> and is worth reading for context.</p>
+</div></section>
+<section data-pdf-bookmark="Recapping RL Terminology" data-type="sect1"><div class="sect1" id="idm44990030580752">
+<h1>Recapping RL Terminology</h1>
+<p>Before we wrap up this chapter, let’s discuss the concepts we’ve encountered in the maze example in a broader context.
+Doing so will prepare you for more complex RL settings in the next chapter and show you where we simplified
+things a little for the running example of this chapter.</p>
+<p>Every RL problem starts with the formulation of an <em>environment</em>, which describes the dynamics of the “game” you want to play.
+The environment hosts a player or <em>agent</em> which interacts with its environment through a simple interface.
+The agent can request information from the environment, namely its current <em>state</em> within the environment,
+the <em>reward</em> it has received in this state, and whether the game is <em>done</em> or not.
+In observing states and rewards, the agent can learn to make decisions based on the information it receives.
+Specifically, the agent will emit an <em>action</em> that can be executed by the environment by taking the next <code>step</code>.</p>
+<p>The mechanism used by an agent to produce actions for a given state is called a <em>policy</em>, and we will sometimes
+say that the agent follows a given policy.
+Given a policy, we can simulate or <em>roll-out</em> a few steps or an entire game using said policy.
+During a roll-out we can collect <em>experiences</em>, which we collect information about the current state and reward,
+the next action and the resulting state.
+An entire sequence of steps from start to finish is referred to as an <em>episode</em>, and the environment can be <code>reset</code> to
+its initial state to start a new episode.</p>
+<p>The policy we used in this chapter was based on the simple idea of tabulating <em>state-action values</em> (also called <em>Q-values</em>),
+and the algorithm used to update the policy from the experiences collected during roll-outs is called <em>Q-learning</em>.
+More generally, you can consider the state-action table we implemented as the <em>model</em> used by the policy.
+In the next chapter you will see examples of more complex models, such as a neural network to learn state-action values.
+The policy can decide to <em>exploit</em> what it has learnt about the environment by choosing the best available value of its model,
+or <em>explore</em> the environment by choosing a random action.</p>
+<p>Many of the basic concepts introduced here hold for any RL problem, but we’ve made a few simplifying assumptions.
+For instance, there could be <em>multiple agents</em> acting in the environment
+(imagine having multiple seekers competing for reaching the goal first), and we’ll look into so-called
+multi-agent environments and multi-agent RL and in the next chapter.
+Also, we assumed that the <em>action space</em> of an agent was <em>discrete</em>, meaning that the agent could only take a fixed set of actions.
+You can, of course, also have <em>continuous</em> action spaces, and the pendulum example from <a data-type="xref" href="ch01.xhtml#chapter_01">Chapter 1</a> is one example of this.
+Especially when you have multiple agents, action spaces can be more complicated, and you might need tuples of actions or even nest them accordingly.
+The <em>observation space</em> we’ve considered for the maze game was also quite simple, and was modeled as a discrete set of states.
+You can easily imagine that complex agents like robots interacting with their environments might work with image or video data
+as observations, which would require a more complex observation space, too.</p>
+<p>Another crucial assumption we made is that the environment is <em>deterministic</em>, meaning that when our agent chose to take an action,
+the resulting state would always reflect that choice.
+In general environments this is not the case, and there can be elements of randomness at play in the environment.
+For instance, we could have implemented a coin flip in the maze game and whenever tails came up, the agent would get pushed
+in a random direction.
+In that scenario, we couldn’t have planned ahead like we did in this chapter, as actions would not deterministically
+lead to the same next state every time.
+To reflect this probabilistic behavior, in general we have to account for <em>state transition probabilities</em> in our RL experiments.</p>
+<p>And the last simplifying assumption I’d like to talk about here is that we’ve been treating the environment and its
+dynamics as a game that can be perfectly simulated.
+But the fact is that there are physical systems that can’t be faithfully simulated.
+In that case you might still interact with this physical environment through an interface like the one we defined
+in our <code>Environment</code> class, but there would be some communication overhead involved.
+In practice, I find that <em>reasoning</em> about RL problems as if they were games takes very little away from the experience.</p>
+</div></section>
+<section data-pdf-bookmark="Summary" data-type="sect1"><div class="sect1" id="idm44990030111504">
+<h1>Summary</h1>
+<p>To recap, we’ve implemented a simple maze problem in plain Python and then solved the task of finding the goal in that maze using a straightforward reinforcement learning algorithm.
+We then took this solution and ported it to a distributed Ray application in roughly 25 lines of code.
+We did so without having to plan how to work with Ray — we simply used the Ray API to parallelize our Python code.
+This example shows how Ray gets out of your way and lets you focus on your application code.
+It also demonstrates how custom workloads that use advanced techniques like RL can be efficiently implemented and distributed with Ray.</p>
+<p>In the next chapter, you’ll build on what you’ve learned here and see how easy it is to solve our maze problem directly with the higher-level Ray RLlib library.</p>
+</div></section>
+<div data-type="footnotes"><p data-type="footnote" id="idm44990031607120"><sup><a href="ch03.xhtml#idm44990031607120-marker">1</a></sup> As we’ll see in chapter <a data-type="xref" href="ch04.xhtml#chapter_04">Chapter 4</a>, you can run RL on multi-player games, too. Making the maze environment a so-called multi-agent environment, in which multiple seekers compete for the goal, is an interesting exercise.</p></div></div></section></div></body></html>
