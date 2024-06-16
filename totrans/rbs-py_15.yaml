@@ -1,74 +1,102 @@
 - en: Chapter 13\. Protocols
+  id: totrans-0
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 第13章。协议
 - en: I have a confession to make. I’ve been skirting around something in the Python
     type system that, upon first glance, is contradictory. It has to do with a key
     difference in philosophy between the Python runtime type system and the static
     type hints.
+  id: totrans-1
   prefs: []
   type: TYPE_NORMAL
+  zh: 我有一个坦白要做。在Python类型系统中，我一直在绕开一个东西，乍一看，它是矛盾的。这涉及到Python运行时类型系统与静态类型提示之间哲学上的一个关键区别。
 - en: Back in [Chapter 2](part0005_split_000.html#types), I described how Python supports
     duck typing. Recall that this means you can use objects in a context as long as
     that object supports a specific set of behaviors. You don’t need any sort of parent
     class or predefined inheritance structure to use duck typing.
+  id: totrans-2
   prefs: []
   type: TYPE_NORMAL
+  zh: 回到[第2章](part0005_split_000.html#types)，我描述了Python如何支持鸭子类型。记住，这意味着只要对象支持特定的一组行为，你就可以在上下文中使用它们。你不需要任何父类或预定义的继承结构来使用鸭子类型。
 - en: However, the typechecker has no clue how to handle duck typing without any assistance.
     The typechecker knows how to handle types known at static analysis time, but how
     does it handle duck-typed decisions made at runtime?
+  id: totrans-3
   prefs: []
   type: TYPE_NORMAL
+  zh: 然而，类型检查器在没有任何帮助的情况下无法处理鸭子类型。类型检查器知道如何处理静态分析时已知的类型，但它如何处理运行时做出的鸭子类型决策呢？
 - en: To remedy this, I’m going to introduce protocols, a feature introduced in Python
     3.8\. Protocols solve the contradiction listed above; they annotate duck-typed
     variables during typechecking. I’ll cover why you need protocols, how to define
     your own, and how to use them in advanced scenarios. But before you start, you
     need to understand the disconnect between Python’s duck typing and static typecheckers.
+  id: totrans-4
   prefs: []
   type: TYPE_NORMAL
+  zh: 为了解决这个问题，我打算介绍协议，这是Python 3.8中引入的一个特性。协议解决了上述列出的矛盾；它们在类型检查期间为鸭子类型的变量做注释。我将讨论为什么你需要协议，如何定义你自己的协议以及如何在高级场景中使用它们。但在开始之前，你需要理解Python的鸭子类型和静态类型检查器之间的差异。
 - en: Tension Between Typing Systems
+  id: totrans-5
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 类型系统之间的张力
 - en: 'In this chapter, you are going to build an automated lunch shop’s digital menu
     system. This restaurant has a variety of entries that are “splittable,” meaning
     you can get a half order. Deli sandwiches, wraps, and soups can be split, but
     entries like drinks and hamburgers cannot be split. In the interest of deduplication,
     I want one method that does all the splitting. Here are some entries as an example:'
+  id: totrans-6
   prefs: []
   type: TYPE_NORMAL
+  zh: 在本章中，你将建立一个自动化午餐店的数字菜单系统。这家餐厅有各种可以“分割”的条目，意味着你可以点半份。三明治、卷饼和汤可以分割，但饮料和汉堡等条目不能分割。为了去重，我希望有一个方法可以完成所有的分割。这里有一些条目作为例子：
 - en: '[PRE0]'
+  id: totrans-7
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE0]'
 - en: 'Now, the split method might look something like this:'
+  id: totrans-8
   prefs: []
   type: TYPE_NORMAL
+  zh: 现在，分割方法可能看起来像这样：
 - en: '[PRE1]'
+  id: totrans-9
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE1]'
 - en: 'What should the parameter `order` be typed as? Remember, a type is a set of
     behaviors, not necessarily a concrete Python type. I may not have a name for this
     set of behaviors, but I do want to make sure that I uphold them. In this example,
     the type must have these behaviors:'
+  id: totrans-10
   prefs: []
   type: TYPE_NORMAL
+  zh: 参数`order`应该被定义为什么类型？记住，类型是一组行为，不一定是具体的Python类型。我可能没有为这组行为取名字，但我确实希望能够保持它们。在这个例子中，类型必须具有以下行为：
 - en: The type must have a function called `split_in_half`. This must return an iterable
     collection of two objects.
+  id: totrans-11
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 类型必须有一个名为`split_in_half`的函数。它必须返回包含两个对象的可迭代集合。
 - en: Each object returned from `split_in_half` must have an attribute called `cost`.
     This `cost` must be able to have the ceiling applied to it and to be integer-divided
     by two. This `cost` must be mutable.
+  id: totrans-12
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '`split_in_half`返回的每个对象必须有一个名为`cost`的属性。这个`cost`必须能够被取天花板函数并且能够整除以2。这个`cost`必须是可变的。'
 - en: Each object returned from `split_in_half` must have an attribute called `name`.
     This `name` must be allowed to set the text `"½ "` prefixed before it. This `name`
     must be mutable.
+  id: totrans-13
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '`split_in_half`返回的每个对象必须有一个名为`name`的属性。这个`name`必须允许在其前面加上文本"½ "。这个`name`必须是可变的。'
 - en: 'A `Chili` or a `BLTSandwich` object will work just fine as a subtype, but `BaconCheeseburger`
     will not. `BaconCheeseburger` does not have the structure that the code is looking
     for. If you did try to pass in `BaconCheeseburger`, you’d get an `AttributeEr⁠ror`
@@ -76,123 +104,180 @@
     other words, `BaconCheeseburger` does not match the structure of the expected
     type. In fact, this is where duck typing earns its other name: *structural subtyping*,
     or subtyping based on structure.'
+  id: totrans-14
   prefs: []
   type: TYPE_NORMAL
+  zh: 一个`Chili`或者`BLTSandwich`对象将完全作为子类型工作，但`BaconCheeseburger`则不会。`BaconCheeseburger`没有代码正在寻找的结构。如果你试图传入`BaconCheeseburger`，你将收到一个`AttributeEr⁠ror`，指明`BaconCheeseburger`没有名为`split_in_half()`的方法。换句话说，`BaconCheeseburger`的结构与预期类型不匹配。实际上，这就是鸭子类型赢得其另一个名称的地方：*结构子类型*，或者基于结构的子类型。
 - en: 'In contrast, most of the type hinting that you’ve been exploring throughout
     this part of the book is known as *nominal subtyping*. This means that types that
     have different names are separate from one another. Do you see the problem? These
     two types of subtyping are opposed to each other. One is based on names of types
     and the other is based on structure. In order to catch errors during typechecking,
     you will need to come up with a named type:'
+  id: totrans-15
   prefs: []
   type: TYPE_NORMAL
+  zh: 相比之下，在本书的这一部分中你一直在探索的大部分类型提示被称为*名义子类型*。这意味着具有不同名称的类型是彼此分离的。你看到问题了吗？这两种子类型相互对立。一种是基于类型名称，另一种是基于结构。为了在类型检查期间捕捉错误，你需要想出一个命名类型：
 - en: '[PRE2]'
+  id: totrans-16
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE2]'
 - en: So, to ask again, what should the parameter be typed as? I’ve listed some options
     below.
+  id: totrans-17
   prefs: []
   type: TYPE_NORMAL
+  zh: 所以，再问一次，参数应该被标记为什么类型？我列出了一些选项如下。
 - en: Leave the Type Blank or Use Any
+  id: totrans-18
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 留空类型或使用任何类型
 - en: '[PRE3]'
+  id: totrans-19
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE3]'
 - en: I cannot condone this, certainly not in a book all about robustness. This conveys
     no intent to future developers, and typecheckers will not detect common errors.
     Moving on.
+  id: totrans-20
   prefs: []
   type: TYPE_NORMAL
+  zh: 我无法认可这一点，尤其是在一本关于健壮性的书中。这不向未来的开发者传达任何意图，而且类型检查器无法检测常见的错误。继续。
 - en: Use a Union
+  id: totrans-21
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 使用联合类型
 - en: '[PRE4]'
+  id: totrans-22
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE4]'
 - en: Ah, this is a bit better than leaving it blank. An order can be either a `BLTSandwich`
     or `Chili`. And for this limited example, it does work. However, this should feel
     slightly off to you. I need to figure out how to reconcile structural subtyping
     and nominal subtyping, and all I’ve done is hardcode a few classes into the type
     signature.
+  id: totrans-23
   prefs: []
   type: TYPE_NORMAL
+  zh: 啊，这比留空好一些。一个订单可以是`BLTSandwich`或`Chili`。对于这个有限的示例，它确实有效。但是，你可能会觉得这有点不对劲。我需要找出如何调和结构子类型和名义子类型，而我所做的只是在类型签名中硬编码了几个类。
 - en: What’s worse about this is that it’s fragile. Every time somebody needs to add
     a class that can be splittable, they have to remember to update this function.
     You can only hope that this function is somewhat near where classes are defined
     so that future maintainers might stumble upon it.
+  id: totrans-24
   prefs: []
   type: TYPE_NORMAL
+  zh: 更糟糕的是，这种方法很脆弱。每当有人需要添加一个可分割的类时，他们必须记得更新这个函数。你只能希望这个函数在类定义附近，以便未来的维护者可能会碰巧发现它。
 - en: There’s another hidden danger here. What if this automated lunch maker is a
     library, meant to be used in automated kiosks by different vendors? Presumably,
     they would pull in this lunch-making library, make their own classes, and call
     `split_dish` on those classes. With the definition of `split_dish` in library
     code, there are very few reasonable ways that a consumer can get their code to
     typecheck.
+  id: totrans-25
   prefs: []
   type: TYPE_NORMAL
+  zh: 这里还有另一个潜在的危险。如果这个自动午餐制造机是一个库，用于由不同供应商的自动售货亭使用？它们可能会引入这个午餐制造库，制作他们自己的类，并在这些类上调用`split_dish`。在库代码中定义了`split_dish`，消费者几乎没有合理的方法可以让他们的代码通过类型检查。
 - en: Use Inheritance
+  id: totrans-26
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 使用继承
 - en: Some of you who are experienced in an object-oriented language such as C++ or
     Java may be yelling that an interface class is appropriate here. It’d be simple
     to have both of these classes inherit from some base class that defined the methods
     you want.
+  id: totrans-27
   prefs: []
   type: TYPE_NORMAL
+  zh: 有些有经验的面向对象语言（如C++或Java）的用户可能会喊道，这里适合使用接口类。让这两个类都继承自某个基类，该基类定义了你想要的方法将是很简单的。
 - en: '[PRE5]'
+  id: totrans-28
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE5]'
 - en: This type hierarchy is modeled in [Figure 13-1](part0017_split_004.html#splittable_type_hierarchy).
+  id: totrans-29
   prefs: []
   type: TYPE_NORMAL
+  zh: 这种类型层次结构在[图 13-1](part0017_split_004.html#splittable_type_hierarchy)中有所体现。
 - en: '![Type hierarchy for splittable](../images/00017.gif)'
+  id: totrans-30
   prefs: []
   type: TYPE_IMG
+  zh: '![可分割类型的类型层次结构](../images/00017.gif)'
 - en: Figure 13-1\. Type hierarchy for splittable
+  id: totrans-31
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 图 13-1\. 可分割类型的类型层次结构
 - en: 'And this does work:'
+  id: totrans-32
   prefs: []
   type: TYPE_NORMAL
+  zh: 而且这确实有效：
 - en: '[PRE6]'
+  id: totrans-33
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE6]'
 - en: 'In fact, you can even annotate the return type:'
+  id: totrans-34
   prefs: []
   type: TYPE_NORMAL
+  zh: 实际上，你甚至可以注释返回类型：
 - en: '[PRE7]'
+  id: totrans-35
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE7]'
 - en: But what if there is a more complicated class hierarchy at play? What if your
     class hierarchy looks like [Figure 13-2](part0017_split_004.html#complicated_splittable)?
+  id: totrans-36
   prefs: []
   type: TYPE_NORMAL
+  zh: 但如果存在更复杂的类层次结构呢？如果您的类层次结构看起来像[图 13-2](part0017_split_004.html#complicated_splittable)那样复杂？
 - en: '![A more complicated type hierarchy](../images/00018.gif)'
+  id: totrans-37
   prefs: []
   type: TYPE_IMG
+  zh: '![一个更复杂的类型层次结构](../images/00018.gif)'
 - en: Figure 13-2\. A more complicated type hierarchy
+  id: totrans-38
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 图 13-2\. 一个更复杂的类型层次结构
 - en: Now, you have a tough decision in front of you. Where do you put the `Splittable`
     class in the type hierarchy? You can’t put it in the parent of the tree; not every
     dish should be splittable. You could make the `Splittable` class into a `SplittableLunch`
     class and jam it right between `Lunch` and whichever class that can be splittable,
     like in [Figure 13-3](part0017_split_004.html#more_complex_splittable).
+  id: totrans-39
   prefs: []
   type: TYPE_NORMAL
+  zh: 现在，您面临一个棘手的决定。您应该将 `Splittable` 类放在类型层次结构的哪里？您不能把它放在树的父级；并非每种餐品都应该可以分割。您可以将
+    `Splittable` 类制作成一个 `SplittableLunch` 类，并将其插入到 `Lunch` 和任何可分割的类之间，如[图 13-3](part0017_split_004.html#more_complex_splittable)所示。
 - en: '![ropy 1303](../images/00019.gif)'
+  id: totrans-40
   prefs: []
   type: TYPE_IMG
+  zh: '![ropy 1303](../images/00019.gif)'
 - en: Figure 13-3\. A more complicated type hierarchy with `Splittable` injected in
+  id: totrans-41
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 图 13-3\. 一个更复杂的类型层次结构，其中插入了 `Splittable`
 - en: This will fall apart as your codebase grows. For one, if you want to use `Splittable`
     anywhere else (say for dinner, or checks, or anything else), you’ll have to duplicate
     that code; nobody wants a billing system that inherits from `SplittableLunch`.
@@ -200,106 +285,157 @@
     may have other attributes, such as being able to share an entree, having it available
     for curbside pickup, specifying that it allows substitutions, and so on. The number
     of classes you have to write explodes with each option you introduce.
+  id: totrans-42
   prefs: []
   type: TYPE_NORMAL
+  zh: 随着代码库的增长，这种方法将会失效。首先，如果您希望在其他地方使用 `Splittable`（比如晚餐、账单或其他任何东西），您将不得不复制该代码；没有人想要一个从
+    `SplittableLunch` 继承的账单系统。此外，`Splittable` 可能不是您想要引入的唯一父类。您可能还有其他属性，比如能够共享主菜、提供外带服务、指定允许替代等等。随着每个选项的引入，您需要编写的类的数量将急剧增加。
 - en: Use Mixins
+  id: totrans-43
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 使用 Mixins
 - en: Now, some languages solve this through the mixins, which I introduced in [Chapter 11](part0015_split_000.html#api).
     Mixins shift the burden to each class at the bottom of the class hierarchy without
     polluting any classes above. If I want my `BLTSandwich` to be `Shareable`, `PickUppable`,
     `Substitutable`, and `Splittable`, then I don’t have to modify anything else besides
     `BLTSandwich`.
+  id: totrans-44
   prefs: []
   type: TYPE_NORMAL
+  zh: 现在，有些语言通过 mixins 来解决这个问题，我在[第 11 章](part0015_split_000.html#api)中介绍过。Mixins
+    将负担转移到类层次结构底部的每个类，而不会污染上面的任何类。如果我希望我的 `BLTSandwich` 可以 `Shareable`、`PickUppable`、`Substitutable`
+    和 `Splittable`，那么我除了修改 `BLTSandwich` 之外，无需修改任何其他内容。
 - en: '[PRE8]'
+  id: totrans-45
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE8]'
 - en: Only the classes that need the functionality need to change. You reduce the
     need to coordinate across large codebases. Still, this is not perfect; users still
     need to add multiple inheritance to their classes to address this problem, and
     it would be great if you could minimize the changes needed to typecheck. It also
     introduces a physical dependency when you import the parent class, which may not
     be ideal.
+  id: totrans-46
   prefs: []
   type: TYPE_NORMAL
+  zh: 只有需要该功能的类才需要更改。您减少了在大型代码库中协调的需求。但这并不完美；用户仍然需要在其类中添加多重继承来解决此问题，如果能最小化类型检查所需的更改，将会更好。当您导入父类时，它还引入了物理依赖性，这可能不是理想的。
 - en: In fact, none of the options above feels right. You’re changing existing classes
     just for the sake of typechecking, which feels very *unpythonic* to me. Many developers
     fell in love with Python because it doesn’t require such verbosity. Fortunately,
     there is a better solution in the form of *protocols*.
+  id: totrans-47
   prefs: []
   type: TYPE_NORMAL
+  zh: 事实上，以上选项都不合适。您只是为了类型检查而修改现有类，这在我看来并不像 Python 风格。许多开发人员喜欢 Python 是因为它不需要如此啰嗦。幸运的是，*协议*
+    提供了更好的解决方案。
 - en: Protocols
+  id: totrans-48
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 协议
 - en: 'Protocols provide a way of closing the gap between type hinting and the runtime
     type system. They allow you to provide structural subtyping during typechecking.
     As a matter of fact, you probably are familiar with a protocol without even knowing
     it: the iterator protocol.'
+  id: totrans-49
   prefs: []
   type: TYPE_NORMAL
+  zh: 协议提供了一种在类型检查和运行时类型系统之间缩小差距的方式。它们允许您在类型检查期间提供结构子类型化。事实上，您可能已经熟悉某种协议而不自知：迭代器协议。
 - en: 'The iterator protocol is a defined set of behaviors that objects may implement.
     If an object implements these behaviors, you can loop over the object. Consider:'
+  id: totrans-50
   prefs: []
   type: TYPE_NORMAL
+  zh: 迭代器协议是一组定义好的对象可能实现的行为。如果一个对象实现了这些行为，您可以对该对象进行循环遍历。考虑：
 - en: '[PRE9]'
+  id: totrans-51
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE9]'
 - en: 'Notice how I didn’t have to subclass `Iterator` in order for the typing to
     work. This is because the `ShuffleIterator` has the two methods needed for iterators
     to work: an `__iter__` method for looping over iterators, and a `__next__` method
     for getting the next item in the sequence.'
+  id: totrans-52
   prefs: []
   type: TYPE_NORMAL
+  zh: 注意我并不需要子类化 `Iterator` 就可以使类型工作。这是因为 `ShuffleIterator` 具有迭代器工作所需的两个方法：用于迭代器循环的
+    `__iter__` 方法，以及用于获取序列中下一个项的 `__next__` 方法。
 - en: This is exactly the sort of pattern I want to achieve with the `Splittable`
     examples. I want to be able to have typing work based on the structure of the
     code. To do this, you can define your own protocol.
+  id: totrans-53
   prefs: []
   type: TYPE_NORMAL
+  zh: 这正是我想要在 `Splittable` 示例中实现的模式。我希望能够根据代码结构使类型工作。为此，你可以定义自己的协议。
 - en: Defining a Protocol
+  id: totrans-54
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 定义协议
 - en: 'Defining a protocol is extremely simple. If you want something to be splittable,
     you define `Splittable` in terms of a protocol:'
+  id: totrans-55
   prefs: []
   type: TYPE_NORMAL
+  zh: 定义协议非常简单。如果你希望某物可分割，你可以根据协议定义 `Splittable`：
 - en: '[PRE10]'
+  id: totrans-56
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE10]'
 - en: This looks pretty close to the example for subclassing earlier in this chapter,
     but you use it a tad differently.
+  id: totrans-57
   prefs: []
   type: TYPE_NORMAL
+  zh: 这看起来与本章早期子类化的示例非常接近，但你稍微不同地使用了它。
 - en: 'To have the `BLTSandwich` be splittable, you don’t have to indicate anything
     different in the class. There is no subclassing needed:'
+  id: totrans-58
   prefs: []
   type: TYPE_NORMAL
+  zh: 要使 `BLTSandwich` 可分割，你无需在类中指示任何不同之处。不需要进行子类化：
 - en: '[PRE11]'
+  id: totrans-59
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE11]'
 - en: There is no explicit parent class for `BLTSandwich`. If you’d like to be explicit,
     you can still subclass from `Splittable`, but it’s not a requirement.
+  id: totrans-60
   prefs: []
   type: TYPE_NORMAL
+  zh: 对于 `BLTSandwich` 没有显式的父类。如果你想要明确，仍然可以从 `Splittable` 进行子类化，但这不是必需的。
 - en: 'The `split_dish` function can now expect to use anything that supports the
     new `Splittable` protocol:'
+  id: totrans-61
   prefs: []
   type: TYPE_NORMAL
+  zh: 现在 `split_dish` 函数可以期望使用任何支持新 `Splittable` 协议的内容：
 - en: '[PRE12]'
+  id: totrans-62
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE12]'
 - en: Discussion Topic
+  id: totrans-63
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 讨论话题
 - en: Where can you use protocols in your codebase? Discuss areas where you use duck
     typing heavily or write generic code. Discuss how it would be easy to misuse these
     areas of code without using a protocol.
+  id: totrans-64
   prefs: []
   type: TYPE_NORMAL
+  zh: 在你的代码库中可以在哪些地方使用协议？讨论你在哪些地方大量使用鸭子类型或编写通用代码。讨论如果不使用协议，这些代码区域如何容易被误用。
 - en: The typechecker will detect that a `BLTSandwich` is `Splittable` just by virtue
     of the fields and method it has defined. This simplifies class hierarchies immensely.
     You don’t need a complicated tree structure, even as you add more protocols. You
@@ -308,140 +444,204 @@
     behaviors can then rely on those protocols instead of any sort of base class.
     The original classes don’t need to change in any form, as long as they implement
     the needed functionality.
+  id: totrans-65
   prefs: []
   type: TYPE_NORMAL
+  zh: 类型检查器将检测到 `BLTSandwich` 仅通过其定义的字段和方法即为 `Splittable`。这极大简化了类层次结构。即使添加更多协议，也无需复杂的树形结构。你可以简单地为每组所需行为定义不同的协议，包括
+    `Shareable`、`Substitutable` 或 `PickUppable`。依赖于这些行为的函数可以依赖于这些协议，而不是任何基类。只要它们实现了所需的功能，原始类就不需要以任何形式更改。
 - en: Advanced Usage
+  id: totrans-66
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 高级用法
 - en: I’ve covered the primary use case for protocols so far, but there’s a little
     more I’d like to show you. You won’t be reaching for these features as often,
     but they fill out a critical niche for protocols.
+  id: totrans-67
   prefs: []
   type: TYPE_NORMAL
+  zh: 我已经讨论了迄今为止协议的主要用例，但还有一些我想向你展示的内容。你可能不会经常使用这些特性，但它们填补了协议的一个重要空白。
 - en: Composite Protocols
+  id: totrans-68
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 复合协议
 - en: I talked in the last section about how a class might satisfy multiple protocols.
     For instance, a single lunch item may be `Splittable`, `Shareable`, `Substitutable`,
     and `PickUppable`. While you can mix in these protocols quite easily, what if
     you found out that over half the lunch entries fall into this category? You could
     designate these lunch entries as a `StandardLunchEntry`, allowing you to refer
     to all four protocols as a single type.
+  id: totrans-69
   prefs: []
   type: TYPE_NORMAL
+  zh: 在上一节中，我谈到了一个类如何满足多个协议的情况。例如，单个午餐项目可能是 `Splittable`、`Shareable`、`Substitutable`
+    和 `PickUppable`。虽然你可以很容易地混合这些协议，但如果你发现超过一半的午餐条目都属于这一类别，怎么办？你可以将这些午餐条目指定为 `StandardLunchEntry`，允许你将所有四个协议视为单一类型进行引用。
 - en: 'Your first attempt might just be to write a type alias to cover your bases:'
+  id: totrans-70
   prefs: []
   type: TYPE_NORMAL
+  zh: 第一次尝试可能只是编写一个类型别名以涵盖你的基础：
 - en: '[PRE13]'
+  id: totrans-71
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE13]'
 - en: 'However, this will match anything that satisfies at least one protocol, not
     all four. To match all four protocols, you need to use a composite protocol:'
+  id: totrans-72
   prefs: []
   type: TYPE_NORMAL
+  zh: 但是，这将匹配满足至少一个协议的任何内容，而不是所有四个协议。要匹配所有四个协议，你需要使用复合协议：
 - en: '[PRE14]'
+  id: totrans-73
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE14]'
 - en: Then, you can use `StandardLunchEntry` anywhere an item should support all four
     protocols. This allows you to group protocols together, without having to duplicate
     the same combinations again and again throughout your codebase.
+  id: totrans-74
   prefs: []
   type: TYPE_NORMAL
+  zh: 然后，你可以在任何应该支持所有四个协议的地方使用`StandardLunchEntry`。这允许你将协议组合在一起，而无需在整个代码库中反复复制相同的组合。
 - en: Note
+  id: totrans-75
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 注意
 - en: '`StandardLunchEntry` also subclasses from `Protocol`. This is required; if
     it is left out, `StandardLunchEntry` would not be a protocol, even though it subclasses
     from other protocols. Put more generally: classes subclassed from a protocol do
     not automatically become a protocol.'
+  id: totrans-76
   prefs: []
   type: TYPE_NORMAL
+  zh: '`StandardLunchEntry`也从`Protocol`子类化。这是必需的；如果省略，即使它从其他协议子类化，`StandardLunchEntry`也不会成为协议。更普遍地说：从协议子类化的类并不会自动成为协议。'
 - en: Runtime Checkable Protocols
+  id: totrans-77
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 运行时可检查的协议
 - en: 'Throughout all of this protocol discussion, I’ve stayed in the realm of static
     typechecking. Sometimes, you just need to check a type at runtime, though. Unfortunately,
     protocols out of the box do not support any sort of `isinstance()` or `issubclass()`
     check. It’s easy to add, though:'
+  id: totrans-78
   prefs: []
   type: TYPE_NORMAL
+  zh: 在整个协议讨论过程中，我一直停留在静态类型检查的领域。但有时候，你确实需要在运行时检查类型。不过，现成的协议并不支持任何形式的`isinstance()`或`issubclass()`检查。不过添加起来很容易：
 - en: '[PRE15]'
+  id: totrans-79
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE15]'
 - en: As long as you throw the `runtime_checkable` decorator in there, you can do
     an `isinstance()` check to see if an object satisfies a protocol. When you do,
     `isinstance()` is essentially calling a `__hasattr__` method on each of the expected
     variables and functions of the protocol.
+  id: totrans-80
   prefs: []
   type: TYPE_NORMAL
+  zh: 只要在那里添加`runtime_checkable`装饰器，你就可以使用`isinstance()`检查对象是否满足协议。当你这样做时，`isinstance()`实质上是在每个预期变量和函数的协议上调用`__hasattr__`方法。
 - en: Note
+  id: totrans-81
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 注意
 - en: '`issubclass()` will only work if your protocol is a nondata protocol, which
     is one that does not have any protocol variables. This has to deal with edge cases
     concerning setting variables in constructors.'
+  id: totrans-82
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果您的协议是一个没有任何协议变量的非数据协议，`issubclass()`才能正常工作。这涉及处理在构造函数中设置变量时的边缘情况。
 - en: You will typically mark protocols as `runtime_checkable` when you are using
     a `Union` of protocols. Functions may expect either one protocol or a different
     protocol, and those functions might need some way to differentiate the two inside
     the body of a function at runtime.
+  id: totrans-83
   prefs: []
   type: TYPE_NORMAL
+  zh: 当您使用协议的联合时，通常会将协议标记为`runtime_checkable`。函数可能期望一个协议或不同的协议，而这些函数可能需要一种在函数体内部在运行时区分两者的方式。
 - en: Modules Satisfying Protocols
+  id: totrans-84
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 模块满足协议
 - en: While I’ve so far only talked about objects satisfying protocols, there’s a
     narrower use case that is worth mentioning. It turns out that modules can satisfy
     protocols, too. After all, a module is still an object.
+  id: totrans-85
   prefs: []
   type: TYPE_NORMAL
+  zh: 虽然我到目前为止只谈论了满足协议的对象，但有一个更窄的用例值得一提。原来，模块也可以满足协议。毕竟，模块仍然是一个对象。
 - en: 'Suppose I want to define a protocol around a restaurant and each restaurant
     is defined in a separate file. Here’s one such file:'
+  id: totrans-86
   prefs: []
   type: TYPE_NORMAL
+  zh: 假设我想在餐厅周围定义一个协议，每个餐厅都在单独的文件中定义。以下是其中一个文件：
 - en: '[PRE16]'
+  id: totrans-87
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE16]'
 - en: 'Then, I need some code that will define the `Restaurant` protocol and be able
     to load a restaurant:'
+  id: totrans-88
   prefs: []
   type: TYPE_NORMAL
+  zh: 然后，我需要一些代码来定义`Restaurant`协议，并能够加载餐厅：
 - en: '[PRE17]'
+  id: totrans-89
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE17]'
 - en: 'Now, I can pass imported modules to my `load_restaurant` function:'
+  id: totrans-90
   prefs: []
   type: TYPE_NORMAL
+  zh: 现在，我可以将导入的模块传递给我的`load_restaurant`函数：
 - en: '[PRE18]'
+  id: totrans-91
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE18]'
 - en: In `main.py`, the call to `load_restaurant` will typecheck just fine. The restaurant
     module satisfies the `Restaurant` protocol I’ve defined. Protocols are even smart
     enough to ignore the `self` argument in `render_menu` when a module is passed
     in. Using a protocol to define a module isn’t an everyday Python sort of thing,
     but you’ll see it crop up if you have Python configuration files or plug-in architectures
     that need to enforce a contract.
+  id: totrans-92
   prefs: []
   type: TYPE_NORMAL
+  zh: 在`main.py`中，对`load_restaurant`的调用将通过类型检查。餐厅模块满足我定义的`Restaurant`协议。协议甚至足够智能，以在传递模块时忽略`render_menu`中的`self`参数。使用协议来定义模块不是每天都会发生的Python事情，但如果你有Python配置文件或需要强制执行合同的插件架构，你会看到它出现。
 - en: Warning
+  id: totrans-93
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 警告
 - en: Not every typechecker may support using a module as a protocol just yet; double-check
     the bugs and documentation of your favorite typechecker for support.
+  id: totrans-94
   prefs: []
   type: TYPE_NORMAL
+  zh: 并非每种类型检查器都可能支持将模块用作协议；请仔细检查您喜欢的类型检查器的错误和文档是否支持。
 - en: Closing Thoughts
+  id: totrans-95
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 总结思路
 - en: Protocols were just introduced in Python 3.8, so they are still relatively new.
     However, they patch a huge hole in what you can do with Python’s static typechecking.
     Remember, while the runtime is structurally subtyped, most of the static typechecking
@@ -450,8 +650,11 @@
     code and want to provide a solid API that users can depend on, without relying
     on a specific type. Using protocols reduces physical dependencies of code, which
     helps with maintainability, but you still can catch errors early.
+  id: totrans-96
   prefs: []
   type: TYPE_NORMAL
+  zh: 协议在 Python 3.8 中刚刚引入，因此它们仍然相对较新。但是，它们填补了 Python 静态类型检查中的一个巨大空白。请记住，虽然运行时是结构子类型化的，但大部分静态类型检查是名义子类型化的。协议填补了这一空白，并允许您在类型检查期间进行结构子类型化。当您编写库代码并希望提供稳定的
+    API 给用户使用而不依赖于特定类型时，您最常会使用它们。使用协议减少了代码的物理依赖，有助于提高可维护性，但仍然可以及早捕捉错误。
 - en: 'In the next chapter, you’ll learn about one more way to enhance your types:
     modeled types. Modeling a type allows you to create a rich set of constraints
     that are checked at typecheck and runtime, and can eliminate a whole class of
@@ -459,5 +662,8 @@
     by modeling your types, you provide built-in documentation for what is and what
     is not allowed in your codebase. Throughout the next chapter, you’ll see how to
     do all of this using the popular library pydantic.'
+  id: totrans-97
   prefs: []
   type: TYPE_NORMAL
+  zh: 在下一章中，您将学习另一种增强类型的方法：建模类型。建模类型允许您创建一组丰富的约束条件，在类型检查和运行时进行检查，并可以消除一整类错误，而无需为每个字段手动编写验证。更好的是，通过对类型进行建模，您为代码库中允许和不允许的内容提供了内置文档。在接下来的章节中，您将看到如何使用流行的库
+    pydantic 实现所有这些功能。
