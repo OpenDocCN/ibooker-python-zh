@@ -1,0 +1,395 @@
+<html><head></head><body><div id="sbo-rt-content"><section data-type="chapter" epub:type="chapter" data-pdf-bookmark="Chapter 5. Dask’s Collections"><div class="chapter" id="ch05">
+<h1><span class="label">Chapter 5. </span>Dask’s Collections</h1>
+
+
+<p>So far you’ve seen the basics of how Dask is built as well as how Dask uses these building blocks to support data science with DataFrames. This chapter explores where Dask’s bag and array interfaces—often overlooked, relative to DataFrames—are more appropriate. As mentioned in <a data-type="xref" href="ch02.xhtml#hello_worlds">“Hello Worlds”</a>, Dask bags implement common functional APIs, and Dask arrays implement a subset of NumPy arrays.</p>
+<div data-type="tip"><h6>Tip</h6>
+<p>Understanding partitioning is important for understanding collections. If you skipped <a data-type="xref" href="ch03.xhtml#basic_partitioning">“Partitioning/Chunking Collections”</a>, now is a good time to head back and take a look.</p>
+</div>
+
+
+
+
+
+
+<section data-type="sect1" data-pdf-bookmark="Dask Arrays"><div class="sect1" id="id52">
+<h1>Dask Arrays</h1>
+
+<p>Dask arrays implement a subset of <a data-type="indexterm" data-primary="collections, arrays" id="id612"/><a data-type="indexterm" data-primary="arrays" id="id613"/><a data-type="indexterm" data-primary="NumPy" data-secondary="ndarray interface" id="id614"/>the NumPy ndarray interface, making them ideal for porting code that uses NumPy to run on Dask. Much of your understanding from the previous chapter with DataFrames carries over to Dask arrays, as well as much of your understanding of ndarrays.</p>
+
+
+
+
+
+
+
+
+<section data-type="sect2" data-pdf-bookmark="Common Use Cases"><div class="sect2" id="id164">
+<h2>Common Use Cases</h2>
+
+<p>Some common use cases for Dask <a data-type="indexterm" data-primary="collections, arrays" data-secondary="use cases" id="id615"/><a data-type="indexterm" data-primary="arrays" data-secondary="use cases" id="id616"/>arrays include:</p>
+
+<ul>
+<li>
+<p>Large-scale imaging and astronomy data</p>
+</li>
+<li>
+<p>Weather data</p>
+</li>
+<li>
+<p>Multi-dimensional data</p>
+</li>
+</ul>
+
+<p>Similar to Dask DataFrames and pandas, if you wouldn’t use an nparray for the problem at a smaller scale, a Dask array may not be the right solution.</p>
+</div></section>
+
+
+
+
+
+
+
+
+<section data-type="sect2" data-pdf-bookmark="When Not to Use Dask Arrays"><div class="sect2" id="id53">
+<h2>When Not to Use Dask Arrays</h2>
+
+<p>If your data fits in memory on a <a data-type="indexterm" data-primary="collections, arrays" data-secondary="not using" id="id617"/><a data-type="indexterm" data-primary="arrays" data-secondary="not using" id="id618"/>single computer, using Dask arrays is unlikely to give you many benefits over nparrays, especially compared to local accelerators like Numba. Numba is <a data-type="indexterm" data-primary="Numba" id="id619"/>well suited to vectorizing and parallelizing local tasks with and without Graphics Processing Units (GPUs). You can use Numba with or without Dask, and we’ll look at how to further speed up Dask arrays using Numba in 
+<span class="keep-together"><a data-type="xref" href="ch10.xhtml#ch10">Chapter 10</a>.</span></p>
+
+<p>Dask arrays, like their local counterpart, require that data is all of the same type. This means that they cannot be used for semi-structured or mixed-type data (think strings and ints).</p>
+</div></section>
+
+
+
+
+
+
+
+
+<section data-type="sect2" data-pdf-bookmark="Loading/Saving"><div class="sect2" id="id54">
+<h2>Loading/Saving</h2>
+
+<p>As with Dask DataFrames, loading <a data-type="indexterm" data-primary="collections, arrays" data-secondary="formats" id="id620"/><a data-type="indexterm" data-primary="arrays" data-secondary="formats" id="id621"/><a data-type="indexterm" data-primary="collections, arrays" data-secondary="loading/saving" id="id622"/><a data-type="indexterm" data-primary="arrays" data-secondary="loading/saving" id="id623"/>and writing functions start with <code>to_</code> or <code>read_</code> as the prefixes. Each format has its own configuration, but in general, the first positional argument is the location of the data to be read. The location can be a wildcard path of files (e.g., <em>s3://test-bucket/magic/*</em>), a list of files, or a regular file location.</p>
+
+<p>Dask arrays support reading the following formats:</p>
+
+<ul>
+<li>
+<p>zarr<a data-type="indexterm" data-primary="zarr" id="id624"/></p>
+</li>
+<li>
+<p>npy stacks (only local disk)<a data-type="indexterm" data-primary="npy stacks" id="id625"/></p>
+</li>
+</ul>
+
+<p>And reading from and writing to:</p>
+
+<ul>
+<li>
+<p>hdf5<a data-type="indexterm" data-primary="hdf5" id="id626"/></p>
+</li>
+<li>
+<p>zarr</p>
+</li>
+<li>
+<p>tiledb<a data-type="indexterm" data-primary="tiledb" id="id627"/></p>
+</li>
+<li>
+<p>npy stacks (local disk only)</p>
+</li>
+</ul>
+
+<p>In addition, you can convert Dask <a data-type="indexterm" data-primary="collections, arrays" data-secondary="converting to/from Dask bags" id="id628"/><a data-type="indexterm" data-primary="arrays" data-secondary="converting to/from Dask bags" id="id629"/><a data-type="indexterm" data-primary="bags" data-secondary="convert to/from arrays" id="id630"/>arrays to/from Dask bags and DataFrames (provided the types are compatible). As you may have noted, Dask does not support reading arrays from as many formats as you might expect, which provides the opportunity for an excellent use of bags (covered in the next section).</p>
+</div></section>
+
+
+
+
+
+
+
+
+<section data-type="sect2" data-pdf-bookmark="What’s Missing"><div class="sect2" id="id261">
+<h2>What’s Missing</h2>
+
+<p>While Dask arrays implement a large amount of the ndarray APIs, it is not a complete set. As with Dask DataFrames, some of the omissions are intentional (e.g., <code>sort</code>, much of <code>linalg</code>, etc., which would be slow), and other parts are just missing because no one has had the time to implement them yet.</p>
+</div></section>
+
+
+
+
+
+
+
+
+<section data-type="sect2" data-pdf-bookmark="Special Dask Functions"><div class="sect2" id="id55">
+<h2>Special Dask Functions</h2>
+
+<p>Since, as with distributed <a data-type="indexterm" data-primary="collections, arrays" data-secondary="functions" id="id631"/><a data-type="indexterm" data-primary="arrays" data-secondary="functions" id="id632"/><a data-type="indexterm" data-primary="functions" data-secondary="arrays" id="id633"/>DataFrames, the partitioned nature of Dask arrays makes performance a bit different, there are some unique Dask array functions not found in <code>numpy.linalg</code>:</p>
+<dl>
+<dt><code>map_overlap</code></dt>
+<dd>
+<p>You can use this for <a data-type="indexterm" data-primary="map_overlap function" id="id634"/><a data-type="indexterm" data-primary="functions" data-secondary="map_overlap" id="id635"/>any windowed view of the data, as with <code>map_overlap</code> on Dask DataFrames.</p>
+</dd>
+<dt><code>map_blocks</code></dt>
+<dd>
+<p>This is similar <a data-type="indexterm" data-primary="map_blocks function" id="id636"/><a data-type="indexterm" data-primary="functions" data-secondary="map_blocks" id="id637"/>to Dask’s DataFrames <code>map_partitions</code>, and you can use it for implementing embarrassingly parallel operations that the standard Dask library has not yet implemented, including new element-wise functions in NumPy.</p>
+</dd>
+<dt><code>topk</code></dt>
+<dd>
+<p>This returns the <a data-type="indexterm" data-primary="topk function" id="id638"/><a data-type="indexterm" data-primary="functions" data-secondary="topk" id="id639"/>topk elements of the array in place of fully sorting it (which is much more expensive).<sup><a data-type="noteref" id="id640-marker" href="ch05.xhtml#id640">1</a></sup></p>
+</dd>
+<dt><code>compute_chunk_sizes</code></dt>
+<dd>
+<p>Dask needs to know the <a data-type="indexterm" data-primary="compute_chunk_sizes function" id="id641"/><a data-type="indexterm" data-primary="functions" data-secondary="compute_chunk_sizes" id="id642"/>chunk sizes to support indexing; if an array has unknown chunk sizes, you can call this function.</p>
+</dd>
+</dl>
+
+<p>These special functions are not present on the underlying regular collections, as they do not offer the same performance savings in non-parallel/non-distributed environments.</p>
+</div></section>
+</div></section>
+
+
+
+
+
+
+<section data-type="sect1" data-pdf-bookmark="Dask Bags"><div class="sect1" id="id262">
+<h1>Dask Bags</h1>
+
+<p>To continue to draw parallels to Python’s internal data structures, you can think of bags as slightly different lists or sets. Bags are like lists except without the concept of order (so there are no indexing operations). Alternatively, if you think of bags like sets, the difference between them is that bags allow duplicates. Dask’s bags have the least number of restrictions on what they contain and similarly have the smallest API. In fact, Examples <a data-type="xref" data-xrefstyle="select:labelnumber" href="ch02.xhtml#make_bag_of_crawler">2-6</a> through <a data-type="xref" data-xrefstyle="select:labelnumber" href="ch02.xhtml#wc_func">2-9</a> covered most of the core of the APIs for bags.</p>
+<div data-type="tip"><h6>Tip</h6>
+<p>For users coming from Apache Spark, Dask bags are most closely related to Spark’s RDDs.</p>
+</div>
+
+
+
+
+
+
+
+
+<section data-type="sect2" data-pdf-bookmark="Common Use Cases"><div class="sect2" id="id165">
+<h2>Common Use Cases</h2>
+
+<p>Bags are an excellent choice <a data-type="indexterm" data-primary="bags" data-secondary="use cases" id="id643"/>when the structure of the data is unknown or otherwise not consistent. Some of the common use cases are as follows:</p>
+
+<ul>
+<li>
+<p>Grouping together a bunch of <code>dask.delayed</code> calls—for example, for loading “messy” or unstructured (or unsupported) data.</p>
+</li>
+<li>
+<p>“Cleaning” (or adding structure to) unstructured data (like JSON).</p>
+</li>
+<li>
+<p>Parallelizing a group of tasks over a fixed range—for example, if you want to call an API 100 times but you are not picky about the details.</p>
+</li>
+<li>
+<p>Catch-all: if the data doesn’t fit in any other collection type, bags are your friend.</p>
+</li>
+</ul>
+
+<p>We believe that the most common use case for Dask bags is loading messy data or data that Dask does not have built-in support for.</p>
+</div></section>
+
+
+
+
+
+
+
+
+<section data-type="sect2" data-pdf-bookmark="Loading and Saving Dask Bags"><div class="sect2" id="id166">
+<h2>Loading and Saving Dask Bags</h2>
+
+<p>Dask bags have built-in readers for <a data-type="indexterm" data-primary="bags" data-secondary="loading" id="id644"/><a data-type="indexterm" data-primary="bags" data-secondary="saving" id="id645"/><a data-type="indexterm" data-primary="bags" data-secondary="text file readers" id="id646"/>text files, with <code>read_text</code>, and avro files, with <code>read_avro</code>. Similarly, you can write Dask bags to text files and avro files, although the results must be serializable. Bags are commonly used when Dask’s built-in tools for reading data are not enough, so the next section will dive into how to go beyond these two built-in formats.</p>
+</div></section>
+
+
+
+
+
+
+
+
+<section data-type="sect2" data-pdf-bookmark="Loading Messy Data with a Dask Bag"><div class="sect2" id="id56">
+<h2>Loading Messy Data with a Dask Bag</h2>
+
+<p>Normally, the goal when loading <a data-type="indexterm" data-primary="bags" data-secondary="loading" data-tertiary="messy data" id="bgldsyd"/><a data-type="indexterm" data-primary="messy data, bags" id="mssydt"/><a data-type="indexterm" data-primary="loading data" data-secondary="bags" id="lddbg"/>messy data is to get it into a structured format for further processing, or at least to extract the components that you are interested in. While your data formats will likely be a bit different, this section will look at loading some messy JSON and then extracting some relevant fields. Don’t worry—we call out places where different formats or sources may require different techniques.</p>
+
+<p>For messy textual data, which <a data-type="indexterm" data-primary="JSON (JavaScript Object Notation)" data-secondary="messy data" id="id647"/>is a common occurrence with JSON, you can save yourself some time by loading the data using <a data-type="indexterm" data-primary="read_text function" id="id648"/><a data-type="indexterm" data-primary="functions" data-secondary="read_text" id="id649"/>bags’ <code>read_text</code> function. The <code>read_text</code> function defaults to splitting up the records by line; however, many formats cannot be processed by line. To get each whole file in a whole record rather than it being split up, you can set the <code>linedelimiter</code> parameter to one not found. Often REST APIs will return the results as a subcomponent, so in <a data-type="xref" href="#preprocess_json">Example 5-1</a>, we load the <a href="https://oreil.ly/3Xmd_">US Food and Drug Administration (FDA) recall dataset</a> and strip it down to the part we care about. The FDA recall dataset is a wonderful real-world example of nested datasets often found in JSON data, which can be hard to process directly in DataFrames.</p>
+<div id="preprocess_json" data-type="example">
+<h5><span class="label">Example 5-1. </span>Pre-processing JSON</h5>
+
+<pre data-type="programlisting" data-code-language="python"><code class="k">def</code> <code class="nf">make_url</code><code class="p">(</code><code class="n">idx</code><code class="p">):</code>
+    <code class="n">page_size</code> <code class="o">=</code> <code class="mi">100</code>
+    <code class="n">start</code> <code class="o">=</code> <code class="n">idx</code> <code class="o">*</code> <code class="n">page_size</code>
+    <code class="n">u</code> <code class="o">=</code> <code class="sa">f</code><code class="s2">"https://api.fda.gov/food/enforcement.json?limit=</code><code class="si">{</code><code class="n">page_size</code><code class="si">}</code><code class="s2">&amp;skip=</code><code class="si">{</code><code class="n">start</code><code class="si">}</code><code class="s2">"</code>
+    <code class="k">return</code> <code class="n">u</code>
+
+
+<code class="n">urls</code> <code class="o">=</code> <code class="nb">list</code><code class="p">(</code><code class="nb">map</code><code class="p">(</code><code class="n">make_url</code><code class="p">,</code> <code class="nb">range</code><code class="p">(</code><code class="mi">0</code><code class="p">,</code> <code class="mi">10</code><code class="p">)))</code>
+<code class="c1"># Since they are multi-line json we can't use the default \n line delim</code>
+<code class="n">raw_json</code> <code class="o">=</code> <code class="n">bag</code><code class="o">.</code><code class="n">read_text</code><code class="p">(</code><code class="n">urls</code><code class="p">,</code> <code class="n">linedelimiter</code><code class="o">=</code><code class="s2">"NODELIM"</code><code class="p">)</code>
+
+
+<code class="k">def</code> <code class="nf">clean_records</code><code class="p">(</code><code class="n">raw_records</code><code class="p">):</code>
+    <code class="kn">import</code> <code class="nn">json</code>
+    <code class="c1"># We don't need the meta field just the results field</code>
+    <code class="k">return</code> <code class="n">json</code><code class="o">.</code><code class="n">loads</code><code class="p">(</code><code class="n">raw_records</code><code class="p">)[</code><code class="s2">"results"</code><code class="p">]</code>
+
+
+<code class="n">cleaned_records</code> <code class="o">=</code> <code class="n">raw_json</code><code class="o">.</code><code class="n">map</code><code class="p">(</code><code class="n">clean_records</code><code class="p">)</code><code class="o">.</code><code class="n">flatten</code><code class="p">()</code>
+<code class="c1"># And now we can convert it to a DataFrame</code>
+<code class="n">df</code> <code class="o">=</code> <code class="n">bag</code><code class="o">.</code><code class="n">Bag</code><code class="o">.</code><code class="n">to_dataframe</code><code class="p">(</code><code class="n">cleaned_records</code><code class="p">)</code></pre></div>
+
+<p>If you need to load <a data-type="indexterm" data-primary="loading data" data-secondary="unsupported sources" id="id650"/>data from an unsupported source (like a custom storage system) or a binary format (like protocol buffers or Flexible Image Transport System), you’ll need to use lower-level APIs. For binary files that are still stored in an FSSPEC-supported filesystem like S3, you can try the pattern in <a data-type="xref" href="#custom_load">Example 5-2</a>.</p>
+<div id="custom_load" data-type="example">
+<h5><span class="label">Example 5-2. </span>Loading PDFs from an FSSPEC-supported filesystem</h5>
+
+<pre data-type="programlisting" data-code-language="python"><code class="k">def</code> <code class="nf">discover_files</code><code class="p">(</code><code class="n">path</code><code class="p">:</code> <code class="nb">str</code><code class="p">):</code>
+    <code class="p">(</code><code class="n">fs</code><code class="p">,</code> <code class="n">fspath</code><code class="p">)</code> <code class="o">=</code> <code class="n">fsspec</code><code class="o">.</code><code class="n">core</code><code class="o">.</code><code class="n">url_to_fs</code><code class="p">(</code><code class="n">path</code><code class="p">)</code>
+    <code class="k">return</code> <code class="p">(</code><code class="n">fs</code><code class="p">,</code> <code class="n">fs</code><code class="o">.</code><code class="n">expand_path</code><code class="p">(</code><code class="n">fspath</code><code class="p">,</code> <code class="n">recursive</code><code class="o">=</code><code class="s2">"true"</code><code class="p">))</code>
+
+
+<code class="k">def</code> <code class="nf">load_file</code><code class="p">(</code><code class="n">fs</code><code class="p">,</code> <code class="n">file</code><code class="p">):</code>
+    <code class="sd">"""Load (and initially process) the data."""</code>
+    <code class="kn">from</code> <code class="nn">PyPDF2</code> <code class="kn">import</code> <code class="n">PdfReader</code>
+    <code class="k">try</code><code class="p">:</code>
+        <code class="n">file_contents</code> <code class="o">=</code> <code class="n">fs</code><code class="o">.</code><code class="n">open</code><code class="p">(</code><code class="n">file</code><code class="p">)</code>
+        <code class="n">pdf</code> <code class="o">=</code> <code class="n">PdfReader</code><code class="p">(</code><code class="n">file_contents</code><code class="p">)</code>
+        <code class="k">return</code> <code class="p">(</code><code class="n">file</code><code class="p">,</code> <code class="n">pdf</code><code class="o">.</code><code class="n">pages</code><code class="p">[</code><code class="mi">0</code><code class="p">]</code><code class="o">.</code><code class="n">extract_text</code><code class="p">())</code>
+    <code class="k">except</code> <code class="ne">Exception</code> <code class="k">as</code> <code class="n">e</code><code class="p">:</code>
+        <code class="k">return</code> <code class="p">(</code><code class="n">file</code><code class="p">,</code> <code class="n">e</code><code class="p">)</code>
+
+
+<code class="k">def</code> <code class="nf">load_data</code><code class="p">(</code><code class="n">path</code><code class="p">:</code> <code class="nb">str</code><code class="p">):</code>
+    <code class="p">(</code><code class="n">fs</code><code class="p">,</code> <code class="n">files</code><code class="p">)</code> <code class="o">=</code> <code class="n">discover_files</code><code class="p">(</code><code class="n">path</code><code class="p">)</code>
+    <code class="n">bag_filenames</code> <code class="o">=</code> <code class="n">bag</code><code class="o">.</code><code class="n">from_sequence</code><code class="p">(</code><code class="n">files</code><code class="p">)</code>
+    <code class="n">contents</code> <code class="o">=</code> <code class="n">bag_filenames</code><code class="o">.</code><code class="n">map</code><code class="p">(</code><code class="k">lambda</code> <code class="n">f</code><code class="p">:</code> <code class="n">load_file</code><code class="p">(</code><code class="n">fs</code><code class="p">,</code> <code class="n">f</code><code class="p">))</code>
+    <code class="k">return</code> <code class="n">contents</code></pre></div>
+
+<p>If you are not using a FSSPEC-supported filesystem, you can still load the data as illustrated in <a data-type="xref" href="#custom_load_nonfs">Example 5-3</a>.</p>
+<div id="custom_load_nonfs" data-type="example">
+<h5><span class="label">Example 5-3. </span>Loading data using a purely custom function</h5>
+
+<pre data-type="programlisting" data-code-language="python"><code class="k">def</code> <code class="nf">special_load_function</code><code class="p">(</code><code class="n">x</code><code class="p">):</code>
+    <code class="c1">## Do your special loading logic in this function, like reading a database</code>
+    <code class="k">return</code> <code class="p">[</code><code class="s2">"Timbit"</code><code class="p">,</code> <code class="s2">"Is"</code><code class="p">,</code> <code class="s2">"Awesome"</code><code class="p">][</code><code class="mi">0</code><code class="p">:</code> <code class="n">x</code> <code class="o">%</code> <code class="mi">4</code><code class="p">]</code>
+
+
+<code class="n">partitions</code> <code class="o">=</code> <code class="n">bag</code><code class="o">.</code><code class="n">from_sequence</code><code class="p">(</code><code class="nb">range</code><code class="p">(</code><code class="mi">20</code><code class="p">),</code> <code class="n">npartitions</code><code class="o">=</code><code class="mi">5</code><code class="p">)</code>
+<code class="n">raw_data</code> <code class="o">=</code> <code class="n">partitions</code><code class="o">.</code><code class="n">map</code><code class="p">(</code><code class="n">special_load_function</code><code class="p">)</code><code class="o">.</code><code class="n">flatten</code><code class="p">()</code></pre></div>
+<div data-type="note" epub:type="note"><h6>Note</h6>
+<p>Loading data in this fashion requires that each file be able to fit inside a worker/executor. If that is not the case, things get much more complicated. Implementing splittable data readers is beyond the scope of this book, but you can take a look at Dask’s internal IO libraries (text is the easiest) to get some inspiration.</p>
+</div>
+
+<p>Sometimes with nested directory <a data-type="indexterm" data-primary="parallelism" id="id651"/>structures, creating the list of files can take a long time. In that case, it’s worthwhile to parallelize the listing of files as well. There are a number of different techniques to parallelize file listing, but for simplicity, we show parallel recursive listing in <a data-type="xref" href="#parallel_list">Example 5-4</a>.</p>
+<div id="parallel_list" data-type="example">
+<h5><span class="label">Example 5-4. </span>Listing the files in parallel (recursively)</h5>
+
+<pre data-type="programlisting" data-code-language="python"><code class="k">def</code> <code class="nf">parallel_recursive_list</code><code class="p">(</code><code class="n">path</code><code class="p">:</code> <code class="nb">str</code><code class="p">,</code> <code class="n">fs</code><code class="o">=</code><code class="kc">None</code><code class="p">)</code> <code class="o">-&gt;</code> <code class="n">List</code><code class="p">[</code><code class="nb">str</code><code class="p">]:</code>
+    <code class="nb">print</code><code class="p">(</code><code class="sa">f</code><code class="s2">"Listing </code><code class="si">{</code><code class="n">path</code><code class="si">}</code><code class="s2">"</code><code class="p">)</code>
+    <code class="k">if</code> <code class="n">fs</code> <code class="ow">is</code> <code class="kc">None</code><code class="p">:</code>
+        <code class="p">(</code><code class="n">fs</code><code class="p">,</code> <code class="n">path</code><code class="p">)</code> <code class="o">=</code> <code class="n">fsspec</code><code class="o">.</code><code class="n">core</code><code class="o">.</code><code class="n">url_to_fs</code><code class="p">(</code><code class="n">path</code><code class="p">)</code>
+    <code class="n">info</code> <code class="o">=</code> <code class="p">[]</code>
+    <code class="n">infos</code> <code class="o">=</code> <code class="n">fs</code><code class="o">.</code><code class="n">ls</code><code class="p">(</code><code class="n">path</code><code class="p">,</code> <code class="n">detail</code><code class="o">=</code><code class="kc">True</code><code class="p">)</code>
+    <code class="c1"># Above could throw PermissionError, but if we can't list the dir it's</code>
+    <code class="c1"># probably wrong so let it bubble up</code>
+    <code class="n">files</code> <code class="o">=</code> <code class="p">[]</code>
+    <code class="n">dirs</code> <code class="o">=</code> <code class="p">[]</code>
+    <code class="k">for</code> <code class="n">i</code> <code class="ow">in</code> <code class="n">infos</code><code class="p">:</code>
+        <code class="k">if</code> <code class="n">i</code><code class="p">[</code><code class="s2">"type"</code><code class="p">]</code> <code class="o">==</code> <code class="s2">"directory"</code><code class="p">:</code>
+            <code class="c1"># You can speed this up by using futures; covered in Chapter 6</code>
+            <code class="n">dir_list</code> <code class="o">=</code> <code class="n">dask</code><code class="o">.</code><code class="n">delayed</code><code class="p">(</code><code class="n">parallel_recursive_list</code><code class="p">)(</code><code class="n">i</code><code class="p">[</code><code class="s2">"name"</code><code class="p">],</code> <code class="n">fs</code><code class="o">=</code><code class="n">fs</code><code class="p">)</code>
+            <code class="n">dirs</code> <code class="o">+=</code> <code class="n">dir_list</code>
+        <code class="k">else</code><code class="p">:</code>
+            <code class="n">files</code><code class="o">.</code><code class="n">append</code><code class="p">(</code><code class="n">i</code><code class="p">[</code><code class="s2">"name"</code><code class="p">])</code>
+    <code class="k">for</code> <code class="n">sub_files</code> <code class="ow">in</code> <code class="n">dask</code><code class="o">.</code><code class="n">compute</code><code class="p">(</code><code class="n">dirs</code><code class="p">):</code>
+        <code class="n">files</code><code class="o">.</code><code class="n">extend</code><code class="p">(</code><code class="n">sub_files</code><code class="p">)</code>
+    <code class="k">return</code> <code class="n">files</code></pre></div>
+<div data-type="tip"><h6>Tip</h6>
+<p>You don’t always have to do the directory listing yourself. It can be worthwhile to check whether there is a metastore, such as Hive or Iceberg, which can give you the list of files without all of these slow API calls.</p>
+</div>
+
+<p>This approach has some downsides: namely, all the filenames come back to a single point—but this is rarely an issue. However, if even just the list of your files is too big to fit in memory, you’ll want to try a recursive algorithm for directory discovery, followed by an iterative algorithm for file listing that keeps the names of the files in the bag.<sup><a data-type="noteref" id="id652-marker" href="ch05.xhtml#id652">2</a></sup> The code becomes a bit more complex, as shown in <a data-type="xref" href="#parallel_list_large">Example 5-5</a>, so this last approach is rarely used.</p>
+<div id="parallel_list_large" data-type="example">
+<h5><span class="label">Example 5-5. </span>Listing the files in parallel without collecting to the driver</h5>
+
+<pre data-type="programlisting" data-code-language="python"><code class="k">def</code> <code class="nf">parallel_list_directories_recursive</code><code class="p">(</code><code class="n">path</code><code class="p">:</code> <code class="nb">str</code><code class="p">,</code> <code class="n">fs</code><code class="o">=</code><code class="kc">None</code><code class="p">)</code> <code class="o">-&gt;</code> <code class="n">List</code><code class="p">[</code><code class="nb">str</code><code class="p">]:</code>
+    <code class="sd">"""</code>
+<code class="sd">    Recursively find all the sub-directories.</code>
+<code class="sd">    """</code>
+    <code class="k">if</code> <code class="n">fs</code> <code class="ow">is</code> <code class="kc">None</code><code class="p">:</code>
+        <code class="p">(</code><code class="n">fs</code><code class="p">,</code> <code class="n">path</code><code class="p">)</code> <code class="o">=</code> <code class="n">fsspec</code><code class="o">.</code><code class="n">core</code><code class="o">.</code><code class="n">url_to_fs</code><code class="p">(</code><code class="n">path</code><code class="p">)</code>
+    <code class="n">info</code> <code class="o">=</code> <code class="p">[]</code>
+    <code class="c1"># Ideally, we could filter for directories here, but fsspec lacks that (for</code>
+    <code class="c1"># now)</code>
+    <code class="n">infos</code> <code class="o">=</code> <code class="n">fs</code><code class="o">.</code><code class="n">ls</code><code class="p">(</code><code class="n">path</code><code class="p">,</code> <code class="n">detail</code><code class="o">=</code><code class="kc">True</code><code class="p">)</code>
+    <code class="c1"># Above could throw PermissionError, but if we can't list the dir, it's</code>
+    <code class="c1"># probably wrong, so let it bubble up</code>
+    <code class="n">dirs</code> <code class="o">=</code> <code class="p">[]</code>
+    <code class="n">result</code> <code class="o">=</code> <code class="p">[]</code>
+    <code class="k">for</code> <code class="n">i</code> <code class="ow">in</code> <code class="n">infos</code><code class="p">:</code>
+        <code class="k">if</code> <code class="n">i</code><code class="p">[</code><code class="s2">"type"</code><code class="p">]</code> <code class="o">==</code> <code class="s2">"directory"</code><code class="p">:</code>
+            <code class="c1"># You can speed this up by using futures; covered in Chapter 6</code>
+            <code class="n">result</code><code class="o">.</code><code class="n">append</code><code class="p">(</code><code class="n">i</code><code class="p">[</code><code class="s2">"name"</code><code class="p">])</code>
+            <code class="n">dir_list</code> <code class="o">=</code> <code class="n">dask</code><code class="o">.</code><code class="n">delayed</code><code class="p">(</code>
+                <code class="n">parallel_list_directories_recursive</code><code class="p">)(</code><code class="n">i</code><code class="p">[</code><code class="s2">"name"</code><code class="p">],</code> <code class="n">fs</code><code class="o">=</code><code class="n">fs</code><code class="p">)</code>
+            <code class="n">dirs</code> <code class="o">+=</code> <code class="n">dir_list</code>
+    <code class="k">for</code> <code class="n">sub_dirs</code> <code class="ow">in</code> <code class="n">dask</code><code class="o">.</code><code class="n">compute</code><code class="p">(</code><code class="n">dirs</code><code class="p">):</code>
+        <code class="n">result</code><code class="o">.</code><code class="n">extend</code><code class="p">(</code><code class="n">sub_dirs</code><code class="p">)</code>
+    <code class="k">return</code> <code class="n">result</code>
+
+
+<code class="k">def</code> <code class="nf">list_files</code><code class="p">(</code><code class="n">path</code><code class="p">:</code> <code class="nb">str</code><code class="p">,</code> <code class="n">fs</code><code class="o">=</code><code class="kc">None</code><code class="p">)</code> <code class="o">-&gt;</code> <code class="n">List</code><code class="p">[</code><code class="nb">str</code><code class="p">]:</code>
+    <code class="sd">"""List files at a given depth with no recursion."""</code>
+    <code class="k">if</code> <code class="n">fs</code> <code class="ow">is</code> <code class="kc">None</code><code class="p">:</code>
+        <code class="p">(</code><code class="n">fs</code><code class="p">,</code> <code class="n">path</code><code class="p">)</code> <code class="o">=</code> <code class="n">fsspec</code><code class="o">.</code><code class="n">core</code><code class="o">.</code><code class="n">url_to_fs</code><code class="p">(</code><code class="n">path</code><code class="p">)</code>
+    <code class="n">info</code> <code class="o">=</code> <code class="p">[]</code>
+    <code class="c1"># Ideally, we could filter for directories here, but fsspec lacks that (for</code>
+    <code class="c1"># now)</code>
+    <code class="k">return</code> <code class="nb">map</code><code class="p">(</code><code class="k">lambda</code> <code class="n">i</code><code class="p">:</code> <code class="n">i</code><code class="p">[</code><code class="s2">"name"</code><code class="p">],</code> <code class="nb">filter</code><code class="p">(</code>
+        <code class="k">lambda</code> <code class="n">i</code><code class="p">:</code> <code class="n">i</code><code class="p">[</code><code class="s2">"type"</code><code class="p">]</code> <code class="o">==</code> <code class="s2">"directory"</code><code class="p">,</code> <code class="n">fs</code><code class="o">.</code><code class="n">ls</code><code class="p">(</code><code class="n">path</code><code class="p">,</code> <code class="n">detail</code><code class="o">=</code><code class="kc">True</code><code class="p">)))</code>
+
+
+<code class="k">def</code> <code class="nf">parallel_list_large</code><code class="p">(</code><code class="n">path</code><code class="p">:</code> <code class="nb">str</code><code class="p">,</code> <code class="n">npartitions</code><code class="o">=</code><code class="kc">None</code><code class="p">,</code> <code class="n">fs</code><code class="o">=</code><code class="kc">None</code><code class="p">)</code> <code class="o">-&gt;</code> <code class="n">bag</code><code class="p">:</code>
+    <code class="sd">"""</code>
+<code class="sd">    Find all of the files (potentially too large to fit on the head node).</code>
+<code class="sd">    """</code>
+    <code class="n">directories</code> <code class="o">=</code> <code class="n">parallel_list_directories_recursive</code><code class="p">(</code><code class="n">path</code><code class="p">,</code> <code class="n">fs</code><code class="o">=</code><code class="n">fs</code><code class="p">)</code>
+    <code class="n">dir_bag</code> <code class="o">=</code> <code class="n">dask</code><code class="o">.</code><code class="n">bag</code><code class="o">.</code><code class="n">from_sequence</code><code class="p">(</code><code class="n">directories</code><code class="p">,</code> <code class="n">npartitions</code><code class="o">=</code><code class="n">npartitions</code><code class="p">)</code>
+    <code class="k">return</code> <code class="n">dir_bag</code><code class="o">.</code><code class="n">map</code><code class="p">(</code><code class="k">lambda</code> <code class="nb">dir</code><code class="p">:</code> <code class="n">list_files</code><code class="p">(</code><code class="nb">dir</code><code class="p">,</code> <code class="n">fs</code><code class="o">=</code><code class="n">fs</code><code class="p">))</code><code class="o">.</code><code class="n">flatten</code><code class="p">()</code></pre></div>
+
+<p>A fully iterative algorithm with FSSPEC would not <a data-type="indexterm" data-primary="bags" data-secondary="loading" data-tertiary="messy data" data-startref="bgldsyd" id="id653"/><a data-type="indexterm" data-primary="messy data, bags" data-startref="mssydt" id="id654"/><a data-type="indexterm" data-primary="loading data" data-secondary="bags" data-startref="lddbg" id="id655"/>be any faster than the naive listing, since FSSPEC does not support querying just for directories.</p>
+</div></section>
+
+
+
+
+
+
+
+
+<section data-type="sect2" data-pdf-bookmark="Limitations"><div class="sect2" id="id167">
+<h2>Limitations</h2>
+
+<p>Dask bags are not well suited to <a data-type="indexterm" data-primary="bags" data-secondary="limitations" id="id656"/>most reduction or shuffling operations, as their core <code>reduction</code> function reduces results down to one partition, requiring that all of the data fit on a single machine. You can reasonably use aggregations that are purely constant space, such as mean, min, and max. However, most of the time you find yourself trying to aggregate your data, you should consider transforming your bag into a DataFrame with <code>bag.Bag.to_dataframe</code>.</p>
+<div data-type="tip"><h6>Tip</h6>
+<p>All three Dask data types (bag, array, and DataFrame) have methods for being converted to other data types. However, some conversions require special attention. For example, when converting a Dask DataFrame to a Dask array, the resulting array will have <code>NaN</code> if you look at the shape it generates. This is because Dask DataFrame does not keep track of the number of rows in each DataFrame chunk.</p>
+</div>
+</div></section>
+</div></section>
+
+
+
+
+
+
+<section data-type="sect1" class="pagebreak-before less_space" data-pdf-bookmark="Conclusion"><div class="sect1" id="id263">
+<h1>Conclusion</h1>
+
+<p>While Dask DataFrames get the most use, Dask arrays and bags have their place. You can use Dask arrays to speed up and parallelize large multi-dimensional array processes. Dask bags allow you to work with data that doesn’t fit nicely into a DataFrame, like PDFs or multi-dimensional nested data. These collections get much less focus and active development than Dask DataFrames but may still have their place in your workflows. In the next chapter, you will see how you can add state to your Dask programs, including with operations on Dask’s collections.</p>
+</div></section>
+<div data-type="footnotes"><p data-type="footnote" id="id640"><sup><a href="ch05.xhtml#id640-marker">1</a></sup> <a href="https://oreil.ly/vUjgv"><code>topk</code></a> extracts the topk elements of each partition and then only needs to shuffle the k elements out of each partition.</p><p data-type="footnote" id="id652"><sup><a href="ch05.xhtml#id652-marker">2</a></sup> Iterative algorithms involve using constructs like <em>while</em> or <em>for</em> instead of recursive calls to the same function.</p></div></div></section></div></body></html>

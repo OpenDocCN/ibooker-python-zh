@@ -1,0 +1,128 @@
+<html><head></head><body><div id="sbo-rt-content"><section data-type="appendix" epub:type="appendix" data-pdf-bookmark="Appendix C. Debugging Dask"><div class="appendix" id="appC">
+<h1><span class="label">Appendix C. </span>Debugging Dask</h1>
+
+
+<p>Depending on your debugging techniques, moving to distributed systems could require a new set of techniques. While you can use debuggers in remote mode, it often requires more setup work. You can also run Dask locally to use your existing debugging tools in many other situations, although—take it from us—a surprising number of difficult-to-debug errors don’t show up in local mode. Dask has a special hybrid approach. Some errors happen outside Python, making them more difficult to debug, like container out-of-memory (OOM) errors, segmentation faults, and other native errors.</p>
+<div data-type="note" epub:type="note"><h6>Note</h6>
+<p>Some of this advice is common across distributed systems, including Ray and Apache Spark. As such, some elements of this chapter are shared with <em>High Performance Spark</em>, second edition, and <em>Scaling Python with Ray</em>.</p>
+</div>
+
+
+
+
+
+
+<section data-type="sect1" data-pdf-bookmark="Using Debuggers"><div class="sect1" id="id146">
+<h1>Using Debuggers</h1>
+
+<p>There are a few different <a data-type="indexterm" data-primary="debugging" data-secondary="debuggers" id="id1079"/><a data-type="indexterm" data-primary="PyCharm" id="id1080"/><a data-type="indexterm" data-primary="Protein Data Bank (PDB) files" id="id1081"/><a data-type="indexterm" data-primary="PDB (Protein Data Bank) files" id="id1082"/>options for using debuggers in Dask. PyCharm and PDB both support connecting to remote debugger processes, but figuring out where your task is running and also setting up the remote debugger can be a challenge. For details on PyCharm remote debugging, see the JetBrains article <a href="https://oreil.ly/HGl90">“Remote Debugging with PyCharm”</a>. One option is to use epdb and run <code>import epdb; epdb.serve()</code> inside of an actor. The easiest option, which is not perfect, is to have Dask re-run failed tasks locally by running <code>client.recreate_error_locally</code> on the future that failed.</p>
+</div></section>
+
+
+
+
+
+
+<section data-type="sect1" data-pdf-bookmark="General Debugging Tips with Dask"><div class="sect1" id="id202">
+<h1>General Debugging Tips with Dask</h1>
+
+<p>You likely have your own standard <a data-type="indexterm" data-primary="debugging" data-secondary="tips" id="id1083"/>debugging techniques for working with Python code, and these are not meant to replace them. Some general techniques that are helpful with Dask include the following:</p>
+
+<ul>
+<li>
+<p>Break up failing functions into smaller functions; smaller functions make it easier to isolate the problem.</p>
+</li>
+<li>
+<p>Be careful about referencing variables from outside of a function, which can result in unintended scope capture, serializing more data and objects than intended.</p>
+</li>
+<li>
+<p>Sample data and try to reproduce locally (local debugging is often easier).</p>
+</li>
+<li>
+<p>Use <a href="https://mypy-lang.org">mypy</a> for type checking. While we haven’t included types in many of our examples for space, in production code liberal type usage can catch tricky errors.</p>
+</li>
+<li>
+<p>Having difficulty tracking down where a task is getting scheduled? Dask actors can’t move, so use an actor to keep all invocations on one machine for debugging.</p>
+</li>
+<li>
+<p>When the issues do appear, regardless of parallelization, debugging your code in local single-threaded mode can make it easier to understand what’s going on.</p>
+</li>
+</ul>
+
+<p>With these tips you will (often) be able to find yourself in a familiar enough environment to use your traditional debugging tools, but some types of errors are a little bit more complicated.</p>
+</div></section>
+
+
+
+
+
+
+<section data-type="sect1" data-pdf-bookmark="Native Errors"><div class="sect1" id="id147">
+<h1>Native Errors</h1>
+
+<p>Native errors and core dumps can <a data-type="indexterm" data-primary="debugging" data-secondary="native errors" id="id1084"/><a data-type="indexterm" data-primary="native errors" id="id1085"/><a data-type="indexterm" data-primary="errors, native" id="id1086"/>be challenging to debug for the same reasons as container errors. Since these types of errors often result in the container exiting, accessing the debugging information can become challenging. Depending on your deployment, there may be a centralized log aggregator that collects all of the logs from the containers, although sometimes these can miss the final few parts of the log (which you likely care about the most). A quick solution to this is to add a <code>sleep</code> to the launch script (on failure) so that you can connect to the container (e.g., <code>[dasklaunchcommand] || sleep 100000</code>) and use native debugging tools.</p>
+
+<p>However, accessing the internals of a container can be easier said than done. In many production environments, you may not be able to get remote access (e.g., <code>kubectly exec</code> on Kubernetes) for security reasons. If that is the case, you can (sometimes) add a shutdown script to your container specification that copies the core files to a location that persists after the container shuts down (e.g., <code>s3</code> or <code>HDFS</code> or <code>NFS</code>). Your cluster administrator may also have recommended tools to help debug (or if not, they may be able to help you create a recommended path for your organization).</p>
+</div></section>
+
+
+
+
+
+
+<section data-type="sect1" data-pdf-bookmark="Some Notes on Official Advice for Handling Bad Records"><div class="sect1" id="id148">
+<h1>Some Notes on Official Advice for Handling Bad Records</h1>
+
+<p>Dask’s <a href="https://oreil.ly/I9wDw">official debugging guide</a> recommends removing failed futures manually. When <a data-type="indexterm" data-primary="bad records" id="id1087"/><a data-type="indexterm" data-primary="debugging" data-secondary="bad records" id="id1088"/>loading data that can be processed in smaller chunks rather than entire partitions at a time, returning tuples with successful and failed data is better, since removing entire partitions is not conducive to determining the root cause. This technique is demonstrated in <a data-type="xref" href="#dask-debugging-handle_appC_1686051006707">Example C-1</a>.</p>
+<div id="dask-debugging-handle_appC_1686051006707" data-type="example">
+<h5><span class="label">Example C-1. </span>Alternative approach for handling bad data</h5>
+
+<pre data-type="programlisting" data-code-language="python"><code class="c1"># Handling some potentially bad data; this assumes line-by-line</code>
+<code class="n">raw_chunks</code> <code class="o">=</code> <code class="n">bag</code><code class="o">.</code><code class="n">read_text</code><code class="p">(</code>
+    <code class="n">urls</code><code class="p">,</code>
+    <code class="n">files_per_partition</code><code class="o">=</code><code class="mi">1</code><code class="p">,</code>
+    <code class="n">linedelimiter</code><code class="o">=</code><code class="s2">"helloworld"</code><code class="p">)</code>
+
+
+<code class="k">def</code> <code class="nf">maybe_load_data</code><code class="p">(</code><code class="n">data</code><code class="p">):</code>
+    <code class="k">try</code><code class="p">:</code>
+        <code class="c1"># Put your processing code here</code>
+        <code class="k">return</code> <code class="p">(</code><code class="n">pandas</code><code class="o">.</code><code class="n">read_csv</code><code class="p">(</code><code class="n">StringIO</code><code class="p">(</code><code class="n">data</code><code class="p">)),</code> <code class="kc">None</code><code class="p">)</code>
+    <code class="k">except</code> <code class="ne">Exception</code> <code class="k">as</code> <code class="n">e</code><code class="p">:</code>
+        <code class="k">return</code> <code class="p">(</code><code class="kc">None</code><code class="p">,</code> <code class="p">(</code><code class="n">e</code><code class="p">,</code> <code class="n">data</code><code class="p">))</code>
+
+
+<code class="n">data</code> <code class="o">=</code> <code class="n">raw_chunks</code><code class="o">.</code><code class="n">map</code><code class="p">(</code><code class="n">maybe_load_data</code><code class="p">)</code>
+<code class="n">data</code><code class="o">.</code><code class="n">persist</code><code class="p">()</code>
+<code class="n">bad_data</code> <code class="o">=</code> <code class="n">data</code><code class="o">.</code><code class="n">filter</code><code class="p">(</code><code class="k">lambda</code> <code class="n">x</code><code class="p">:</code> <code class="n">x</code><code class="p">[</code><code class="mi">0</code><code class="p">]</code> <code class="ow">is</code> <code class="kc">None</code><code class="p">)</code>
+<code class="n">good_data</code> <code class="o">=</code> <code class="n">data</code><code class="o">.</code><code class="n">filter</code><code class="p">(</code><code class="k">lambda</code> <code class="n">x</code><code class="p">:</code> <code class="n">x</code><code class="p">[</code><code class="mi">1</code><code class="p">]</code> <code class="ow">is</code> <code class="kc">None</code><code class="p">)</code></pre></div>
+<div data-type="note" epub:type="note"><h6>Note</h6>
+<p>Bad records here does not exclusively mean records that fail to load or parse; they can also be records that are causing your code to fail. By following this pattern, you can extract the problematic records for deeper investigation and use this to improve your code.</p>
+</div>
+</div></section>
+
+
+
+
+
+
+<section data-type="sect1" data-pdf-bookmark="Dask Diagnostics"><div class="sect1" id="id149">
+<h1>Dask Diagnostics</h1>
+
+<p>Dask has built-in diagnostic tools for both <a href="https://oreil.ly/Uin87">distributed</a> and <a href="https://oreil.ly/JO4qR">local</a> schedulers. The <a data-type="indexterm" data-primary="diagnostics" id="id1089"/><a data-type="indexterm" data-primary="debugging" data-secondary="diagnostics" id="id1090"/>local diagnostics are more featureful with pretty much every part of debugging. These diagnostics can be especially great for debugging situations in which you see a slow degradation of performance over time.</p>
+<div data-type="note" epub:type="note"><h6>Note</h6>
+<p>It’s really easy to accidentally use Dask’s distributed local backend by mistake when making a Dask client, so if you don’t see the diagnostics you expect, make sure you are explicit about which backend you are running on.</p>
+</div>
+</div></section>
+
+
+
+
+
+
+<section data-type="sect1" data-pdf-bookmark="Conclusion"><div class="sect1" id="id284">
+<h1>Conclusion</h1>
+
+<p>You will have a bit more work to get started with your debugging tools in Dask, and when possible, Dask’s local mode offers a great alternative to remote debugging. Not all errors are created equal, and some errors, like segmentation faults in native code, are especially challenging to debug. Good luck finding the bug(s); we believe in you.</p>
+</div></section>
+</div></section></div></body></html>

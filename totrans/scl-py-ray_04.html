@@ -1,0 +1,382 @@
+<html><head></head><body><section data-pdf-bookmark="Chapter 3. Remote Functions" data-type="chapter" epub:type="chapter"><div class="chapter" id="ch03">
+<h1><span class="label">Chapter 3. </span>Remote Functions</h1>
+
+
+<p>You often need some form of distributed or parallel computing when building modern applications at scale. Many Python developers’ introduction to parallel computing is <a data-primary="multiprocessing" data-type="indexterm" id="idm45354786344256"/>through the <a href="https://oreil.ly/qj72E">multiprocessing module</a>. Multiprocessing is limited in its ability to handle the requirements of modern applications. These requirements<a data-primary="applications" data-secondary="requirements of" data-type="indexterm" id="idm45354786342608"/> include the following:</p>
+
+<ul>
+<li>
+<p>Running the same code on multiple cores or machines</p>
+</li>
+<li>
+<p>Using tooling to handle machine and processing failures</p>
+</li>
+<li>
+<p>Efficiently handling large parameters</p>
+</li>
+<li>
+<p>Easily passing information between processes</p>
+</li>
+</ul>
+
+<p>Unlike multiprocessing, Ray’s remote functions satisfy<a data-primary="remote functions" data-secondary="purpose of" data-type="indexterm" id="idm45354786337184"/> these requirements. It’s important to note that <em>remote</em> doesn’t necessarily refer to a separate computer, despite its name; the function could be running on the same machine. What Ray does provide is mapping function calls to the right process on your behalf. Ray takes over distributing calls to that function instead of running in the same process. When calling remote functions, you are effectively running asynchronously on multiple cores or different machines, without having to concern yourself with how or where.</p>
+<div data-type="note" epub:type="note"><h6>Note</h6>
+<p><em>Asynchronously</em> is <a data-primary="asynchronously, defined" data-type="indexterm" id="idm45354786334400"/>a fancy way of saying running multiple things at the same time without waiting on each other.</p>
+</div>
+
+<p class="pagebreak-before">In this chapter, you will learn how to create remote functions, wait for their completion, and fetch results. Once you have the basics down, you will learn to compose remote functions together to create more complex operations. Before you go too far, let’s start with understanding some of what we glossed over in the previous chapter.</p>
+
+
+
+
+
+
+<section data-pdf-bookmark="Essentials of Ray Remote Functions" data-type="sect1"><div class="sect1" id="idm45354786332512">
+<h1>Essentials of Ray Remote Functions</h1>
+
+<p>In <a data-type="xref" href="ch02.html#sleepy_task">Example 2-7</a>, <a data-primary="remote functions" data-secondary="ray.get versus ray.wait" data-type="indexterm" id="remote-function-getwait"/><a data-primary="ray.get" data-type="indexterm" id="rayget"/>you learned how to create a basic Ray remote function.</p>
+
+<p>When you call a remote function, it immediately returns an <code>ObjectRef</code> (a future), which is a reference to a remote object. Ray creates and executes a task in the background on a separate worker process and writes the result when finished into the original reference. You can then call <code>ray.get</code> on the <code>ObjectRef</code> to obtain the value. Note that <code>ray.get</code> is a blocking method waiting for task execution to complete before returning the result.</p>
+<aside data-type="sidebar" epub:type="sidebar"><div class="sidebar" id="idm45354786324992">
+<h5>Remote Objects in Ray</h5>
+<p>A <em>remote object</em> is<a data-primary="remote objects" data-type="indexterm" id="idm45354786322992"/> just an object, which may be on another node. <code>ObjectRef</code>s are like pointers or IDs to objects that you can use to get the value from, or status of, the remote function. In addition to being created from remote function calls, you can also create <code>ObjectRef</code>s explicitly by using <a data-primary="ray.put" data-type="indexterm" id="idm45354786321328"/>the <code>ray.put</code> function.</p>
+
+<p>We will explore remote objects and their fault tolerance in <a data-type="xref" href="ch05.html#ray_objects">“Ray Objects”</a>.</p>
+</div></aside>
+
+<p>Some details in <a data-type="xref" href="ch02.html#sleepy_task">Example 2-7</a> are worth understanding. The example converts the iterator to a list before passing it to <code>ray.get</code>. You need to do this when calling <code>ray.get</code> takes in a list of futures or an individual future.<sup><a data-type="noteref" href="ch03.html#idm45354786316576" id="idm45354786316576-marker">1</a></sup> The function waits until it has all the objects so it can return the list in order.</p>
+<div data-type="tip"><h6>Tip</h6>
+<p>As with<a data-primary="remote functions" data-secondary="when not to use" data-type="indexterm" id="idm45354786314912"/> regular Ray remote functions, it’s important to think about the amount of work done inside each remote invocation. For example, using <code>ray.remote</code> to compute factorials recursively will be slower than doing it locally since the work inside each function is small even though the overall work can be large. The exact amount of time depends on how busy your cluster is, but as a general rule, anything executed in under a few seconds without any special resources is not worth scheduling remotely.</p>
+</div>
+<aside data-type="sidebar" epub:type="sidebar"><div class="sidebar" id="idm45354786313136">
+<h5>Remote Functions Lifecycle</h5>
+<p>The<a data-primary="remote functions" data-secondary="lifecycle of" data-type="indexterm" id="idm45354786311600"/><a data-primary="owner of remote functions" data-type="indexterm" id="idm45354786310592"/> invoking Ray process (called the <em>owner</em>) of a remote function schedules the execution of a submitted task and facilitates the resolution of the returned <code>ObjectRef</code> to its underlying value if needed.</p>
+
+<p>On task submission, the owner waits for all dependencies (i.e., <code>ObjectRef</code> objects that were passed as an argument to the task) to become available before scheduling. The dependencies can be local or remote, and the owner considers the dependencies to be ready as soon as they are available anywhere in the cluster. When the dependencies are ready, the owner requests resources from the distributed scheduler to execute the task. Once resources are available, the scheduler grants the request and responds with the address of a worker that will execute the function.</p>
+
+<p>At this point, the owner sends the task specification over gRPC to the worker. After executing the task, the worker stores the return values. If the return values are small (less than 100 KiB by default), the worker returns the values inline directly to the owner, which copies them to its in-process object store. If the return values are large, the worker stores the objects in its local shared memory store and replies to the owner, indicating that the objects are now in distributed memory. This allows the owner to refer to the objects without having to fetch the objects to its local node.</p>
+
+<p>When a task is submitted with an <code>ObjectRef</code> as its argument, the worker must resolve its value before it can start executing the task.</p>
+
+<p>Tasks <a data-primary="task errors, types of" data-type="indexterm" id="idm45354786306288"/>can end in an error. Ray distinguishes between two types of task errors:</p>
+<dl>
+<dt>Application-level</dt>
+<dd>
+<p>In this scenario,<a data-primary="application-level task errors" data-type="indexterm" id="idm45354786303952"/> the worker process is alive, but the task ends in an error (e.g., a task that throws an <code>IndexError</code> in Python).</p>
+</dd>
+<dt>System-level</dt>
+<dd>
+<p>In this<a data-primary="system-level task errors" data-type="indexterm" id="idm45354786301184"/> scenario, the worker process dies unexpectedly (e.g., a process that segfaults, or if the worker’s local Raylet dies).</p>
+</dd>
+</dl>
+
+<p>Tasks that fail because of application-level errors are never retried. The exception is caught and stored as the return value of the task. Tasks that fail because of system-level errors may be automatically retried up to a specified number of attempts. This is covered in more detail in <a data-type="xref" href="ch05.html#fault_tolerance">“Fault Tolerance”</a>.</p>
+</div></aside>
+
+<p>In our examples so far, using <code>ray.get</code> has been fine because the futures all had the same execution time. If the execution times are different, such as when training a model on different-sized batches of data, and you don’t need all of the results at the same time, this can be quite wasteful. Instead of directly calling <code>ray.get</code>, you should <a data-primary="ray.wait" data-type="indexterm" id="raywait"/>use <code>ray.wait</code>, which returns the requested number of futures that have already been completed. To see the performance difference, you will need to modify your remote function to have a variable sleep time, as in <a data-type="xref" href="#variable_sleep_task">Example 3-1</a>.</p>
+<div data-type="example" id="variable_sleep_task">
+<h5><span class="label">Example 3-1. </span><a href="https://oreil.ly/UdVmt">Remote function with different execution times</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="nd">@ray</code><code class="o">.</code><code class="n">remote</code>
+<code class="k">def</code> <code class="nf">remote_task</code><code class="p">(</code><code class="n">x</code><code class="p">):</code>
+    <code class="n">time</code><code class="o">.</code><code class="n">sleep</code><code class="p">(</code><code class="n">x</code><code class="p">)</code>
+    <code class="k">return</code> <code class="n">x</code></pre></div>
+
+<p>As you recall, the example remote function sleeps based on the input argument. Since the range is in ascending order, calling the remote function on it will result in futures that are completed in order. To ensure that the futures won’t complete in order, you will need to modify the list. One way you can do this is by calling <code>things.sort(reverse=True)</code> prior to mapping your remote function over <code>things</code>.</p>
+
+<p>To see the difference between using <code>ray.get</code> and <code>ray.wait</code>, you can write a function that collects the values from your futures with some time delay on each object to simulate business logic.</p>
+
+<p>The first option, not using <code>ray.wait</code>, is a bit simpler and cleaner to read, as shown in <a data-type="xref" href="#get_only">Example 3-2</a>, but is not recommended for production use.</p>
+<div data-type="example" id="get_only">
+<h5><span class="label">Example 3-2. </span><a href="https://oreil.ly/UdVmt"><code>ray.get</code> without the wait</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="c1"># Process in order</code>
+<code class="k">def</code> <code class="nf">in_order</code><code class="p">():</code>
+    <code class="c1"># Make the futures</code>
+    <code class="n">futures</code> <code class="o">=</code> <code class="nb">list</code><code class="p">(</code><code class="nb">map</code><code class="p">(</code><code class="k">lambda</code> <code class="n">x</code><code class="p">:</code> <code class="n">remote_task</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="n">x</code><code class="p">),</code> <code class="n">things</code><code class="p">))</code>
+    <code class="n">values</code> <code class="o">=</code> <code class="n">ray</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="n">futures</code><code class="p">)</code>
+    <code class="k">for</code> <code class="n">v</code> <code class="ow">in</code> <code class="n">values</code><code class="p">:</code>
+        <code class="nb">print</code><code class="p">(</code><code class="sa">f</code><code class="s2">" Completed </code><code class="si">{</code><code class="n">v</code><code class="si">}</code><code class="s2">"</code><code class="p">)</code>
+        <code class="n">time</code><code class="o">.</code><code class="n">sleep</code><code class="p">(</code><code class="mi">1</code><code class="p">)</code> <code class="c1"># Business logic goes here</code></pre></div>
+
+<p>The second option is a bit more complex, as shown in <a data-type="xref" href="#as_available">Example 3-3</a>. This works by calling <code>ray.wait</code> to find the next available future and iterating until all the futures have been completed. <code>ray.wait</code> returns two lists, one of the object references for completed tasks (of the size requested, which defaults to 1) and another list of the rest of the object references.</p>
+<div data-type="example" id="as_available">
+<h5><span class="label">Example 3-3. </span><a href="https://oreil.ly/UdVmt">Using <code>ray.wait</code></a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="c1"># Process as results become available</code>
+<code class="k">def</code> <code class="nf">as_available</code><code class="p">():</code>
+    <code class="c1"># Make the futures</code>
+    <code class="n">futures</code> <code class="o">=</code> <code class="nb">list</code><code class="p">(</code><code class="nb">map</code><code class="p">(</code><code class="k">lambda</code> <code class="n">x</code><code class="p">:</code> <code class="n">remote_task</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="n">x</code><code class="p">),</code> <code class="n">things</code><code class="p">))</code>
+    <code class="c1"># While we still have pending futures</code>
+    <code class="k">while</code> <code class="nb">len</code><code class="p">(</code><code class="n">futures</code><code class="p">)</code> <code class="o">&gt;</code> <code class="mi">0</code><code class="p">:</code>
+        <code class="n">ready_futures</code><code class="p">,</code> <code class="n">rest_futures</code> <code class="o">=</code> <code class="n">ray</code><code class="o">.</code><code class="n">wait</code><code class="p">(</code><code class="n">futures</code><code class="p">)</code>
+        <code class="nb">print</code><code class="p">(</code><code class="sa">f</code><code class="s2">"Ready </code><code class="si">{</code><code class="nb">len</code><code class="p">(</code><code class="n">ready_futures</code><code class="p">)</code><code class="si">}</code><code class="s2"> rest </code><code class="si">{</code><code class="nb">len</code><code class="p">(</code><code class="n">rest_futures</code><code class="p">)</code><code class="si">}</code><code class="s2">"</code><code class="p">)</code>
+        <code class="k">for</code> <code class="nb">id</code> <code class="ow">in</code> <code class="n">ready_futures</code><code class="p">:</code>
+            <code class="nb">print</code><code class="p">(</code><code class="sa">f</code><code class="s1">'completed value </code><code class="si">{</code><code class="nb">id</code><code class="si">}</code><code class="s1">, result </code><code class="si">{</code><code class="n">ray</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="nb">id</code><code class="p">)</code><code class="si">}</code><code class="s1">'</code><code class="p">)</code>
+            <code class="n">time</code><code class="o">.</code><code class="n">sleep</code><code class="p">(</code><code class="mi">1</code><code class="p">)</code> <code class="c1"># Business logic goes here</code>
+        <code class="c1"># We just need to wait on the ones that are not yet available</code>
+        <code class="n">futures</code> <code class="o">=</code> <code class="n">rest_futures</code></pre></div>
+
+<p>Running these functions side by side with <code>timeit.time</code>, you can see the difference in performance. It’s important to note that this performance improvement depends on how long the nonparallelized business logic (the logic in the loop) takes. If you’re just summing the results, using <code>ray.get</code> directly could be OK, but if you’re doing something more complex, you should use <code>ray.wait</code>. When we run this, we see that <code>ray.wait</code> performs roughly twice as fast. You can try varying the sleep times and see how it works out.</p>
+
+<p>You may wish to specify one of the few optional parameters to <code>ray.wait</code>:</p>
+<dl>
+<dt><code>num_returns</code></dt>
+<dd>
+<p>The number of <code>ObjectRef</code> objects for Ray to wait for completion before returning. You should set <code>num_returns</code> to less than or equal to the length of the input list of <code>ObjectRef</code> objects; otherwise, the function throws an exception.<sup><a data-type="noteref" href="ch03.html#idm45354783539024" id="idm45354783539024-marker">2</a></sup> The default value is 1.</p>
+</dd>
+<dt><code>timeout</code></dt>
+<dd>
+<p>The maximum amount of time in seconds to wait before returning. This defaults to −1 (which is treated as infinite).</p>
+</dd>
+<dt><code>fetch_local</code></dt>
+<dd>
+<p>You can disable fetching of results by setting this to <code>false</code> if you are interested only in ensuring that the futures are completed.</p>
+</dd>
+</dl>
+<div data-type="tip"><h6>Tip</h6>
+<p>The <code>timeout</code> parameter<a data-primary="timeout parameter in remote functions" data-type="indexterm" id="idm45354783532144"/> is extremely important in both <code>ray.get</code> and <code>ray.wait</code>. If this parameter is not specified and one of your remote functions misbehaves (never completes), the <code>ray.get</code> or <code>ray.wait</code> will never return, and your program will block forever.<sup><a data-type="noteref" href="ch03.html#idm45354786609680" id="idm45354786609680-marker">3</a></sup> As a result, for any production code, we recommend that you use the <code>timeout</code> parameter in both to avoid deadlocks.</p>
+</div>
+
+<p>Ray’s <code>get</code> and <code>wait</code> functions handle timeouts slightly differently. Ray doesn’t raise an exception on <code>ray.wait</code> when a timeout occurs; instead, it simply returns fewer ready futures than <code>num_returns</code>. However, if <code>ray.get</code> encounters a timeout, Ray will raise a <code>GetTimeoutError</code>. Note that the return of the <code>wait</code>/<code>get</code> function does not mean that your remote function will be terminated; it will still run in the dedicated process. You can explicitly terminate your future (see the following tip) if you want to release the resources.</p>
+<div data-type="tip"><h6>Tip</h6>
+<p>Since <code>ray.wait</code> can return results in any order, it’s essential to not depend on the order of the results. If you need to do different processing with different records (e.g., test a mix of group A and group B), you should encode this in the result (often with types).</p>
+</div>
+
+<p>If you have a task that does not finish in a reasonable time (e.g., a straggler), you can cancel the task by<a data-primary="ray.cancel" data-type="indexterm" id="idm45354786601776"/><a data-primary="canceling tasks" data-type="indexterm" id="idm45354786601072"/> using <code>ray.cancel</code> with the same <code>ObjectRef</code> used to <code>wait</code>/<code>get</code>. You can modify the previous <code>ray.wait</code> example to add a timeout and cancel any “bad” tasks, resulting in something like <a data-type="xref" href="#handle_bad_futures">Example 3-4</a>.</p>
+<div data-type="example" id="handle_bad_futures">
+<h5><span class="label">Example 3-4. </span><a href="https://oreil.ly/UdVmt">Using <code>ray.wait</code> with a timeout and a cancel</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="n">futures</code> <code class="o">=</code> <code class="nb">list</code><code class="p">(</code><code class="nb">map</code><code class="p">(</code><code class="k">lambda</code> <code class="n">x</code><code class="p">:</code> <code class="n">remote_task</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="n">x</code><code class="p">),</code> <code class="p">[</code><code class="mi">1</code><code class="p">,</code> <code class="n">threading</code><code class="o">.</code><code class="n">TIMEOUT_MAX</code><code class="p">]))</code>
+<code class="c1"># While we still have pending futures</code>
+<code class="k">while</code> <code class="nb">len</code><code class="p">(</code><code class="n">futures</code><code class="p">)</code> <code class="o">&gt;</code> <code class="mi">0</code><code class="p">:</code>
+    <code class="c1"># In practice, 10 seconds is too short for most cases</code>
+    <code class="n">ready_futures</code><code class="p">,</code> <code class="n">rest_futures</code> <code class="o">=</code> <code class="n">ray</code><code class="o">.</code><code class="n">wait</code><code class="p">(</code><code class="n">futures</code><code class="p">,</code> <code class="n">timeout</code><code class="o">=</code><code class="mi">10</code><code class="p">,</code> <code class="n">num_returns</code><code class="o">=</code><code class="mi">1</code><code class="p">)</code>
+    <code class="c1"># If we get back anything less than num_returns </code>
+    <code class="k">if</code> <code class="nb">len</code><code class="p">(</code><code class="n">ready_futures</code><code class="p">)</code> <code class="o">&lt;</code> <code class="mi">1</code><code class="p">:</code>
+        <code class="nb">print</code><code class="p">(</code><code class="sa">f</code><code class="s2">"Timed out on </code><code class="si">{</code><code class="n">rest_futures</code><code class="si">}</code><code class="s2">"</code><code class="p">)</code>
+        <code class="c1"># Canceling is a good idea for long-running, unneeded tasks</code>
+        <code class="n">ray</code><code class="o">.</code><code class="n">cancel</code><code class="p">(</code><code class="o">*</code><code class="n">rest_futures</code><code class="p">)</code>
+        <code class="c1"># You should break since you exceeded your timeout</code>
+        <code class="k">break</code>
+    <code class="k">for</code> <code class="nb">id</code> <code class="ow">in</code> <code class="n">ready_futures</code><code class="p">:</code>
+        <code class="nb">print</code><code class="p">(</code><code class="sa">f</code><code class="s1">'completed value </code><code class="si">{</code><code class="nb">id</code><code class="si">}</code><code class="s1">, result </code><code class="si">{</code><code class="n">ray</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="nb">id</code><code class="p">)</code><code class="si">}</code><code class="s1">'</code><code class="p">)</code>
+        <code class="n">futures</code> <code class="o">=</code> <code class="n">rest_futures</code></pre></div>
+<div data-type="warning" epub:type="warning"><h6>Warning</h6>
+<p>Canceling a task should not be part of your normal program flow. If you find yourself having to frequently cancel tasks, you should investigate what’s going on. Any subsequent calls to <code>wait</code> or <code>get</code> for a canceled task are unspecified and could raise an exception or return incorrect<a data-primary="remote functions" data-secondary="ray.get versus ray.wait" data-startref="remote-function-getwait" data-type="indexterm" id="idm45354784954720"/><a data-primary="ray.get" data-startref="rayget" data-type="indexterm" id="idm45354784953504"/><a data-primary="ray.wait" data-startref="raywait" data-type="indexterm" id="idm45354784952560"/> results.</p>
+</div>
+
+<p>Another minor point that we skipped in the previous chapter is that while the examples so far return only a single value, Ray remote functions can return multiple values, as with regular Python functions.</p>
+
+<p>Fault tolerance is<a data-primary="remote functions" data-secondary="fault tolerance" data-type="indexterm" id="idm45354784950528"/><a data-primary="fault tolerance" data-type="indexterm" id="idm45354784949520"/> an important consideration for those running in a distributed environment. Say the worker executing the task dies unexpectedly (because either the process crashed or the machine failed). Ray will rerun the task (after a delay) until either the task succeeds or the maximum number of retries is exceeded. We cover fault tolerance more in <a data-type="xref" href="ch05.html#ch05">Chapter 5</a>.</p>
+</div></section>
+
+
+
+
+
+
+<section data-pdf-bookmark="Composition of Remote Ray Functions" data-type="sect1"><div class="sect1" id="idm45354786331568">
+<h1>Composition of Remote Ray Functions</h1>
+
+<p>You <a data-primary="remote functions" data-secondary="composing" data-type="indexterm" id="remote-function-compose"/><a data-primary="composing remote functions" data-type="indexterm" id="compose-remote-function"/>can make your remote functions even more powerful by composing them. The two most common methods of composition with remote functions in Ray are pipelining and nested parallelism. You can compose your functions with nested parallelism to express recursive functions. Ray also allows you to express sequential dependencies without having to block or collect the result in the driver, <a data-primary="pipelining" data-type="indexterm" id="pipelining"/>known as <em>pipelining</em>.</p>
+
+<p>You can build a pipelined function by using <code>ObjectRef</code> objects from an earlier <code>ray.remote</code> as parameters for a new remote function call. Ray will automatically fetch the <code>ObjectRef</code> objects and pass the underlying objects to your function. This approach allows for easy coordination between the function invocations. Additionally, such an approach minimizes data transfer; the result will be sent directly to the node where execution of the second remote function is executed. A simple example of such a sequential calculation is presented in <a data-type="xref" href="#ray_remote_seq">Example 3-5</a>.</p>
+<div class="example-margin-2" data-type="example" id="ray_remote_seq">
+<h5><span class="label">Example 3-5. </span><a href="https://oreil.ly/UdVmt">Ray pipelining/sequential remote execution with task dependency</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="nd">@ray</code><code class="o">.</code><code class="n">remote</code>
+<code class="k">def</code> <code class="nf">generate_number</code><code class="p">(</code><code class="n">s</code><code class="p">:</code> <code class="nb">int</code><code class="p">,</code> <code class="n">limit</code><code class="p">:</code> <code class="nb">int</code><code class="p">,</code> <code class="n">sl</code><code class="p">:</code> <code class="nb">float</code><code class="p">)</code> <code class="o">-&gt;</code> <code class="nb">int</code> <code class="p">:</code>
+   <code class="n">random</code><code class="o">.</code><code class="n">seed</code><code class="p">(</code><code class="n">s</code><code class="p">)</code>
+   <code class="n">time</code><code class="o">.</code><code class="n">sleep</code><code class="p">(</code><code class="n">sl</code><code class="p">)</code>
+   <code class="k">return</code> <code class="n">random</code><code class="o">.</code><code class="n">randint</code><code class="p">(</code><code class="mi">0</code><code class="p">,</code> <code class="n">limit</code><code class="p">)</code>
+
+<code class="nd">@ray</code><code class="o">.</code><code class="n">remote</code>
+<code class="k">def</code> <code class="nf">sum_values</code><code class="p">(</code><code class="n">v1</code><code class="p">:</code> <code class="nb">int</code><code class="p">,</code> <code class="n">v2</code><code class="p">:</code> <code class="nb">int</code><code class="p">,</code> <code class="n">v3</code><code class="p">:</code> <code class="nb">int</code><code class="p">)</code> <code class="o">-&gt;</code> <code class="nb">int</code> <code class="p">:</code>
+   <code class="k">return</code> <code class="n">v1</code><code class="o">+</code><code class="n">v2</code><code class="o">+</code><code class="n">v3</code>
+
+<code class="c1"># Get result</code>
+<code class="nb">print</code><code class="p">(</code><code class="n">ray</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="n">sum_values</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="n">generate_number</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="mi">1</code><code class="p">,</code> <code class="mi">10</code><code class="p">,</code> <code class="mf">.1</code><code class="p">),</code>
+       <code class="n">generate_number</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="mi">5</code><code class="p">,</code> <code class="mi">20</code><code class="p">,</code> <code class="mf">.2</code><code class="p">),</code> <code class="n">generate_number</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="mi">7</code><code class="p">,</code> <code class="mi">15</code><code class="p">,</code> <code class="mf">.3</code><code class="p">))))</code></pre></div>
+
+<p>This code defines two remote functions and then starts three instances of the first one. <code>ObjectRef</code> objects for all three instances are then used as input for the second function. In this case, Ray will wait for all three instances to complete before starting to execute <code>sum_values</code>. You can use this approach not only for passing data but also for expressing basic workflow style dependencies. There is no restriction on the number of <code>ObjectRef</code> objects you can pass, and you can also pass “normal” Python objects at the same time.</p>
+
+<p>You <em>cannot</em> use Python structures (for example, lists, dictionaries, or classes) containing <code>ObjectRef</code> instead of using <code>ObjectRef</code> directly. Ray waits for and resolves only <code>ObjectRef</code> objects that are passed directly to a function. If you attempt to pass a structure, you will have to do your own <code>ray.wait</code> and <code>ray.get</code> inside the function. <a data-type="xref" href="#broken_ray_remote_seq">Example 3-6</a> is a variation of <a data-type="xref" href="#ray_remote_seq">Example 3-5</a> that does not work.</p>
+<div data-type="example" id="broken_ray_remote_seq">
+<h5><span class="label">Example 3-6. </span><a href="https://oreil.ly/UdVmt">Broken sequential remote function execution with task dependency</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="nd">@ray</code><code class="o">.</code><code class="n">remote</code>
+<code class="k">def</code> <code class="nf">generate_number</code><code class="p">(</code><code class="n">s</code><code class="p">:</code> <code class="nb">int</code><code class="p">,</code> <code class="n">limit</code><code class="p">:</code> <code class="nb">int</code><code class="p">,</code> <code class="n">sl</code><code class="p">:</code> <code class="nb">float</code><code class="p">)</code> <code class="o">-&gt;</code> <code class="nb">int</code> <code class="p">:</code>
+   <code class="n">random</code><code class="o">.</code><code class="n">seed</code><code class="p">(</code><code class="n">s</code><code class="p">)</code>
+   <code class="n">time</code><code class="o">.</code><code class="n">sleep</code><code class="p">(</code><code class="n">sl</code><code class="p">)</code>
+   <code class="k">return</code> <code class="n">random</code><code class="o">.</code><code class="n">randint</code><code class="p">(</code><code class="mi">0</code><code class="p">,</code> <code class="n">limit</code><code class="p">)</code>
+
+<code class="nd">@ray</code><code class="o">.</code><code class="n">remote</code>
+<code class="k">def</code> <code class="nf">sum_values</code><code class="p">(</code><code class="n">values</code><code class="p">:</code> <code class="p">[])</code> <code class="o">-&gt;</code> <code class="nb">int</code> <code class="p">:</code>
+   <code class="k">return</code> <code class="nb">sum</code><code class="p">(</code><code class="n">values</code><code class="p">)</code>
+
+<code class="c1"># Get result</code>
+<code class="nb">print</code><code class="p">(</code><code class="n">ray</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="n">sum_values</code><code class="o">.</code><code class="n">remote</code><code class="p">([</code><code class="n">generate_number</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="mi">1</code><code class="p">,</code> <code class="mi">10</code><code class="p">,</code> <code class="mf">.1</code><code class="p">),</code>
+       <code class="n">generate_number</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="mi">5</code><code class="p">,</code> <code class="mi">20</code><code class="p">,</code> <code class="mf">.2</code><code class="p">),</code> <code class="n">generate_number</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="mi">7</code><code class="p">,</code> <code class="mi">15</code><code class="p">,</code> <code class="mf">.3</code><code class="p">)])))</code></pre></div>
+
+<p><a data-type="xref" href="#broken_ray_remote_seq">Example 3-6</a> has been modified from <a data-type="xref" href="#ray_remote_seq">Example 3-5</a> to take a list of <code>ObjectRef</code> objects as parameters instead of <code>ObjectRef</code> objects themselves. Ray does not “look 
+<span class="keep-together">inside” any</span> structure being passed in. Therefore, the function will be invoked immediately, and since types won’t match, the function will fail with an error <code>TypeError: unsupported operand type(s) for +: 'int' and 'ray._raylet.ObjectRef'</code>. You could fix this error by using <code>ray.wait</code> and <code>ray.get</code>, but this would still launch the function too early, resulting in unnecessary<a data-primary="pipelining" data-startref="pipelining" data-type="indexterm" id="idm45354786150688"/> blocking.</p>
+
+<p>In another composition <a data-primary="nested parallelism" data-type="indexterm" id="nest-parallel"/>approach, <em>nested parallelism</em>, your remote function launches additional remote functions. This can be useful in many cases, including implementing recursive algorithms and combining hyperparameter tuning with parallel model training.<sup><a data-type="noteref" href="ch03.html#idm45354786147744" id="idm45354786147744-marker">4</a></sup> Let’s take a look at two ways to implement nested parallelism 
+<span class="keep-together">(<a data-type="xref" href="#nested_par">Example 3-7</a>).</span></p>
+<div data-type="example" id="nested_par">
+<h5><span class="label">Example 3-7. </span><a href="https://oreil.ly/UdVmt">Implementing nested parallelism</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="nd">@ray</code><code class="o">.</code><code class="n">remote</code>
+<code class="k">def</code> <code class="nf">generate_number</code><code class="p">(</code><code class="n">s</code><code class="p">:</code> <code class="nb">int</code><code class="p">,</code> <code class="n">limit</code><code class="p">:</code> <code class="nb">int</code><code class="p">)</code> <code class="o">-&gt;</code> <code class="nb">int</code> <code class="p">:</code>
+   <code class="n">random</code><code class="o">.</code><code class="n">seed</code><code class="p">(</code><code class="n">s</code><code class="p">)</code>
+   <code class="n">time</code><code class="o">.</code><code class="n">sleep</code><code class="p">(</code><code class="mf">.1</code><code class="p">)</code>
+   <code class="k">return</code> <code class="n">randint</code><code class="p">(</code><code class="mi">0</code><code class="p">,</code> <code class="n">limit</code><code class="p">)</code>
+
+<code class="nd">@ray</code><code class="o">.</code><code class="n">remote</code>
+<code class="k">def</code> <code class="nf">remote_objrefs</code><code class="p">():</code>
+   <code class="n">results</code> <code class="o">=</code> <code class="p">[]</code>
+   <code class="k">for</code> <code class="n">n</code> <code class="ow">in</code> <code class="nb">range</code><code class="p">(</code><code class="mi">4</code><code class="p">):</code>
+       <code class="n">results</code><code class="o">.</code><code class="n">append</code><code class="p">(</code><code class="n">generate_number</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="n">n</code><code class="p">,</code> <code class="mi">4</code><code class="o">*</code><code class="n">n</code><code class="p">))</code>
+   <code class="k">return</code> <code class="n">results</code>
+
+<code class="nd">@ray</code><code class="o">.</code><code class="n">remote</code>
+<code class="k">def</code> <code class="nf">remote_values</code><code class="p">():</code>
+   <code class="n">results</code> <code class="o">=</code> <code class="p">[]</code>
+   <code class="k">for</code> <code class="n">n</code> <code class="ow">in</code> <code class="nb">range</code><code class="p">(</code><code class="mi">4</code><code class="p">):</code>
+       <code class="n">results</code><code class="o">.</code><code class="n">append</code><code class="p">(</code><code class="n">generate_number</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="n">n</code><code class="p">,</code> <code class="mi">4</code><code class="o">*</code><code class="n">n</code><code class="p">))</code>
+   <code class="k">return</code> <code class="n">ray</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="n">results</code><code class="p">)</code>
+
+<code class="nb">print</code><code class="p">(</code><code class="n">ray</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="n">remote_values</code><code class="o">.</code><code class="n">remote</code><code class="p">()))</code>
+<code class="n">futures</code> <code class="o">=</code> <code class="n">ray</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="n">remote_objrefs</code><code class="o">.</code><code class="n">remote</code><code class="p">())</code>
+<code class="k">while</code> <code class="nb">len</code><code class="p">(</code><code class="n">futures</code><code class="p">)</code> <code class="o">&gt;</code> <code class="mi">0</code><code class="p">:</code>
+    <code class="n">ready_futures</code><code class="p">,</code> <code class="n">rest_futures</code> <code class="o">=</code> <code class="n">ray</code><code class="o">.</code><code class="n">wait</code><code class="p">(</code><code class="n">futures</code><code class="p">,</code> <code class="n">timeout</code><code class="o">=</code><code class="mi">600</code><code class="p">,</code> <code class="n">num_returns</code><code class="o">=</code><code class="mi">1</code><code class="p">)</code>
+    <code class="c1"># If we get back anything less than num_returns, there was a timeout</code>
+    <code class="k">if</code> <code class="nb">len</code><code class="p">(</code><code class="n">ready_futures</code><code class="p">)</code> <code class="o">&lt;</code> <code class="mi">1</code><code class="p">:</code>
+        <code class="n">ray</code><code class="o">.</code><code class="n">cancel</code><code class="p">(</code><code class="o">*</code><code class="n">rest_futures</code><code class="p">)</code>
+        <code class="k">break</code>
+    <code class="k">for</code> <code class="nb">id</code> <code class="ow">in</code> <code class="n">ready_futures</code><code class="p">:</code>
+        <code class="nb">print</code><code class="p">(</code><code class="sa">f</code><code class="s1">'completed result </code><code class="si">{</code><code class="n">ray</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="nb">id</code><code class="p">)</code><code class="si">}</code><code class="s1">'</code><code class="p">)</code>
+        <code class="n">futures</code> <code class="o">=</code> <code class="n">rest_futures</code></pre></div>
+
+<p>This code defines three remote functions:</p>
+<dl>
+<dt><code>generate_numbers</code></dt>
+<dd>
+<p>A simple function that generates random numbers</p>
+</dd>
+<dt><code>remote_objrefs</code></dt>
+<dd>
+<p>Invokes several remote functions and returns resulting <code>ObjectRef</code> objects</p>
+</dd>
+<dt><code>remote_values</code></dt>
+<dd>
+<p>Invokes several remote functions, waits for their completion, and returns the resulting values</p>
+</dd>
+</dl>
+
+<p class="pagebreak-before">As you can see from this example, nested parallelism allows for two approaches. In the first case (<code>remote_objrefs</code>), you return all the <code>ObjectRef</code> objects to the invoker of the aggregating function. The invoking code is responsible for waiting for all the remote functions’ completion and processing the results. In the second case 
+<span class="keep-together">(<code>remote_values</code>),</span> the aggregating function waits for all the remote functions’ executions to complete and returns the actual execution results.</p>
+
+<p>Returning all of the <code>ObjectRef</code> objects allows for more flexibility with nonsequential consumption, as described back in <code>ray.await</code>, but it is not suitable for many recursive algorithms. With many recursive algorithms (e.g., quicksort, factorial, etc.) we have many levels of a combination step that need to be performed, requiring that the results be combined at each level <a data-primary="remote functions" data-secondary="composing" data-startref="remote-function-compose" data-type="indexterm" id="idm45354783982384"/><a data-primary="composing remote functions" data-startref="compose-remote-function" data-type="indexterm" id="idm45354783981136"/><a data-primary="nested parallelism" data-startref="nest-parallel" data-type="indexterm" id="idm45354783980224"/>of recursion.</p>
+</div></section>
+
+
+
+
+
+
+<section data-pdf-bookmark="Ray Remote Best Practices" data-type="sect1"><div class="sect1" id="idm45354784947664">
+<h1>Ray Remote Best Practices</h1>
+
+<p>When you <a data-primary="remote functions" data-secondary="best practices" data-type="indexterm" id="remote-function-best"/><a data-primary="best practices" data-secondary="remote functions" data-type="indexterm" id="best-remote-function"/>are using remote functions, keep in mind that you don’t want to make them too small. If the tasks are very small, using Ray can take longer than if you used Python without Ray. The reason for this is that every task invocation has a nontrivial overhead—​for example, scheduling, data passing, inter-process communication (IPC), and updating the system state. To get a real advantage from parallel execution, you need to make sure that this overhead is negligible compared to the execution time of the function itself.<sup><a data-type="noteref" href="ch03.html#idm45354783975024" id="idm45354783975024-marker">5</a></sup></p>
+
+<p>As described in this chapter, one of the most powerful features of Ray <code>remote</code> is the ability to parallelize functions’ execution. Once you call the remote functions, the handle to the remote object (future) is returned immediately, and the invoker can continue execution either locally or with additional remote functions. If, at this point, you call <code>ray.get</code>, your code will block, waiting for a remote function to complete, and as a result, you will have no parallelism. To ensure parallelization of your code, you should invoke <code>ray.get</code> only at the point when you absolutely need the data to continue the main thread of execution. Moreover, as we’ve described, it is recommended to use <code>ray.wait</code> instead of <code>ray.get</code> directly. Additionally, if the result of one remote function is required for the execution of another remote function(s), consider using pipelining (described previously) to leverage Ray’s task coordination.</p>
+
+<p>When you submit your parameters to remote functions, Ray does not submit them directly to the remote function, but rather copies the parameters into object storage and then passes <code>ObjectRef</code> as a parameter. As a result, if you send the same parameter to multiple remote functions, you are paying a (performance) penalty for storing the same data to the object storage several times. The larger the size of the data, the larger the penalty. To avoid this, if you need to pass the same data to multiple remote functions, a better option is to first put the shared data in object storage and use the resulting <code>ObjectRef</code> as a parameter to the function. We illustrate how to do this in <a data-type="xref" href="ch05.html#ray_objects">“Ray Objects”</a>.</p>
+
+<p>As we will show in <a data-type="xref" href="ch05.html#ch05">Chapter 5</a>, remote function invocation is done by the Raylet component. If you invoke a lot of remote functions from a single client, all these invocations are done by a single Raylet. Therefore, it takes a certain amount of time for a given Raylet to process these requests, which can cause a delay in starting all the functions. A better approach, as described in the <a href="https://oreil.ly/PTZOI">“Ray Design Patterns” documentation</a>, is to use an invocation tree—​a nested function invocation as described in the previous section. Basically, a client creates several remote functions, each of which, in turn, creates more remote functions, and so on. In this approach, the invocations are spread across multiple Raylets, allowing scheduling to happen faster.</p>
+
+<p>Every time you define a remote function by using the <code>@ray.remote</code> decorator, Ray exports these definitions to all Ray workers, which takes time (especially if you have a lot of nodes). To reduce the number of function exports, a good practice is to define as many of the remote tasks on the top level outside the loops and local functions using<a data-primary="remote functions" data-secondary="best practices" data-startref="remote-function-best" data-type="indexterm" id="idm45354783965520"/><a data-primary="best practices" data-secondary="remote functions" data-startref="best-remote-function" data-type="indexterm" id="idm45354783964272"/> them.</p>
+</div></section>
+
+
+
+
+
+
+<section data-pdf-bookmark="Bringing It Together with an Example" data-type="sect1"><div class="sect1" id="idm45354783962800">
+<h1>Bringing It Together with an Example</h1>
+
+<p>ML models<a data-primary="remote functions" data-secondary="example of" data-type="indexterm" id="remote-function-example"/> composed of other models (e.g., ensemble models) are well suited to evaluation with Ray. <a data-type="xref" href="#ensemble_example">Example 3-8</a> shows what it looks like to use Ray’s function composition for a hypothetical spam model for web links.</p>
+<div data-type="example" id="ensemble_example">
+<h5><span class="label">Example 3-8. </span><a href="https://oreil.ly/UdVmt">Ensemble model</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="kn">import</code> <code class="nn">random</code>
+
+<code class="nd">@ray</code><code class="o">.</code><code class="n">remote</code>
+<code class="k">def</code> <code class="nf">fetch</code><code class="p">(</code><code class="n">url</code><code class="p">:</code> <code class="nb">str</code><code class="p">)</code> <code class="o">-&gt;</code> <code class="n">Tuple</code><code class="p">[</code><code class="nb">str</code><code class="p">,</code> <code class="nb">str</code><code class="p">]:</code>
+    <code class="kn">import</code> <code class="nn">urllib.request</code>
+    <code class="k">with</code> <code class="n">urllib</code><code class="o">.</code><code class="n">request</code><code class="o">.</code><code class="n">urlopen</code><code class="p">(</code><code class="n">url</code><code class="p">)</code> <code class="k">as</code> <code class="n">response</code><code class="p">:</code>
+       <code class="k">return</code> <code class="p">(</code><code class="n">url</code><code class="p">,</code> <code class="n">response</code><code class="o">.</code><code class="n">read</code><code class="p">())</code>
+
+<code class="nd">@ray</code><code class="o">.</code><code class="n">remote</code>
+<code class="k">def</code> <code class="nf">has_spam</code><code class="p">(</code><code class="n">site_text</code><code class="p">:</code> <code class="n">Tuple</code><code class="p">[</code><code class="nb">str</code><code class="p">,</code> <code class="nb">str</code><code class="p">])</code> <code class="o">-&gt;</code> <code class="nb">bool</code><code class="p">:</code>
+    <code class="c1"># Open the list of spammers or download it</code>
+    <code class="n">spammers_url</code> <code class="o">=</code> <code class="p">(</code>
+        <code class="s2">"https://raw.githubusercontent.com/matomo-org/"</code> <code class="o">+</code> 
+        <code class="s2">"referrer-spam-list/master/spammers.txt"</code>
+    <code class="p">)</code>
+    <code class="kn">import</code> <code class="nn">urllib.request</code>
+    <code class="k">with</code> <code class="n">urllib</code><code class="o">.</code><code class="n">request</code><code class="o">.</code><code class="n">urlopen</code><code class="p">(</code><code class="n">spammers_url</code><code class="p">)</code> <code class="k">as</code> <code class="n">response</code><code class="p">:</code>
+            <code class="n">spammers</code> <code class="o">=</code> <code class="n">response</code><code class="o">.</code><code class="n">readlines</code><code class="p">()</code>
+            <code class="k">for</code> <code class="n">spammer</code> <code class="ow">in</code> <code class="n">spammers</code><code class="p">:</code>
+                <code class="k">if</code> <code class="n">spammer</code> <code class="ow">in</code> <code class="n">site_text</code><code class="p">[</code><code class="mi">1</code><code class="p">]:</code>
+                    <code class="k">return</code> <code class="kc">True</code>
+    <code class="k">return</code> <code class="kc">False</code>
+            
+    
+<code class="nd">@ray</code><code class="o">.</code><code class="n">remote</code>
+<code class="k">def</code> <code class="nf">fake_spam1</code><code class="p">(</code><code class="n">us</code><code class="p">:</code> <code class="n">Tuple</code><code class="p">[</code><code class="nb">str</code><code class="p">,</code> <code class="nb">str</code><code class="p">])</code> <code class="o">-&gt;</code> <code class="nb">bool</code><code class="p">:</code>
+    <code class="c1"># You should do something fancy here with TF or even just NLTK</code>
+    <code class="n">time</code><code class="o">.</code><code class="n">sleep</code><code class="p">(</code><code class="mi">10</code><code class="p">)</code>
+    <code class="k">if</code> <code class="n">random</code><code class="o">.</code><code class="n">randrange</code><code class="p">(</code><code class="mi">10</code><code class="p">)</code> <code class="o">==</code> <code class="mi">1</code><code class="p">:</code>
+        <code class="k">return</code> <code class="kc">True</code>
+    <code class="k">else</code><code class="p">:</code>
+        <code class="k">return</code> <code class="kc">False</code>
+    
+<code class="nd">@ray</code><code class="o">.</code><code class="n">remote</code>
+<code class="k">def</code> <code class="nf">fake_spam2</code><code class="p">(</code><code class="n">us</code><code class="p">:</code> <code class="n">Tuple</code><code class="p">[</code><code class="nb">str</code><code class="p">,</code> <code class="nb">str</code><code class="p">])</code> <code class="o">-&gt;</code> <code class="nb">bool</code><code class="p">:</code>
+    <code class="c1"># You should do something fancy here with TF or even just NLTK</code>
+    <code class="n">time</code><code class="o">.</code><code class="n">sleep</code><code class="p">(</code><code class="mi">5</code><code class="p">)</code>
+    <code class="k">if</code> <code class="n">random</code><code class="o">.</code><code class="n">randrange</code><code class="p">(</code><code class="mi">10</code><code class="p">)</code> <code class="o">&gt;</code> <code class="mi">4</code><code class="p">:</code>
+        <code class="k">return</code> <code class="kc">True</code>
+    <code class="k">else</code><code class="p">:</code>
+        <code class="k">return</code> <code class="kc">False</code>
+    
+<code class="nd">@ray</code><code class="o">.</code><code class="n">remote</code>
+<code class="k">def</code> <code class="nf">combine_is_spam</code><code class="p">(</code><code class="n">us</code><code class="p">:</code> <code class="n">Tuple</code><code class="p">[</code><code class="nb">str</code><code class="p">,</code> <code class="nb">str</code><code class="p">],</code> <code class="n">model1</code><code class="p">:</code> <code class="nb">bool</code><code class="p">,</code> <code class="n">model2</code><code class="p">:</code> <code class="nb">bool</code><code class="p">,</code> <code class="n">model3</code><code class="p">:</code> <code class="nb">bool</code><code class="p">)</code> <code class="o">-&gt;</code> 
+<code class="n">Tuple</code><code class="p">[</code><code class="nb">str</code><code class="p">,</code> <code class="nb">str</code><code class="p">,</code> <code class="nb">bool</code><code class="p">]:</code>
+    <code class="c1"># Questionable fake ensemble</code>
+    <code class="n">score</code> <code class="o">=</code> <code class="n">model1</code> <code class="o">*</code> <code class="mf">0.2</code> <code class="o">+</code> <code class="n">model2</code> <code class="o">*</code> <code class="mf">0.4</code> <code class="o">+</code> <code class="n">model3</code> <code class="o">*</code> <code class="mf">0.4</code>
+    <code class="k">if</code> <code class="n">score</code> <code class="o">&gt;</code> <code class="mf">0.2</code><code class="p">:</code>
+        <code class="k">return</code> <code class="kc">True</code>
+    <code class="k">else</code><code class="p">:</code>
+        <code class="k">return</code> <code class="kc">False</code></pre></div>
+
+<p>By using Ray instead of taking the summation of the time to evaluate all the models, you instead need to wait for only the slowest model, and all other models that finish faster are “free.” For example, if the models take equal lengths of time to run, evaluating these models serially, without Ray, would take almost three times as<a data-primary="remote functions" data-secondary="example of" data-startref="remote-function-example" data-type="indexterm" id="idm45354785162992"/> long.</p>
+</div></section>
+
+
+
+
+
+
+<section class="pagebreak-before less_space" data-pdf-bookmark="Conclusion" data-type="sect1"><div class="sect1" id="idm45354785161520">
+<h1>Conclusion</h1>
+
+<p>In this chapter, you learned about a fundamental Ray feature—​remote functions’ invocation and their use in creating parallel asynchronous execution of Python across multiple cores and machines. You also learned multiple approaches for waiting for remote functions to complete execution and how to use <code>ray.wait</code> to prevent deadlocks in your code.</p>
+
+<p>Finally, you learned about remote function composition and how to use it for rudimentary execution control (mini workflows). You also learned to implement nested parallelism, enabling you to invoke several functions in parallel, with each of these functions in turn invoking more parallel functions. In the next chapter, you will learn how to manage state in Ray by using actors.</p>
+</div></section>
+<div data-type="footnotes"><p data-type="footnote" id="idm45354786316576"><sup><a href="ch03.html#idm45354786316576-marker">1</a></sup> Ray does not “go inside” classes or structures to resolve futures, so if you have a list of lists of futures or a class containing a future, Ray will not resolve the “inner” future.</p><p data-type="footnote" id="idm45354783539024"><sup><a href="ch03.html#idm45354783539024-marker">2</a></sup> Currently, if the list of <code>ObjectRef</code> objects passed in is empty, Ray treats it as a special case, and returns immediately regardless of the value of <code>num_returns</code>.</p><p data-type="footnote" id="idm45354786609680"><sup><a href="ch03.html#idm45354786609680-marker">3</a></sup> If you’re working interactively, you can fix this with a <code>SIGINT</code> or the stop button in Jupyter.</p><p data-type="footnote" id="idm45354786147744"><sup><a href="ch03.html#idm45354786147744-marker">4</a></sup> You can then train multiple models in parallel and train each of the models using data parallel gradient computations, resulting in nested parallelism.</p><p data-type="footnote" id="idm45354783975024"><sup><a href="ch03.html#idm45354783975024-marker">5</a></sup> As an exercise, you can remove <code>sleep</code> from the function in <a data-type="xref" href="ch02.html#sleepy_task">Example 2-7</a> and you will see that execution of remote functions on Ray takes several times longer than regular function invocation. Overhead is not constant, but rather depends on your network, size of the invocation parameters, etc. For example, if you have only small bits of data to transfer, the overhead will be lower than if you are transferring, say, the entire text of Wikipedia as a parameter.</p></div></div></section></body></html>

@@ -1,0 +1,227 @@
+<html><head></head><body><section data-pdf-bookmark="Chapter 11. Using GPUs and Accelerators with Ray" data-type="chapter" epub:type="chapter"><div class="chapter" id="ch11">
+<h1><span class="label">Chapter 11. </span>Using GPUs and Accelerators with Ray</h1>
+
+
+<p>While Ray is <a data-primary="graphics processing units" data-see="GPUs" data-type="indexterm" id="idm45354762215872"/><a data-primary="accelerators" data-seealso="GPUs" data-type="indexterm" id="idm45354762214896"/>primarily focused on horizontal scaling, sometimes using special accelerators like GPUs can be cheaper and faster than just throwing more “regular” compute nodes at a problem. GPUs<a data-primary="GPUs (graphics processing units)" data-secondary="when to use" data-type="indexterm" id="gpu-when-to-use"/> are well suited to vectorized operations performing the same operation on chunks of data at a time. ML, and more generally linear algebra, are some of the top use cases,<sup><a data-type="noteref" href="ch11.html#idm45354762212512" id="idm45354762212512-marker">1</a></sup> as deep learning is incredibly vectorizable.</p>
+
+<p>Often GPU resources are more expensive than CPU resources, so Ray’s architecture makes it easy to request GPU resources only when necessary. To take advantage of GPUs, you need to use specialized libraries, and since these libraries deal with direct memory access, their results may not always be serializable. In the GPU computing world, NVIDIA and, to a lesser degree, AMD are the two main options, with different libraries for integration.</p>
+
+
+
+
+
+
+<section data-pdf-bookmark="What Are GPUs Good At?" data-type="sect1"><div class="sect1" id="idm45354762209136">
+<h1>What Are GPUs Good At?</h1>
+
+<p>Not every problem is a good fit for GPU acceleration. GPUs are especially good at performing the same calculation on many data points at the same time. If a problem is well suited to vectorization, there is a good chance that GPUs may be well suited 
+<span class="keep-together">to it.</span></p>
+
+<p class="pagebreak-before">The following are common problems that benefit from GPU acceleration:</p>
+
+<ul>
+<li>
+<p>ML</p>
+</li>
+<li>
+<p>Linear algebra</p>
+</li>
+<li>
+<p>Physics simulations</p>
+</li>
+<li>
+<p>Graphics (no surprise here)</p>
+</li>
+</ul>
+
+<p>GPUs are not well suited to branch-heavy nonvectorized workflows, or workflows for which the cost of copying the data is similar to or higher than the cost of the<a data-primary="GPUs (graphics processing units)" data-secondary="when to use" data-startref="gpu-when-to-use" data-type="indexterm" id="idm45354762201968"/> computation.</p>
+</div></section>
+
+
+
+
+
+
+<section data-pdf-bookmark="The Building Blocks" data-type="sect1"><div class="sect1" id="idm45354762200368">
+<h1>The Building Blocks</h1>
+
+<p>Working <a data-primary="GPUs (graphics processing units)" data-secondary="low-level libraries" data-type="indexterm" id="idm45354762199040"/><a data-primary="low-level libraries for GPUs" data-type="indexterm" id="idm45354762198064"/><a data-primary="libraries" data-secondary="low-level" data-type="indexterm" id="idm45354762197376"/>with GPUs involves additional overhead, similar to the overhead of distributing tasks (although a bit faster). This overhead comes from serializing data as well as communication, although the links between CPU and GPU are generally faster than network links. Unlike distributed tasks with Ray, GPUs do not have Python interpreters. Instead of sending Python lambdas, your high-level tools will generally generate or call native GPU code. CUDA and Radeon Open Compute (ROCm) are the two de facto low-level libraries for interacting with GPUs, from NVIDIA and AMD, respectively.</p>
+
+<p>NVIDIA released CUDA first, <a data-primary="NVIDIA, CUDA library" data-type="indexterm" id="idm45354762195920"/><a data-primary="CUDA library" data-type="indexterm" id="idm45354762195216"/><a data-primary="AMD, ROCm library" data-type="indexterm" id="idm45354762194544"/><a data-primary="ROCm (Radeon Open Compute) library" data-type="indexterm" id="idm45354762193872"/>and it quickly gained traction with many higher-level libraries and tools, including TensorFlow. AMD’s ROCm has had a slower start and has not seen the same level of adoption. Some high-level tools, including PyTorch, have now integrated ROCm support, but many others require using a special forked ROCm version, like TensorFlow (tensorflow-rocm) or LAPACK (rocSOLVER).</p>
+
+<p>Getting the building blocks right can be surprisingly challenging. For example, in our experience, getting NVIDIA GPU Docker containers to build with Ray on Linux4Tegra took several days. ROCm and CUDA libraries have specific versions that support specific hardware, and similarly, higher-level programs that you may wish to use likely support only some versions. If you are running on Kubernetes, or a similar containerized platform, you can benefit from starting with prebuilt containers like NVIDIA’s <a href="https://oreil.ly/klaV4">CUDA images</a> or AMD’s <a href="https://oreil.ly/IKLF9">ROCm images</a> as the base.</p>
+</div></section>
+
+
+
+
+
+
+<section data-pdf-bookmark="Higher-Level Libraries" data-type="sect1"><div class="sect1" id="idm45354762190960">
+<h1>Higher-Level Libraries</h1>
+
+<p>Unless <a data-primary="GPUs (graphics processing units)" data-secondary="high-level libraries" data-type="indexterm" id="gpu-high-lib"/><a data-primary="high-level libraries for GPUs" data-type="indexterm" id="high-libs-gpus"/><a data-primary="libraries" data-secondary="high-level" data-type="indexterm" id="libs-high"/>you have specialized needs, you’ll likely find it easiest to work with higher-level libraries that generate GPU code for you, like Basic Linear Algebra Subprograms (BLAS), TensorFlow, or Numba. You should try to install these libraries in the base container or machine image that you are using, as they often involve a substantial amount of compile time during installation.</p>
+
+<p>Some of the libraries, like Numba, <a data-primary="Numba" data-type="indexterm" id="idm45354762185216"/><a data-primary="@numba.jit" data-type="indexterm" id="idm45354762184512"/><a data-primary="decorators" data-secondary="@numba.jit" data-type="indexterm" id="idm45354762183840"/>perform dynamic rewriting of your Python code. To have Numba operate on your code, you add a decorator to your function (e.g., <code>@numba.jit</code>). Unfortunately, <code>numba.jit</code> and other dynamic rewriting of your functions are not directly supported in Ray. Instead, if you are using such a library, simply wrap the call as shown in <a data-type="xref" href="#numba_ex">Example 11-1</a>.</p>
+<div data-type="example" id="numba_ex">
+<h5><span class="label">Example 11-1. </span><a href="https://oreil.ly/xjpkD">Simple CUDA example</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="kn">from</code> <code class="nn">numba</code> <code class="kn">import</code> <code class="n">cuda</code><code class="p">,</code> <code class="n">float32</code>
+
+<code class="c1"># CUDA kernel</code>
+<code class="nd">@cuda</code><code class="o">.</code><code class="n">jit</code>
+<code class="k">def</code> <code class="nf">mul_two</code><code class="p">(</code><code class="n">io_array</code><code class="p">):</code>
+    <code class="n">pos</code> <code class="o">=</code> <code class="n">cuda</code><code class="o">.</code><code class="n">grid</code><code class="p">(</code><code class="mi">1</code><code class="p">)</code>
+    <code class="k">if</code> <code class="n">pos</code> <code class="o">&lt;</code> <code class="n">io_array</code><code class="o">.</code><code class="n">size</code><code class="p">:</code>
+        <code class="n">io_array</code><code class="p">[</code><code class="n">pos</code><code class="p">]</code> <code class="o">*=</code> <code class="mi">2</code> <code class="c1"># do the computation</code>
+        
+<code class="nd">@ray</code><code class="o">.</code><code class="n">remote</code>
+<code class="k">def</code> <code class="nf">remote_mul</code><code class="p">(</code><code class="n">input_array</code><code class="p">):</code>
+    <code class="c1"># This implicitly transfers the array into the GPU and back, which is not free</code>
+    <code class="k">return</code> <code class="n">mul_two</code><code class="p">(</code><code class="n">input_array</code><code class="p">)</code></pre></div>
+<div data-type="note" epub:type="note"><h6>Note</h6>
+<p>Similar to Ray’s distributed functions, these tools will generally take care of copying data for you, but it’s important to remember it isn’t free to move data in and out of GPUs. Since these datasets can be large, most libraries try to do multiple operations on the same data. If you have an iterative algorithm that reuses the data, using an actor to hold on to the GPU resource and keep data in the GPU can reduce this cost.</p>
+</div>
+
+<p>Regardless of which libraries you choose (or if you decide to write your own GPU code), you’ll need to make sure Ray schedules your code on nodes <a data-primary="GPUs (graphics processing units)" data-secondary="high-level libraries" data-startref="gpu-high-lib" data-type="indexterm" id="idm45354762107344"/><a data-primary="high-level libraries for GPUs" data-startref="high-libs-gpus" data-type="indexterm" id="idm45354762106224"/><a data-primary="libraries" data-secondary="high-level" data-startref="libs-high" data-type="indexterm" id="idm45354762105312"/>with GPUs.</p>
+</div></section>
+
+
+
+
+
+
+<section data-pdf-bookmark="Acquiring and Releasing GPU and Accelerator Resources" data-type="sect1"><div class="sect1" id="idm45354762103840">
+<h1>Acquiring and Releasing GPU and Accelerator Resources</h1>
+
+<p class="pagebreak-after">You can<a data-primary="GPUs (graphics processing units)" data-secondary="requesting and releasing resources" data-type="indexterm" id="gpu-request-release"/><a data-primary="accelerators" data-secondary="requesting and releasing resources" data-type="indexterm" id="accel-request-release"/><a data-primary="requesting GPU resources" data-type="indexterm" id="request-resource"/><a data-primary="releasing GPU resources" data-type="indexterm" id="release-resource"/><a data-primary="resources, requesting and releasing" data-type="indexterm" id="resource-request-release"/> request GPU resources by adding <code>num_gpus</code> to the <code>ray.remote</code> decorator, much the same way as memory and CPU. Like other resources in Ray (including memory), GPUs in Ray are not guaranteed, and Ray does not automatically clean up resources for you. While Ray does not automatically clean up memory for you, Python does (to an extent), making GPU leaks more likely than memory leaks.</p>
+
+<p>Many of the high-level libraries do not release the GPU unless the Python VM exits. You can force the Python VM to exit after each call, thereby releasing any GPU resources, by adding <code>max_calls=1</code> in your <code>ray.remote</code> decorator, as in <a data-type="xref" href="#remote_gpu">Example 11-2</a>.</p>
+<div data-type="example" id="remote_gpu">
+<h5><span class="label">Example 11-2. </span><a href="https://oreil.ly/xjpkD">Requesting and releasing GPU resources</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="c1"># Request a full GPU, like CPUs we can request fractional</code>
+<code class="nd">@ray</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="n">num_gpus</code><code class="o">=</code><code class="mi">1</code><code class="p">)</code>
+<code class="k">def</code> <code class="nf">do_serious_work</code><code class="p">():</code>
+<code class="c1"># Restart entire worker after each call</code>
+<code class="nd">@ray</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="n">num_gpus</code><code class="o">=</code><code class="mi">1</code><code class="p">,</code> <code class="n">max_calls</code><code class="o">=</code><code class="mi">1</code><code class="p">)</code>
+<code class="k">def</code> <code class="nf">do_serious_work</code><code class="p">():</code></pre></div>
+
+<p>One downside of restarting is that it removes your ability to reuse existing data in the GPU or accelerator. You can work around this by using long-lived actors in place of functions, but with the trade-off of locking up the resources in those <a data-primary="GPUs (graphics processing units)" data-secondary="requesting and releasing resources" data-startref="gpu-request-release" data-type="indexterm" id="idm45354762027136"/><a data-primary="accelerators" data-secondary="requesting and releasing resources" data-startref="accel-request-release" data-type="indexterm" id="idm45354762061872"/><a data-primary="requesting GPU resources" data-startref="request-resource" data-type="indexterm" id="idm45354762060784"/><a data-primary="releasing GPU resources" data-startref="release-resource" data-type="indexterm" id="idm45354762059872"/><a data-primary="resources, requesting and releasing" data-startref="resource-request-release" data-type="indexterm" id="idm45354762058928"/>actors.</p>
+</div></section>
+
+
+
+
+
+
+<section data-pdf-bookmark="Ray’s ML Libraries" data-type="sect1"><div class="sect1" id="idm45354762057792">
+<h1>Ray’s ML Libraries</h1>
+
+<p>You <a data-primary="GPUs (graphics processing units)" data-secondary="ML libraries with" data-type="indexterm" id="idm45354762056240"/><a data-primary="ML libraries, GPU usage" data-type="indexterm" id="idm45354762055264"/><a data-primary="libraries" data-secondary="ML libraries, GPU usage" data-type="indexterm" id="idm45354762054592"/>can also configure Ray’s built-in ML libraries to use GPUs. To have <a data-primary="Ray Train" data-type="indexterm" id="idm45354762053520"/>Ray Train launch PyTorch to use GPU resources for training, you need to set <code>use_gpu=True</code> in your <code>Trainer</code> constructor call, just as you configure the number of workers. Ray Tune gives you more flexibility <a data-primary="Ray Tune" data-type="indexterm" id="idm45354762051776"/>for resource requests, and you specify the resources in <code>tune.run</code>, using the same dictionary as you would in <code>ray.remote</code>. For example, to use two CPUs and one GPU per trial, you would call <code>tune.run(trainable, num_samples=10, resources_per_trial=\{"cpu": 2, "gpu": 2})</code>.</p>
+</div></section>
+
+
+
+
+
+
+<section data-pdf-bookmark="Autoscaler with GPUs and Accelerators" data-type="sect1"><div class="sect1" id="idm45354762004192">
+<h1>Autoscaler with GPUs and Accelerators</h1>
+
+<p>Ray’s autoscaler <a data-primary="autoscaler" data-secondary="with GPUs" data-type="indexterm" id="autoscaler-gpu"/><a data-primary="GPUs (graphics processing units)" data-secondary="with autoscaler" data-secondary-sortas="autoscaler" data-type="indexterm" id="gpu-autoscale"/><a data-primary="accelerators" data-secondary="with autoscaler" data-secondary-sortas="autoscaler" data-type="indexterm" id="accel-autoscale"/>has the ability to understand different types of nodes and chooses which node type to schedule based on the requested resources. This is especially important with GPUs, which tend to be more expensive (and in lower supply) than other resources. On our cluster, since we have only four nodes with GPUs, we configure the autoscaler <a href="https://oreil.ly/juA4y">as follows</a>:</p>
+
+<pre data-code-language="yaml" data-type="programlisting"><code class="nt">imagePullSecrets</code><code class="p">:</code><code class="w"> </code><code class="p-Indicator">[]</code><code class="w"/>
+<code class="c1"># In practice you _might_ want an official Ray image</code><code class="w"/>
+<code class="c1"># but this is for a bleeding-edge mixed arch cluster,</code><code class="w"/>
+<code class="c1"># which still is not fully supported by Ray's official</code><code class="w"/>
+<code class="c1"># wheels &amp; containers.</code><code class="w"/>
+<code class="nt">image</code><code class="p">:</code><code class="w"> </code><code class="l-Scalar-Plain">holdenk/ray-ray:nightly</code><code class="w"/>
+<code class="nt">operatorImage</code><code class="p">:</code><code class="w"> </code><code class="l-Scalar-Plain">holdenk/ray-ray:nightly</code><code class="w"/>
+<code class="nt">podTypes</code><code class="p">:</code><code class="w"/>
+<code class="w">  </code><code class="nt">rayGPUWorkerType</code><code class="p">:</code><code class="w"/>
+<code class="w">    </code><code class="nt">memory</code><code class="p">:</code><code class="w"> </code><code class="l-Scalar-Plain">10Gi</code><code class="w"/>
+<code class="w">    </code><code class="nt">maxWorkers</code><code class="p">:</code><code class="w"> </code><code class="l-Scalar-Plain">4</code><code class="w"/>
+<code class="w">    </code><code class="nt">minWorkers</code><code class="p">:</code><code class="w"> </code><code class="l-Scalar-Plain">1</code><code class="w"/>
+<code class="c1"># Normally you'd ask for a GPU but NV auto labeler is...funky on ARM</code><code class="w"/>
+<code class="w">    </code><code class="nt">CPU</code><code class="p">:</code><code class="w"> </code><code class="l-Scalar-Plain">1</code><code class="w"/>
+<code class="w">    </code><code class="nt">rayResources</code><code class="p">:</code><code class="w"/>
+<code class="w">      </code><code class="nt">CPU</code><code class="p">:</code><code class="w"> </code><code class="l-Scalar-Plain">1</code><code class="w"/>
+<code class="w">      </code><code class="nt">GPU</code><code class="p">:</code><code class="w"> </code><code class="l-Scalar-Plain">1</code><code class="w"/>
+<code class="w">      </code><code class="nt">memory</code><code class="p">:</code><code class="w"> </code><code class="l-Scalar-Plain">1000000000</code><code class="w"/>
+<code class="w">    </code><code class="nt">nodeSelector</code><code class="p">:</code><code class="w"/>
+<code class="w">      </code><code class="nt">node.kubernetes.io/gpu</code><code class="p">:</code><code class="w"> </code><code class="l-Scalar-Plain">gpu</code><code class="w"/>
+<code class="w">  </code><code class="nt">rayWorkerType</code><code class="p">:</code><code class="w"/>
+<code class="w">    </code><code class="nt">memory</code><code class="p">:</code><code class="w"> </code><code class="l-Scalar-Plain">10Gi</code><code class="w"/>
+<code class="w">    </code><code class="nt">maxWorkers</code><code class="p">:</code><code class="w"> </code><code class="l-Scalar-Plain">4</code><code class="w"/>
+<code class="w">    </code><code class="nt">minWorkers</code><code class="p">:</code><code class="w"> </code><code class="l-Scalar-Plain">1</code><code class="w"/>
+<code class="w">    </code><code class="nt">CPU</code><code class="p">:</code><code class="w"> </code><code class="l-Scalar-Plain">1</code><code class="w"/>
+<code class="w">  </code><code class="nt">rayHeadType</code><code class="p">:</code><code class="w"/>
+<code class="w">    </code><code class="nt">memory</code><code class="p">:</code><code class="w"> </code><code class="l-Scalar-Plain">3Gi</code><code class="w"/>
+<code class="w">    </code><code class="nt">CPU</code><code class="p">:</code><code class="w"> </code><code class="l-Scalar-Plain">1</code><code class="w"/></pre>
+
+<p>This way, the autoscaler can allocate containers without GPU resources, which allows Kubernetes to place those pods on CPU-only <a data-primary="autoscaler" data-secondary="with GPUs" data-startref="autoscaler-gpu" data-type="indexterm" id="idm45354761802176"/><a data-primary="GPUs (graphics processing units)" data-secondary="with autoscaler" data-secondary-sortas="autoscaler" data-startref="gpu-autoscale" data-type="indexterm" id="idm45354761843344"/><a data-primary="accelerators" data-secondary="with autoscaler" data-secondary-sortas="autoscaler" data-startref="accel-autoscale" data-type="indexterm" id="idm45354761841888"/>nodes.</p>
+</div></section>
+
+
+
+
+
+
+<section data-pdf-bookmark="CPU Fallback as a Design Pattern" data-type="sect1"><div class="sect1" id="idm45354761840016">
+<h1>CPU Fallback as a Design Pattern</h1>
+
+<p>Most of<a data-primary="GPUs (graphics processing units)" data-secondary="CPU fallback" data-type="indexterm" id="gpu-cpu-fallback"/><a data-primary="CPU fallback" data-type="indexterm" id="cpu-fallback"/> the high-level libraries that can be accelerated by GPUs also have CPU fallback. Ray does not have a built-in way of expressing the concept of CPU fallback, or “GPU if available.” In Ray, if you ask for a resource and the scheduler cannot find it, and the autoscaler cannot create an instance for it, the function or actor will block forever. With a bit of creativity, you can build your own CPU-fallback code in Ray.</p>
+
+<p>If you want to use GPU resources when the cluster has them and fall back to CPU, you’ll need to do a bit of extra work. The simplest way to determine whether a cluster has usable GPU resources is to ask Ray to run a remote task with a GPU and then set the resources based on this, as shown in <a data-type="xref" href="#cpu_fallback">Example 11-3</a>.</p>
+<div data-type="example" id="cpu_fallback">
+<h5><span class="label">Example 11-3. </span><a href="https://oreil.ly/xjpkD">Falling back to a CPU if no GPU exists</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="c1"># Function that requests a GPU</code>
+<code class="nd">@ray</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="n">num_gpus</code><code class="o">=</code><code class="mi">1</code><code class="p">)</code>
+<code class="k">def</code> <code class="nf">do_i_have_gpus</code><code class="p">():</code>
+    <code class="k">return</code> <code class="kc">True</code>
+
+<code class="c1"># Give it at most 4 minutes to see if we can get a GPU</code>
+<code class="c1"># We want to give the autoscaler some time to see if it can spin up</code>
+<code class="c1"># a GPU node for us.</code>
+<code class="n">futures</code> <code class="o">=</code> <code class="p">[</code><code class="n">do_i_have_gpus</code><code class="o">.</code><code class="n">remote</code><code class="p">()]</code>
+<code class="n">ready_futures</code><code class="p">,</code> <code class="n">rest_futures</code> <code class="o">=</code> <code class="n">ray</code><code class="o">.</code><code class="n">wait</code><code class="p">(</code><code class="n">futures</code><code class="p">,</code> <code class="n">timeout</code><code class="o">=</code><code class="mi">240</code><code class="p">)</code>
+
+<code class="n">resources</code> <code class="o">=</code> <code class="p">{</code><code class="s2">"num_cpus"</code><code class="p">:</code> <code class="mi">1</code><code class="p">}</code>
+<code class="c1"># If we have a ready future, we have a GPU node in our cluster</code>
+<code class="k">if</code> <code class="n">ready_futures</code><code class="p">:</code>
+    <code class="n">resources</code><code class="p">[</code><code class="s2">"num_gpus"</code><code class="p">]</code> <code class="o">=</code><code class="mi">1</code>
+
+<code class="c1"># "splat" the resources</code>
+<code class="nd">@ray</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="o">**</code> <code class="n">resources</code><code class="p">)</code>
+<code class="k">def</code> <code class="nf">optional_gpu_task</code><code class="p">():</code></pre></div>
+
+<p>Any libraries you use will also need to fall back to CPU-based code. If they don’t do so automatically (e.g., you have two different functions called depending on CPU versus GPU, like <code>mul_two_cuda</code> and <code>mul_two_np</code>), you can pass through a Boolean indicating whether the cluster has GPUs.</p>
+<div data-type="warning" epub:type="warning"><h6>Warning</h6>
+<p>This can still result in failures on GPU clusters if GPU resources are not properly released. Ideally, you should fix the GPU release issue, but on a multitenant cluster, that may not be an option. You can also do try/except with acquiring the GPU inside each <a data-primary="GPUs (graphics processing units)" data-secondary="CPU fallback" data-startref="gpu-cpu-fallback" data-type="indexterm" id="idm45354761756992"/><a data-primary="CPU fallback" data-startref="cpu-fallback" data-type="indexterm" id="idm45354761755776"/>function.</p>
+</div>
+</div></section>
+
+
+
+
+
+
+<section data-pdf-bookmark="Other (Non-GPU) Accelerators" data-type="sect1"><div class="sect1" id="idm45354761754448">
+<h1>Other (Non-GPU) Accelerators</h1>
+
+<p>While much<a data-primary="accelerators" data-secondary="non-GPU" data-type="indexterm" id="idm45354761753152"/> of this chapter has focused on GPU accelerators, the same general techniques apply to other kinds of hardware acceleration. For example, Numba<a data-primary="Numba" data-type="indexterm" id="idm45354761752016"/> is able to take advantage of special CPU features, and TensorFlow <a data-primary="TensorFlow" data-type="indexterm" id="idm45354761751216"/><a data-primary="TPUs (Tensor Processing Units)" data-type="indexterm" id="idm45354761750544"/><a data-primary="Tensor Processing Units (TPUs)" data-type="indexterm" id="idm45354761749904"/>can take advantage of Tensor Processing Units (TPUs). In some cases, resources may not require a code change but instead simply offer faster performance with the same APIs, like machines with Non-Volatile Memory Express (NVMe) drives. In all of those cases, you can configure your autoscaler to tag and make these resources available in much the same way as GPUs.</p>
+</div></section>
+
+
+
+
+
+
+<section data-pdf-bookmark="Conclusion" data-type="sect1"><div class="sect1" id="idm45354761697008">
+<h1>Conclusion</h1>
+
+<p>GPUs are a wonderful tool to accelerate certain types of workflows on Ray. While Ray itself doesn’t have hooks for accelerating your code with GPUs, it integrates well with the various libraries that you can use for GPU computation. Many of these libraries were not created with shared computation in mind, so it’s important to be on the lookout for accidental resource leaks, especially since GPU resources tend to be more expensive.</p>
+</div></section>
+<div data-type="footnotes"><p data-type="footnote" id="idm45354762212512"><sup><a href="ch11.html#idm45354762212512-marker">1</a></sup> Another one of the top use cases has been cryptocurrency mining, but you don’t need a system like  <span class="keep-together">Ray for that.</span> Cryptomining with GPUs has led to increased demand, with many cards selling above  <span class="keep-together">list price, and</span> NVIDIA has been <a href="https://oreil.ly/tG6qH">attempting to discourage cryptocurrency mining with its latest GPUs</a>.</p></div></div></section></body></html>

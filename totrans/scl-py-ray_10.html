@@ -1,0 +1,856 @@
+<html><head></head><body><section data-pdf-bookmark="Chapter 9. Advanced Data with Ray" data-type="chapter" epub:type="chapter"><div class="chapter" id="ch09">
+<h1><span class="label">Chapter 9. </span>Advanced Data with Ray</h1>
+
+
+<p>Despite, or perhaps because of, data ecosystems’ rapid advances, you will likely end up needing to use multiple tools as part of your data pipeline. Ray Datasets allows data sharing among tools in the data and ML ecosystems. This allows you to switch tools without having to copy or move data. <a data-primary="Ray Datasets" data-seealso="datasets" data-type="indexterm" id="idm45354767757056"/><a data-primary="datasets" data-seealso="Ray Datasets" data-type="indexterm" id="idm45354767756080"/>Ray Datasets supports Spark, Modin, Dask, and Mars and can also be used with ML tools like TensorFlow. You can also use Arrow with Ray to allow more tools to work on top of Datasets, such as R or even MATLAB. Ray Datasets act as a common format for all steps of your ML pipeline, simplifying legacy pipelines.</p>
+
+<p>It all boils down to this: you can use the same dataset in multiple tools without worrying about the details. Internally, many of these tools have their own formats, but Ray and Arrow manage the translations transparently.</p>
+
+<p>In addition to simplifying your use of different tools, Ray also has a growing collection of built-in operations for Datasets. These built-in operations are being actively developed and are not intended to be as full-featured as those of the data tools built on top of Ray.</p>
+<div data-type="tip"><h6>Tip</h6>
+<p>As covered in <a data-type="xref" href="ch05.html#ray_objects">“Ray Objects”</a>, Ray Datasets’ default behavior may be different than you expect. You can enable object recovery by setting <code>enable_object_reconstruction=True</code> in <code>ray.init</code> to make Ray Datasets more resilient.</p>
+</div>
+
+<p>Ray Datasets continues to be an area of active development, including large feature additions between minor releases, and more functionality likely will be added by the time you are reading this chapter. Regardless, the fundamental principles of partitioning and multitool interoperability will remain the same.</p>
+
+
+
+
+
+
+<section data-pdf-bookmark="Creating and Saving Ray Datasets" data-type="sect1"><div class="sect1" id="idm45354767750704">
+<h1>Creating and Saving Ray Datasets</h1>
+
+<p>As <a data-primary="datasets" data-secondary="creating" data-type="indexterm" id="dataset-create2"/><a data-primary="loading data" data-type="indexterm" id="load-data"/>you saw in <a data-type="xref" href="ch02.html#ds_hello">Example 2-9</a>, you can create datasets from local collections by calling <code>ray.data.from_items</code>. However, local collections naturally limit the scope of data that you can handle, so Ray supports many other options.</p>
+<aside data-type="sidebar" epub:type="sidebar"><div class="sidebar" id="idm45354767745200">
+<h5>Apache Arrow</h5>
+<p>Apache Arrow <a data-primary="Apache Arrow" data-secondary="components of" data-type="indexterm" id="idm45354767743872"/><a data-primary="Arrow" data-secondary="components of" data-type="indexterm" id="idm45354767742864"/>defines a language-independent columnar memory format for flat and hierarchical data. The key components of Arrow include the following:</p>
+
+<ul>
+<li>
+<p>Rich datatype sets covering both SQL and JSON types, such as <code>int</code>, <code>BigInt</code>, <code>decimal</code>, <code>varchar</code>, <code>map</code>, <code>struct</code>, and <code>array</code></p>
+</li>
+<li>
+<p>Columnar in-memory representations allowing you to support an arbitrarily complex record structure built on top of the defined data types</p>
+</li>
+<li>
+<p>Support for data structures including picklists (which are like enums), hash tables, and queues</p>
+</li>
+<li>
+<p>Use of shared memory, TCP/IP, and remote direct memory access (RDMA) for interprocess data exchange</p>
+</li>
+<li>
+<p>Data libraries used for reading and writing columnar data in multiple languages, including Java, C++, Python, Ruby, Rust, Go, and JavaScript</p>
+</li>
+<li>
+<p>Algorithms for various operations including bitmap selection, hashing, filtering, bucketing, sorting, and matching</p>
+</li>
+<li>
+<p>Increased efficiency of memory use through columnar in-memory compression</p>
+</li>
+<li>
+<p>Memory persistence tools for short-term persistence through nonvolatile memory, SSD, or HDD</p>
+</li>
+</ul>
+</div></aside>
+
+<p>Ray uses <a href="https://oreil.ly/GY0at">Arrow</a> to load external data into Datasets, which support multiple file formats and filesystems. The formats, at present, are CSV, JSON, Parquet, NumPy, text, and raw binary. The functions for loading data follow the <code>read_[<em>format</em>]</code> pattern and are in the <code>ray.data</code> module, as shown in <a data-type="xref" href="#load_csv_local_fs">Example 9-1</a>.</p>
+<div data-type="example" id="load_csv_local_fs">
+<h5><span class="label">Example 9-1. </span><a href="https://oreil.ly/HP05n">Loading local data</a></h5>
+
+<pre data-code-language="python" data-type="programlisting">    <code class="n">ds</code> <code class="o">=</code> <code class="n">ray</code><code class="o">.</code><code class="n">data</code><code class="o">.</code><code class="n">read_csv</code><code class="p">(</code>
+        <code class="s2">"2021"</code><code class="p">,</code>
+        <code class="n">partition_filter</code><code class="o">=</code><code class="kc">None</code> <code class="c1"># Since the file doesn't end in .csv</code>
+    <code class="p">)</code>                   </pre></div>
+
+<p>When loading, you can specify a target <code>parallelism</code>, but Ray may be limited by the number of files being loaded. Picking a good value for your target parallelism is complicated and depends on numerous factors. You want to ensure that your data can fit easily in memory and take advantage of all of the machines in your cluster, while also not picking a number so high that the overhead of launching individual tasks exceeds the benefits. Generally, parallelism resulting in splits between hundreds of megabytes to tens of gigabytes is often considered a sweet spot.</p>
+<div data-type="tip"><h6>Tip</h6>
+<p>If you wish to customize the way Arrow loads your data, you can pass additional arguments, like <code>compression</code> or <code>buffer_size</code>, to Arrow through the <code>arrow_open_stream_args</code> parameter.</p>
+</div>
+
+<p>Arrow has built-in native (fast) support for S3, HDFS, and regular filesystems. Ray automatically selects the correct built-in filesystem driver based on the path.</p>
+<div data-type="warning" epub:type="warning"><h6>Warning</h6>
+<p>When loading from a local filesystem, it is up to you to ensure that the file is available on all of the workers when running in distributed mode.</p>
+</div>
+
+<p>Arrow, and by extension Ray, also uses <a href="https://oreil.ly/Tz32F"><code>fsspec</code></a>, which supports a wider array of filesystems, including HTTPS (when aiohttp is installed). Unlike with the “built-in” filesystems, you need to manually specify the filesystem, as shown in <a data-type="xref" href="#ex_load_from_https">Example 9-2</a>.</p>
+<div data-type="example" id="ex_load_from_https">
+<h5><span class="label">Example 9-2. </span><a href="https://oreil.ly/HP05n">Loading data over HTTPS</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="n">fs</code> <code class="o">=</code> <code class="n">fsspec</code><code class="o">.</code><code class="n">filesystem</code><code class="p">(</code><code class="s1">'https'</code><code class="p">)</code>
+<code class="n">ds</code> <code class="o">=</code> <code class="n">ray</code><code class="o">.</code><code class="n">data</code><code class="o">.</code><code class="n">read_csv</code><code class="p">(</code>
+    <code class="s2">"https://https://gender-pay-gap.service.gov.uk/viewing/download-data/2021"</code><code class="p">,</code>
+    <code class="n">filesystem</code><code class="o">=</code><code class="n">fs</code><code class="p">,</code>
+    <code class="n">partition_filter</code><code class="o">=</code><code class="kc">None</code> <code class="c1"># Since the file doesn't end in .csv</code>
+    <code class="p">)</code></pre></div>
+<div data-type="warning" epub:type="warning"><h6>Warning</h6>
+<p>At present, the protocol is incorrectly stripped off, so you need to put it in twice. For example, when loading data from an HTTPS website, you would load from <code>https://https://[someurlhere].com</code>.</p>
+</div>
+
+<p>Ray has the ability to write in all the formats it can read from. The writing functions, like the reading functions, follow a pattern of <code>write_[<em>format</em>]</code>. A few minor differences exist between the read path and the write path. Instead of taking in a <code>parallelism</code> parameter, the write path always writes with the parallelism of the input dataset:</p>
+
+<pre data-code-language="python" data-type="programlisting"><code class="n">word_count</code><code class="o">.</code><code class="n">write_csv</code><code class="p">(</code><code class="s2">"s3://ray-demo/wc"</code><code class="p">)</code></pre>
+
+<p>If Ray does not have I/O support for your desired format or filesystem, you should check to see whether any of the other tools that Ray supports does. Then, as covered in the next section, you can convert your dataset from/to the desired<a data-primary="datasets" data-secondary="creating" data-startref="dataset-create2" data-type="indexterm" id="idm45354767578272"/><a data-primary="loading data" data-startref="load-data" data-type="indexterm" id="idm45354767577184"/> tool.</p>
+</div></section>
+
+
+
+
+
+
+<section data-pdf-bookmark="Using Ray Datasets with Different Tools" data-type="sect1"><div class="sect1" id="idm45354767750080">
+<h1>Using Ray Datasets with Different Tools</h1>
+
+<p>Ray has<a data-primary="datasets" data-secondary="setting up for usage" data-type="indexterm" id="dataset-setup"/> built-in tooling to share data among the various data tools running on Ray. Most of these tools have their own internal representations of the data, but Ray handles converting the data as needed. Before you first use a dataset with Spark or Dask, you need to run a bit of setup code so that they delegate their execution to Ray, as<a data-primary="Dask" data-secondary="setting up" data-type="indexterm" id="idm45354767637152"/> shown in Examples <a data-type="xref" data-xrefstyle="select:labelnumber" href="#ex_setup_dask">9-3</a> and <a data-type="xref" data-xrefstyle="select:labelnumber" href="#ex_setup_spark">9-4</a>.</p>
+<div data-type="example" id="ex_setup_dask">
+<h5><span class="label">Example 9-3. </span><a href="https://oreil.ly/HP05n">Setting up Dask on Ray</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="kn">from</code> <code class="nn">ray.util.dask</code> <code class="kn">import</code> <code class="n">enable_dask_on_ray</code><code class="p">,</code> <code class="n">disable_dask_on_ray</code>
+<code class="n">enable_dask_on_ray</code><code class="p">()</code> <code class="c1"># Routes all Dask calls through the Ray scheduler</code></pre></div>
+<div data-type="example" id="ex_setup_spark">
+<h5><span class="label">Example 9-4. </span><a href="https://oreil.ly/HP05n">Setting up Dask on Spark</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="kn">import</code> <code class="nn">raydp</code>
+<code class="n">spark</code> <code class="o">=</code> <code class="n">raydp</code><code class="o">.</code><code class="n">init_spark</code><code class="p">(</code>
+  <code class="n">app_name</code> <code class="o">=</code> <code class="s2">"sleepy"</code><code class="p">,</code>
+  <code class="n">num_executors</code> <code class="o">=</code> <code class="mi">2</code><code class="p">,</code>
+  <code class="n">executor_cores</code> <code class="o">=</code> <code class="mi">1</code><code class="p">,</code>
+  <code class="n">executor_memory</code> <code class="o">=</code> <code class="s2">"2GB"</code>
+<code class="p">)</code></pre></div>
+
+<p>As with functions for reading and loading datasets, transfer-to-Ray functions are defined on the <code>ray.data</code> module and follow the <code>from_[<em>x</em>]</code> pattern, where <code>[<em>x</em>]</code> is the tool name. Similar to writing data, we convert datasets to a tool with a <code>to_[<em>x</em>]</code> function defined on the dataset, where <code>[<em>x</em>]</code> is the tool name. <a data-type="xref" href="#raydataset0905">Example 9-5</a> shows how to use this pattern to convert a Ray dataset into a Dask DataFrame.</p>
+<div data-type="note" epub:type="note"><h6>Note</h6>
+<p>Datasets do not use Ray’s runtime environments for dependencies, so you must have your desired tools installed in your worker image; see <a data-type="xref" href="app02.html#appB">Appendix B</a>. This is more involved for Spark, as it requires the Java Virtual Machine (JVM) and other non-Python components.</p>
+</div>
+<div data-type="example" id="raydataset0905">
+<h5><span class="label">Example 9-5. </span><a href="https://oreil.ly/HP05n">Ray dataset in Dask</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="n">dask_df</code> <code class="o">=</code> <code class="n">ds</code><code class="o">.</code><code class="n">to_dask</code><code class="p">()</code></pre></div>
+
+<p>You are not limited to the tools that are built into Ray. If you have a new tool that supports Arrow, and you are using <a href="https://oreil.ly/qNbFA">Arrow-supported types</a>, <code>to_arrow_refs</code> gives you a zero-copy Arrow representation of your dataset. You can then use this list of Ray Arrow objects to pass into your tool, whether for model training or any other purpose. You will learn more about this in <a data-type="xref" href="#builtinRayDSops">“Using Built-in Ray Dataset Operations”</a>.</p>
+
+<p>Many tools and languages can be connected with Arrow and Ray, including:</p>
+
+<ul>
+<li>
+<p><a href="https://oreil.ly/o2m4s">Apache Spark</a></p>
+</li>
+<li>
+<p><a href="https://oreil.ly/tqbJY">Dask</a></p>
+</li>
+<li>
+<p><a href="https://oreil.ly/Mj0N8">Apache Parquet</a></p>
+</li>
+<li>
+<p><a href="https://oreil.ly/uSMt5">Modin</a></p>
+</li>
+<li>
+<p><a href="https://oreil.ly/oX5FO">pandas</a></p>
+</li>
+<li>
+<p><a href="https://oreil.ly/7sweI">TensorFlow</a></p>
+</li>
+<li>
+<p><a href="https://oreil.ly/41btG">R</a></p>
+</li>
+<li>
+<p><a href="https://oreil.ly/shYH5">JSON</a></p>
+</li>
+<li>
+<p><a href="https://oreil.ly/tqqR2">MATLAB</a></p>
+</li>
+</ul>
+<div data-type="tip"><h6>Tip</h6>
+<p>Dask and Spark both have non-DataFrame collections—bags, arrays, and resilient distributed datasets (RDDs)—that cannot be converted with <a data-primary="datasets" data-secondary="setting up for usage" data-startref="dataset-setup" data-type="indexterm" id="idm45354767442480"/>these APIs.</p>
+</div>
+</div></section>
+
+
+
+
+
+
+<section data-pdf-bookmark="Using Tools on Ray Datasets" data-type="sect1"><div class="sect1" id="idm45354767575520">
+<h1>Using Tools on Ray Datasets</h1>
+
+<p>This section <a data-primary="pandas" data-secondary="resources for information" data-type="indexterm" id="idm45354767439152"/><a data-primary="Spark" data-secondary="resources for information" data-type="indexterm" id="idm45354767438208"/><a data-primary="Apache Spark" data-secondary="resources for information" data-type="indexterm" id="idm45354767437264"/>assumes you have a good understanding of the data-wrangling tools you’re going to use with Ray—either pandas or Spark. Pandas is ideal for users scaling Python analytics, and Spark is well suited for users connecting to big data tools. If you’re not familiar with the pandas APIs, you should check out <a class="orm:hideurl" href="https://oreil.ly/IoSNu"><em>Python for Data Analysis</em></a> by Wes McKinney (O’Reilly). New Spark users should check out <a class="orm:hideurl" href="https://oreil.ly/wmypt"><em>Learning Spark</em></a> by Jules Damji et al. (O’Reilly). If you want to go super deep, Holden recommends <a class="orm:hideurl" href="https://oreil.ly/lyZ99"><em>High Performance Spark</em></a> by Holden and Rachel Warren (O’Reilly).<sup><a data-type="noteref" href="ch09.html#idm45354767432992" id="idm45354767432992-marker">1</a></sup></p>
+<aside data-type="sidebar" epub:type="sidebar"><div class="sidebar" id="basic_partitioning">
+<h5>Partitioning</h5>
+<p><em>Partitioning</em> gives <a data-primary="partitioning" data-type="indexterm" id="idm45354767430528"/><a data-primary="Ray Datasets" data-secondary="partitioning with" data-type="indexterm" id="idm45354767429792"/>you the ability to control the number of tasks used to process your data. If you have billions of rows, using a single task to process it can take forever. On the other hand, using one task for each row would require more time for scheduling the tasks than the work itself. As a result, proper data partitioning is one of the fundamental requirements for its efficient processing.</p>
+
+<p>Using Ray Datasets allows you to efficiently split your data into partitions or chunks so that you can parallelize computation while keeping the overhead of scheduling a task at an acceptable level. As the number of partitions increases, the maximum parallelism increases but so does the scheduling and communication overhead.</p>
+</div></aside>
+
+
+
+
+
+
+
+
+<section data-pdf-bookmark="pandas-like DataFrames with Dask" data-type="sect2"><div class="sect2" id="idm45354767428080">
+<h2>pandas-like DataFrames with Dask</h2>
+
+<p><a href="https://oreil.ly/ylNqR">Dask</a> on Ray<a data-primary="Dask" data-type="indexterm" id="dask"/><a data-primary="DataFrames" data-secondary="in Dask" data-secondary-sortas="Dask" data-type="indexterm" id="dataframe-dask"/><a data-primary="datasets" data-secondary="with Dask" data-secondary-sortas="Dask" data-type="indexterm" id="dataset-dask"/><a data-primary="pandas" data-seealso="Dask; DataFrames" data-type="indexterm" id="idm45354767422064"/> is an excellent choice for data preparation for ML, or scaling existing pandas code. Many initial Dask developers also worked on pandas, leading to a comparatively solid distributed pandas interface.</p>
+<div data-type="note" epub:type="note"><h6>Note</h6>
+<p>Portions of this section are based on the DataFrame chapter in <a class="orm:hideurl" href="https://oreil.ly/Fk0I6"><em>Scaling Python with Dask</em></a>.</p>
+</div>
+<aside data-type="sidebar" epub:type="sidebar"><div class="sidebar" id="idm45354767418640">
+<h5>Dask</h5>
+<p><em>Dask</em> is a <a data-primary="Dask" data-secondary="components of" data-type="indexterm" id="idm45354767417056"/>parallel computing library that scales the existing Python ecosystem. ​​You can think of Dask at a high and a low level:</p>
+<dl>
+<dt>High-level collections</dt>
+<dd>
+<p>Dask provides high-level <code>Array</code>, <code>Bag</code>, and <code>DataFrame</code> collections that mimic NumPy, lists, and pandas but can operate in parallel on datasets that don’t fit into memory. Dask’s high-level collections are alternatives to NumPy and pandas for large datasets.</p>
+</dd>
+<dt>Low-level schedulers</dt>
+<dd>
+<p>Dask provides dynamic task schedulers that execute task graphs in parallel. These execution engines power the high-level collections but can also power custom, user-defined workloads.</p>
+</dd>
+</dl>
+
+<p>Here we focus on Dask’s high-level DataFrame collection as Ray has its own tech­ni⁠ques for low-level scheduling.</p>
+</div></aside>
+
+<p>Dask on Ray benefits from using Ray’s per node/container shared memory storage for data. This is especially important when doing operations like broadcast joins; in Dask the same data will need to be stored in each worker process.<sup><a data-type="noteref" href="ch09.html#idm45354767410480" id="idm45354767410480-marker">2</a></sup> However, in Ray, it needs to be stored only once per node or container.</p>
+<div data-type="warning" epub:type="warning"><h6>Warning</h6>
+<p>Unlike Ray, Dask is generally lazy, meaning it does not evaluate data until forced. This can make debugging a challenge as errors may appear several lines removed from their root cause.</p>
+</div>
+
+<p>Most of the distributed components of Dask’s DataFrames use the three core building blocks <code>map_partitions</code>, <code>reduction</code>, and <code>rolling</code>. You mostly won’t need to call these functions directly; instead, you will use higher-level APIs, but understanding them and how they work is important to understanding how Dask works. <code>shuffle</code> is a critical building block of distributed DataFrames for reorganizing your data. Unlike the other building blocks, you may use it directly more frequently as Dask is unable to abstract away<a data-primary="Dask" data-startref="dask" data-type="indexterm" id="idm45354767406208"/><a data-primary="DataFrames" data-secondary="in Dask" data-secondary-sortas="Dask" data-startref="dataframe-dask" data-type="indexterm" id="idm45354767405232"/><a data-primary="datasets" data-secondary="with Dask" data-secondary-sortas="Dask" data-startref="dataset-dask" data-type="indexterm" id="idm45354767403744"/> partitioning.</p>
+</div></section>
+
+
+
+
+
+
+
+
+<section data-pdf-bookmark="Indexing" data-type="sect2"><div class="sect2" id="idm45354767402128">
+<h2>Indexing</h2>
+
+<p>Indexing <a data-primary="Dask" data-secondary="indexing" data-type="indexterm" id="idm45354767400624"/><a data-primary="DataFrames" data-secondary="in Dask" data-secondary-sortas="Dask" data-tertiary="indexing" data-type="indexterm" id="idm45354767399616"/><a data-primary="datasets" data-secondary="with Dask" data-secondary-sortas="Dask" data-tertiary="indexing" data-type="indexterm" id="idm45354767398128"/><a data-primary="indexing" data-type="indexterm" id="idm45354767396640"/>into a DataFrame is one of the powerful features of pandas, but comes with some restrictions when moving into a distributed system like Dask. Since Dask does not, by default, track the size of each partition, positional indexing by row is not supported. You can use positional indexing into columns, as well as label indexing for columns or rows.</p>
+
+<p>Indexing is frequently used to filter data to have only the components you need. We did this for San Francisco COVID-19 data by looking at just the case rates for people of all vaccine statuses, as shown in <a data-type="xref" href="#index_covid_data">Example 9-6</a>.</p>
+<div data-type="example" id="index_covid_data">
+<h5><span class="label">Example 9-6. </span><a href="https://oreil.ly/IJaQ2">Dask DataFrame indexing</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="n">mini_sf_covid_df</code> <code class="o">=</code> <code class="n">sf_covid_df</code><code class="p">[</code> <code class="n">sf_covid_df</code><code class="p">[</code><code class="s1">'vaccination_status'</code><code class="p">]</code> <code class="o">==</code> 
+  <code class="s1">'All'</code><code class="p">][[</code><code class="s1">'specimen_collection_date'</code><code class="p">,</code> <code class="s1">'new_cases'</code><code class="p">]]</code></pre></div>
+
+<p>If you truly need positional indexing by row, you can implement your own by computing the size of each partition and using this to select the desired partition subsets. This is very inefficient, so Dask avoids implementing directly so you make an intentional choice before doing this.</p>
+</div></section>
+
+
+
+
+
+
+
+
+<section data-pdf-bookmark="Shuffles" data-type="sect2"><div class="sect2" id="idm45354767387904">
+<h2>Shuffles</h2>
+
+<p>As <a data-primary="Dask" data-secondary="shuffles" data-type="indexterm" id="idm45354767386528"/><a data-primary="DataFrames" data-secondary="in Dask" data-secondary-sortas="Dask" data-tertiary="shuffles" data-type="indexterm" id="idm45354767366288"/><a data-primary="datasets" data-secondary="with Dask" data-secondary-sortas="Dask" data-tertiary="shuffles" data-type="indexterm" id="idm45354767364800"/><a data-primary="shuffles" data-type="indexterm" id="idm45354767363312"/>mentioned in the previous chapter, shuffles are expensive. The primary causes of the expensive nature of shuffles are the comparative slowness of network speed (relative to to reading data from memory) and serialization overhead. These costs scale as the amount of data being shuffled increases, so Dask has techniques to reduce the amount of data being shuffled. These techniques depend on certain data properties or on the operation being performed.</p>
+<div data-type="note" epub:type="note"><h6>Note</h6>
+<p>While understanding shuffles is important for performance, feel free to skip this section if your code is working well enough.</p>
+</div>
+
+
+
+
+
+
+
+
+
+
+<section data-pdf-bookmark="Rolling windows and map_overlap" data-type="sect3"><div class="sect3" id="rollingWindowsMapOL">
+<h3>Rolling windows and map_overlap</h3>
+
+<p>One <a data-primary="Dask" data-secondary="rolling windows" data-type="indexterm" id="idm45354767359248"/><a data-primary="DataFrames" data-secondary="in Dask" data-secondary-sortas="Dask" data-tertiary="rolling windows" data-type="indexterm" id="idm45354767358240"/><a data-primary="datasets" data-secondary="with Dask" data-secondary-sortas="Dask" data-tertiary="rolling windows" data-type="indexterm" id="idm45354767356752"/><a data-primary="rolling windows" data-type="indexterm" id="idm45354767355264"/><a data-primary="map_overlap function" data-type="indexterm" id="idm45354767354592"/>situation that can trigger the need for a shuffle is a rolling window, where at the edges of a partition your function needs some records from its neighbors. A Dask DataFrame has a special <code>map_overlap</code> function in which you can specify a <em>look-after</em> window (also called a <em>look-ahead</em> window) and a <em>look-before</em> window (also called a <em>look-back</em> window) of rows to transfer (either an integer or a time delta). The simplest example taking advantage of this is a rolling average, shown in <a data-type="xref" href="#rolling_date_ex">Example 9-7</a>.</p>
+<div data-type="example" id="rolling_date_ex">
+<h5><span class="label">Example 9-7. </span><a href="https://oreil.ly/IJaQ2">Dask DataFrame rolling average</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="k">def</code> <code class="nf">process_overlapped</code><code class="p">(</code><code class="n">df</code><code class="p">):</code>
+     <code class="n">df</code><code class="o">.</code><code class="n">rolling</code><code class="p">(</code><code class="s1">'5D'</code><code class="p">)</code><code class="o">.</code><code class="n">mean</code><code class="p">()</code>
+<code class="n">rolling_avg</code> <code class="o">=</code> <code class="n">partitioned_df</code><code class="o">.</code><code class="n">map_overlap</code><code class="p">(</code><code class="n">process_overlapped</code><code class="p">,</code> <code class="n">pd</code><code class="o">.</code><code class="n">Timedelta</code><code class="p">(</code><code class="s1">'5D'</code><code class="p">),</code> <code class="mi">0</code><code class="p">)</code></pre></div>
+
+<p>Using <code>map_overlap</code> allows Dask to transfer only the data needed. For this implementation to work correctly, your minimum partition size needs to be larger than your largest window.</p>
+<div data-type="warning" epub:type="warning"><h6>Warning</h6>
+<p>Dask’s rolling windows will not cross multiple partitions. If your DataFrame is partitioned in such a way that the look-after or look-back is greater than the length of the neighbor’s partition, the results will either fail or be incorrect. Dask validates this for timedelta look-afters, but no such checks are performed for look-backs or integer look-afters.</p>
+</div>
+</div></section>
+
+
+
+
+
+
+
+
+
+
+<section data-pdf-bookmark="Aggregations" data-type="sect3"><div class="sect3" id="idm45354767273136">
+<h3>Aggregations</h3>
+
+<p>Aggregations <a data-primary="Dask" data-secondary="aggregations" data-type="indexterm" id="dask-aggregations"/><a data-primary="DataFrames" data-secondary="in Dask" data-secondary-sortas="Dask" data-tertiary="aggregations" data-type="indexterm" id="dataframe-dask-aggregations"/><a data-primary="datasets" data-secondary="with Dask" data-secondary-sortas="Dask" data-tertiary="aggregations" data-type="indexterm" id="dataset-dask-aggregations"/><a data-primary="aggregations" data-secondary="in Dask" data-secondary-sortas="Dask" data-type="indexterm" id="aggregations"/>are another special case that can reduce the amount of data that needs to be transferred over the network. Aggregations are functions that combine records. If you are coming from a map/reduce or Spark background, <code>reduceByKey</code> is the classic aggregation. Aggregations can either be <em>by key</em> or global across an entire DataFrame.</p>
+
+<p>To aggregate by key, you first need to call <code>groupby</code> with the column(s) representing the key, or the keying function to aggregate on. For example, calling <code>df.groupby("PostCode")</code> groups your DataFrame by postal code, or calling <code>df.groupby(["PostCode", "SicCodes"])</code> uses a combination of columns for grouping. Function-wise, many of the same pandas aggregates are available, but the performance of aggregates in Dask are very different than with local pandas DataFrames.</p>
+<div data-type="tip"><h6>Tip</h6>
+<p>If you’re aggregating by partition key, Dask can compute the aggregation without needing a shuffle.</p>
+</div>
+
+<p>The first way to speed up your aggregations is to reduce the columns that you are aggregating on, since the fastest data to process is no data. Finally, when possible, doing multiple aggregations at the same time reduces the number of times the same data needs to be shuffled. Therefore, you need to compute the average and the max, you should compute both at the same time, as shown in <a data-type="xref" href="#max_mean">Example 9-8</a>.</p>
+<div class="example-margin-5" data-type="example" id="max_mean">
+<h5><span class="label">Example 9-8. </span><a href="https://oreil.ly/IJaQ2">Computing a Dask DataFrame max and mean together</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="n">dask</code><code class="o">.</code><code class="n">compute</code><code class="p">(</code>
+    <code class="n">raw_grouped</code><code class="p">[[</code><code class="s2">"new_cases"</code><code class="p">]]</code><code class="o">.</code><code class="n">max</code><code class="p">(),</code>
+    <code class="n">raw_grouped</code><code class="p">[[</code><code class="s2">"new_cases"</code><code class="p">]]</code><code class="o">.</code><code class="n">mean</code><code class="p">())</code></pre></div>
+
+<p>For distributed systems like Dask, if an aggregation can be partially evaluated and then merged, you can potentially combine some records pre-shuffle. Not all partial aggregations are created equal. What matters with partial aggregations is the amount of data reduced when merging values with the same key, as compared to the storage space used by the original multiple values.</p>
+
+<p class="pagebreak-after">The most efficient aggregations take a sublinear amount of space regardless of the number of records. Some of these can take constant space such as sum, count, first, minimum, maximum, mean, and standard deviation. More complicated tasks, like quantiles and distinct counts, also have sublinear approximation options. These approximation options can be great, as exact answers can require linear growth in storage.</p>
+
+<p>Some aggregation functions are not sublinear in growth, but “tend to” or “might” not grow too quickly. Counting the distinct values is in this group, but if all your values are unique, there is no space-saving.</p>
+
+<p>To take advantage of efficient aggregations, you need to use a built-in aggregation from Dask, or write your own using Dask’s aggregation class. Whenever you can, use a built-in. Built-ins not only require less effort but also are often faster. Not all of the pandas aggregates are directly supported in Dask, so sometimes your only choice is to write your own aggregate.</p>
+
+<p>If you choose to write your own aggregate, you have three functions to define: <code>chunk</code> for handling each group-partition/chunk, <code>agg</code> to combine the results of <code>chunk</code> between partitions, and (optionally) <code>finalize</code> to take the result of <code>agg</code> and produce a final value.</p>
+
+<p>The fastest way to understand how to use partial aggregation is by looking at an example that uses all three functions. Using weighted average in <a data-type="xref" href="#weight_avg">Example 9-9</a> can help you think of what is needed for each function. The first function needs to compute the weighted values and the weights. The <code>agg</code> function combines these by summing each side part of the tuple. Finally, the <code>finalize</code> function divides the total by the weights.</p>
+<div data-type="example" id="weight_avg">
+<h5><span class="label">Example 9-9. </span><a href="https://oreil.ly/IJaQ2">Dask custom aggregate</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="c1"># Write a custom weighted mean, we get either a DataFrameGroupBy with</code>
+<code class="c1"># multiple columns or SeriesGroupBy for each chunk</code>
+<code class="k">def</code> <code class="nf">process_chunk</code><code class="p">(</code><code class="n">chunk</code><code class="p">):</code>
+    <code class="k">def</code> <code class="nf">weighted_func</code><code class="p">(</code><code class="n">df</code><code class="p">):</code>
+        <code class="k">return</code> <code class="p">(</code><code class="n">df</code><code class="p">[</code><code class="s2">"EmployerSize"</code><code class="p">]</code> <code class="o">*</code> <code class="n">df</code><code class="p">[</code><code class="s2">"DiffMeanHourlyPercent"</code><code class="p">])</code><code class="o">.</code><code class="n">sum</code><code class="p">()</code>
+    <code class="k">return</code> <code class="p">(</code><code class="n">chunk</code><code class="o">.</code><code class="n">apply</code><code class="p">(</code><code class="n">weighted_func</code><code class="p">),</code> <code class="n">chunk</code><code class="o">.</code><code class="n">sum</code><code class="p">()[</code><code class="s2">"EmployerSize"</code><code class="p">])</code>
+        
+<code class="k">def</code> <code class="nf">agg</code><code class="p">(</code><code class="n">total</code><code class="p">,</code> <code class="n">weights</code><code class="p">):</code>
+    <code class="k">return</code> <code class="p">(</code><code class="n">total</code><code class="o">.</code><code class="n">sum</code><code class="p">(),</code> <code class="n">weights</code><code class="o">.</code><code class="n">sum</code><code class="p">())</code>
+
+<code class="k">def</code> <code class="nf">finalize</code><code class="p">(</code><code class="n">total</code><code class="p">,</code> <code class="n">weights</code><code class="p">):</code>
+    <code class="k">return</code> <code class="n">total</code> <code class="o">/</code> <code class="n">weights</code>
+    
+<code class="n">weighted_mean</code> <code class="o">=</code> <code class="n">dd</code><code class="o">.</code><code class="n">Aggregation</code><code class="p">(</code>
+    <code class="n">name</code><code class="o">=</code><code class="s1">'weighted_mean'</code><code class="p">,</code>
+    <code class="n">chunk</code><code class="o">=</code><code class="n">process_chunk</code><code class="p">,</code>
+    <code class="n">agg</code><code class="o">=</code><code class="n">agg</code><code class="p">,</code>
+    <code class="n">finalize</code><code class="o">=</code><code class="n">finalize</code><code class="p">)</code>
+
+<code class="n">aggregated</code> <code class="o">=</code> <code class="n">df_diff_with_emp_size</code><code class="o">.</code><code class="n">groupby</code><code class="p">(</code><code class="s2">"PostCode"</code><code class="p">)</code>
+    <code class="p">[</code><code class="s2">"EmployerSize"</code><code class="p">,</code> <code class="s2">"DiffMeanHourlyPercent"</code><code class="p">]</code><code class="o">.</code><code class="n">agg</code><code class="p">(</code><code class="n">weighted_mean</code><code class="p">)</code></pre></div>
+
+<p>In some cases, like a pure summation, you don’t need to do any post-processing on <code>agg</code>’s output, so you can skip the <code>finalize</code> function.</p>
+
+<p>Not all aggregations must be by key; you can also compute aggregations across all rows. Dask’s custom aggregation interface, however, is only exposed with by-key operations.</p>
+
+<p>Dask’s built-in full DataFrame aggregations use a lower-level interface called <code>apply_contact_apply</code>, for partial aggregations. Rather than learn two different APIs for partial aggregations, we prefer to do a static <code>groupby</code> by providing a constant grouping function. This way, we have to know only one interface for aggregations. You can use this to find the aggregate COVID-19 numbers across the DataFrame, as shown in <a data-type="xref" href="#agg_entire">Example 9-10</a>.</p>
+<div data-type="example" id="agg_entire">
+<h5><span class="label">Example 9-10. </span><a href="https://oreil.ly/IJaQ2">Aggregating the entire DataFrame</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="n">raw_grouped</code> <code class="o">=</code> <code class="n">sf_covid_df</code><code class="o">.</code><code class="n">groupby</code><code class="p">(</code><code class="k">lambda</code> <code class="n">x</code><code class="p">:</code> <code class="mi">0</code><code class="p">)</code></pre></div>
+
+<p>If built-in aggregations exist, they will likely be better than anything we may be able to write. Sometimes a partial aggregation is partially implemented, as in the case of Dask’s HyperLogLog: it is implemented only for full DataFrames. You can often translate simple aggregations by using <code>apply_contact_apply</code> or <code>aca</code> by copying the <code>chunk</code> function, using the <code>combine</code> parameter for <code>agg</code>, and using the <code>aggregate</code> parameter for <code>finalize</code>. This is shown via porting Dask’s HyperLogLog implementation in <a data-type="xref" href="#custom_agg_hyperloglog">Example 9-11</a>.</p>
+<div class="example-margin-7" data-type="example" id="custom_agg_hyperloglog">
+<h5><span class="label">Example 9-11. </span><a href="https://oreil.ly/IJaQ2">Wrapping Dask’s HyperLogLog in <code>dd.Aggregation</code></a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="c1"># Wrap Dask's hyperloglog in dd.Aggregation</code>
+
+<code class="kn">from</code> <code class="nn">dask.dataframe</code> <code class="kn">import</code> <code class="n">hyperloglog</code>
+
+<code class="n">approx_unique</code> <code class="o">=</code> <code class="n">dd</code><code class="o">.</code><code class="n">Aggregation</code><code class="p">(</code>
+    <code class="n">name</code><code class="o">=</code><code class="s1">'aprox_unique'</code><code class="p">,</code>
+    <code class="n">chunk</code><code class="o">=</code><code class="n">hyperloglog</code><code class="o">.</code><code class="n">compute_hll_array</code><code class="p">,</code>
+    <code class="n">agg</code><code class="o">=</code><code class="n">hyperloglog</code><code class="o">.</code><code class="n">reduce_state</code><code class="p">,</code>
+    <code class="n">finalize</code><code class="o">=</code><code class="n">hyperloglog</code><code class="o">.</code><code class="n">estimate_count</code><code class="p">)</code>
+
+<code class="n">aggregated</code> <code class="o">=</code> <code class="n">df_diff_with_emp_size</code><code class="o">.</code><code class="n">groupby</code><code class="p">(</code><code class="s2">"PostCode"</code><code class="p">)</code>
+    <code class="p">[</code><code class="s2">"EmployerSize"</code><code class="p">,</code> <code class="s2">"DiffMeanHourlyPercent"</code><code class="p">]</code><code class="o">.</code><code class="n">agg</code><code class="p">(</code><code class="n">weighted_mean</code><code class="p">)</code></pre></div>
+
+<p>Slow/inefficient aggregations (or those likely to cause an out-of-memory exception) use storage proportional to the records being aggregated. Examples from this slow group include making a list and naively computing exact quantiles.<sup><a data-type="noteref" href="ch09.html#idm45354766947536" id="idm45354766947536-marker">3</a></sup> With these slow aggregates, using Dask’s aggregation class has no benefit over the <code>apply</code> API, which you may wish to use for simplicity. For example, if you just wanted a list of employer IDs by postal code, rather than having to write three functions, you could use a one-liner like <code>df.groupby("PostCode")["EmployerId"].apply(lambda g: list(g))</code>. Dask implements the <code>apply</code> function as a full shuffle, which is covered in the next section.</p>
+<div data-type="warning" epub:type="warning"><h6>Warning</h6>
+<p>Dask is unable to apply partial aggregations when you <a data-primary="Dask" data-secondary="aggregations" data-startref="dask-aggregations" data-type="indexterm" id="idm45354766954128"/><a data-primary="DataFrames" data-secondary="in Dask" data-secondary-sortas="Dask" data-startref="dataframe-dask-aggregations" data-tertiary="aggregations" data-type="indexterm" id="idm45354766952880"/><a data-primary="datasets" data-secondary="with Dask" data-secondary-sortas="Dask" data-startref="dataset-dask-aggregations" data-tertiary="aggregations" data-type="indexterm" id="idm45354766951152"/><a data-primary="aggregations" data-secondary="in Dask" data-secondary-sortas="Dask" data-startref="aggregations" data-type="indexterm" id="idm45354766949424"/>use the <code>apply</code> function.</p>
+</div>
+</div></section>
+
+
+
+
+
+
+
+
+
+
+<section data-pdf-bookmark="Full shuffles and partitioning" data-type="sect3"><div class="sect3" id="idm45354767272224">
+<h3>Full shuffles and partitioning</h3>
+
+<p>Sorting is<a data-primary="Dask" data-secondary="full shuffles" data-type="indexterm" id="idm45354766911024"/><a data-primary="DataFrames" data-secondary="in Dask" data-secondary-sortas="Dask" data-tertiary="full shuffles" data-type="indexterm" id="idm45354766910080"/><a data-primary="datasets" data-secondary="with Dask" data-secondary-sortas="Dask" data-tertiary="full shuffles" data-type="indexterm" id="idm45354766908592"/><a data-primary="full shuffles" data-type="indexterm" id="idm45354766907104"/> inherently expensive in distributed systems because it most often requires a <em>full shuffle</em>. Full shuffles are sometimes an unavoidable part of working in Dask. Counterintuitively, while full shuffles are themselves slow, you can use them to speed up future operations that are all happening on the same grouping key(s). As mentioned in the aggregation section, one of the ways a full shuffle is triggered is by using the <code>apply</code> method when partitioning is not aligned.</p>
+</div></section>
+
+
+
+
+
+
+
+
+
+
+<section data-pdf-bookmark="Partitioning" data-type="sect3"><div class="sect3" id="idm45354766905248">
+<h3>Partitioning</h3>
+
+<p>You <a data-primary="Dask" data-secondary="partitioning in" data-type="indexterm" id="dask-partition"/><a data-primary="DataFrames" data-secondary="in Dask" data-secondary-sortas="Dask" data-tertiary="partitioning" data-type="indexterm" id="dataframe-dask-partition"/><a data-primary="datasets" data-secondary="with Dask" data-secondary-sortas="Dask" data-tertiary="partitioning" data-type="indexterm" id="dataset-dask-partition"/><a data-primary="partitioning" data-secondary="in Dask" data-secondary-sortas="Dask" data-type="indexterm" id="partition-dask"/>will most commonly use full shuffles to repartition your data. It’s important to have the right partitioning when dealing with aggregations, rolling windows, or look-ups/indexing. As discussed in <a data-type="xref" href="#rollingWindowsMapOL">“Rolling windows and map_overlap”</a>, Dask cannot do more than one partition’s worth of look-ahead or look-behind, so having the right partitioning is required to get correct results. For most other operations, having incorrect partitioning will slow down your job.</p>
+
+<p>Dask has three primary methods for controlling the partitioning of a DataFrame: <code>set_index</code>, <code>repartition</code>, and <code>shuffle</code>. You use <code>set_index</code> when the partitioning is being changed to a new key/index. <code>repartition</code> keeps the same key/index but changes the splits. <code>repartition</code> and <code>set_index</code> take similar parameters, with 
+<span class="keep-together"><code>repartition</code></span> not taking an index key name. <code>shuffle</code> is a bit different since it does not produce a “known” partitioning scheme that operations like <code>groupby</code> can take advantage of.</p>
+
+<p>The first step of getting the right partitioning for your DataFrame is to decide whether you want an index. Indexes are useful for pretty much any by-key type of operation, including filtering data, grouping, and, of course, indexing. One such by-key operation would be a <code>groupby</code>; the column being grouped on could be a good candidate for the key. If you use a rolling window over a column, that column must be the key, which makes choosing the key relatively easy. Once you’ve decided on an index, you can call <code>set_index</code> with the column name of the index (e.g., <code>set_index("PostCode")</code>). This will, under most circumstances, result in a shuffle, so it’s a good time to size your partitions.</p>
+<div data-type="tip"><h6>Tip</h6>
+<p>If you’re unsure of the current key used for partitioning, you can check the <code>index</code> property to see the partitioning key.</p>
+</div>
+
+<p>Once you’ve chosen your key, the next question is how to size your partitions. The advice in <a data-type="xref" href="#basic_partitioning">“Partitioning”</a> generally applies here: shoot for enough partitions to keep each machine busy, but keep in mind the general sweet spot of 100 MB to 1 GB. Dask generally computes pretty even splits if you give it a target number of partitions.<sup><a data-type="noteref" href="ch09.html#idm45354766886064" id="idm45354766886064-marker">4</a></sup> Thankfully, <code>set_index</code> will also take <code>npartitions</code>. To repartition the data by postal code, with 10 partitions, you would add <code>set_index("PostCode", npartitions=10)</code>; otherwise, Dask will default to the number of input partitions.</p>
+
+<p>If you plan to use <a data-primary="rolling windows" data-type="indexterm" id="idm45354766883648"/>rolling windows, you will likely need to ensure that you have the right size (in terms of key range) covered in each partition. To do this as part of <code>set_index</code>, you would need to compute your own divisions to ensure that each partition has the right range of records present. Divisions are specified as a list starting from the minimal value of the first partition up to the maximum value of the last partition. Each value in between is a “cut” point for between the pandas DataFrames that make up the Dask DataFrame. To make a DataFrame with 
+<span class="keep-together"><code>[0, 100) [100, 200), (300, 500]</code></span>, you would write <code>df.set_index("Num​Employees", divisions=[0, 100, 200, 300, 500])</code>. Similarly for the date range, to support a rolling window of up to seven days, from the start of the pandemic to this writing, is shown in <a data-type="xref" href="#set_index_with_rolling_window">Example 9-12</a>.</p>
+<div data-type="example" id="set_index_with_rolling_window">
+<h5><span class="label">Example 9-12. </span><a href="https://oreil.ly/IJaQ2">Dask DataFrame rolling window with <code>set_index</code></a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="n">divisions</code> <code class="o">=</code> <code class="n">pd</code><code class="o">.</code><code class="n">date_range</code><code class="p">(</code>
+    <code class="n">start</code><code class="o">=</code><code class="s2">"2021-01-01"</code><code class="p">,</code> <code class="n">end</code><code class="o">=</code><code class="n">datetime</code><code class="o">.</code><code class="n">today</code><code class="p">(),</code> <code class="n">freq</code><code class="o">=</code><code class="s1">'7D'</code><code class="p">)</code><code class="o">.</code><code class="n">tolist</code><code class="p">()</code>
+<code class="n">partitioned_df_as_part_of_set_index</code> <code class="o">=</code> <code class="n">mini_sf_covid_df</code><code class="o">.</code><code class="n">set_index</code><code class="p">(</code>
+    <code class="s1">'specimen_collection_date'</code><code class="p">,</code> <code class="n">divisions</code><code class="o">=</code><code class="n">divisions</code><code class="p">)</code></pre></div>
+<div data-type="warning" epub:type="warning"><h6>Warning</h6>
+<p>Dask, including for rolling time windows, assumes that your partition index is <em>monotonically increasing</em>—strictly increasing with no repeated values (e.g., 1, 4, 7 is monotically increasing, but 1, 4, 4, 7 is not).</p>
+</div>
+
+<p>So far, you’ve had to specify the number of partitions, or the specific divisions, but you might be wondering if Dask can just figure this out itself. Thankfully, Dask’s repartition function has the ability to pick divisions from a target size. However, doing this is a nontrivial cost as Dask must evaluate the DataFrame as well as the repartition itself. <a data-type="xref" href="#repartition_ex">Example 9-13</a> shows how to have Dask calculate the divisions from a desired partition size in bytes.</p>
+<div data-type="example" id="repartition_ex">
+<h5><span class="label">Example 9-13. </span><a href="https://oreil.ly/IJaQ2">Dask DataFrame automatic partitioning</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="n">reparted</code> <code class="o">=</code> <code class="n">indexed</code><code class="o">.</code><code class="n">repartition</code><code class="p">(</code><code class="n">partition_size</code><code class="o">=</code><code class="s2">"20kb"</code><code class="p">)</code></pre></div>
+<div data-type="warning" epub:type="warning"><h6>Warning</h6>
+<p>Dask’s <code>set_index</code> has a similar <code>partition_size</code> parameter, but as of the writing, it does not work.</p>
+</div>
+
+<p>As you’ve seen at the start of this chapter when writing DataFrames, each partition is given its own file, but sometimes this can result in files that are too big or too small. Some tools can accept only one file as input, so you need to repartition everything into a single partition. Other times, the data storage system is optimized for certain file sizes, like the Hadoop Distributed File System (HDFS) default block size of 128 MB. The good news is you can use <code>repartition</code> or <code>set_index</code> to get your desired output <a data-primary="Dask" data-secondary="partitioning in" data-startref="dask-partition" data-type="indexterm" id="idm45354766785216"/><a data-primary="DataFrames" data-secondary="in Dask" data-secondary-sortas="Dask" data-startref="dataframe-dask-partition" data-tertiary="partitioning" data-type="indexterm" id="idm45354766783968"/><a data-primary="datasets" data-secondary="with Dask" data-secondary-sortas="Dask" data-startref="dataset-dask-partition" data-tertiary="partitioning" data-type="indexterm" id="idm45354766782240"/><a data-primary="partitioning" data-secondary="in Dask" data-secondary-sortas="Dask" data-startref="partition-dask" data-type="indexterm" id="idm45354766780480"/>structure.</p>
+</div></section>
+</div></section>
+
+
+
+
+
+
+
+
+<section data-pdf-bookmark="Embarrassingly Parallel Operations" data-type="sect2"><div class="sect2" id="idm45354766904624">
+<h2>Embarrassingly Parallel Operations</h2>
+
+<p>Dask’s <code>map_partitions</code> function<a data-primary="Dask" data-secondary="embarrassingly parallel operations" data-type="indexterm" id="dask-parallel"/><a data-primary="DataFrames" data-secondary="in Dask" data-secondary-sortas="Dask" data-tertiary="embarrassingly parallel operations" data-type="indexterm" id="dataframe-dask-parallel"/><a data-primary="datasets" data-secondary="with Dask" data-secondary-sortas="Dask" data-tertiary="embarrassingly parallel operations" data-type="indexterm" id="dataset-dask-parallel"/><a data-primary="embarrassingly parallel operations in Dask" data-type="indexterm" id="parallel-dask"/> applies a function to each of the partitions underlying pandas DataFrames, and the result is also a pandas DataFrame. Functions implemented with <code>map_partitions</code> are embarrassingly parallel since they don’t require any inter-worker transfer of data. In  <a href="https://oreil.ly/NFYHB">embarrassingly parallel problems</a>, the overhead of distributed computing and communication is low.</p>
+
+<p><code>map_partitions</code> implements <code>map</code>, and many row-wise operations. If you want to use a row-wise operation that you find missing, you can implement it yourself, as shown in <a data-type="xref" href="#filna_ex">Example 9-14</a>.</p>
+<div data-type="example" id="filna_ex">
+<h5><span class="label">Example 9-14. </span><a href="https://oreil.ly/IJaQ2">Dask DataFrame <code>fillna</code></a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="k">def</code> <code class="nf">fillna</code><code class="p">(</code><code class="n">df</code><code class="p">):</code>
+    <code class="k">return</code> <code class="n">df</code><code class="o">.</code><code class="n">fillna</code><code class="p">(</code><code class="n">value</code><code class="o">=</code><code class="p">{</code><code class="s2">"PostCode"</code><code class="p">:</code> <code class="s2">"UNKNOWN"</code><code class="p">})</code><code class="o">.</code><code class="n">fillna</code><code class="p">(</code><code class="n">value</code><code class="o">=</code><code class="mi">0</code><code class="p">)</code>
+    
+<code class="n">new_df</code> <code class="o">=</code> <code class="n">df</code><code class="o">.</code><code class="n">map_partitions</code><code class="p">(</code><code class="n">fillna</code><code class="p">)</code>
+<code class="c1"># Since there could be an NA in the index clear the partition/division information</code>
+<code class="n">new_df</code><code class="o">.</code><code class="n">clear_divisions</code><code class="p">()</code></pre></div>
+
+<p>You aren’t limited to calling pandas built-ins as in this example. Provided that your function takes and returns a DataFrame, you can do pretty much anything you want inside <code>map_partitions</code>.</p>
+
+<p>The full pandas API is too long to cover in this chapter, but if a function can operate on a row-by-row basis without any knowledge of the rows before or after, it may already be implemented in Dask DataFrames using <code>map_partitions</code>. If not, you can also implement it yourself using the pattern from <a data-type="xref" href="#filna_ex">Example 9-14</a>.</p>
+
+<p>When using <code>map_partitions</code> on a DataFrame, you can change anything about each row, including the key that it is partitioned on. If you <em>are</em> changing the values in the partition key, you <em>must</em> either clear the partitioning information on the resulting DataFrame with <code>clear_divisions</code> <em>or</em> specify the correct indexing with <code>set_index</code>, which you’ll learn more about in the next section.</p>
+<div data-type="warning" epub:type="warning"><h6>Warning</h6>
+<p>Incorrect partitioning information can result in incorrect results, not just exceptions, as Dask may miss relevant<a data-primary="Dask" data-secondary="embarrassingly parallel operations" data-startref="dask-parallel" data-type="indexterm" id="idm45354766684096"/><a data-primary="DataFrames" data-secondary="in Dask" data-secondary-sortas="Dask" data-startref="dataframe-dask-parallel" data-tertiary="embarrassingly parallel operations" data-type="indexterm" id="idm45354766682880"/><a data-primary="datasets" data-secondary="with Dask" data-secondary-sortas="Dask" data-startref="dataset-dask-parallel" data-tertiary="embarrassingly parallel operations" data-type="indexterm" id="idm45354766678288"/><a data-primary="embarrassingly parallel operations in Dask" data-startref="parallel-dask" data-type="indexterm" id="idm45354766676720"/> data.</p>
+</div>
+</div></section>
+
+
+
+
+
+
+
+
+<section data-pdf-bookmark="Working with Multiple DataFrames" data-type="sect2"><div class="sect2" id="idm45354766675488">
+<h2>Working with Multiple DataFrames</h2>
+
+<p>pandas and<a data-primary="Dask" data-secondary="multiple DataFrames" data-type="indexterm" id="dask-multiple"/><a data-primary="DataFrames" data-secondary="in Dask" data-secondary-sortas="Dask" data-tertiary="multiple DataFrames" data-type="indexterm" id="dataframe-dask-multiple"/><a data-primary="datasets" data-secondary="with Dask" data-secondary-sortas="Dask" data-tertiary="multiple DataFrames" data-type="indexterm" id="dataset-dask-multiple"/><a data-primary="multiple DataFrames in Dask" data-type="indexterm" id="multiple-dataframe-dask"/> Dask have four common functions for combining DataFrames. At the root is the <code>concat</code> function, which allows joining DataFrames on any axis. Concatenating DataFrames is generally slower in Dask since it involves inter-worker communication. The other three functions are <code>join</code>, <code>merge</code>, and <code>append</code>, which all implement special cases for common situations on top of <code>concat</code>, and have slightly different performance considerations. Having good divisions/partitioning, in terms of key selection and number of partitions, makes a huge difference when working on multiple DataFrames.</p>
+
+<p>Dask’s <code>join</code> and <code>merge</code> functions take most of the standard pandas arguments along with an extra, optional, one. <code>npartitions</code> specifies a target number of output partitions, but is used for only hash-based joins (which you’ll learn about in <a data-type="xref" href="#multiDFI">“Multi-DataFrame internals”</a>). Both <code>join</code> and <code>merge</code> automatically repartition your input DataFrames if needed. This is great, as you might not know the partitioning, but since repartitioning can be slow, explicitly using the lower-level <code>concat</code> function when you don’t expect any partitioning changes to be needed can help catch performance problems early. Dask’s join takes only more than two DataFrames at a time when doing a left or outer join type.</p>
+<div data-type="tip"><h6>Tip</h6>
+<p>Dask has special logic to speed up multi-DataFrame joins, so in most cases, rather than do <code>a.join(b).join(c).join(d).join(e)</code>, you will benefit from doing <code>a.join([b, c, d, e])</code>. However, if you are performing a left join with a small dataset, the first syntax may be more efficient.</p>
+</div>
+
+<p>When you combine (via <code>concat</code>) DataFrames by row (similar to a SQL UNION) the performance depends on whether divisions of the DataFrames being combined are well ordered. We call the divisions of a series of DataFrames <em>well ordered</em> if all the divisions are known, and the highest division of the previous DataFrame is below that of the lowest division of the next. If any input has an unknown division, Dask will produce an output without known partitioning. With all known partitions, Dask treats row-based concatenations as a metadata-only change and will not perform any shuffle. This requires that no overlap between the divisions exists. In addition, an extra <code>interleave_partitions</code> parameter will change the join type for row-based combinations to one without the input partitioning restriction and will result in a known partitioner.</p>
+
+<p>Dask’s column-based <code>concat</code> (similar to a SQL JOIN) also has restrictions around the divisions/partitions of the DataFrames it is combining. Dask’s version of concat supports only inner or full outer joins, not left or right. Column-based joins require that all inputs have known partitioners and also result in a DataFrame with known partitioning. Having a known partitioner can be useful for subsequent joins.</p>
+<div data-type="warning" epub:type="warning"><h6>Warning</h6>
+<p>Don’t use Dask’s <code>concat</code> when operating by row on a DataFrame with unknown divisions, as it will likely return incorrect results. Dask assumes indices are aligned no indices are present.</p>
+</div>
+
+
+
+
+
+
+
+
+
+
+<section data-pdf-bookmark="Multi-DataFrame internals" data-type="sect3"><div class="sect3" id="multiDFI">
+<h3>Multi-DataFrame internals</h3>
+
+<p>Dask uses four techniques—hash, broadcast, partitioned, and <code>stack_partitions</code>—to combine DataFrames, and each results in very different performance. Dask chooses the technique based on the indexes, divisions, and requested join type (e.g., outer/left/inner). The three column-based join techniques are hash joins, broadcast, and partitioned joins. When doing row-based combinations (e.g., <code>append</code>), Dask has a special technique called <code>stack_partitions</code> that is extra fast. It’s important that you understand the performance of each of these techniques and the conditions that will cause Dask to pick which approach.</p>
+
+<p><em>Hash</em> joins <a data-primary="hash joins" data-type="indexterm" id="idm45354766651728"/>are the default that Dask uses when no other join technique is suit­able. Hash joins shuffle the data for all the input DataFrames to partition on the target 
+<span class="keep-together">key. Hash joins</span> use the hash values of keys, which results in a DataFrame that is not in any particular order. As such, the result of hash joins do not have any known divisions.</p>
+
+<p><em>Broadcast</em> joins <a data-primary="broadcast joins" data-type="indexterm" id="idm45354766649504"/>are ideal for joining large DataFrames with small DataFrames. In a broadcast join, Dask takes the smaller DataFrame and distributes it to all of the workers. This means that the smaller DataFrame must be able to fit in memory. To tell Dask that a DataFrame is a good candidate for broadcasting, you make sure it is all stored in one partition—for example, call <code>repartition(npartitions=1)</code>.</p>
+
+<p><em>Partitioned</em> joins<a data-primary="partitioned joins" data-type="indexterm" id="idm45354766647552"/> happen when combining DataFrames along an index where the partitions are known for all the DataFrames. Since the input partitions are known, Dask is able to align the partitions between the DataFrames, involving less data transfer as each output partition has a smaller than full set of inputs.</p>
+
+<p>Since partition and broadcast joins are faster, doing some work to help Dask can be worthwhile. For example, concatenating several DataFrames with known and aligned partitions, and one DataFrame which is unaligned, will result in an expensive hash join. Instead, try to either set the index and partition on the remaining DataFrame, or join the less expensive DataFrames first and then perform the expensive join after.</p>
+
+<p>Using <code>stack_partitions</code> is different from all of the other options since it doesn’t involve any movement of data. Instead, the resulting DataFrame partitions list is a union of the upstream partitions from the input DataFrames. Dask uses <code>stack​_partiti⁠ons</code> for most row-based combinations except when all of the input DataFrame divisions are known and they are not well ordered and you ask Dask to 
+<span class="keep-together"><code>interleave_partitions</code>.</span> The <code>stack_partitions</code> function is able to provide only known partitioning in its output when the input divisions are known and well ordered. If all the divisions are known but not well ordered, and you set 
+<span class="keep-together"><code>interleave_partitions</code></span>, Dask will use a partitioned join instead. While this approach is compa⁠r­atively inexpensive, it is not free and can result in an excessively large number of partitions requiring you to repartition anyway.</p>
+</div></section>
+
+
+
+
+
+
+
+
+
+
+<section data-pdf-bookmark="Missing functionality" data-type="sect3"><div class="sect3" id="idm45354766642144">
+<h3>Missing functionality</h3>
+
+<p>Not all multi-DataFrame operations are implemented; <code>compare</code> is one such operation, which leads into the next section about the limitations of<a data-primary="Dask" data-secondary="multiple DataFrames" data-startref="dask-multiple" data-type="indexterm" id="idm45354766640432"/><a data-primary="DataFrames" data-secondary="in Dask" data-secondary-sortas="Dask" data-startref="dataframe-dask-multiple" data-tertiary="multiple DataFrames" data-type="indexterm" id="idm45354766639184"/><a data-primary="datasets" data-secondary="with Dask" data-secondary-sortas="Dask" data-startref="dataset-dask-multiple" data-tertiary="multiple DataFrames" data-type="indexterm" id="idm45354766637424"/><a data-primary="multiple DataFrames in Dask" data-startref="multiple-dataframe-dask" data-type="indexterm" id="idm45354766635664"/> Dask DataFrames.</p>
+</div></section>
+</div></section>
+
+
+
+
+
+
+
+
+<section data-pdf-bookmark="What Does Not Work" data-type="sect2"><div class="sect2" id="idm45354766634240">
+<h2>What Does Not Work</h2>
+
+<p>Dask’s DataFrame <a data-primary="Dask" data-secondary="limitations of" data-type="indexterm" id="dask-limits"/><a data-primary="DataFrames" data-secondary="in Dask" data-secondary-sortas="Dask" data-tertiary="limitations of" data-type="indexterm" id="dataframe-dask-limits"/><a data-primary="datasets" data-secondary="with Dask" data-secondary-sortas="Dask" data-tertiary="limitations of" data-type="indexterm" id="dataset-dask-limits"/>implements most, but not all, of the pandas DataFrame API. Some of the pandas API is not implemented in Dask because of the development time involved. Other parts are not used in order to avoid exposing an API that would be unexpectedly slow.</p>
+
+<p class="pagebreak-before">Sometimes the API is just missing small parts, as both pandas and Dask are under active development. An example is the <code>split</code> function. In local pandas, instead of doing <code>split().explode</code>, you could have called <code>split(expand=true)</code>. Some of these can be excellent places to get involved and <a href="https://oreil.ly/OHPqQ">contribute to the Dask project</a> if you are interested.</p>
+
+<p>Some libraries do not parallelize as well as others. In these cases, a common approach is to try to filter or aggregate the data down enough that it can be represented locally and then apply the local libraries to the data. For example, with graphing, it’s common to pre-aggregate the counts or take a random sample and graph the result.</p>
+
+<p>While much of the pandas DataFrame API will work out of the box, before you swap in Dask DataFrame, it’s important to make sure you have good test coverage to catch the situations where it does not.</p>
+</div></section>
+
+
+
+
+
+
+
+
+<section data-pdf-bookmark="What’s Slower" data-type="sect2"><div class="sect2" id="idm45354766624080">
+<h2>What’s Slower</h2>
+
+<p>Usually, using Dask DataFrames will improve performance, but not always. Generally, smaller datasets will perform better in local pandas. As discussed, anything involving shuffles is generally slower in a distributed system than in a local one. Iterative algorithms can also produce large graphs of operations, which are slow to evaluate in Dask compared to traditional greedy evaluation.</p>
+
+<p>Some problems are generally unsuitable for data-parallel computing. For example, writing out to a data store with a single lock that has more parallel writers will increase the lock contention and may make it slower than if a single thread was doing the writing. In these situations, you can sometimes repartition your data or write individual partitions to avoid lock contention.</p>
+</div></section>
+
+
+
+
+
+
+
+
+<section data-pdf-bookmark="Handling Recursive Algorithms" data-type="sect2"><div class="sect2" id="idm45354766622080">
+<h2>Handling Recursive Algorithms</h2>
+
+<p>Dask’s lazy evaluation, powered by its lineage graph, is normally beneficial, allowing it to combine steps automatically. However, when the graph gets too large, Dask can struggle to manage it, which often shows up as a slow driver process or notebook, and sometimes an out-of-memory exception. Thankfully, you can work around this by writing out your DataFrame and reading it back in. Generally, Parquet is the best format for doing this as it is space-efficient and self-describing, so no schema inference is required.</p>
+</div></section>
+
+
+
+
+
+
+
+
+<section class="pagebreak-before less_space" data-pdf-bookmark="What Other Functions Are Different" data-type="sect2"><div class="sect2" id="idm45354766620528">
+<h2>What Other Functions Are Different</h2>
+
+<p>For performance reasons, various parts of Dask DataFrames behave a little differently from local DataFrames:</p>
+<dl>
+<dt><code>reset_index</code></dt>
+<dd>
+<p>The index will start back over at zero on each partition.</p>
+</dd>
+<dt><code>kurtosis</code></dt>
+<dd>
+<p>Does not filter out not-a-number (NaN) values and uses SciPy defaults.</p>
+</dd>
+<dt><code>concat</code></dt>
+<dd>
+<p>Instead of coercing category types, each category type is expanded to the union of all of the categories it is concatenated with.</p>
+</dd>
+<dt><code>sort_values</code></dt>
+<dd>
+<p>Dask supports only single-column sorts.</p>
+</dd>
+<dt>Joins</dt>
+<dd>
+<p>When joining more than two DataFrames at the same time, the join type must be either outer or left.</p>
+</dd>
+</dl>
+<div data-type="tip"><h6>Tip</h6>
+<p>If you are interested in going deeper with Dask, several Dask-focused books are in active development. Much of the material in this chapter is <a data-primary="Dask" data-secondary="limitations of" data-startref="dask-limits" data-type="indexterm" id="idm45354766609392"/><a data-primary="DataFrames" data-secondary="in Dask" data-secondary-sortas="Dask" data-startref="dataframe-dask-limits" data-tertiary="limitations of" data-type="indexterm" id="idm45354766608144"/><a data-primary="datasets" data-secondary="with Dask" data-secondary-sortas="Dask" data-startref="dataset-dask-limits" data-tertiary="limitations of" data-type="indexterm" id="idm45354766606384"/>based on <a class="orm:hideurl" href="https://oreil.ly/Fk0I6"><em>Scaling Python with Dask</em></a>.</p>
+</div>
+</div></section>
+
+
+
+
+
+
+
+
+<section data-pdf-bookmark="pandas-like DataFrames with Modin" data-type="sect2"><div class="sect2" id="idm45354766603072">
+<h2>pandas-like DataFrames with Modin</h2>
+
+<p><a href="https://oreil.ly/KR1wT">Modin</a>, like<a data-primary="Modin" data-type="indexterm" id="idm45354766601056"/><a data-primary="DataFrames" data-secondary="in Modin" data-secondary-sortas="Modin" data-type="indexterm" id="idm45354766600320"/><a data-primary="datasets" data-secondary="with Modin" data-secondary-sortas="Modin" data-type="indexterm" id="idm45354766599104"/><a data-primary="pandas" data-secondary="with Modin" data-secondary-sortas="Modin" data-type="indexterm" id="idm45354766597888"/> Dask DataFrames, is designed to largely be a plug-in replacement for pandas DataFrames. Modin DataFrames follow the same general performance as Dask DataFrames, with a few caveats. Modin offers less control over internals, which can limit performance for some applications. Since Modin and Dask DataFrames are sufficiently similar, we won’t cover it here except to say it’s another option if Dask doesn’t meet your needs.</p>
+<div class="pagebreak-after" data-type="note" epub:type="note"><h6>Note</h6>
+<p><em>Modin</em> is a new library designed to accelerate pandas by automatically distributing the computation across all of the system’s available CPU cores. Modin claims to be able to get nearly linear speedup to the number of CPU cores on your system for pandas DataFrames of any size.</p>
+</div>
+
+<p>Since Modin on Ray is so similar to Dask DataFrames, we’ve decided to skip repeating the examples from Dask on Ray as they would not change substantially.</p>
+<div data-type="warning" epub:type="warning"><h6>Warning</h6>
+<p>When you look at Dask and Modin’s documentation side by side, you may get the impression that Dask is earlier in its development cycle. In our opinion, this is not the case; rather, the Dask documentation takes a more conservative approach to marking features as ready.</p>
+</div>
+</div></section>
+
+
+
+
+
+
+
+
+<section data-pdf-bookmark="Big Data with Spark" data-type="sect2"><div class="sect2" id="idm45354766593072">
+<h2>Big Data with Spark</h2>
+
+<p>If you’re<a data-primary="Apache Spark" data-secondary="big data with" data-type="indexterm" id="idm45354766591568"/><a data-primary="Spark" data-secondary="big data with" data-type="indexterm" id="idm45354766590560"/><a data-primary="big data" data-type="indexterm" id="idm45354766589616"/><a data-primary="datasets" data-secondary="with Spark" data-secondary-sortas="Spark" data-type="indexterm" id="idm45354766588944"/> working with an existing big data infrastructure (such as Apache Hive, Iceberg, or HBase), Spark is an excellent choice. Spark has optimizations like filter push-down, which can dramatically improve performance. Spark has a more traditional, big data DataFrame interface.</p>
+
+<p>Spark’s strong suit is in the data ecosystem of which it is a part. As a Java-based tool, with a Python API, Spark plugs into much of the traditional big data ecosystem. Spark supports the widest array of formats and filesystems, making it an excellent choice for the initial stages of many pipelines.</p>
+
+<p>While Spark continues to add more pandas-like functionality, its DataFrames started from more of a SQL-inspired design. You have several options to learn about Spark, including some O’Reilly books: <a class="orm:hideurl" href="https://oreil.ly/LearningSpark2"><em>Learning Spark</em></a> by Jules Damji, <a class="orm:hideurl" href="https://oreil.ly/highperfSpark"><em>High Performance Spark</em></a> by Holden and Rachel Warren, and <a class="orm:hideurl" href="https://oreil.ly/sparkTDG"><em>Spark: The Definitive Guide</em></a> by Bill Chambers and Matei Zaharia.</p>
+<div data-type="warning" epub:type="warning"><h6>Warning</h6>
+<p>Unlike Ray, Spark is generally lazy, meaning it does not evaluate data until forced. This can make debugging a challenge as errors may appear several lines removed from their root cause.</p>
+</div>
+</div></section>
+
+
+
+
+
+
+
+
+<section data-pdf-bookmark="Working with Local Tools" data-type="sect2"><div class="sect2" id="idm45354766582080">
+<h2>Working with Local Tools</h2>
+
+<p>Some tools <a data-primary="datasets" data-secondary="converting to local objects" data-type="indexterm" id="idm45354766580784"/><a data-primary="converting datasets to local objects" data-type="indexterm" id="idm45354766579376"/><a data-primary="local objects, converting datasets to" data-type="indexterm" id="idm45354766578688"/>are not well suited to distributed operation. Thankfully, provided your dataset is filtered down small enough, you can convert it into a variety of local in-process formats. If the entire dataset can fit in memory, <code>to_pandas</code> and <code>to_arrow</code> are the simplest ways to convert a dataset to a local object. For larger objects, where each partition may fit in memory but the entire dataset may not, <code>iter_batches</code> will give you a generator/iterator to consume one partition at a time. The <code>iter_batches</code> function takes a <code>batch_format</code> parameter to switch between <code>pandas</code> or <code>pyarrow</code>. If possible, <code>pyarrow</code> is generally more efficient than <code>pandas</code>.</p>
+</div></section>
+</div></section>
+
+
+
+
+
+
+<section data-pdf-bookmark="Using Built-in Ray Dataset Operations" data-type="sect1"><div class="sect1" id="builtinRayDSops">
+<h1>Using Built-in Ray Dataset Operations</h1>
+
+<p>In addition<a data-primary="Ray Datasets" data-secondary="built-in operations" data-type="indexterm" id="ray-dataset-operations"/><a data-primary="datasets" data-secondary="built-in Ray operations" data-type="indexterm" id="dataset-operations"/> to allowing you to move data among various tools, Ray also has some built-in operations. Ray Datasets does not attempt to match any particular existing API, but rather expose basic building blocks you can use when the existing libraries do not meet your needs.</p>
+
+<p>Ray Datasets has support for basic data operations. Ray Datasets does not aim to expose a pandas-like API; rather, it focuses on providing basic primitives to build on top of. The Dataset API is functionally inspired, along with partition-oriented functions. Ray also recently added <code>groupBy</code>s and aggregates.</p>
+
+<p>The core building block of most of the dataset operations<a data-primary="map_batches function" data-type="indexterm" id="map-batches"/> is <code>map_batches</code>. By default, <code>map_batches</code> executes the function you provide across the blocks or batches that make up a dataset and uses the results to make a new dataset. The <code>map_batches</code> function is used to implement <code>filter</code>, <code>flat_map</code>, and <code>map</code>. You can see the flexibility of <code>map_batches</code> by looking at the word-count example rewritten to directly use <code>map_batches</code> as well as drop any word that shows up only once, as shown in 
+<span class="keep-together"><a data-type="xref" href="#ray_wordcount_on_ds_filter_only_once_with_batches">Example 9-15</a></span>.</p>
+<div data-type="example" id="ray_wordcount_on_ds_filter_only_once_with_batches">
+<h5><span class="label">Example 9-15. </span><a href="https://oreil.ly/HP05n">Ray word count with <code>map_batches</code></a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="k">def</code> <code class="nf">tokenize_batch</code><code class="p">(</code><code class="n">batch</code><code class="p">):</code>
+    <code class="n">nested_tokens</code> <code class="o">=</code> <code class="nb">map</code><code class="p">(</code><code class="k">lambda</code> <code class="n">s</code><code class="p">:</code> <code class="n">s</code><code class="o">.</code><code class="n">split</code><code class="p">(</code><code class="s2">" "</code><code class="p">),</code> <code class="n">batch</code><code class="p">)</code>
+    <code class="c1"># Flatten the result</code>
+    <code class="n">nr</code> <code class="o">=</code> <code class="p">[]</code>
+    <code class="k">for</code> <code class="n">r</code> <code class="ow">in</code> <code class="n">nested_tokens</code><code class="p">:</code>
+        <code class="n">nr</code><code class="o">.</code><code class="n">extend</code><code class="p">(</code><code class="n">r</code><code class="p">)</code>
+    <code class="k">return</code> <code class="n">nr</code>
+
+<code class="k">def</code> <code class="nf">pair_batch</code><code class="p">(</code><code class="n">batch</code><code class="p">):</code>
+    <code class="k">return</code> <code class="nb">list</code><code class="p">(</code><code class="nb">map</code><code class="p">(</code><code class="k">lambda</code> <code class="n">w</code><code class="p">:</code> <code class="p">(</code><code class="n">w</code><code class="p">,</code> <code class="mi">1</code><code class="p">),</code> <code class="n">batch</code><code class="p">))</code>
+
+<code class="k">def</code> <code class="nf">filter_for_interesting</code><code class="p">(</code><code class="n">batch</code><code class="p">):</code>
+    <code class="k">return</code> <code class="nb">list</code><code class="p">(</code><code class="nb">filter</code><code class="p">(</code><code class="k">lambda</code> <code class="n">wc</code><code class="p">:</code> <code class="n">wc</code><code class="p">[</code><code class="mi">1</code><code class="p">]</code> <code class="o">&gt;</code> <code class="mi">1</code><code class="p">,</code> <code class="n">batch</code><code class="p">))</code>
+
+<code class="n">words</code> <code class="o">=</code> <code class="n">pages</code><code class="o">.</code><code class="n">map_batches</code><code class="p">(</code><code class="n">tokenize_batch</code><code class="p">)</code><code class="o">.</code><code class="n">map_batches</code><code class="p">(</code><code class="n">pair_batch</code><code class="p">)</code>
+<code class="c1"># The one part we can't rewrite with map_batches since it involves a shuffle</code>
+<code class="n">grouped_words</code> <code class="o">=</code> <code class="n">words</code><code class="o">.</code><code class="n">groupby</code><code class="p">(</code><code class="k">lambda</code> <code class="n">wc</code><code class="p">:</code> <code class="n">wc</code><code class="p">[</code><code class="mi">0</code><code class="p">])</code> 
+<code class="n">interesting_words</code> <code class="o">=</code> <code class="n">groupd_words</code><code class="o">.</code><code class="n">map_batches</code><code class="p">(</code><code class="n">filter_for_interesting</code><code class="p">)</code></pre></div>
+
+<p>The <code>map_batches</code> function takes parameters to customize its behavior. For stateful operations, you can change the <code>compute</code> strategy to <code>actors</code> from its default <code>tasks</code>. The previous example uses the default format, which is Ray’s internal format, but you can also convert the data to <code>pandas</code> or <code>pyarrow</code>. You can see this in <a data-type="xref" href="#batch_op_on_pandas">Example 9-16</a> in which Ray converts the data to pandas for us.</p>
+<div class="example-margin-5" data-type="example" id="batch_op_on_pandas">
+<h5><span class="label">Example 9-16. </span><a href="https://oreil.ly/HP05n">Using Ray <code>map_batches</code> with pandas to update a column</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="c1"># Kind of hacky string munging to get a median-ish to weight our values.</code>
+<code class="k">def</code> <code class="nf">update_empsize_to_median</code><code class="p">(</code><code class="n">df</code><code class="p">):</code>
+    <code class="k">def</code> <code class="nf">to_median</code><code class="p">(</code><code class="n">value</code><code class="p">):</code>
+        <code class="k">if</code> <code class="s2">" to "</code> <code class="ow">in</code> <code class="n">value</code><code class="p">:</code>
+            <code class="n">f</code> <code class="p">,</code> <code class="n">t</code> <code class="o">=</code> <code class="n">value</code><code class="o">.</code><code class="n">replace</code><code class="p">(</code><code class="s2">","</code><code class="p">,</code> <code class="s2">""</code><code class="p">)</code><code class="o">.</code><code class="n">split</code><code class="p">(</code><code class="s2">" to "</code><code class="p">)</code>
+            <code class="k">return</code> <code class="p">(</code><code class="nb">int</code><code class="p">(</code><code class="n">f</code><code class="p">)</code> <code class="o">+</code> <code class="nb">int</code><code class="p">(</code><code class="n">t</code><code class="p">))</code> <code class="o">/</code> <code class="mf">2.0</code>
+        <code class="k">elif</code> <code class="s2">"Less than"</code> <code class="ow">in</code> <code class="n">value</code><code class="p">:</code>
+            <code class="k">return</code> <code class="mi">100</code>
+        <code class="k">else</code><code class="p">:</code>
+            <code class="k">return</code> <code class="mi">10000</code>
+    <code class="n">df</code><code class="p">[</code><code class="s2">"EmployerSize"</code><code class="p">]</code> <code class="o">=</code> <code class="n">df</code><code class="p">[</code><code class="s2">"EmployerSize"</code><code class="p">]</code><code class="o">.</code><code class="n">apply</code><code class="p">(</code><code class="n">to_median</code><code class="p">)</code>
+    <code class="k">return</code> <code class="n">df</code>
+
+<code class="n">ds_with_median</code> <code class="o">=</code> <code class="n">ds</code><code class="o">.</code><code class="n">map_batches</code><code class="p">(</code><code class="n">update_empsize_to_median</code><code class="p">,</code> <code class="n">batch_format</code><code class="o">=</code><code class="s2">"pandas"</code><code class="p">)</code></pre></div>
+<div data-type="tip"><h6>Tip</h6>
+<p>The result you return must be a list, <code>pandas</code>, or <code>pyarrow</code>, and it does not need to match the same type that you take in.</p>
+</div>
+
+<p>Ray Datasets does not have a built-in way to specify additional libraries to be installed. You can use <code>map_batches</code> along with a task to accomplish this, as shown in <a data-type="xref" href="#more_awesome_wordcount_with_batches">Example 9-17</a>, which installs extra libraries to parse the<a data-primary="map_batches function" data-startref="map-batches" data-type="indexterm" id="idm45354766295488"/> HTML.</p>
+<div data-type="example" id="more_awesome_wordcount_with_batches">
+<h5><span class="label">Example 9-17. </span><a href="https://oreil.ly/HP05n">Using Ray <code>map_batches</code> with extra libraries</a></h5>
+
+<pre class="widows_11" data-code-language="python" data-type="programlisting"><code class="k">def</code> <code class="nf">extract_text_for_batch</code><code class="p">(</code><code class="n">sites</code><code class="p">):</code>
+    <code class="n">text_futures</code> <code class="o">=</code> <code class="nb">map</code><code class="p">(</code><code class="k">lambda</code> <code class="n">s</code><code class="p">:</code> <code class="n">extract_text</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="n">s</code><code class="p">),</code> <code class="n">sites</code><code class="p">)</code>
+    <code class="n">result</code> <code class="o">=</code> <code class="n">ray</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="nb">list</code><code class="p">(</code><code class="n">text_futures</code><code class="p">))</code>
+    <code class="c1"># ray.get returns None on an empty input, but map_batches requires lists</code>
+    <code class="k">if</code> <code class="n">result</code> <code class="ow">is</code> <code class="kc">None</code><code class="p">:</code>
+        <code class="k">return</code> <code class="p">[]</code>
+    <code class="k">return</code> <code class="n">result</code>
+
+<code class="k">def</code> <code class="nf">tokenize_batch</code><code class="p">(</code><code class="n">texts</code><code class="p">):</code>
+    <code class="n">token_futures</code> <code class="o">=</code> <code class="nb">map</code><code class="p">(</code><code class="k">lambda</code> <code class="n">s</code><code class="p">:</code> <code class="n">tokenize</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="n">s</code><code class="p">),</code> <code class="n">texts</code><code class="p">)</code>
+    <code class="n">result</code> <code class="o">=</code> <code class="n">ray</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="nb">list</code><code class="p">(</code><code class="n">token_futures</code><code class="p">))</code>
+    <code class="k">if</code> <code class="n">result</code> <code class="ow">is</code> <code class="kc">None</code><code class="p">:</code>
+        <code class="k">return</code> <code class="p">[]</code>
+    <code class="c1"># Flatten the result</code>
+    <code class="n">nr</code> <code class="o">=</code> <code class="p">[]</code>
+    <code class="k">for</code> <code class="n">r</code> <code class="ow">in</code> <code class="n">result</code><code class="p">:</code>
+        <code class="n">nr</code><code class="o">.</code><code class="n">extend</code><code class="p">(</code><code class="n">r</code><code class="p">)</code>
+    <code class="k">return</code> <code class="n">nr</code>
+
+
+<code class="c1"># Exercise for the reader: generalize the preceding patterns - </code>
+<code class="c1"># note the flatten magic difference</code>
+
+<code class="n">urls</code> <code class="o">=</code> <code class="n">ray</code><code class="o">.</code><code class="n">data</code><code class="o">.</code><code class="n">from_items</code><code class="p">([</code><code class="s2">"http://www.holdenkarau.com"</code><code class="p">,</code> <code class="s2">"http://www.google.com"</code><code class="p">])</code>
+
+<code class="n">pages</code> <code class="o">=</code> <code class="n">urls</code><code class="o">.</code><code class="n">map</code><code class="p">(</code><code class="n">fetch</code><code class="p">)</code>
+
+<code class="n">page_text</code> <code class="o">=</code> <code class="n">pages</code><code class="o">.</code><code class="n">map_batches</code><code class="p">(</code><code class="n">extract_text_for_batch</code><code class="p">)</code>
+<code class="n">words</code> <code class="o">=</code> <code class="n">page_text</code><code class="o">.</code><code class="n">map_batches</code><code class="p">(</code><code class="n">tokenize_batch</code><code class="p">)</code>
+<code class="n">word_count</code> <code class="o">=</code> <code class="n">words</code><code class="o">.</code><code class="n">groupby</code><code class="p">(</code><code class="k">lambda</code> <code class="n">x</code><code class="p">:</code> <code class="n">x</code><code class="p">)</code><code class="o">.</code><code class="n">count</code><code class="p">()</code>
+<code class="n">word_count</code><code class="o">.</code><code class="n">show</code><code class="p">()</code></pre></div>
+
+<p>For operations <a data-primary="aggregations" data-secondary="with GroupedDataset" data-secondary-sortas="GroupedDataset" data-type="indexterm" id="idm45354766071216"/>needing shuffles, Ray has <code>GroupedDataset</code>, which behaves a bit differently. Unlike the rest of the Datasets API, <code>groupby</code> is lazily evaluated in Ray. The <code>groupby</code> function takes a column name or function, where records with the same value will be aggregated together. Once you have the <code>GroupedDataset</code>, you can then pass in multiple aggregates to the <code>aggregate</code> function. Ray’s <code>AggregateFn</code> class is conceptually similar to Dask’s <code>Aggregation</code> class except it operates by row. Since it operates by row, you need to provide an <code>init</code> function for when a new key value is found. Instead of <code>chunk</code> for each new chunk, you provide <code>accumulate</code> to add each new element. You still provide a method of combining the aggregators, called <code>merge</code> instead of <code>agg</code>, and both have the same optional <code>finalize</code>. To understand the differences, we rewrote the Dask weighted average example to Ray in <a data-type="xref" href="#ray_basic_agg">Example 9-18</a>.</p>
+<div data-type="example" id="ray_basic_agg">
+<h5><span class="label">Example 9-18. </span><a href="https://oreil.ly/HP05n">Ray weighted average aggregation</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="k">def</code> <code class="nf">init_func</code><code class="p">(</code><code class="n">key</code><code class="p">):</code>
+    <code class="c1"># First elem is weighted total, second is weights</code>
+    <code class="k">return</code> <code class="p">[</code><code class="mi">0</code><code class="p">,</code> <code class="mi">0</code><code class="p">]</code>
+
+<code class="k">def</code> <code class="nf">accumulate_func</code><code class="p">(</code><code class="n">accumulated</code><code class="p">,</code> <code class="n">row</code><code class="p">):</code>
+    <code class="k">return</code> <code class="p">[</code>
+        <code class="n">accumulated</code><code class="p">[</code><code class="mi">0</code><code class="p">]</code> <code class="o">+</code> 
+        <code class="p">(</code><code class="nb">float</code><code class="p">(</code><code class="n">row</code><code class="p">[</code><code class="s2">"EmployerSize"</code><code class="p">])</code> <code class="o">*</code> <code class="nb">float</code><code class="p">(</code><code class="n">row</code><code class="p">[</code><code class="s2">"DiffMeanHourlyPercent"</code><code class="p">])),</code>
+        <code class="n">accumulated</code><code class="p">[</code><code class="mi">1</code><code class="p">]</code> <code class="o">+</code> <code class="n">row</code><code class="p">[</code><code class="s2">"DiffMeanHourlyPercent"</code><code class="p">]]</code>
+        
+<code class="k">def</code> <code class="nf">combine_aggs</code><code class="p">(</code><code class="n">agg1</code><code class="p">,</code> <code class="n">agg2</code><code class="p">):</code>
+    <code class="k">return</code> <code class="p">(</code><code class="n">agg1</code><code class="p">[</code><code class="mi">0</code><code class="p">]</code> <code class="o">+</code> <code class="n">agg2</code><code class="p">[</code><code class="mi">0</code><code class="p">],</code> <code class="n">agg1</code><code class="p">[</code><code class="mi">1</code><code class="p">]</code> <code class="o">+</code> <code class="n">agg2</code><code class="p">[</code><code class="mi">1</code><code class="p">])</code>
+
+<code class="k">def</code> <code class="nf">finalize</code><code class="p">(</code><code class="n">agg</code><code class="p">):</code>
+    <code class="k">if</code> <code class="n">agg</code><code class="p">[</code><code class="mi">1</code><code class="p">]</code> <code class="o">!=</code> <code class="mi">0</code><code class="p">:</code>
+        <code class="k">return</code> <code class="n">agg</code><code class="p">[</code><code class="mi">0</code><code class="p">]</code> <code class="o">/</code> <code class="n">agg</code><code class="p">[</code><code class="mi">1</code><code class="p">]</code>
+    <code class="k">else</code><code class="p">:</code>
+        <code class="k">return</code> <code class="mi">0</code>
+    
+<code class="n">weighted_mean</code> <code class="o">=</code> <code class="n">ray</code><code class="o">.</code><code class="n">data</code><code class="o">.</code><code class="n">aggregate</code><code class="o">.</code><code class="n">AggregateFn</code><code class="p">(</code>
+    <code class="n">name</code><code class="o">=</code><code class="s1">'weighted_mean'</code><code class="p">,</code>
+    <code class="n">init</code><code class="o">=</code><code class="n">init_func</code><code class="p">,</code>
+    <code class="n">merge</code><code class="o">=</code><code class="n">combine_aggs</code><code class="p">,</code>
+    <code class="n">accumulate_row</code><code class="o">=</code><code class="n">accumulate_func</code><code class="p">,</code> <code class="c1"># Used to be accumulate</code>
+    <code class="c1"># There is a higher performance option called accumulate_block for vectorized op</code>
+    <code class="n">finalize</code><code class="o">=</code><code class="n">finalize</code><code class="p">)</code>
+<code class="n">aggregated</code> <code class="o">=</code> <code class="n">ds_with_median</code><code class="o">.</code><code class="n">groupby</code><code class="p">(</code><code class="s2">"PostCode"</code><code class="p">)</code><code class="o">.</code><code class="n">aggregate</code><code class="p">(</code><code class="n">weighted_mean</code><code class="p">)</code></pre></div>
+<div data-type="note" epub:type="note"><h6>Note</h6>
+<p>Full dataset aggregation is implemented using <code>None</code> since all records then have the same key.</p>
+</div>
+
+<p>Ray’s parallelism control does not have the same flexibility as indexes in Dask or partitioning in Spark. You can control the target number of partitions—but not the way the data is spread out.</p>
+<div data-type="note" epub:type="note"><h6>Note</h6>
+<p>Ray does not currently take advantage of the concept of known partitioning<a data-primary="Ray Datasets" data-secondary="built-in operations" data-startref="ray-dataset-operations" data-type="indexterm" id="idm45354765930272"/><a data-primary="datasets" data-secondary="built-in Ray operations" data-startref="dataset-operations" data-type="indexterm" id="idm45354765929024"/> to minimize shuffles.</p>
+</div>
+</div></section>
+
+
+
+
+
+
+<section data-pdf-bookmark="Implementing Ray Datasets" data-type="sect1"><div class="sect1" id="idm45354766573520">
+<h1>Implementing Ray Datasets</h1>
+
+<p>Ray datasets <a data-primary="Ray Datasets" data-secondary="implementing" data-type="indexterm" id="idm45354765926048"/><a data-primary="datasets" data-secondary="implementing" data-type="indexterm" id="idm45354765925040"/>are built using the tools you have been working with in the previous chapters. Ray splits each dataset into many smaller components. These smaller components are called both <em>blocks</em> and <em>partitions</em> inside the Ray code. Each partition contains an Arrow dataset representing a slice of the entire Ray dataset. Since Arrow does not support all of the types from Ray, if you have unsupported types, each partition also contains a list of the unsupported types.</p>
+
+<p>The data inside each dataset is stored in the standard Ray object store. Each partition is stored as a separate object, since Ray is not able to split up individual objects. This also means that you can use the underlying Ray objects as parameters to Ray remote functions and actors. The dataset contains references to these objects as well as schema information.</p>
+<div data-type="tip"><h6>Tip</h6>
+<p>Since the dataset contains the schema information, loading a dataset blocks on the first partition so that the schema information can be determined. The remainder of the partitions are eagerly loaded, but in a nonblocking fashion like the rest of Ray’s operations.</p>
+</div>
+
+<p>In keeping with the rest of Ray, datasets are immutable. When you want to do an operation on a dataset, you apply a transformation, like <code>filter</code>, <code>join</code>, or <code>map</code>, and Ray returns a new dataset with the result.</p>
+
+<p>Ray datasets can use either tasks (aka remote functions) or actors for processing transformations. Some libraries built on top of Ray datasets, like Modin, depend on using actor processing so they can implement certain ML tasks involving state.</p>
+</div></section>
+
+
+
+
+
+
+<section data-pdf-bookmark="Conclusion" data-type="sect1"><div class="sect1" id="idm45354765796720">
+<h1>Conclusion</h1>
+
+<p>Ray’s transparent handling of moving data among tools makes it an excellent choice for building end-to-end ML pipelines when compared with traditional techniques where the communication barrier between tools is much higher. Two separate frameworks, Modin and Dask, both offer a pandas-like experience on top of Ray Datasets, making it easy to scale existing data science workflows. Spark on Ray (known as <em>RayDP</em>) provides an easy integration path for those working in organizations with existing big-data tools.</p>
+
+<p>In this chapter, you learned to effectively process data with Ray to power your ML and other needs. In the next chapter, you will learn to use Ray to power ML.</p>
+</div></section>
+<div data-type="footnotes"><p data-type="footnote" id="idm45354767432992"><sup><a href="ch09.html#idm45354767432992-marker">1</a></sup> This is like a Ford dealer recommending a Ford, so take this advice with a grain of salt.</p><p data-type="footnote" id="idm45354767410480"><sup><a href="ch09.html#idm45354767410480-marker">2</a></sup> Operations in native code can avoid this problem in Dask by using multithreading, but the details are beyond the scope of this book.</p><p data-type="footnote" id="idm45354766947536"><sup><a href="ch09.html#idm45354766947536-marker">3</a></sup> Alternate algorithms for exact quantiles depend on more shuffles to reduce the space overhead.</p><p data-type="footnote" id="idm45354766886064"><sup><a href="ch09.html#idm45354766886064-marker">4</a></sup> Key-skew can make this impossible for a known partitioner.</p></div></div></section></body></html>

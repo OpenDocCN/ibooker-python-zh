@@ -1,0 +1,349 @@
+<html><head></head><body><div id="sbo-rt-content"><section data-type="chapter" epub:type="chapter" data-pdf-bookmark="Chapter 6. Advanced Task Scheduling: &#10;Futures and Friends"><div class="chapter" id="ch06">
+<h1><span class="label">Chapter 6. </span>Advanced Task Scheduling: 
+<span class="keep-together">Futures and Friends</span></h1>
+
+
+<p>Dask’s computational flow follows these four main logical steps, which can happen concurrently and recursively for each task:</p>
+<ol>
+<li>
+<p>Collect and read the input data.</p>
+</li>
+<li>
+<p>Define and build the compute graph representing the set of computations that needs to be performed on the data.</p>
+</li>
+<li>
+<p>Run the computation (this happens when you run <code>.compute()</code>).</p>
+</li>
+<li>
+<p>Pass the result as data to the next step.</p>
+</li>
+
+</ol>
+
+<p>Now we introduce more ways to control this flow with futures. So far, you have mostly seen lazy operations in Dask, where Dask doesn’t do the work until something forces the computation. This pattern has a number of benefits, including allowing Dask’s optimizer to combine steps when doing so makes sense. However, not all tasks are well suited to lazy evaluation. One common pattern not well suited to lazy <a data-type="indexterm" data-primary="fire-and-forget" id="id657"/><a data-type="indexterm" data-primary="computational flow, fire-and-forget" id="id658"/><a data-type="indexterm" data-primary="flow control" data-see="computational flow, fire-and-forget" id="id659"/>evaluation is <em>fire-and-forget</em>, where we call a function for its side effect<sup><a data-type="noteref" id="id660-marker" href="ch06.xhtml#id660">1</a></sup> and necessarily care about the output. Trying to express this with lazy evaluation (e.g., <code>dask.delayed</code>) results in unnecessary blocking to force computation. When lazy evaluation is not what you need, you can explore Dask’s futures. Futures can be used for much more than just fire-and-forget, and you can return results from them. This chapter will explore a number of common use cases for futures.</p>
+<div data-type="note" epub:type="note"><h6>Note</h6>
+<p>You may already be familiar with futures from Python. Dask’s futures are an extension of Python’s concurrent.futures library, allowing you to use them in its place. Similar to using Dask DataFrames in place of pandas DataFrames, the behavior can be a bit different (although the differences here are smaller).</p>
+</div>
+
+<p>Dask futures are a <a data-type="indexterm" data-primary="futures" id="id661"/>part of Dask’s distributed client library, so you will get started by importing it with <code>from dask.distributed import Client</code>.</p>
+<div data-type="tip"><h6>Tip</h6>
+<p>Despite the name, you can use Dask’s distributed client locally. Refer to <a data-type="xref" href="ch03.xhtml#distributed_ch03_1687438078727">“Distributed (Dask Client and Scheduler)”</a> for different local deployment types.</p>
+</div>
+
+
+
+
+
+
+<section data-type="sect1" data-pdf-bookmark="Lazy and Eager Evaluation Revisited"><div class="sect1" id="id58">
+<h1>Lazy and Eager Evaluation Revisited</h1>
+
+<p>Eager evaluation is the most common form <a data-type="indexterm" data-primary="eager evaluation" id="id662"/><a data-type="indexterm" data-primary="lazy evaluation" id="id663"/>of evaluation in programming, including in Python. While most eager evaluation is blocking—that is, the program will not move to the next statement until the result is completed—you can still have asynchronous/non-blocking eager evaluation. Futures are one way of representing non-blocking eager computation.</p>
+
+<p>Non-blocking eager evaluation still <a data-type="indexterm" data-primary="eager evaluation" data-secondary="non-blocking" id="id664"/><a data-type="indexterm" data-primary="non-blocking eager evaluation" id="id665"/>has some potential downsides compared to lazy evaluation. Some of these challenges include:</p>
+
+<ul>
+<li>
+<p>The inability to combine adjacent stages (sometimes known as pipelining)</p>
+</li>
+<li>
+<p>Unnecessary computation:</p>
+
+<ul>
+<li>
+<p>Repeated subgraphs cannot be detected by Dask’s optimizer.</p>
+</li>
+<li>
+<p>Even if nothing depends on the result of the future, it may be computed.<sup><a data-type="noteref" id="id666-marker" href="ch06.xhtml#id666">2</a></sup></p>
+</li>
+</ul>
+</li>
+<li>
+<p>Potential excessive blocking when futures launch and block on other futures</p>
+</li>
+<li>
+<p>A need for more careful memory management</p>
+</li>
+</ul>
+
+<p>Not all Python code is eagerly evaluated. In Python 3 some built-in functions use lazy evaluation, with operators like <code>map</code> returning iterators and evaluating elements only on request.</p>
+</div></section>
+
+
+
+
+
+
+<section data-type="sect1" class="pagebreak-before less_space" data-pdf-bookmark="Use Cases for Futures"><div class="sect1" id="id168">
+<h1>Use Cases for Futures</h1>
+
+<p>Many common use cases can be made <a data-type="indexterm" data-primary="futures" data-secondary="use cases" id="id667"/>faster with careful application of futures:</p>
+<dl>
+<dt>Integrating with other async servers (like Tornado)</dt>
+<dd>
+<p>Although we generally believe that most of the time Dask is not the right solution for the “hot path,” there are exceptions, such as dynamically computed analytic dashboards.</p>
+</dd>
+<dt>Request/response pattern</dt>
+<dd>
+<p>Make a call to a remote service and (later) block on its result. This can include querying services like databases, remote procedure calls, or even websites.</p>
+</dd>
+<dt>IO</dt>
+<dd>
+<p>Input/output can often be slow, but you know you want them to start happening as soon as possible.</p>
+</dd>
+<dt>Timeouts</dt>
+<dd>
+<p>Sometimes you care about a result only if you can get it within a certain period of time. For example, think of a boosted ML model where you need to make a decision within a certain time frame, collecting all scores from available models quickly and then skipping any that take too long.</p>
+</dd>
+<dt>Fire-and-forget</dt>
+<dd>
+<p>Sometimes you might not care about the result of a function call, but you do want to ensure it is called. Futures allow you to ensure a computation occurs without having to block on the result.</p>
+</dd>
+<dt>Actors</dt>
+<dd>
+<p>The results from calling actors are futures. We cover actors in the next chapter.</p>
+</dd>
+</dl>
+
+<p>Launching futures in Dask is non-blocking, whereas computing tasks in Dask is blocking. This means that when you submit a future to Dask, while it begins work right away, it does not stop (or block) your program from continuing.</p>
+</div></section>
+
+
+
+
+
+
+<section data-type="sect1" data-pdf-bookmark="Launching Futures"><div class="sect1" id="id169">
+<h1>Launching Futures</h1>
+
+<p class="pagebreak-after">The syntax for launching Dask <a data-type="indexterm" data-primary="futures" data-secondary="launching" id="ftrlch"/>futures is a little different than that for <code>dask.delayed</code>. Dask futures are launched from the Dask distributed client with either <code>submit</code> for single futures or <code>map</code> for multiple futures, as shown in <a data-type="xref" href="#launching_futures_ch06_1686239180753">Example 6-1</a>.</p>
+<div id="launching_futures_ch06_1686239180753" data-type="example" class="less_space">
+<h5><span class="label">Example 6-1. </span>Launching futures</h5>
+
+<pre data-type="programlisting" data-code-language="python"><code class="kn">from</code> <code class="nn">dask.distributed</code> <code class="kn">import</code> <code class="n">Client</code>
+<code class="n">client</code> <code class="o">=</code> <code class="n">Client</code><code class="p">()</code>
+
+
+<code class="k">def</code> <code class="nf">slow</code><code class="p">(</code><code class="n">x</code><code class="p">):</code>
+    <code class="n">time</code><code class="o">.</code><code class="n">sleep</code><code class="p">(</code><code class="mi">3</code> <code class="o">*</code> <code class="n">x</code><code class="p">)</code>
+    <code class="k">return</code> <code class="mi">3</code> <code class="o">*</code> <code class="n">x</code>
+
+
+<code class="n">slow_future</code> <code class="o">=</code> <code class="n">client</code><code class="o">.</code><code class="n">submit</code><code class="p">(</code><code class="n">slow</code><code class="p">,</code> <code class="mi">1</code><code class="p">)</code>
+<code class="n">slow_futures</code> <code class="o">=</code> <code class="n">client</code><code class="o">.</code><code class="n">map</code><code class="p">(</code><code class="n">slow</code><code class="p">,</code> <code class="nb">range</code><code class="p">(</code><code class="mi">1</code><code class="p">,</code> <code class="mi">5</code><code class="p">))</code></pre></div>
+
+<p>Unlike with <code>dask.delayed</code>, as soon as the future is launched, Dask begins to compute the value.</p>
+<div data-type="note" epub:type="note"><h6>Note</h6>
+<p>While this <code>map</code> is somewhat similar to the <code>map</code> on Dask bags, each item results in a separate task, whereas bags are able to group together tasks into partitions to reduce the overhead (although they are <a data-type="indexterm" data-primary="futures" data-secondary="launching" data-startref="ftrlch" id="id668"/>lazily evaluated).</p>
+</div>
+
+<p>Some actions in Dask, like <code>persist()</code> on Dask collections, use futures under the hood. You can get the futures of the persisted collection by calling <code>futures_of</code>. These futures follow the same life cycle as the futures that you launch yourself.</p>
+</div></section>
+
+
+
+
+
+
+<section data-type="sect1" data-pdf-bookmark="Future Life Cycle"><div class="sect1" id="id59">
+<h1>Future Life Cycle</h1>
+
+<p>Futures have a different life cycle <a data-type="indexterm" data-primary="futures" data-secondary="life cycle" id="id669"/><a data-type="indexterm" data-primary="life cycle, futures" id="id670"/>from <code>dask.delayed</code> beyond eager computation. With <code>dask.delayed</code>, intermediate computations are automatically cleaned up; however, Dask futures results are stored until either the future is explicitly canceled or the reference to it is garbage collected in Python. If you no longer need the value of a future, you can cancel it and free any storage space or cores used by calling <code>.cancel</code>. The future life cycle is illustrated in <a data-type="xref" href="#future_lifecycle_ch06_1686239207398">Example 6-2</a>.</p>
+<div id="future_lifecycle_ch06_1686239207398" data-type="example">
+<h5><span class="label">Example 6-2. </span>Future life cycle</h5>
+
+<pre data-type="programlisting" data-code-language="python"><code class="n">myfuture</code> <code class="o">=</code> <code class="n">client</code><code class="o">.</code><code class="n">submit</code><code class="p">(</code><code class="n">slow</code><code class="p">,</code> <code class="mi">5</code><code class="p">)</code> <code class="c1"># Starts running</code>
+<code class="n">myfuture</code> <code class="o">=</code> <code class="kc">None</code> <code class="c1"># future may be GCd and then stop since there are no other references</code>
+
+<code class="n">myfuture</code> <code class="o">=</code> <code class="n">client</code><code class="o">.</code><code class="n">submit</code><code class="p">(</code><code class="n">slow</code><code class="p">,</code> <code class="mi">5</code><code class="p">)</code> <code class="c1"># Starts running</code>
+<code class="k">del</code> <code class="n">myfuture</code> <code class="c1"># future may be GCd and then stop since there are no other references</code>
+
+<code class="n">myfuture</code> <code class="o">=</code> <code class="n">client</code><code class="o">.</code><code class="n">submit</code><code class="p">(</code><code class="n">slow</code><code class="p">,</code> <code class="mi">5</code><code class="p">)</code> <code class="c1"># Starts running</code>
+<code class="c1"># Future stops running, any other references point to canceled future</code>
+<code class="n">myfuture</code><code class="o">.</code><code class="n">cancel</code><code class="p">()</code></pre></div>
+
+<p>Canceling a future behaves <a data-type="indexterm" data-primary="futures" data-secondary="canceling" id="id671"/>differently than deleting or depending on garbage collection. If there is another reference to the future, then deleting or setting the individual reference to None will not cancel the future. This means the result will remain stored in Dask. On the other hand, canceling futures has the downside that if you are incorrect and the futures value is needed, this will cause an error.</p>
+<div data-type="warning" epub:type="warning"><h6>Warning</h6>
+<p>When using Dask in a Jupyter notebook, <a data-type="indexterm" data-primary="Jupyter" data-secondary="notebooks, futures" id="id672"/>the notebook may “hold on to” the result of any previous cell, so even if the future is unnamed, it will remain present in Dask. There is a <a href="https://oreil.ly/zyy2H">discussion on Discourse</a> with more context for those interested.</p>
+</div>
+
+<p>The string representation of a future will show you where it is in its life cycle (e.g., <code>Future: slow status: cancelled,</code>).</p>
+</div></section>
+
+
+
+
+
+
+<section data-type="sect1" data-pdf-bookmark="Fire-and-Forget"><div class="sect1" id="id170">
+<h1>Fire-and-Forget</h1>
+
+<p>Sometimes you no longer need a future, but you also don’t want it to be canceled. This pattern is <a data-type="indexterm" data-primary="futures" data-secondary="fire-and-forget" id="id673"/><a data-type="indexterm" data-primary="fire-and-forget" data-secondary="futures" id="id674"/>called fire-and-forget. This is most useful for things like writing data out, updating a database, or other side effects. If all reference to a future is lost, garbage collection can result in the future being canceled. To work around this, Dask has the aptly named <code>fire_and_forget</code> method, which allows you to take advantage of this pattern, as shown in <a data-type="xref" href="#fire_and_forget_ch06_1686239249531">Example 6-3</a>, without needing to keep references around.</p>
+<div id="fire_and_forget_ch06_1686239249531" data-type="example">
+<h5><span class="label">Example 6-3. </span>Fire-and-forget</h5>
+
+<pre data-type="programlisting" data-code-language="python"><code class="kn">from</code> <code class="nn">dask.distributed</code> <code class="kn">import</code> <code class="n">fire_and_forget</code>
+
+
+<code class="k">def</code> <code class="nf">do_some_io</code><code class="p">(</code><code class="n">data</code><code class="p">):</code>
+    <code class="sd">"""</code>
+<code class="sd">    Do some io we don't need to block on :)</code>
+<code class="sd">    """</code>
+    <code class="kn">import</code> <code class="nn">requests</code>
+    <code class="k">return</code> <code class="n">requests</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="s1">'https://httpbin.org/get'</code><code class="p">,</code> <code class="n">params</code><code class="o">=</code><code class="n">data</code><code class="p">)</code>
+
+
+<code class="k">def</code> <code class="nf">business_logic</code><code class="p">():</code>
+    <code class="c1"># Make a future, but we don't really care about its result, just that it</code>
+    <code class="c1"># happens</code>
+    <code class="n">future</code> <code class="o">=</code> <code class="n">client</code><code class="o">.</code><code class="n">submit</code><code class="p">(</code><code class="n">do_some_io</code><code class="p">,</code> <code class="p">{</code><code class="s2">"timbit"</code><code class="p">:</code> <code class="s2">"awesome"</code><code class="p">})</code>
+    <code class="n">fire_and_forget</code><code class="p">(</code><code class="n">future</code><code class="p">)</code>
+
+
+<code class="n">business_logic</code><code class="p">()</code></pre></div>
+</div></section>
+
+
+
+
+
+
+<section data-type="sect1" data-pdf-bookmark="Retrieving Results"><div class="sect1" id="id60">
+<h1>Retrieving Results</h1>
+
+<p>More commonly, you will eventually want to <a data-type="indexterm" data-primary="futures" data-secondary="return values" id="ftrrsl"/><a data-type="indexterm" data-primary="return values, futures" id="rtvft"/>know what the future has computed (or even just if it encountered an error). For futures that are not just side effects, you’ll eventually want to get the return value (or error) from the futures. Futures have the blocking method <code>result</code>, as shown in <a data-type="xref" href="#get_result_ch06_1686239283618">Example 6-4</a>, which gives you back the value computed in the future or raises the exception from the future.</p>
+<div id="get_result_ch06_1686239283618" data-type="example">
+<h5><span class="label">Example 6-4. </span>Getting the result</h5>
+
+<pre data-type="programlisting" data-code-language="python"><code class="n">future</code> <code class="o">=</code> <code class="n">client</code><code class="o">.</code><code class="n">submit</code><code class="p">(</code><code class="n">do_some_io</code><code class="p">,</code> <code class="p">{</code><code class="s2">"timbit"</code><code class="p">:</code> <code class="s2">"awesome"</code><code class="p">})</code>
+<code class="n">future</code><code class="o">.</code><code class="n">result</code><code class="p">()</code></pre></div>
+
+<p>You can extend this to multiple futures, as in <a data-type="xref" href="#get_a_list_of_results_ch06_1686239329136">Example 6-5</a>, but there are ways to do it faster.</p>
+<div id="get_a_list_of_results_ch06_1686239329136" data-type="example">
+<h5><span class="label">Example 6-5. </span>Getting a list of results</h5>
+
+<pre data-type="programlisting" data-code-language="python"><code class="k">for</code> <code class="n">f</code> <code class="ow">in</code> <code class="n">futures</code><code class="p">:</code>
+    <code class="n">time</code><code class="o">.</code><code class="n">sleep</code><code class="p">(</code><code class="mi">2</code><code class="p">)</code> <code class="c1"># Business numbers logic</code>
+    <code class="nb">print</code><code class="p">(</code><code class="n">f</code><code class="o">.</code><code class="n">result</code><code class="p">())</code></pre></div>
+
+<p>If you’ve got multiple futures together—say, you created them with <code>map</code>—you can get the results back as they become available (see <a data-type="xref" href="#get_list_results_as_avail_ch06_1686239357228">Example 6-6</a>). If you can process the results out of order, this can greatly improve your processing time.</p>
+<div id="get_list_results_as_avail_ch06_1686239357228" data-type="example">
+<h5><span class="label">Example 6-6. </span>Getting a list of results as they become available</h5>
+
+<pre data-type="programlisting" data-code-language="python"><code class="kn">from</code> <code class="nn">dask.distributed</code> <code class="kn">import</code> <code class="n">as_completed</code>
+
+<code class="k">for</code> <code class="n">f</code> <code class="ow">in</code> <code class="n">as_completed</code><code class="p">(</code><code class="n">futures</code><code class="p">):</code>
+    <code class="n">time</code><code class="o">.</code><code class="n">sleep</code><code class="p">(</code><code class="mi">2</code><code class="p">)</code> <code class="c1"># Business numbers logic</code>
+    <code class="nb">print</code><code class="p">(</code><code class="n">f</code><code class="o">.</code><code class="n">result</code><code class="p">())</code></pre></div>
+
+<p>In the preceding example, by processing futures as they complete you can have the main thread do its “business logic” (similar to <code>combine</code> step for an aggregate) for each element as it becomes available. If the futures finish at different times, this can be a large speed increase.</p>
+
+<p>If you have a deadline, like scoring a model for ad serving<sup><a data-type="noteref" id="id675-marker" href="ch06.xhtml#id675">3</a></sup> or doing something funky with the stock market, you might not want to wait for all of your futures. Instead, the <code>wait</code> function allows you to fetch results with a timeout, as shown in <a data-type="xref" href="#get_the_first_future_ch06_1686239413080">Example 6-7</a>.</p>
+<div id="get_the_first_future_ch06_1686239413080" data-type="example">
+<h5><span class="label">Example 6-7. </span>Getting the first future (within a time limit)</h5>
+
+<pre data-type="programlisting" data-code-language="python"><code class="kn">from</code> <code class="nn">dask.distributed</code> <code class="kn">import</code> <code class="n">wait</code>
+<code class="kn">from</code> <code class="nn">dask.distributed.client</code> <code class="kn">import</code> <code class="n">FIRST_COMPLETED</code>
+
+<code class="c1"># Will throw an exception if no future completes in time.</code>
+<code class="c1"># If it does not throw, the result has two lists:</code>
+<code class="c1"># The done list may return between one and all futures.</code>
+<code class="c1"># The not_done list may contain zero or more futures.</code>
+<code class="n">finished</code> <code class="o">=</code> <code class="n">wait</code><code class="p">(</code><code class="n">futures</code><code class="p">,</code> <code class="mi">1</code><code class="p">,</code> <code class="n">return_when</code><code class="o">=</code><code class="n">FIRST_COMPLETED</code><code class="p">)</code>
+
+<code class="c1"># Process the returned futures</code>
+<code class="k">for</code> <code class="n">f</code> <code class="ow">in</code> <code class="n">finished</code><code class="o">.</code><code class="n">done</code><code class="p">:</code>
+    <code class="nb">print</code><code class="p">(</code><code class="n">f</code><code class="o">.</code><code class="n">result</code><code class="p">())</code>
+
+<code class="c1"># Cancel the futures we don't need</code>
+<code class="k">for</code> <code class="n">f</code> <code class="ow">in</code> <code class="n">finished</code><code class="o">.</code><code class="n">not_done</code><code class="p">:</code>
+    <code class="n">f</code><code class="o">.</code><code class="n">cancel</code><code class="p">()</code></pre></div>
+
+<p>This time limit can apply either to the entire set or to one future at a time. If you want all features finished by a given time, then you need a bit more work, as shown in <a data-type="xref" href="#get_any_futures_that_finish_ch06_1686239442955">Example 6-8</a>.</p>
+<div id="get_any_futures_that_finish_ch06_1686239442955" data-type="example">
+<h5><span class="label">Example 6-8. </span>Getting any futures that finish within a time limit</h5>
+
+<pre data-type="programlisting" data-code-language="python"><code class="n">max_wait</code> <code class="o">=</code> <code class="mi">10</code>
+<code class="n">start</code> <code class="o">=</code> <code class="n">time</code><code class="o">.</code><code class="n">time</code><code class="p">()</code>
+
+<code class="k">while</code> <code class="nb">len</code><code class="p">(</code><code class="n">futures</code><code class="p">)</code> <code class="o">&gt;</code> <code class="mi">0</code> <code class="ow">and</code> <code class="n">time</code><code class="o">.</code><code class="n">time</code><code class="p">()</code> <code class="o">-</code> <code class="n">start</code> <code class="o">&lt;</code> <code class="n">max_wait</code><code class="p">:</code>
+    <code class="k">try</code><code class="p">:</code>
+        <code class="n">finished</code> <code class="o">=</code> <code class="n">wait</code><code class="p">(</code><code class="n">futures</code><code class="p">,</code> <code class="mi">1</code><code class="p">,</code> <code class="n">return_when</code><code class="o">=</code><code class="n">FIRST_COMPLETED</code><code class="p">)</code>
+        <code class="k">for</code> <code class="n">f</code> <code class="ow">in</code> <code class="n">finished</code><code class="o">.</code><code class="n">done</code><code class="p">:</code>
+            <code class="nb">print</code><code class="p">(</code><code class="n">f</code><code class="o">.</code><code class="n">result</code><code class="p">())</code>
+        <code class="n">futures</code> <code class="o">=</code> <code class="n">finished</code><code class="o">.</code><code class="n">not_done</code>
+    <code class="k">except</code> <code class="ne">TimeoutError</code><code class="p">:</code>
+        <code class="kc">True</code> <code class="c1"># No future finished in this cycle</code>
+
+<code class="c1"># Cancel any remaining futures</code>
+<code class="k">for</code> <code class="n">f</code> <code class="ow">in</code> <code class="n">futures</code><code class="p">:</code>
+    <code class="n">f</code><code class="o">.</code><code class="n">cancel</code><code class="p">()</code></pre></div>
+
+<p>Now that you can get the results from futures, you can compare the execution time of <code>dask.delayed</code> versus Dask futures, as shown in <a data-type="xref" href="#how_futures_faster_ch06_1686239467057">Example 6-9</a>.</p>
+<div id="how_futures_faster_ch06_1686239467057" data-type="example">
+<h5><span class="label">Example 6-9. </span>Seeing that futures can be faster</h5>
+
+<pre data-type="programlisting" data-code-language="python"><code class="n">slow_future</code> <code class="o">=</code> <code class="n">client</code><code class="o">.</code><code class="n">submit</code><code class="p">(</code><code class="n">slow</code><code class="p">,</code> <code class="mi">1</code><code class="p">)</code>
+<code class="n">slow_delayed</code> <code class="o">=</code> <code class="n">dask</code><code class="o">.</code><code class="n">delayed</code><code class="p">(</code><code class="n">slow</code><code class="p">)(</code><code class="mi">1</code><code class="p">)</code>
+<code class="c1"># Pretend we do some other work here</code>
+<code class="n">time</code><code class="o">.</code><code class="n">sleep</code><code class="p">(</code><code class="mi">1</code><code class="p">)</code>
+<code class="n">future_time</code> <code class="o">=</code> <code class="n">timeit</code><code class="o">.</code><code class="n">timeit</code><code class="p">(</code><code class="k">lambda</code><code class="p">:</code> <code class="n">slow_future</code><code class="o">.</code><code class="n">result</code><code class="p">(),</code> <code class="n">number</code><code class="o">=</code><code class="mi">1</code><code class="p">)</code>
+<code class="n">delayed_time</code> <code class="o">=</code> <code class="n">timeit</code><code class="o">.</code><code class="n">timeit</code><code class="p">(</code><code class="k">lambda</code><code class="p">:</code> <code class="n">dask</code><code class="o">.</code><code class="n">compute</code><code class="p">(</code><code class="n">slow_delayed</code><code class="p">),</code> <code class="n">number</code><code class="o">=</code><code class="mi">1</code><code class="p">)</code>
+<code class="nb">print</code><code class="p">(</code>
+    <code class="sa">f</code><code class="s2">"""So as you can see by the future time </code><code class="si">{</code><code class="n">future_time</code><code class="si">}</code><code class="s2"> v.s. </code><code class="si">{</code><code class="n">delayed_time</code><code class="si">}</code><code class="s2"/>
+<code class="s2">    the future starts running right away."""</code>
+<code class="p">)</code></pre></div>
+
+<p>In this (albeit contrived) example, you can see how, by starting the work as soon as possible, the future is completed by the time you get the result, whereas the <code>dask.delayed</code> starts only when <a data-type="indexterm" data-primary="futures" data-secondary="return values" data-startref="ftrrsl" id="id676"/><a data-type="indexterm" data-primary="return values, futures" data-startref="rtvft" id="id677"/>you get there.</p>
+</div></section>
+
+
+
+
+
+
+<section data-type="sect1" data-pdf-bookmark="Nested Futures"><div class="sect1" id="id61">
+<h1>Nested Futures</h1>
+
+<p>As with <code>dask.delayed</code>, you can also <a data-type="indexterm" data-primary="futures" data-secondary="nested" id="id678"/><a data-type="indexterm" data-primary="nested futures" id="id679"/>launch futures from inside futures. The syntax is a bit different, as you need to get an instance of the <code>client</code> object, which is not serializable, so <code>dask.distributed</code> has the special function <code>get_client</code> to get the client inside a distributed function. Once you have the client, you can then launch the future like normal, as shown in <a data-type="xref" href="#ex_nested">Example 6-10</a>.</p>
+<div id="ex_nested" data-type="example">
+<h5><span class="label">Example 6-10. </span>Launching a nested future</h5>
+
+<pre data-type="programlisting" data-code-language="python"><code class="kn">from</code> <code class="nn">dask.distributed</code> <code class="kn">import</code> <code class="n">get_client</code>
+
+
+<code class="k">def</code> <code class="nf">nested</code><code class="p">(</code><code class="n">x</code><code class="p">):</code>
+    <code class="n">client</code> <code class="o">=</code> <code class="n">get_client</code><code class="p">()</code> <code class="c1"># The client is serializable, so we use get_client</code>
+    <code class="n">futures</code> <code class="o">=</code> <code class="n">client</code><code class="o">.</code><code class="n">map</code><code class="p">(</code><code class="n">slow</code><code class="p">,</code> <code class="nb">range</code><code class="p">(</code><code class="mi">0</code><code class="p">,</code> <code class="n">x</code><code class="p">))</code>
+    <code class="n">r</code> <code class="o">=</code> <code class="mi">0</code>
+    <code class="k">for</code> <code class="n">f</code> <code class="ow">in</code> <code class="n">as_completed</code><code class="p">(</code><code class="n">futures</code><code class="p">):</code>
+        <code class="n">r</code> <code class="o">=</code> <code class="n">r</code> <code class="o">+</code> <code class="n">f</code><code class="o">.</code><code class="n">result</code><code class="p">()</code>
+    <code class="k">return</code> <code class="n">r</code>
+
+
+<code class="n">f</code> <code class="o">=</code> <code class="n">client</code><code class="o">.</code><code class="n">submit</code><code class="p">(</code><code class="n">nested</code><code class="p">,</code> <code class="mi">3</code><code class="p">)</code>
+<code class="n">f</code><code class="o">.</code><code class="n">result</code><code class="p">()</code></pre></div>
+
+<p>Note that since Dask uses a centralized scheduler, the client is communicating with that centralized scheduler to determine where to place the future.</p>
+<aside data-type="sidebar" epub:type="sidebar"><div class="sidebar" id="dds_scheduling">
+<h1>Distributed Data Structures for Scheduling</h1>
+<p>Dask also has a collection of data <a data-type="indexterm" data-primary="data structures, scheduling and" id="id680"/><a data-type="indexterm" data-primary="distributed data structures" id="id681"/>structures to simplify task coordination. These data structures include queues, locks/semaphores, events, and publish/subscriber topics. These distributed data structures aim to behave similarly to their local counterparts, but it’s important to remember that the distributed nature of Dask adds overhead for coordination and remote procedure calls.</p>
+
+<p>For example, Dask’s distributed <a data-type="indexterm" data-primary="distributed variable" id="id682"/><a data-type="indexterm" data-primary="variables, distributed" id="id683"/><a data-type="indexterm" data-primary="get function" id="id684"/><a data-type="indexterm" data-primary="functions" data-secondary="get" id="id685"/><a data-type="indexterm" data-primary="set function" id="id686"/><a data-type="indexterm" data-primary="functions" data-secondary="set" id="id687"/><a data-type="indexterm" data-primary="delete function" id="id688"/><a data-type="indexterm" data-primary="functions" data-secondary="delete" id="id689"/>variable is called <code>Variable</code>, which implements <code>get</code>, <code>set</code>, and <code>delete</code>. The <code>get</code> function takes a <code>timeout</code>, which should remind you that these operations are distributed in nature and therefore are slower than updating a local variable. As with multi-threaded global variables, race conditions can occur when different workers update the same local variable.</p>
+<div data-type="tip"><h6>Tip</h6>
+<p>You can name Dask’s distributed data structures when constructing them, and two resources with the same name will be resolved to the same object even if they are constructed separately.</p>
+</div>
+</div></aside>
+</div></section>
+
+
+
+
+
+
+<section data-type="sect1" data-pdf-bookmark="Conclusion"><div class="sect1" id="id264">
+<h1>Conclusion</h1>
+
+<p>While Dask’s primary building block is <code>dask.delayed</code>, it’s not the only option. You can control more of your execution flow by using Dask’s futures. Futures are ideal for I/O, model inference, and deadline-sensitive applications. In exchange for this additional control, you are responsible for managing the life cycle of your futures and the data they produce in a way that you are not with <code>dask.delayed</code>. Dask also has a number of distributed data structures, including queues, variables, and locks. While these distributed data structures are more expensive than their local counterparts, they also give you another layer of flexibility around controlling your task scheduling.</p>
+</div></section>
+<div data-type="footnotes"><p data-type="footnote" id="id660"><sup><a href="ch06.xhtml#id660-marker">1</a></sup> Like writing a file to disk or updating a database record.</p><p data-type="footnote" id="id666"><sup><a href="ch06.xhtml#id666-marker">2</a></sup> Although if the only reference to it gets garbage collected, it may not.</p><p data-type="footnote" id="id675"><sup><a href="ch06.xhtml#id675-marker">3</a></sup> We believe that this is one of the areas in which Dask has more room for growth, and if you do want to implement a microservice for deadline-critical events, you may want to explore using Dask in conjunction with other systems, like Ray.</p></div></div></section></div></body></html>

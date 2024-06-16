@@ -1,0 +1,724 @@
+<html><head></head><body><section data-pdf-bookmark="Chapter 5. Ray Design Details" data-type="chapter" epub:type="chapter"><div class="chapter" id="ch05">
+<h1><span class="label">Chapter 5. </span>Ray Design Details</h1>
+
+
+<p>Now that you’ve created and worked with remote functions and actors, it’s time to learn what’s happening behind the scenes. In this chapter, you will learn about important distributed system concepts, like fault tolerance, Ray’s resource management, and ways to speed up your remote functions and actors. Many of these details are most important when using Ray in a distributed fashion, but even local users benefit. Having a solid grasp of the way Ray works will help you decide how and when to 
+<span class="keep-together">use it.</span></p>
+
+
+
+
+
+
+<section data-pdf-bookmark="Fault Tolerance" data-type="sect1"><div class="sect1" id="fault_tolerance">
+<h1>Fault Tolerance</h1>
+
+<p><em>Fault tolerance</em> refers<a data-primary="fault tolerance" data-type="indexterm" id="fault-tolerance"/> to how a system will handle failures of everything from user code to the framework itself or the machines it runs on. Ray has a different fault tolerance mechanism tailored for each system. Like many systems, Ray cannot recover from the <a data-primary="head nodes" data-secondary="fault tolerance" data-type="indexterm" id="idm45354777622560"/>head node failing.<sup><a data-type="noteref" href="ch05.html#idm45354777621488" id="idm45354777621488-marker">1</a></sup></p>
+<div data-type="warning" epub:type="warning"><h6>Warning</h6>
+<p>Some nonrecoverable errors exist in Ray, which you cannot (at present) configure away. If the head node, GCS, or connection between your application and the head node fails, your application will fail and cannot be recovered by Ray. If you require fault tolerance for these situations, you will have to roll your own high availability, likely using ZooKeeper or similar lower-level tools.</p>
+</div>
+
+<p>Overall, Ray’s <a href="https://oreil.ly/eHV9H">architecture</a> (see <a data-type="xref" href="#overall-ray-architecture">Figure 5-1</a>) consists<a data-primary="Ray" data-secondary="architecture of" data-type="indexterm" id="idm45354777617856"/><a data-primary="architecture of Ray" data-type="indexterm" id="idm45354777616880"/> of an application layer and a system layer, both of which can handle failures.</p>
+
+<figure><div class="figure" id="overall-ray-architecture">
+<img alt="spwr 0501" src="assets/spwr_0501.png"/>
+<h6><span class="label">Figure 5-1. </span>Overall Ray architecture</h6>
+</div></figure>
+
+<p>The <em>system layer</em> consists<a data-primary="system layer" data-type="indexterm" id="idm45354777613312"/><a data-primary="GCS (global control store)" data-secondary="fault tolerance" data-type="indexterm" id="idm45354777612576"/> of three major components: a GCS, a distributed scheduler, and a distributed object store. Except for the GCS, all components are horizontally scalable and fault-tolerant.</p>
+
+<p>At the heart of Ray’s architecture is the GCS that maintains the entire control state of the system. Internally, the GCS is a key/value store with pub/sub functionality.<sup><a data-type="noteref" href="ch05.html#idm45354777611152" id="idm45354777611152-marker">2</a></sup> At present, the GCS is a single point of failure and runs on the head node.</p>
+
+<p>Using GCS, which centrally maintains Ray’s state, significantly simplifies overall architecture by enabling the rest of the system layer components to be stateless. This design is fundamental for fault tolerance (i.e., on failure, components simply restart and read the lineage from the GCS) and makes it easy to scale the distributed object store and scheduler independently, as all components share the needed state via 
+<span class="keep-together">the GCS.</span></p>
+
+<p>Since <a data-primary="remote functions" data-secondary="fault tolerance" data-type="indexterm" id="idm45354777609104"/>remote functions do not contain any persistent state, recovering from their failure is relatively simple. Ray will try again until it succeeds or reaches a maximum number of retries. As seen in the previous chapter, you can control the number of retries through the <code>max_retries</code> parameter in the <code>@ray.remote</code> annotation. To try out and better understand Ray’s fault tolerance, write a flaky remote function that fails a certain percentage of the time, as shown in <a data-type="xref" href="#ex_flaky_ray">Example 5-1</a>.</p>
+<div data-type="example" id="ex_flaky_ray">
+<h5><span class="label">Example 5-1. </span><a href="https://oreil.ly/ytqOu">Auto retry remote function</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="nd">@ray</code><code class="o">.</code><code class="n">remote</code>
+<code class="k">def</code> <code class="nf">flaky_remote_fun</code><code class="p">(</code><code class="n">x</code><code class="p">):</code>
+    <code class="kn">import</code> <code class="nn">random</code>
+    <code class="kn">import</code> <code class="nn">sys</code>
+    <code class="k">if</code> <code class="n">random</code><code class="o">.</code><code class="n">randint</code><code class="p">(</code><code class="mi">0</code><code class="p">,</code> <code class="mi">2</code><code class="p">)</code> <code class="o">==</code> <code class="mi">1</code><code class="p">:</code>
+        <code class="n">sys</code><code class="o">.</code><code class="n">exit</code><code class="p">(</code><code class="mi">0</code><code class="p">)</code>
+    <code class="k">return</code> <code class="n">x</code>
+
+<code class="n">r</code> <code class="o">=</code> <code class="n">flaky_remote_fun</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="mi">1</code><code class="p">)</code></pre></div>
+
+<p>If your flaky function fails, you will see <code>WARNING worker.py:1215 -- A worker died or was killed while executing a task by an unexpected system error.</code> output to stderr. You’ll still get back the correct value when you execute <code>ray.get</code>, demonstrating Ray’s fault tolerance.</p>
+<div data-type="tip"><h6>Tip</h6>
+<p>Alternatively, to see fault tolerance in action, if you’re running a distributed Ray cluster, you can find the node running your remote function by returning the hostname and then shut down the node while running a request.</p>
+</div>
+
+<p>Remote actors<a data-primary="remote actors" data-secondary="fault tolerance" data-type="indexterm" id="remote-actor-fault"/> are a complicated case for fault tolerance as they contain state within them. This is why in <a data-type="xref" href="ch04.html#ch04">Chapter 4</a> you explored options for persisting and recovering that state. Actors can experience failure at any stage: setup, message processing, or between messages.</p>
+
+<p>Unlike for remote functions, if an actor fails while processing a message, Ray does not automatically retry it. This is true even if you have set <code>max_restarts</code>. Ray will restart your actor for processing the next message. On error, you will get back a <code>RayActorError</code> exception.</p>
+<div data-type="tip"><h6>Tip</h6>
+<p>Ray actors are lazily initialized, so failure during the init stage is the same as failing on the first message.</p>
+</div>
+
+<p>When an actor fails between messages, Ray automatically attempts to recover the actor the next time it is called, up to <code>max_retries</code> times. If you’ve written your state recovery code well, failures between messages are generally invisible besides slightly slower processing times. If you don’t have state recovery, each restart will reset the actor to the initial values.</p>
+
+<p>If your application fails, nearly all of the resources your application was using will eventually be garbage collected. The one exception is detached resources, <a data-primary="detached actors" data-secondary="fault tolerance" data-type="indexterm" id="idm45354777523968"/>such as detached actors or detached placement groups. Ray will restart these as configured beyond the life of your current program, provided the cluster does not fail. This can prevent your cluster from scaling down, as Ray will not release the<a data-primary="remote actors" data-secondary="fault tolerance" data-startref="remote-actor-fault" data-type="indexterm" id="idm45354777520336"/> resources.</p>
+
+<p>Ray does not automatically attempt to re-create lost objects after they are first stored. You can configure Ray to try to re-create lost objects when accessed. In the next section, you’ll learn more about Ray objects and how to configure that <a data-primary="fault tolerance" data-startref="fault-tolerance" data-type="indexterm" id="idm45354777518736"/>resiliency.</p>
+</div></section>
+
+
+
+
+
+
+<section data-pdf-bookmark="Ray Objects" data-type="sect1"><div class="sect1" id="ray_objects">
+<h1>Ray Objects</h1>
+
+<p><em>Ray objects</em> can <a data-primary="Ray objects" data-type="indexterm" id="ray-objects"/>contain anything serializable (covered in the next section), including references to other Ray objects, called <code>ObjectRef</code>s. An <code>ObjectRef</code> is <a data-primary="ObjectRefs" data-type="indexterm" id="idm45354777512656"/>essentially a unique ID that refers to a remote object and is conceptually similar to futures. Ray objects are created automatically for task results, and large parameters of actors and remote functions. You can manually create objects by <a data-primary="ray.put" data-type="indexterm" id="rayput"/>calling <code>ray.put</code>, which will return an immediately ready <code>ObjectRef</code>—for example, <code>o = ray.put(1)</code>.</p>
+<div data-type="tip"><h6>Tip</h6>
+<p>In general, small objects are initially stored in their owner’s in-process store, while Ray stores large objects on the worker that generates them. This allows Ray to balance each object’s memory footprint and resolution time.</p>
+</div>
+
+<p>The owner of an object is the worker that created the initial <code>ObjectRef</code>, by submitting the creating task or calling <code>ray.put</code>. The owner manages the lifetime of the object through reference counting.</p>
+<div data-type="tip"><h6>Tip</h6>
+<p>Reference counting <a data-primary="reference counting" data-type="indexterm" id="idm45354777505984"/>makes it especially important when defining objects to set them to <code>None</code> when you are done with them or make sure they go out of scope. Ray’s reference counting is susceptible to circular references, where objects refer to each other. Printing the objects stored in the cluster by running <code>ray memory --group-by STACK_TRACE</code> can be a good way to find objects Ray cannot garbage collect.</p>
+</div>
+
+<p>Ray objects are immutable; they cannot be modified. It’s important to note that if you change an object you’ve read from Ray (e.g., with <code>ray.get</code>) or stored in Ray (e.g., with <code>ray.put</code>), that change won’t be reflected in the object store. See <a data-type="xref" href="#ex_ray_immuteable">Example 5-2</a>.</p>
+<div data-type="example" id="ex_ray_immuteable">
+<h5><span class="label">Example 5-2. </span><a href="https://oreil.ly/ytqOu">Immutable Ray objects</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="n">remote_array</code> <code class="o">=</code> <code class="n">ray</code><code class="o">.</code><code class="n">put</code><code class="p">([</code><code class="mi">1</code><code class="p">])</code>
+<code class="n">v</code> <code class="o">=</code> <code class="n">ray</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="n">remote_array</code><code class="p">)</code>
+<code class="n">v</code><code class="o">.</code><code class="n">append</code><code class="p">(</code><code class="mi">2</code><code class="p">)</code>
+<code class="nb">print</code><code class="p">(</code><code class="n">v</code><code class="p">)</code>
+<code class="nb">print</code><code class="p">(</code><code class="n">ray</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="n">remote_array</code><code class="p">))</code></pre></div>
+
+<p>When you run this code, you can see that while you can mutate a value, the change won’t propagate to the object store.</p>
+
+<p>If a parameter or return value is large and used more than once, or medium-sized and used frequently, storing it explicitly as an object can be worthwhile. You can then use the <code>ObjectRef</code> in place of the regular parameter, and Ray will automatically translate the <code>ObjectRef</code> into a Python type for you, as shown in <a data-type="xref" href="#ex_use_ray_put">Example 5-3</a>.</p>
+<div data-type="example" id="ex_use_ray_put">
+<h5><span class="label">Example 5-3. </span><a href="https://oreil.ly/ytqOu">Using <code>ray.put</code></a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="kn">import</code> <code class="nn">numpy</code> <code class="k">as</code> <code class="nn">np</code>
+<code class="nd">@ray</code><code class="o">.</code><code class="n">remote</code>
+<code class="k">def</code> <code class="nf">sup</code><code class="p">(</code><code class="n">x</code><code class="p">):</code>
+    <code class="kn">import</code> <code class="nn">random</code>
+    <code class="kn">import</code> <code class="nn">sys</code>
+    <code class="k">return</code> <code class="nb">len</code><code class="p">(</code><code class="n">x</code><code class="p">)</code>
+
+<code class="n">p</code> <code class="o">=</code> <code class="n">ray</code><code class="o">.</code><code class="n">put</code><code class="p">(</code><code class="n">np</code><code class="o">.</code><code class="n">array</code><code class="p">(</code><code class="nb">range</code><code class="p">(</code><code class="mi">0</code><code class="p">,</code> <code class="mi">1000</code><code class="p">)))</code>
+<code class="n">ray</code><code class="o">.</code><code class="n">get</code><code class="p">([</code><code class="n">sup</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="n">p</code><code class="p">),</code> <code class="n">sup</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="n">p</code><code class="p">),</code> <code class="n">sup</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="n">p</code><code class="p">)])</code></pre></div>
+
+<p>When <a data-primary="ray.put" data-startref="rayput" data-type="indexterm" id="idm45354777405120"/>another node needs an object, it asks the owner who has any copies of the object and then fetches and creates a local copy of that object. Therefore, many copies of the same object can exist in object stores on different nodes. Ray does not proactively replicate objects, so it is also possible that Ray may have only one copy of an object.</p>
+
+<p>By default, <a data-primary="lost objects" data-type="indexterm" id="idm45354777336064"/>Ray will raise an <code>ObjectLostError</code> when you attempt to get a lost object. You can enable recomputing by providing <code>enable_object_reconstruction=True</code> to <code>ray.init</code> or adding <code>--enable-object-reconstruction</code> to <code>ray start</code>. This recomputation, which uses information in the GCS, will happen only when the object is needed (reconstruction is lazy on resolution).</p>
+
+<p>We can lose an object in two ways. Since the owner is responsible for reference counting, if the owner is lost, the object is lost, regardless of whether other copies of the object exist. If no copies of an object remain (e.g., all the nodes storing it die), Ray also loses the object. (This case is distinct because the object may be stored only on nodes different from the owner.)</p>
+<div data-type="tip"><h6>Tip</h6>
+<p>Ray will follow the <code>max_retries</code> limit discussed previously during reconstruction.</p>
+</div>
+
+<p>Ray’s object store uses reference-counting garbage collection to clean up objects that your program doesn’t need anymore.<sup><a data-type="noteref" href="ch05.html#idm45354777330896" id="idm45354777330896-marker">3</a></sup> The object store keeps track of both direct and indirect references.<sup><a data-type="noteref" href="ch05.html#idm45354777330208" id="idm45354777330208-marker">4</a></sup></p>
+
+<p>Even with<a data-primary="spilled objects" data-type="indexterm" id="idm45354777329296"/> garbage collection, an object store can fill up with objects. When an object store fills up, Ray will first execute garbage collection, removing objects with no references. If memory pressure remains, the object store will attempt to spill to disk. <em>Spilling to disk</em> copies objects from memory to disk and is called <code>spilling</code> since it happens when memory usage overflows.</p>
+<div data-type="note" epub:type="note"><h6>Note</h6>
+<p>Earlier versions of Ray had the capability to evict objects per actor by setting an <code>object_store_memory</code> limit.</p>
+</div>
+
+<p>You might want to fine-tune the object store settings. Depending on your use case, you may need more or less memory for the object store. You configure the object store through the <code>_system_config</code> settings. Two important configuration options include the minimum aggregate size to spill to disk, <code>min_spilling_size</code>, and total memory allocated to the object store, <code>object_store_memory_mb</code>. You can set these when calling <code>ray.init</code>, as shown in <a data-type="xref" href="#ray_obj_store_config">Example 5-4</a>.</p>
+
+<p>If you have a mixture of fast and slow disks—​for example, solid-state drive (SSD), hard disk drive (HDD), and network—​you should consider using the faster storage for spilled objects. Unlike the rest of the storage configs, you configure the spilled object storage location with a nested JavaScript Object Notation (JSON) blob. Like the rest of the object store settings, <code>object_spilling_config</code> is stored under 
+<span class="keep-together"><code>_system_config</code>.</span> This is a bit counterintuitive, but if your machine had fast temporary storage at <em>/tmp/fast</em>, you would configure Ray to use it as in <a data-type="xref" href="#ray_obj_store_config">Example 5-4</a>.</p>
+<div data-type="example" id="ray_obj_store_config">
+<h5><span class="label">Example 5-4. </span><a href="https://oreil.ly/ytqOu">Ray object store configuration</a></h5>
+
+<pre data-code-language="python" data-type="programlisting">    <code class="n">ray</code><code class="o">.</code><code class="n">init</code><code class="p">(</code><code class="n">num_cpus</code><code class="o">=</code><code class="mi">20</code><code class="p">,</code>
+         <code class="n">_system_config</code><code class="o">=</code><code class="p">{</code>
+            <code class="s2">"min_spilling_size"</code><code class="p">:</code> <code class="mi">1024</code> <code class="o">*</code> <code class="mi">1024</code><code class="p">,</code>  <code class="c1"># Spill at least 1 MB</code>
+            <code class="s2">"object_store_memory_mb"</code><code class="p">:</code> <code class="mi">500</code><code class="p">,</code>
+            <code class="s2">"object_spilling_config"</code><code class="p">:</code> <code class="n">json</code><code class="o">.</code><code class="n">dumps</code><code class="p">(</code>
+                <code class="p">{</code><code class="s2">"type"</code><code class="p">:</code> <code class="s2">"filesystem"</code><code class="p">,</code> <code class="s2">"params"</code><code class="p">:</code> <code class="p">{</code><code class="s2">"directory_path"</code><code class="p">:</code> <code class="s2">"/tmp/fast"</code><code class="p">}},</code>
+                <code class="p">)</code>
+             <code class="p">})</code></pre></div>
+
+<p>Frameworks like Ray use serialization to pass both data and functions among workers. Before Ray can transfer an object into the object store, it must serialize the<a data-primary="Ray objects" data-startref="ray-objects" data-type="indexterm" id="idm45354777292240"/> object.</p>
+</div></section>
+
+
+
+
+
+
+<section data-pdf-bookmark="Serialization/Pickling" data-type="sect1"><div class="sect1" id="help_im_in_a_pickle">
+<h1>Serialization/Pickling</h1>
+
+<p>Ray, and <a data-primary="serialization" data-secondary="types of" data-type="indexterm" id="idm45354777272176"/><a data-primary="pickling" data-type="indexterm" id="idm45354777271168"/>systems like it, depend on serialization to be able to store and move data (and functions) among processes. (These processes can be on the same or different nodes.) Not all objects are serializable, and as a result, cannot move among workers. In addition to the object store and IPC, fault tolerance depends on serialization, so the same restrictions apply.</p>
+
+<p>There are many kinds of serialization, from multilanguage data-only tools like JSON and Arrow to Python’s internal pickle. Serializing with pickle is called <em>pickling</em>. Pickling can handle a wider range of types than JSON, but can be used only between Python processes. Pickling does not work for all objects—​in most cases, there is no good way to serialize (like a network connection), and in other cases, this is because no one has had the time to implement one.</p>
+
+<p>In addition to communicating among processes, Ray also has a shared in-memory object store. This object store allows multiple processes on the same computer to share objects.</p>
+
+<p>Ray uses a few serialization techniques, depending on the use case. With some exceptions, Ray’s Python libraries generally use a fork of cloudpickle, an improved pickle. For datasets, Ray tries to use Arrow and will fall back to cloudpickle when Arrow does not work. Ray’s Java libraries use a variety of serializers, including Fast Serialization and MessagePack. Internally, Ray uses Google Protocol Buffers between workers. As a Ray Python developer, you will benefit the most from an in-depth understanding of the cloudpickle and Arrow serialization tools.</p>
+
+
+
+
+
+
+
+
+<section data-pdf-bookmark="cloudpickle" data-type="sect2"><div class="sect2" id="idm45354777268416">
+<h2>cloudpickle</h2>
+
+<p>The <a data-primary="serialization" data-secondary="with cloudpickle" data-secondary-sortas="cloudpickle" data-type="indexterm" id="serialize-cloudpickle"/><a data-primary="cloudpickle" data-type="indexterm" id="cloudpickle"/><a data-primary="remote functions" data-secondary="serializing" data-type="indexterm" id="idm45354777264240"/><a data-primary="remote actors" data-secondary="serializing" data-type="indexterm" id="idm45354777231360"/>cloudpickle tool serializes the functions, actors, and most of the data in Ray. Most nondistributed Python code doesn’t depend on serializing functions. However, cluster computing often does require serializing functions. The cloudpickle project is designed for cluster computing and can serialize and deserialize more functions than Python’s built-in pickle.</p>
+<div data-type="tip"><h6>Tip</h6>
+<p>If you are uncertain why some data is not serializable, you can either try looking at the stack traces or use the Ray function <code>ray.util.inspect_serializability</code>.</p>
+</div>
+
+<p>When pickling classes, <a data-primary="classes, serializing" data-type="indexterm" id="class-serial"/>cloudpickle still uses the same extension mechanisms (<code>get​ne⁠wargs</code>, <code>getstate</code>, <code>setstate</code>, etc.) as pickling. You can write a custom serializer if you have a class with nonserializable components, such as a database connection. While this won’t allow you to serialize things like database connections, you can instead serialize the information required to create a similar object. <a data-type="xref" href="#custom_serializer">Example 5-5</a> takes this approach by serializing a class containing a thread pool.</p>
+<div data-type="example" id="custom_serializer">
+<h5><span class="label">Example 5-5. </span><a href="https://oreil.ly/ytqOu">Custom serializer</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="kn">import</code> <code class="nn">ray.cloudpickle</code> <code class="k">as</code> <code class="nn">pickle</code>
+<code class="kn">from</code> <code class="nn">multiprocessing</code> <code class="kn">import</code> <code class="n">Pool</code>
+<code class="n">pickle</code>
+
+<code class="k">class</code> <code class="nc">BadClass</code><code class="p">:</code>
+    <code class="k">def</code> <code class="fm">__init__</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code> <code class="n">threadCount</code><code class="p">,</code> <code class="n">friends</code><code class="p">):</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">friends</code> <code class="o">=</code> <code class="n">friends</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">p</code> <code class="o">=</code> <code class="n">Pool</code><code class="p">(</code><code class="n">threadCount</code><code class="p">)</code> <code class="c1"># not serializable</code>
+
+<code class="n">i</code> <code class="o">=</code> <code class="n">BadClass</code><code class="p">(</code><code class="mi">5</code><code class="p">,</code> <code class="p">[</code><code class="s2">"boo"</code><code class="p">,</code> <code class="s2">"boris"</code><code class="p">])</code>
+<code class="c1"># This will fail with a "NotImplementedError: pool objects cannot be passed between </code>
+<code class="c1"># processes or pickled"</code>
+<code class="c1"># pickle.dumps(i)</code>
+
+<code class="k">class</code> <code class="nc">LessBadClass</code><code class="p">:</code>
+    <code class="k">def</code> <code class="fm">__init__</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code> <code class="n">threadCount</code><code class="p">,</code> <code class="n">friends</code><code class="p">):</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">friends</code> <code class="o">=</code> <code class="n">friends</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">p</code> <code class="o">=</code> <code class="n">Pool</code><code class="p">(</code><code class="n">threadCount</code><code class="p">)</code>
+    <code class="k">def</code> <code class="nf">__getstate__</code><code class="p">(</code><code class="bp">self</code><code class="p">):</code>
+        <code class="n">state_dict</code> <code class="o">=</code> <code class="bp">self</code><code class="o">.</code><code class="vm">__dict__</code><code class="o">.</code><code class="n">copy</code><code class="p">()</code>
+        <code class="c1"># We can't move the threads but we can move the info to make a pool </code>
+        <code class="c1"># of the same size</code>
+        <code class="n">state_dict</code><code class="p">[</code><code class="s2">"p"</code><code class="p">]</code> <code class="o">=</code> <code class="nb">len</code><code class="p">(</code><code class="bp">self</code><code class="o">.</code><code class="n">p</code><code class="o">.</code><code class="n">_pool</code><code class="p">)</code>
+        <code class="k">return</code> <code class="n">state_dict</code>
+    <code class="k">def</code> <code class="nf">__setsate__</code><code class="p">(</code><code class="bp">self</code><code class="p">):</code>
+        <code class="bp">self</code><code class="o">.</code><code class="vm">__dict__</code><code class="o">.</code><code class="n">update</code><code class="p">(</code><code class="n">state</code><code class="p">)</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">p</code> <code class="o">=</code> <code class="n">Pool</code><code class="p">(</code><code class="bp">self</code><code class="o">.</code><code class="n">p</code><code class="p">)</code>
+<code class="n">k</code> <code class="o">=</code> <code class="n">LessBadClass</code><code class="p">(</code><code class="mi">5</code><code class="p">,</code> <code class="p">[</code><code class="s2">"boo"</code><code class="p">,</code> <code class="s2">"boris"</code><code class="p">])</code>
+<code class="n">pickle</code><code class="o">.</code><code class="n">loads</code><code class="p">(</code><code class="n">pickle</code><code class="o">.</code><code class="n">dumps</code><code class="p">(</code><code class="n">k</code><code class="p">))</code></pre></div>
+
+<p>Alternatively, Ray allows you to register serializers for classes. This approach allows you to change the serialization of classes that are not your own, as shown in 
+<span class="keep-together"><a data-type="xref" href="#custom_serializer_not_own_class">Example 5-6</a></span>.</p>
+<div data-type="example" id="custom_serializer_not_own_class">
+<h5><span class="label">Example 5-6. </span><a href="https://oreil.ly/ytqOu">Custom serializer, external class</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="k">def</code> <code class="nf">custom_serializer</code><code class="p">(</code><code class="n">bad</code><code class="p">):</code>
+    <code class="k">return</code> <code class="p">{</code><code class="s2">"threads"</code><code class="p">:</code> <code class="nb">len</code><code class="p">(</code><code class="n">bad</code><code class="o">.</code><code class="n">p</code><code class="o">.</code><code class="n">_pool</code><code class="p">),</code> <code class="s2">"friends"</code><code class="p">:</code> <code class="n">bad</code><code class="o">.</code><code class="n">friends</code><code class="p">}</code>
+
+<code class="k">def</code> <code class="nf">custom_deserializer</code><code class="p">(</code><code class="n">params</code><code class="p">):</code>
+    <code class="k">return</code> <code class="n">BadClass</code><code class="p">(</code><code class="n">params</code><code class="p">[</code><code class="s2">"threads"</code><code class="p">],</code> <code class="n">params</code><code class="p">[</code><code class="s2">"friends"</code><code class="p">])</code>
+
+<code class="c1"># Register serializer and deserializer the BadClass:</code>
+<code class="n">ray</code><code class="o">.</code><code class="n">util</code><code class="o">.</code><code class="n">register_serializer</code><code class="p">(</code>
+  <code class="n">BadClass</code><code class="p">,</code> <code class="n">serializer</code><code class="o">=</code><code class="n">custom_serializer</code><code class="p">,</code> <code class="n">deserializer</code><code class="o">=</code><code class="n">custom_deserializer</code><code class="p">)</code>
+<code class="n">ray</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="n">ray</code><code class="o">.</code><code class="n">put</code><code class="p">(</code><code class="n">i</code><code class="p">))</code></pre></div>
+
+<p>Otherwise, you would need to subclass and extend the classes, which can make your code difficult to read when working with external libraries.</p>
+<div data-type="note" epub:type="note"><h6>Note</h6>
+<p>cloudpickle requires that the version of Python loading and the version of Python reading are exactly the same. This requirement carries forward and means that all of Ray’s workers must have the same Python<a data-primary="serialization" data-secondary="with cloudpickle" data-secondary-sortas="cloudpickle" data-startref="serialize-cloudpickle" data-type="indexterm" id="idm45354776974768"/><a data-primary="cloudpickle" data-startref="cloudpickle" data-type="indexterm" id="idm45354776903056"/><a data-primary="classes, serializing" data-startref="class-serial" data-type="indexterm" id="idm45354776902112"/> version.</p>
+</div>
+</div></section>
+
+
+
+
+
+
+
+
+<section data-pdf-bookmark="Apache Arrow" data-type="sect2"><div class="sect2" id="idm45354776900784">
+<h2>Apache Arrow</h2>
+
+<p>As <a data-primary="serialization" data-secondary="with Apache Arrow" data-secondary-sortas="Apache Arrow" data-type="indexterm" id="idm45354776899280"/><a data-primary="Apache Arrow" data-secondary="serialization with" data-type="indexterm" id="idm45354776898000"/><a data-primary="Arrow" data-secondary="serialization with" data-type="indexterm" id="idm45354776897056"/>mentioned before, Ray uses Apache Arrow to serialize datasets when possible. Ray DataFrames can have types that are not supported by Arrow. Under the hood, Ray performs schema inference or translation when loading data into datasets. If Arrow cannot represent a type, Ray serializes the dataset by using lists via cloudpickle.</p>
+
+<p>Arrow works with many data processing and ML tools, including pandas, PySpark, TensorFlow, and Dask. Arrow is a columnar format with a strongly typed schema. It is generally more space-efficient than pickling, and it can be used not only between different versions of Python but also between programming languages—​for example, Rust, C, Java, Python, and Compute Unified Device Architecture (CUDA).</p>
+<div data-type="note" epub:type="note"><h6>Note</h6>
+<p>Not all tools using Arrow support all the same data types. For example, Arrow supports nested columns, which pandas does not.</p>
+</div>
+<aside data-type="sidebar" epub:type="sidebar"><div class="sidebar" id="idm45354776894336">
+<h5>gRPC</h5>
+<p>gRPC is a <a data-primary="serialization" data-secondary="with gRPC" data-secondary-sortas="gRPC" data-type="indexterm" id="idm45354776893008"/><a data-primary="gRPC" data-type="indexterm" id="idm45354776891728"/>modern, open source, high-performance Remote Procedure Call framework that can run in any environment. While you won’t interact directly with gRPC in the same way you do with cloudpickle and Arrow, gRPC forms <a href="https://oreil.ly/as33k">the foundation of communication inside Ray</a>. gRPC uses Protocol Buffers for serialization, which is incredibly fast for small objects. Larger objects are serialized with Arrow or cloudpickle and put in Ray’s object store. Like Arrow, gRPC, and Protocol Buffers have native implementations in all of the languages used in Ray.</p>
+</div></aside>
+</div></section>
+</div></section>
+
+
+
+
+
+
+<section data-pdf-bookmark="Resources / Vertical Scaling" data-type="sect1"><div class="sect1" id="ray_resources">
+<h1>Resources / Vertical Scaling</h1>
+
+<p>By default,<a data-primary="resource allocation" data-type="indexterm" id="resource-allocate"/><a data-primary="scaling" data-secondary="resource allocation" data-type="indexterm" id="scale-resource-allocate"/><a data-primary="vertical scaling" data-type="indexterm" id="vertical-scale"/> Ray assumes that all functions and actors have the same resource requirements (e.g., one CPU). For actors or functions with different resource requirements, you can specify the resources needed. The scheduler will attempt to find a node that has these resources available, and if there are none, the autoscaler, covered next, will attempt to allocate a node that meets those 
+<span class="keep-together">requirements.</span></p>
+
+<p>The <code>ray.remote</code> decorator takes <code>num_cpus</code>, <code>num_gpus</code>, and <code>memory</code> as parameters to indicate the amount of resources an actor or remote function will consume. The defaults are one CPU and zero GPUs.</p>
+<div data-type="tip"><h6>Tip</h6>
+<p>When no CPU <a data-primary="remote functions" data-secondary="resource allocation" data-type="indexterm" id="idm45354776880832"/><a data-primary="remote actors" data-secondary="resource allocation" data-type="indexterm" id="idm45354776879824"/>requirements are specified, the resource allocation behavior is different for remote functions and actors.
+For remote functions, one CPU is required for both allocation and running. Alternatively, for actors, if no CPU resources are specified, Ray uses one CPU for scheduling and zero CPUs for running. This means the actor cannot
+get scheduled on a zero-CPU node, but an infinite number can run on any nonzero-CPU node. On the other hand, if
+resources are specified explicitly, they are required for both scheduling and running. We recommend always explicitly specifying CPU resource requirements and not relying on defaults.</p>
+</div>
+
+<p>To override the default resource value, specify required resources in the <code>@ray.remote</code> annotation. For example, using the annotation <code>@ray.remote(num_cpus=4, num_gpus=2)</code> will request four CPUs and two GPUs for function execution.</p>
+<div data-type="tip"><h6>Tip</h6>
+<p>Most resource requests in Ray are <em>soft</em>, which means that Ray does not enforce or guarantee the limits, but does its best to try to meet them.</p>
+</div>
+
+<p>If you know the amount of memory a task or actor requires, you can specify it in the resource requirements of its <code>ray.remote</code> annotation to enable memory-aware scheduling.<sup><a data-type="noteref" href="ch05.html#idm45354776874752" id="idm45354776874752-marker">5</a></sup> For example, <code>@ray.remote(memory=500 * 1024 * 1024)</code> will request 500 MiB of memory for this task.</p>
+<aside data-type="sidebar" epub:type="sidebar"><div class="sidebar" id="idm45354776873040">
+<h5>Ray Memory Usage</h5>
+<p>Ray <a data-primary="Ray" data-secondary="memory usage" data-type="indexterm" id="idm45354776871664"/><a data-primary="memory usage in Ray" data-type="indexterm" id="idm45354776870816"/>memory usage is split into <a href="https://oreil.ly/Jkxrt">two main groups</a>: memory used by Ray itself (Ray system memory) and memory used by applications (Ray application memory). <a data-primary="system memory" data-type="indexterm" id="idm45354776869328"/>Ray’s <em>system memory</em> currently comprises the following:</p>
+<dl>
+<dt>Redis</dt>
+<dd>
+<p>Memory used for storing the list of nodes and actors present in the cluster. The amount of memory used for these purposes is typically quite small.</p>
+</dd>
+<dt>Raylet</dt>
+<dd>
+<p>Memory used by the C++ Raylet process running on each node. This cannot be controlled but is typically quite small.</p>
+</dd>
+</dl>
+
+<p>Ray <em>application memory</em> <a data-primary="application memory" data-type="indexterm" id="idm45354776864080"/>comprises the following:</p>
+<dl>
+<dt>Worker heap</dt>
+<dd>
+<p>Memory used by the users’ application, best measured as the resident set size (RSS) of your application minus its shared memory usage (SHR) in commands such as <code>top</code>.</p>
+</dd>
+<dt>Object store memory</dt>
+<dd>
+<p>Memory used when your application creates objects in the object store via <code>ray.put</code> and when returning values from remote functions. Objects are evicted when they fall out of scope. An object store server is running on each node. Objects will be <a href="https://oreil.ly/ZWpjR">spilled to disk</a> if the object store fills up.</p>
+</dd>
+<dt>Object store shared memory</dt>
+<dd>
+<p>Memory used when your application reads objects via <code>ray.get</code>.</p>
+</dd>
+</dl>
+
+<p>To help you to debug some memory issues, Ray provides<a data-primary="ray memory command" data-type="indexterm" id="idm45354776855680"/> a ray <code>memory</code> command that can be invoked from the command line from the machine where the Ray node is running (at the time of this writing, there is no corresponding API). This command allows you to get a dump of all of the <code>ObjectRef</code> references that are currently held by the driver, actors, and tasks in the cluster. This allows you to track down any <code>ObjectRef</code> references in scope that may be causing an <code>ObjectStoreFullError</code>.</p>
+</div></aside>
+
+<p>Ray can also keep track of and assign custom resources by using the same mechanism as memory and CPU resources. When the worker process is starting, it needs to know all of the resources that are present. For manually launched workers, you specify the custom resources with a <code>--resources</code> argument. For example, on a mixed architecture cluster, you might want to add <code>--resources=\{"x86": "1"}</code> to the x86 nodes and <code>--resources\{"arm64":"1"}</code> to the ARM nodes. See <a data-type="xref" href="app02.html#appB">Appendix B</a> to configure resources with your deployment mechanism.</p>
+<div data-type="tip"><h6>Tip</h6>
+<p>These resources don’t need to be limited to hardware. If you have certain libraries or datasets available on only some nodes because of licensing, you can use the same technique.</p>
+</div>
+
+<p>So far we’ve focused on horizontal scaling, but you can also use Ray to get more resources for each process. Scaling by using machines with more resources is known as <em>vertical scaling</em>. You can request different amounts of memory, CPU cores, or even GPUs from Ray for your tasks and actors. The default Ray configuration supports only machines of the same size, but as covered in <a data-type="xref" href="app02.html#appB">Appendix B</a>, you can create multiple node types. If you create node or container types of different sizes, these can be used for <a data-primary="resource allocation" data-startref="resource-allocate" data-type="indexterm" id="idm45354776847248"/><a data-primary="scaling" data-secondary="resource allocation" data-startref="scale-resource-allocate" data-type="indexterm" id="idm45354776846304"/><a data-primary="vertical scaling" data-startref="vertical-scale" data-type="indexterm" id="idm45354776845088"/>vertical scaling.</p>
+</div></section>
+
+
+
+
+
+
+<section data-pdf-bookmark="Autoscaler" data-type="sect1"><div class="sect1" id="idm45354776889424">
+<h1>Autoscaler</h1>
+
+<p>One of<a data-primary="scaling" data-secondary="with autoscaler" data-secondary-sortas="autoscaler" data-type="indexterm" id="scale-autoscaler"/><a data-primary="autoscaler" data-secondary="functions of" data-type="indexterm" id="autoscaler"/> the important components of Ray is the <em>autoscaler</em>, which is responsible for managing workers. More specifically, the autoscaler is responsible for the following three functions:</p>
+<dl>
+<dt>Launching new workers (based on demand)</dt>
+<dd>
+<p>Includes uploading user-defined files or directories and running init/setup/start commands on the started worker</p>
+</dd>
+<dt>Terminating worker nodes</dt>
+<dd>
+<p>Occurs if the node is idle, the node is failing to start up / initialize, or the node configuration changed</p>
+</dd>
+<dt>Restarting workers</dt>
+<dd>
+<p>Occurs if the Raylet running a worker crashes or the worker’s setup / startup / file mount changes</p>
+</dd>
+</dl>
+
+<p class="pagebreak-before">The autoscaler creates new nodes in response to the following events:</p>
+<dl>
+<dt>Cluster creation with the <code>min-nodes</code> configuration</dt>
+<dd>
+<p>In this case, the autoscaler creates the required number of nodes.</p>
+</dd>
+<dt>Resource demands</dt>
+<dd>
+<p>For remote functions with resource requirements, the autoscaler checks whether a cluster can satisfy additional resource requirements and, if not, creates one or more new worker nodes.</p>
+</dd>
+<dt>Placement groups</dt>
+<dd>
+<p>Similar to resource demand, for new placement groups, the autoscaler checks whether the cluster has enough resources and, if not, creates new worker node(s).</p>
+</dd>
+<dt><a href="https://oreil.ly/S9wHA">An SDK <code>request_resources</code> function call</a></dt>
+<dd>
+<p>This is similar to the cluster creation request, but these resources are never released for the life of the cluster.</p>
+</dd>
+</dl>
+
+<p>Ray’s autoscaler works with different node/computer types, which can map to different physical instance types (e.g., different AWS node types) or accelerators 
+<span class="keep-together">(e.g., GPUs).</span></p>
+
+<p>For more information on the autoscaler, refer to the video <a href="https://oreil.ly/CB5Gl">“A Glimpse into the Ray Autoscaler”</a> by Ameer Haj Ali. For more information on creating worker nodes for different platforms, refer to<a data-primary="scaling" data-secondary="with autoscaler" data-secondary-sortas="autoscaler" data-startref="scale-autoscaler" data-type="indexterm" id="idm45354776824160"/><a data-primary="autoscaler" data-secondary="functions of" data-startref="autoscaler" data-type="indexterm" id="idm45354776822672"/> Ray’s <a href="https://oreil.ly/u7h4m">cloud VM documentation</a>.</p>
+</div></section>
+
+
+
+
+
+
+<section data-pdf-bookmark="Placement Groups: Organizing Your Tasks and Actors" data-type="sect1"><div class="sect1" id="idm45354776820384">
+<h1>Placement Groups: Organizing Your Tasks and Actors</h1>
+
+<p>Ray <a data-primary="resource allocation" data-secondary="with placement groups" data-secondary-sortas="placement groups" data-type="indexterm" id="resource-allocate-placement-group"/><a data-primary="placement groups" data-type="indexterm" id="placement-group"/>applications use <em>placement groups</em> to organize tasks as well as preallocate resources. Organizing tasks is sometimes important for reusing resources and increased data locality.</p>
+<div data-type="tip"><h6>Tip</h6>
+<p>Ray uses node-based data storage, so running multiple functions with large data exchanges on the same node leads to data locality and thus can often improve overall execution performance.</p>
+</div>
+
+<p class="pagebreak-before"><em>Data locality</em> can <a data-primary="data locality" data-type="indexterm" id="idm45354776812960"/>reduce the amount of data to be transferred, and is based on the idea that it’s often faster to serialize a function than your data.<sup><a data-type="noteref" href="ch05.html#idm45354776812096" id="idm45354776812096-marker">6</a></sup> On the flip side, data locality can also be used to minimize impact of hardware failure by ensuring that work is spread across many computers. Preallocating resources can speed up your work by allowing the autoscaler to request multiple machines before they are needed.</p>
+
+<p>When you start a remote function or actor, Ray may need to start an additional node to meet the resource needs, which delays the function/actor creation. If you try to create several large functions/actors in a series, Ray creates the workers sequentially, which slows down your job even more. You can force parallel allocation with Ray’s placement groups, which often reduces resources’ waiting time.</p>
+<div data-type="tip"><h6>Tip</h6>
+<p>Ray creates placement groups atomically, so if you have a minimum number of resources required before your task can run, you can also use placement groups for this effect. Note, though, that placement groups can experience partial restarts.</p>
+</div>
+
+<p>You can use placement groups for a few purposes:</p>
+
+<ul>
+<li>
+<p>Preallocating resources</p>
+</li>
+<li>
+<p><a href="https://oreil.ly/d6wxR">Gang scheduling</a>, to ensure that all tasks and actors will be scheduled and start at the same time</p>
+</li>
+<li>
+<p>Organizing your tasks and actors inside your cluster to support either of the following strategies:</p>
+<dl>
+<dt>Maximizing data locality</dt>
+<dd>
+<p>Ensuring the placement of all your tasks and actors close to your data to avoid object-transfer overhead</p>
+</dd>
+<dt>Load balancing</dt>
+<dd>
+<p>Improving application availability by placing your actors or tasks into different physical machines as much as possible</p>
+</dd>
+</dl>
+</li>
+</ul>
+
+<p>Placement groups consist of the desired resources for each worker as well as the placement strategy.</p>
+
+<p>Since a placement group can span multiple workers, you must specify the desired resources (or resource bundle) for each worker. Each group of resources for a worker is known as<a data-primary="resource bundles" data-type="indexterm" id="resource-bundle"/> a <em>resource bundle</em> and must be able to fit inside a single machine. Otherwise, the autoscaler will be unable to create the node types, and the placement group will never be scheduled.</p>
+
+<p>Placement groups are collections of resource bundles, where a resource bundle is a collection of resources (CPU, GPU, etc.). You define the resource bundles with the same arguments. Each resource bundle must fit on a single machine.</p>
+
+<p>You control the way Ray schedules your resource group by setting placement strategies. Your placement strategy can either try to reduce the number of nodes (improving locality) or spread the work out more (improving reliability and load balancing). You have a few variations on these core strategies to choose from:</p>
+<dl>
+<dt><code>STRICT_PACK</code></dt>
+<dd>
+<p>All bundles must be placed into a single node on the cluster.</p>
+</dd>
+<dt><code>PACK</code></dt>
+<dd>
+<p>All provided bundles are packed onto a single node on a best effort basis. If strict packing is not feasible, bundles can be placed onto other nodes. This is the default placement group strategy.</p>
+</dd>
+<dt><code>STRICT_SPREAD</code></dt>
+<dd>
+<p>Each bundle must be scheduled in a separate node.</p>
+</dd>
+<dt><code>SPREAD</code></dt>
+<dd>
+<p>Each bundle will be spread onto separate nodes on a best effort basis. If strict spreading is not feasible, some bundles can be collocated on nodes.</p>
+</dd>
+</dl>
+<div data-type="tip"><h6>Tip</h6>
+<p>Multiple remote functions or actors can be in the same resource bundle. Any functions or actors using the same bundle will always be on the <a data-primary="resource bundles" data-startref="resource-bundle" data-type="indexterm" id="idm45354776790704"/>same node.</p>
+</div>
+
+<p>The lifecycle of placement groups has the following stages:</p>
+<dl>
+<dt>Creation</dt>
+<dd>
+<p>The placement group creation request is sent to the GCS, which calculates how to distribute the bundles and sends resource reservation requests to all the nodes. Ray guarantees that placement groups are placed <em>atomically</em>.</p>
+</dd>
+<dt>Allocation</dt>
+<dd>
+<p>Placement groups are pending creation. If existing Ray nodes can satisfy resource requirements for a given strategy, placement groups are allocated and success is returned. Otherwise, the result depends on whether Ray is able to add nodes. If the autoscaler is not present or the node limit is reached, placement group allocation fails and the error is returned. Otherwise, the autoscaler scales the cluster to ensure that pending groups can be allocated.</p>
+</dd>
+<dt>Node’s failure</dt>
+<dd>
+<p>When worker nodes that contain some bundles of a placement group die, all the bundles will be rescheduled on different nodes by GCS.<sup><a data-type="noteref" href="ch05.html#idm45354776784176" id="idm45354776784176-marker">7</a></sup> The placement group creation <em>atomicity</em> applies only to initial placement creation. Once a placement group is created, it can become partial because of node failures.</p>
+</dd>
+<dt>Cleanup</dt>
+<dd>
+<p>Ray automatically removes placement groups when the job that created the placement group is finished. If you’d like to keep the placement group alive regardless of the job that created it, you should specify <code>lifetime="detached"</code> during placement group creation. You can also explicitly free a placement group at any time by calling <code>remove_placement_group</code>.</p>
+</dd>
+</dl>
+
+<p>To make a placement group, you will need a few extra imports, shown in <a data-type="xref" href="#placement_group_imports">Example 5-7</a>. If you are working with Ray in local mode, seeing the effect of placement groups is harder because there is only one node. You can still create CPU-only bundles together into a placement group. Once you’ve created the placement group, you can use <code>options</code> to run a function or actor in a specific bundle, as shown in <a data-type="xref" href="#placement_group">Example 5-8</a>.</p>
+<div data-type="example" id="placement_group_imports">
+<h5><span class="label">Example 5-7. </span><a href="https://oreil.ly/ytqOu">Placement group imports</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="kn">from</code> <code class="nn">ray.util.placement_group</code> <code class="kn">import</code> <code class="p">(</code>
+    <code class="n">placement_group</code><code class="p">,</code>
+    <code class="n">placement_group_table</code><code class="p">,</code>
+    <code class="n">remove_placement_group</code>
+<code class="p">)</code></pre></div>
+<div data-type="example" id="placement_group">
+<h5><span class="label">Example 5-8. </span><a href="https://oreil.ly/ytqOu">CPU-only placement group</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="c1"># Create a placement group.</code>
+<code class="n">cpu_bundle</code> <code class="o">=</code> <code class="p">{</code><code class="s2">"CPU"</code><code class="p">:</code> <code class="mi">3</code><code class="p">}</code>
+<code class="n">mini_cpu_bundle</code> <code class="o">=</code> <code class="p">{</code><code class="s2">"CPU"</code><code class="p">:</code> <code class="mi">1</code><code class="p">}</code>
+<code class="n">pg</code> <code class="o">=</code> <code class="n">placement_group</code><code class="p">([</code><code class="n">cpu_bundle</code><code class="p">,</code> <code class="n">mini_cpu_bundle</code><code class="p">])</code>
+<code class="n">ray</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="n">pg</code><code class="o">.</code><code class="n">ready</code><code class="p">())</code>
+<code class="nb">print</code><code class="p">(</code><code class="n">placement_group_table</code><code class="p">(</code><code class="n">pg</code><code class="p">))</code>
+<code class="nb">print</code><code class="p">(</code><code class="n">ray</code><code class="o">.</code><code class="n">available_resources</code><code class="p">())</code>
+<code class="c1"># Run remote_fun in cpu_bundle</code>
+<code class="n">handle</code> <code class="o">=</code> <code class="n">remote_fun</code><code class="o">.</code><code class="n">options</code><code class="p">(</code><code class="n">placement_group</code><code class="o">=</code><code class="n">pg</code><code class="p">,</code> 
+<code class="n">placement_group_bundle_index</code><code class="o">=</code><code class="mi">0</code><code class="p">)</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="mi">1</code><code class="p">)</code></pre></div>
+
+<p>If you are running Ray on a cluster, you can create a more complex resource group. If you have some GPU nodes in your cluster, you can create more complex placement groups. When we run <a data-type="xref" href="#mixed_placement_group">Example 5-9</a> on our test cluster, the autoscaler allocates a node with a GPU. Once you’re finished with your placement group, you can delete it with <code>remove_placement_group(pg)</code>.</p>
+<div data-type="example" id="mixed_placement_group">
+<h5><span class="label">Example 5-9. </span><a href="https://oreil.ly/Wxxdo">Mixed CPU and GPU placement group</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="c1"># Create a placement group.</code>
+<code class="n">cpu_bundle</code> <code class="o">=</code> <code class="p">{</code><code class="s2">"CPU"</code><code class="p">:</code> <code class="mi">1</code><code class="p">}</code>
+<code class="n">gpu_bundle</code> <code class="o">=</code> <code class="p">{</code><code class="s2">"GPU"</code><code class="p">:</code> <code class="mi">1</code><code class="p">}</code>
+<code class="n">pg</code> <code class="o">=</code> <code class="n">placement_group</code><code class="p">([</code><code class="n">cpu_bundle</code><code class="p">,</code> <code class="n">gpu_bundle</code><code class="p">])</code>
+<code class="n">ray</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="n">pg</code><code class="o">.</code><code class="n">ready</code><code class="p">())</code>
+<code class="nb">print</code><code class="p">(</code><code class="n">placement_group_table</code><code class="p">(</code><code class="n">pg</code><code class="p">))</code>
+<code class="nb">print</code><code class="p">(</code><code class="n">ray</code><code class="o">.</code><code class="n">available_resources</code><code class="p">())</code></pre></div>
+<aside data-type="sidebar" epub:type="sidebar"><div class="sidebar" id="idm45354776626848">
+<h5>Ray Scheduler</h5>
+<p>Ray uses a <a href="https://oreil.ly/p7Q7Y">bottom-up distributed scheduler</a>, which<a data-primary="schedulers" data-type="indexterm" id="idm45354776568528"/><a data-primary="global scheduler" data-type="indexterm" id="idm45354776567824"/><a data-primary="local schedulers" data-type="indexterm" id="idm45354776567152"/> consists of a global scheduler and per node local schedulers. On task creation, the task is always first submitted to the node’s local scheduler, which encourages task locality. If the local node is overloaded (its local task queue exceeds a predefined threshold) or it cannot satisfy the task’s requirements (for example, lacks GPU), the local scheduler calls the global scheduler to take over.</p>
+
+<p>The global scheduler first identifies the set of nodes that have enough resources to satisfy the task’s requirements and then selects the one that provides the lowest estimated waiting time. This is the sum of the estimated time the task will be queued at that node (task queue size times average task execution), and the estimated transfer time of the task’s remote inputs (total size of remote inputs divided by average bandwidth).</p>
+
+<p>Each worker sends a periodic heartbeat with resource availability and queue depth to the global scheduler. The global scheduler also has access to the location of the task’s inputs and their sizes from the GCS when deciding where to schedule. Once the global scheduler picks the node, it calls the node’s local scheduler, which schedules 
+<span class="keep-together">the task.</span></p>
+
+<p>Additional improvements to this basic algorithm are described in <a href="https://oreil.ly/sLMbp">“Investigating Scheduling and Object Management in Ray”</a> by Mihir Kulkarni and Alejandro Newell and include the following:</p>
+
+<ul>
+<li>
+<p>Parallel retrieval of task arguments</p>
+</li>
+<li>
+<p>Preemptive local object handling—​if the object is used locally it is available even before it is available in the GCS</p>
+</li>
+<li>
+<p>Taking into account node resource imbalances for the global scheduler</p>
+</li>
+<li>
+<p>Dependency-aware task scheduling</p>
+</li>
+</ul>
+</div></aside>
+
+<p>You can assign placement group names. You can achieve this by specifying a parameter <code>name="desired_name"</code> at the point of placement group creation. This allows you to retrieve and use the placement group from any job in the Ray cluster by name rather than passing a placement group<a data-primary="resource allocation" data-secondary="with placement groups" data-secondary-sortas="placement groups" data-startref="resource-allocate-placement-group" data-type="indexterm" id="idm45354776546768"/><a data-primary="placement groups" data-startref="placement-group" data-type="indexterm" id="idm45354776545280"/> handle.</p>
+</div></section>
+
+
+
+
+
+
+<section data-pdf-bookmark="Namespaces" data-type="sect1"><div class="sect1" id="idm45354776819408">
+<h1>Namespaces</h1>
+
+<p>A <em>namespace</em> is <a data-primary="namespaces" data-type="indexterm" id="idm45354776542608"/>a logical grouping of jobs and actors that provides limited isolation. By default, each Ray program runs in its own anonymous namespace. The anonymous namespace cannot be accessed from another Ray program. To share actors among your Ray applications, you’ll need to put both of your programs in the same namespace. When constructing your Ray context with <code>ray.init</code>, just add the <code>namespace</code> named parameter—​for example, <code>ray.init(namespace="timbit")</code>.</p>
+<div data-type="note" epub:type="note"><h6>Note</h6>
+<p>Namespaces are not intended to provide security isolation.</p>
+</div>
+
+<p>You can get the current namespace by calling <code>ray.get_runtime_context().namespace</code>.</p>
+</div></section>
+
+
+
+
+
+
+<section data-pdf-bookmark="Managing Dependencies with Runtime Environments" data-type="sect1"><div class="sect1" id="idm45354776538400">
+<h1>Managing Dependencies with Runtime Environments</h1>
+
+<p>One of<a data-primary="managing" data-secondary="dependencies" data-type="indexterm" id="manage-depend"/><a data-primary="dependencies" data-secondary="managing" data-type="indexterm" id="depend-manage"/><a data-primary="runtime environments" data-type="indexterm" id="runtime-envi"/> the big draws of Python is the amazing ecosystem of tools available. Ray supports managing dependencies with both Conda and Virtualenv. Ray dynamically creates these virtual environments inside your larger container as needed and launches workers using the matching environment.</p>
+
+<p>The fastest way to add a few packages to your runtime context is by specifying a list of needed packages from <a href="https://oreil.ly/IS5mx">PyPI</a>. Looking at the web-crawler example from <a data-type="xref" href="ch02.html#ch02">Chapter 2</a>, where you used the Beautiful Soup library, you can ensure that this package is available in a distributed environment by creating an execution context with it, as shown in <a data-type="xref" href="#pip_pkg_list">Example 5-10</a>.</p>
+<div data-type="example" id="pip_pkg_list">
+<h5><span class="label">Example 5-10. </span><a href="https://oreil.ly/ytqOu">pip package list</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="n">runtime_env</code> <code class="o">=</code> <code class="p">{</code><code class="s2">"pip"</code><code class="p">:</code> <code class="p">[</code><code class="s2">"bs4"</code><code class="p">]}</code></pre></div>
+
+<p>This works well for a few dependencies, but if you have a <em>requirements.txt</em> file like Holden’s <a href="https://oreil.ly/xBDkK">print-the-world project</a>, you can also just point this to your local <em>requirements.txt</em>, as shown in <a data-type="xref" href="#pip_pkg_reqs">Example 5-11</a>.</p>
+<div data-type="example" id="pip_pkg_reqs">
+<h5><span class="label">Example 5-11. </span><a href="https://oreil.ly/ytqOu">pip package requirements file</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="n">runtime_env</code> <code class="o">=</code> <code class="p">{</code><code class="s2">"pip"</code><code class="p">:</code> <code class="s2">"requirements.txt"</code><code class="p">}</code></pre></div>
+<div data-type="tip"><h6>Tip</h6>
+<p>If you have an even more complex setup using Conda, you can make a runtime context by passing the path to your Conda environment file or package list with <code>conda=</code> instead of <code>pip=</code>.</p>
+</div>
+
+<p>Once you’ve created a runtime context, you can specify it either globally when creating your Ray client, as in <a data-type="xref" href="#runtime_env_init">Example 5-12</a>, or inside the <code>ray.remote</code> decorator, as in <a data-type="xref" href="#ex_local_ctx">Example 5-13</a>.</p>
+<div class="example-margin-7" data-type="example" id="runtime_env_init">
+<h5><span class="label">Example 5-12. </span><a href="https://oreil.ly/ytqOu">Using a runtime environment for an entire program</a></h5>
+
+<pre data-code-language="python" data-type="programlisting">    <code class="n">ray</code><code class="o">.</code><code class="n">init</code><code class="p">(</code><code class="n">num_cpus</code><code class="o">=</code><code class="mi">20</code><code class="p">,</code> <code class="n">runtime_env</code><code class="o">=</code><code class="n">runtime_env</code><code class="p">)</code></pre></div>
+<div class="example-margin-7" data-type="example" id="ex_local_ctx">
+<h5><span class="label">Example 5-13. </span><a href="https://oreil.ly/ytqOu">Using a runtime environment for a specific function</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="nd">@ray</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="n">runtime_env</code><code class="o">=</code><code class="n">runtime_env</code><code class="p">)</code>
+<code class="k">def</code> <code class="nf">sup</code><code class="p">(</code><code class="n">x</code><code class="p">):</code>
+    <code class="kn">from</code> <code class="nn">bs4</code> <code class="kn">import</code> <code class="n">BeautifulSoup</code></pre></div>
+<div data-type="warning" epub:type="warning"><h6>Warning</h6>
+<p>Not all dependencies are well suited to the dynamically created execution context. Anything involving large native code compilation without a preexisting wheel takes too long (e.g., TensorFlow on ARM).</p>
+</div>
+
+<p>Adding certain packages to a runtime execution context can result in a slower start and scale-up. Think of, for example, how long it takes to install TensorFlow without a wheel. If Ray had to do that each time it started another worker, this would be much slower. You can solve this by creating Conda environments in your cluster or container. We discuss how to do <a data-primary="managing" data-secondary="dependencies" data-startref="manage-depend" data-type="indexterm" id="idm45354776382832"/><a data-primary="dependencies" data-secondary="managing" data-startref="depend-manage" data-type="indexterm" id="idm45354776381760"/><a data-primary="runtime environments" data-startref="runtime-envi" data-type="indexterm" id="idm45354776380544"/>this in <a data-type="xref" href="app02.html#appB">Appendix B</a>.</p>
+</div></section>
+
+
+
+
+
+
+<section data-pdf-bookmark="Deploying Ray Applications with the Ray Job API" data-type="sect1"><div class="sect1" id="idm45354776537776">
+<h1>Deploying Ray Applications with the Ray Job API</h1>
+
+<p class="pagebreak-after">In <a data-primary="applications" data-secondary="deploying" data-type="indexterm" id="apps-deploy"/><a data-primary="deploying applications" data-type="indexterm" id="deploy-apps"/><a data-primary="job API" data-type="indexterm" id="job-api"/>addition to connecting your job to an existing cluster with <code>ray.init</code>, Ray offers a job API. The job API provides a lightweight mechanism to submit jobs without having to worry about library mismatches and avoids the issue of flaky networks between the remote cluster and the head node. The three main methods of the job API that you will use do the following:</p>
+
+<ul class="less_space">
+<li>
+<p>Submit a new job to the cluster, returning a job ID</p>
+</li>
+<li>
+<p>Get a job’s status based on the execution ID, which returns the status of the submitted job</p>
+</li>
+<li>
+<p>Obtain the execution logs based on a job for an execution ID</p>
+</li>
+</ul>
+<aside data-type="sidebar" epub:type="sidebar"><div class="sidebar" id="idm45354776367504">
+<h5>Why Another API?</h5>
+<p>Although you can theoretically attach your program to the existing Ray cluster by using the <a href="https://oreil.ly/yPZi9">Ray Client</a>, it often does not always work, especially when Ray is deployed on a Kubernetes cluster. The issue here is that the Ray node’s gRPC interface is using insecure gRPC, which is not supported by the majority of <a href="https://oreil.ly/C5tmz">Kubernetes Ingress implementations</a>. To overcome this issue, Ray has introduced a new <a href="https://oreil.ly/AzBbX">Ray job SDK</a>, using HTTP instead of gRPC.</p>
+</div></aside>
+
+<p>A job request consists of the following:</p>
+
+<ul>
+<li>
+<p>A directory containing a collection of files and configurations that defines an application</p>
+</li>
+<li>
+<p>An entrypoint for the execution</p>
+</li>
+<li>
+<p>A runtime environment consisting of any needed files, Python libraries, and environment variables</p>
+</li>
+</ul>
+
+<p><a data-type="xref" href="#ex-job-submission">Example 5-14</a> shows you how to run your code on a Ray cluster with the job API. This is the Ray code that we want to submit to the cluster.</p>
+<div data-type="example" id="ex-job-submission">
+<h5><span class="label">Example 5-14. </span><a href="https://oreil.ly/qptxx">Job submission</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="k">class</code> <code class="nc">ParseKwargs</code><code class="p">(</code><code class="n">argparse</code><code class="o">.</code><code class="n">Action</code><code class="p">):</code>
+   <code class="k">def</code> <code class="fm">__call__</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code> <code class="n">parser</code><code class="p">,</code> <code class="n">namespace</code><code class="p">,</code> <code class="n">values</code><code class="p">,</code> <code class="n">option_string</code><code class="o">=</code><code class="kc">None</code><code class="p">):</code>
+       <code class="nb">setattr</code><code class="p">(</code><code class="n">namespace</code><code class="p">,</code> <code class="bp">self</code><code class="o">.</code><code class="n">dest</code><code class="p">,</code> <code class="nb">dict</code><code class="p">())</code>
+       <code class="k">for</code> <code class="n">value</code> <code class="ow">in</code> <code class="n">values</code><code class="p">:</code>
+           <code class="n">key</code><code class="p">,</code> <code class="n">value</code> <code class="o">=</code> <code class="n">value</code><code class="o">.</code><code class="n">split</code><code class="p">(</code><code class="s1">'='</code><code class="p">)</code>
+           <code class="nb">getattr</code><code class="p">(</code><code class="n">namespace</code><code class="p">,</code> <code class="bp">self</code><code class="o">.</code><code class="n">dest</code><code class="p">)[</code><code class="n">key</code><code class="p">]</code> <code class="o">=</code> <code class="n">value</code>
+
+<code class="n">parser</code> <code class="o">=</code> <code class="n">argparse</code><code class="o">.</code><code class="n">ArgumentParser</code><code class="p">()</code>
+<code class="n">parser</code><code class="o">.</code><code class="n">add_argument</code><code class="p">(</code><code class="s1">'-k'</code><code class="p">,</code> <code class="s1">'--kwargs'</code><code class="p">,</code> <code class="n">nargs</code><code class="o">=</code><code class="s1">'*'</code><code class="p">,</code> <code class="n">action</code><code class="o">=</code><code class="n">ParseKwargs</code><code class="p">)</code>
+<code class="n">args</code> <code class="o">=</code> <code class="n">parser</code><code class="o">.</code><code class="n">parse_args</code><code class="p">()</code>
+
+<code class="n">numberOfIterations</code> <code class="o">=</code> <code class="nb">int</code><code class="p">(</code><code class="n">args</code><code class="o">.</code><code class="n">kwargs</code><code class="p">[</code><code class="s2">"iterations"</code><code class="p">])</code>
+<code class="nb">print</code><code class="p">(</code><code class="sa">f</code><code class="s2">"Requested number of iterations is: </code><code class="si">{</code><code class="n">numberOfIterations</code><code class="si">}</code><code class="s2">"</code><code class="p">)</code>
+
+<code class="nb">print</code><code class="p">(</code><code class="sa">f</code><code class="s1">'Environment variable MY_VARIABLE has a value " +</code>
+<code class="sa">f</code><code class="s2">"of </code><code class="si">{</code><code class="n">os</code><code class="o">.</code><code class="n">getenv</code><code class="p">(</code><code class="s2">"MY_VARIABLE"</code><code class="p">)</code><code class="si">}</code><code class="s2">')</code>
+
+<code class="n">ray</code><code class="o">.</code><code class="n">init</code><code class="p">()</code>
+
+<code class="nd">@ray</code><code class="o">.</code><code class="n">remote</code>
+<code class="k">class</code> <code class="nc">Counter</code><code class="p">:</code>
+   <code class="k">def</code> <code class="fm">__init__</code><code class="p">(</code><code class="bp">self</code><code class="p">):</code>
+       <code class="bp">self</code><code class="o">.</code><code class="n">counter</code> <code class="o">=</code> <code class="mi">0</code>
+
+   <code class="k">def</code> <code class="nf">inc</code><code class="p">(</code><code class="bp">self</code><code class="p">):</code>
+       <code class="bp">self</code><code class="o">.</code><code class="n">counter</code> <code class="o">+=</code> <code class="mi">1</code>
+
+   <code class="k">def</code> <code class="nf">get_counter</code><code class="p">(</code><code class="bp">self</code><code class="p">):</code>
+       <code class="k">return</code> <code class="bp">self</code><code class="o">.</code><code class="n">counter</code>
+
+<code class="n">counter</code> <code class="o">=</code> <code class="n">Counter</code><code class="o">.</code><code class="n">remote</code><code class="p">()</code>
+
+<code class="k">for</code> <code class="n">_</code> <code class="ow">in</code> <code class="nb">range</code><code class="p">(</code><code class="n">numberOfIterations</code><code class="p">):</code>
+   <code class="n">ray</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="n">counter</code><code class="o">.</code><code class="n">inc</code><code class="o">.</code><code class="n">remote</code><code class="p">())</code>
+   <code class="nb">print</code><code class="p">(</code><code class="n">ray</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="n">counter</code><code class="o">.</code><code class="n">get_counter</code><code class="o">.</code><code class="n">remote</code><code class="p">()))</code>
+
+<code class="nb">print</code><code class="p">(</code><code class="s2">"Requests"</code><code class="p">,</code> <code class="n">requests</code><code class="o">.</code><code class="n">__version__</code><code class="p">)</code>
+<code class="nb">print</code><code class="p">(</code><code class="s2">"Qiskit"</code><code class="p">,</code> <code class="n">qiskit</code><code class="o">.</code><code class="n">__version__</code><code class="p">)</code></pre></div>
+
+<p>In addition to the Ray code itself, this example shows several other things:</p>
+
+<ul>
+<li>
+<p>Getting variables that can be used during job submission</p>
+</li>
+<li>
+<p>Accessing environment variables that can be set during job submission</p>
+</li>
+<li>
+<p>Getting versions of libraries that are installed during job submission</p>
+</li>
+</ul>
+
+<p class="loosen_tracking2">With this in place, you can now submit your job to the <a data-primary="applications" data-secondary="deploying" data-startref="apps-deploy" data-type="indexterm" id="idm45354776092992"/><a data-primary="deploying applications" data-startref="deploy-apps" data-type="indexterm" id="idm45354776091744"/><a data-primary="job API" data-startref="job-api" data-type="indexterm" id="idm45354776090800"/>Ray cluster <a href="https://oreil.ly/LMiEB">as follows</a>:</p>
+
+<pre data-code-language="python" data-type="programlisting"><code class="n">client</code><code> </code><code class="o">=</code><code> </code><code class="n">JobSubmissionClient</code><code class="p">(</code><code class="s2">"</code><em><code class="s2">&lt;your Ray URL&gt;</code></em><code class="s2">"</code><code class="p">)</code><code>
+</code><code>
+</code><code class="n">job_id</code><code> </code><code class="o">=</code><code> </code><code class="n">client</code><code class="o">.</code><code class="n">submit_job</code><code class="p">(</code><code>
+</code><code>   </code><code class="c1"># Entrypoint shell command to execute</code><code>
+</code><code>   </code><code class="n">entrypoint</code><code class="o">=</code><code class="s2">"</code><code class="s2">python script_with_parameters.py --kwargs iterations=7</code><code class="s2">"</code><code class="p">,</code><code>
+</code><code>   </code><code class="c1"># Working dir</code><code>
+</code><code>   </code><code class="n">runtime_env</code><code class="o">=</code><code class="p">{</code><code>
+</code><code>       </code><code class="s2">"</code><code class="s2">working_dir</code><code class="s2">"</code><code class="p">:</code><code> </code><code class="s2">"</code><code class="s2">.</code><code class="s2">"</code><code class="p">,</code><code>
+</code><code>       </code><code class="s2">"</code><code class="s2">pip</code><code class="s2">"</code><code class="p">:</code><code> </code><code class="p">[</code><code class="s2">"</code><code class="s2">requests==2.26.0</code><code class="s2">"</code><code class="p">,</code><code> </code><code class="s2">"</code><code class="s2">qiskit==0.34.2</code><code class="s2">"</code><code class="p">]</code><code class="p">,</code><code>
+</code><code>       </code><code class="s2">"</code><code class="s2">env_vars</code><code class="s2">"</code><code class="p">:</code><code> </code><code class="p">{</code><code class="s2">"</code><code class="s2">MY_VARIABLE</code><code class="s2">"</code><code class="p">:</code><code> </code><code class="s2">"</code><code class="s2">foo</code><code class="s2">"</code><code class="p">}</code><code>
+</code><code>   </code><code class="p">}</code><code>
+</code><code class="p">)</code><code>
+</code><code>
+</code><code class="nb">print</code><code class="p">(</code><code class="sa">f</code><code class="s2">"</code><code class="s2">Submitted job with ID : </code><code class="si">{</code><code class="n">job_id</code><code class="si">}</code><code class="s2">"</code><code class="p">)</code><code>
+</code><code>
+</code><code class="k">while</code><code> </code><code class="kc">True</code><code class="p">:</code><code>
+</code><code>   </code><code class="n">status</code><code> </code><code class="o">=</code><code> </code><code class="n">client</code><code class="o">.</code><code class="n">get_job_status</code><code class="p">(</code><code class="n">job_id</code><code class="p">)</code><code>
+</code><code>   </code><code class="nb">print</code><code class="p">(</code><code class="sa">f</code><code class="s2">"</code><code class="s2">status: </code><code class="si">{</code><code class="n">status</code><code class="si">}</code><code class="s2">"</code><code class="p">)</code><code>
+</code><code>   </code><code class="k">if</code><code> </code><code class="n">status</code><code> </code><code class="ow">in</code><code> </code><code class="p">{</code><code class="n">JobStatus</code><code class="o">.</code><code class="n">SUCCEEDED</code><code class="p">,</code><code> </code><code class="n">JobStatus</code><code class="o">.</code><code class="n">STOPPED</code><code class="p">,</code><code> </code><code class="n">JobStatus</code><code class="o">.</code><code class="n">FAILED</code><code class="p">}</code><code class="p">:</code><code>
+</code><code>       </code><code class="k">break</code><code>
+</code><code>   </code><code class="n">time</code><code class="o">.</code><code class="n">sleep</code><code class="p">(</code><code class="mi">5</code><code class="p">)</code><code>
+</code><code>
+</code><code class="n">logs</code><code> </code><code class="o">=</code><code> </code><code class="n">client</code><code class="o">.</code><code class="n">get_job_logs</code><code class="p">(</code><code class="n">job_id</code><code class="p">)</code><code>
+</code><code class="nb">print</code><code class="p">(</code><code class="sa">f</code><code class="s2">"</code><code class="s2">logs: </code><code class="si">{</code><code class="n">logs</code><code class="si">}</code><code class="s2">"</code><code class="p">)</code></pre>
+</div></section>
+
+
+
+
+
+
+<section data-pdf-bookmark="Conclusion" data-type="sect1"><div class="sect1" id="idm45354776403008">
+<h1>Conclusion</h1>
+
+<p>In this chapter, you’ve gained a deeper understanding of the way Ray works. Your knowledge of serialization will help you understand which work to distribute and which to keep in the same process. You now know your options and how to choose the right scaling technique. You have a few techniques for managing Python dependencies, even conflicting ones, on your Ray cluster. You are well set up to learn about the higher-level building blocks covered in the next part of the book.</p>
+</div></section>
+<div data-type="footnotes"><p data-type="footnote" id="idm45354777621488"><sup><a href="ch05.html#idm45354777621488-marker">1</a></sup> Some distributed systems can survive failure of head nodes; systems such as Apache ZooKeeper and algorithms like Paxos or Raft use multiple computers to monitor and restart jobs with a voting system. If you need to handle head node failure, you can write your own recovery logic, but this is complicated to do right. Instead, a system like Spark, which has integrated job restarts, may be a better option.</p><p data-type="footnote" id="idm45354777611152"><sup><a href="ch05.html#idm45354777611152-marker">2</a></sup> Pub/sub systems allow processes to subscribe to updates by categories.</p><p data-type="footnote" id="idm45354777330896"><sup><a href="ch05.html#idm45354777330896-marker">3</a></sup> This process uses the same algorithm as Python.</p><p data-type="footnote" id="idm45354777330208"><sup><a href="ch05.html#idm45354777330208-marker">4</a></sup> This has the same cycle problem as Python.</p><p data-type="footnote" id="idm45354776874752"><sup><a href="ch05.html#idm45354776874752-marker">5</a></sup> Specifying a memory requirement does <em>not</em> impose any limits on memory usage. The requirements are used for admission control during scheduling only (similar to the way CPU scheduling works in Ray). It is up to the task itself to not use more memory than it requested.</p><p data-type="footnote" id="idm45354776812096"><sup><a href="ch05.html#idm45354776812096-marker">6</a></sup> Systems before Ray, like Apache Spark and Hadoop, take advantage of data locality.</p><p data-type="footnote" id="idm45354776784176"><sup><a href="ch05.html#idm45354776784176-marker">7</a></sup> Ray’s head node is a single point of failure, so if it fails, the whole cluster will fail, as mentioned in <a data-type="xref" href="#fault_tolerance">“Fault Tolerance”</a>.</p></div></div></section></body></html>

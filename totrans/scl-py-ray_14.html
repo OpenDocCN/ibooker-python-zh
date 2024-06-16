@@ -1,0 +1,714 @@
+<html><head></head><body><section data-pdf-bookmark="Appendix A. Space Beaver Case Study: &#10;Actors, Kubernetes, and More" data-type="appendix" epub:type="appendix"><div class="appendix" id="appA">
+<h1><span class="label">Appendix A. </span>Space Beaver Case Study: 
+<span class="keep-together">Actors, Kubernetes, and More</span></h1>
+
+
+<p>The <a href="https://oreil.ly/IDSzc">Space Beaver project</a> (from Pigs Can Fly Labs) uses<a data-primary="Space Beaver case study" data-type="indexterm" id="idm45354760656096"/> satellite service from Swarm and Simple Mail Transfer Protocol (SMTP) to provide what is politely called value-conscious (aka cheap) off-grid messaging.<sup><a data-type="noteref" href="app01.html#idm45354760655264" id="idm45354760655264-marker">1</a></sup> The initial draft of Space Beaver’s core architecture was built using Scala and Akka, but then we switched to using Ray. By using Ray with Python instead of Akka with Scala, we were able to reuse the object relational mapping (ORM) from the website and simplify the deployment.</p>
+
+<p>While it is possible to deploy Akka applications on Kubernetes, it is (in Holden’s opinion) substantially more complicated than accomplishing the same task with Ray.<sup><a data-type="noteref" href="app01.html#idm45354760653232" id="idm45354760653232-marker">2</a></sup> In this appendix, we will walk through the general design of the Space Beaver backend, the code for the various actors, and show how to deploy it (and similar applications).</p>
+<div data-type="note" epub:type="note"><h6>Note</h6>
+<p>The code for this case study can be found in the <a href="https://oreil.ly/cyuw4">Pigs Can Fly Labs GitHub repo</a>.</p>
+</div>
+
+
+
+
+
+
+<section data-pdf-bookmark="High-Level Design" data-type="sect1"><div class="sect1" id="idm45354760646384">
+<h1>High-Level Design</h1>
+
+<p>Space Beaver’s <a data-primary="Space Beaver case study" data-secondary="design of" data-type="indexterm" id="idm45354760645056"/><a data-primary="designing Space Beaver case study" data-type="indexterm" id="idm45354760644048"/>core requirement is to serve as a bridge between email (through SMTP), SMS (through Twilio), and the Swarm satellite APIs. Most of these involve some amount of state, such as running an SMTP server, but the outbound mail messages can be implemented without any state. <a data-type="xref" href="#actor_layout">Figure A-1</a> shows a rough outline of the design.</p>
+
+<figure><div class="figure" id="actor_layout">
+<img alt="spwr aa01" src="assets/spwr_aa01.png"/>
+<h6><span class="label">Figure A-1. </span>Actor layout</h6>
+</div></figure>
+</div></section>
+
+
+
+
+
+
+<section data-pdf-bookmark="Implementation" data-type="sect1"><div class="sect1" id="idm45354760640192">
+<h1>Implementation</h1>
+
+<p>Now that you’ve seen a rough design, it’s time to explore how the patterns you’ve learned throughout the book are applied to bring this all together.</p>
+
+
+
+
+
+
+
+
+<section data-pdf-bookmark="Outbound Mail Client" data-type="sect2"><div class="sect2" id="idm45354760638352">
+<h2>Outbound Mail Client</h2>
+
+<p>The <a data-primary="Space Beaver case study" data-secondary="outbound mail client" data-type="indexterm" id="space-outbound-mail"/><a data-primary="outbound mail client (Space Beaver case study)" data-type="indexterm" id="outbound-mail"/><a data-primary="remote functions" data-secondary="in Space Beaver case study" data-secondary-sortas="Space Beaver" data-type="indexterm" id="remote-function-space"/>outbound mail client is the one stateless piece of code, since it establishes a connection for each outbound message. Since it’s stateless, we implemented this as a regular remote function, which is created for every incoming request. Ray can then scale up or down as needed, depending on the amount of incoming requests. Being able to scale the number of instances of the remote function containing the email client is useful since the client may end up blocking on external hosts.</p>
+<div data-type="tip"><h6>Tip</h6>
+<p>Scheduling each remote function invocation requires some overhead. In our case, the expected message rate is not that high. If you have a good idea of the desired concurrency, you should consider using Ray’s <code>multiprocessing.Pool</code> to avoid function creation overhead.</p>
+</div>
+
+<p>However, we want to serialize some settings, like in a settings class, so we wrap the outbound mail client function with a special method to pass through a self-reference, despite not being an actor, as shown in <a data-type="xref" href="#ray_outbound_mail_client">Example A-1</a>.</p>
+<div data-type="example" id="ray_outbound_mail_client">
+<h5><span class="label">Example A-1. </span><a href="https://oreil.ly/9zM1N">Mail client</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="k">class</code> <code class="nc">MailClient</code><code class="p">(</code><code class="nb">object</code><code class="p">):</code>
+    <code class="sd">"""</code>
+<code class="sd">    Mail Client</code>
+<code class="sd">    """</code>
+
+    <code class="k">def</code> <code class="fm">__init__</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code> <code class="n">settings</code><code class="p">:</code> <code class="n">Settings</code><code class="p">):</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">settings</code> <code class="o">=</code> <code class="n">settings</code>
+
+    <code class="k">def</code> <code class="nf">send_message</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code> <code class="o">*</code><code class="n">args</code><code class="p">,</code> <code class="o">**</code><code class="n">kwargs</code><code class="p">):</code>
+        <code class="sd">"""</code>
+<code class="sd">        Wrap send_msg to include settings.</code>
+<code class="sd">        """</code>
+        <code class="k">return</code> <code class="bp">self</code><code class="o">.</code><code class="n">send_msg</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code> <code class="o">*</code><code class="n">args</code><code class="p">,</code> <code class="o">**</code><code class="n">kwargs</code><code class="p">)</code>
+
+    <code class="nd">@ray</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="n">retry_exceptions</code><code class="o">=</code><code class="kc">True</code><code class="p">)</code>
+    <code class="k">def</code> <code class="nf">send_msg</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code> <code class="n">msg_from</code><code class="p">:</code> <code class="nb">str</code><code class="p">,</code> <code class="n">msg_to</code><code class="p">:</code> <code class="nb">str</code><code class="p">,</code> <code class="n">data</code><code class="p">:</code> <code class="nb">str</code><code class="p">):</code>
+        <code class="n">message</code> <code class="o">=</code> <code class="n">MIMEMultipart</code><code class="p">(</code><code class="s2">"alternative"</code><code class="p">)</code>
+        <code class="n">message</code><code class="p">[</code><code class="s2">"From"</code><code class="p">]</code> <code class="o">=</code> <code class="n">msg_from</code>
+        <code class="n">message</code><code class="p">[</code><code class="s2">"To"</code><code class="p">]</code> <code class="o">=</code> <code class="n">msg_to</code>
+        <code class="n">message</code><code class="p">[</code><code class="s2">"Subject"</code><code class="p">]</code> <code class="o">=</code> <code class="sa">f</code><code class="s2">"A satelite msg: f</code><code class="si">{</code><code class="n">data</code><code class="p">[</code><code class="mi">0</code><code class="p">:</code><code class="mi">20</code><code class="p">]</code><code class="si">}</code><code class="s2">"</code>
+        <code class="n">part1</code> <code class="o">=</code> <code class="n">MIMEText</code><code class="p">(</code><code class="n">data</code><code class="p">,</code> <code class="s2">"plain"</code><code class="p">)</code>
+        <code class="c1"># Possible later: HTML</code>
+        <code class="n">message</code><code class="o">.</code><code class="n">attach</code><code class="p">(</code><code class="n">part1</code><code class="p">)</code>
+
+        <code class="k">with</code> <code class="n">SMTP</code><code class="p">(</code><code class="bp">self</code><code class="o">.</code><code class="n">settings</code><code class="o">.</code><code class="n">mail_server</code><code class="p">,</code> <code class="n">port</code><code class="o">=</code><code class="bp">self</code><code class="o">.</code><code class="n">settings</code><code class="o">.</code><code class="n">mail_port</code><code class="p">)</code> <code class="k">as</code> <code class="n">smtp</code><code class="p">:</code>
+            <code class="k">if</code> <code class="bp">self</code><code class="o">.</code><code class="n">settings</code><code class="o">.</code><code class="n">mail_username</code> <code class="ow">is</code> <code class="ow">not</code> <code class="kc">None</code><code class="p">:</code>
+                <code class="n">smtp</code><code class="o">.</code><code class="n">login</code><code class="p">(</code><code class="bp">self</code><code class="o">.</code><code class="n">settings</code><code class="o">.</code><code class="n">mail_username</code><code class="p">,</code>
+                           <code class="bp">self</code><code class="o">.</code><code class="n">settings</code><code class="o">.</code><code class="n">mail_password</code><code class="p">)</code>
+            <code class="n">logging</code><code class="o">.</code><code class="n">info</code><code class="p">(</code><code class="sa">f</code><code class="s2">"Sending message </code><code class="si">{</code><code class="n">message</code><code class="si">}</code><code class="s2">"</code><code class="p">)</code>
+            <code class="n">r</code> <code class="o">=</code> <code class="n">smtp</code><code class="o">.</code><code class="n">sendmail</code><code class="p">(</code>
+                <code class="n">msg</code><code class="o">=</code><code class="nb">str</code><code class="p">(</code><code class="n">message</code><code class="p">),</code>
+                <code class="n">from_addr</code><code class="o">=</code><code class="n">msg_from</code><code class="p">,</code>
+                <code class="n">to_addrs</code><code class="o">=</code><code class="n">msg_to</code><code class="p">)</code>
+            <code class="k">return</code> <code class="n">r</code></pre></div>
+
+<p>Another reasonable approach would be to make this stateful and maintain a connection across<a data-primary="Space Beaver case study" data-secondary="outbound mail client" data-startref="space-outbound-mail" data-type="indexterm" id="idm45354760364208"/><a data-primary="outbound mail client (Space Beaver case study)" data-startref="outbound-mail" data-type="indexterm" id="idm45354760363120"/><a data-primary="remote functions" data-secondary="in Space Beaver case study" data-secondary-sortas="Space Beaver" data-startref="remote-function-space" data-type="indexterm" id="idm45354760362240"/> messages.</p>
+</div></section>
+
+
+
+
+
+
+
+
+<section data-pdf-bookmark="Shared Actor Patterns and Utilities" data-type="sect2"><div class="sect2" id="idm45354760430720">
+<h2>Shared Actor Patterns and Utilities</h2>
+
+<p>The<a data-primary="Space Beaver case study" data-secondary="shared actor patterns" data-type="indexterm" id="space-share-actor"/><a data-primary="shared actor patterns (Space Beaver case study)" data-type="indexterm" id="share-actor"/><a data-primary="remote actors" data-secondary="in Space Beaver case study" data-secondary-sortas="Space Beaver" data-tertiary="shared actor patterns" data-type="indexterm" id="remote-actor-space-share"/> remaining components of our system are stateful, either in the context of long-lived network connections or database connections. Since the user actor needs to talk to all the other actors (and vice versa), to simplify discovering the other actors 
+<span class="keep-together">running</span> in the system, we added a <code>LazyNamedActorPool</code>, which combines the concept of named actors <a data-primary="named actors" data-secondary="in Space Beaver case study" data-secondary-sortas="Space Beaver" data-type="indexterm" id="idm45354760423872"/>along with actor pools (<a data-type="xref" href="#lazypool">Example A-2</a>).<sup><a data-type="noteref" href="app01.html#idm45354760421728" id="idm45354760421728-marker">3</a></sup></p>
+<div data-type="example" id="lazypool">
+<h5><span class="label">Example A-2. </span><a href="https://oreil.ly/pNolb">Lazy named actor pool</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="k">class</code> <code class="nc">LazyNamedPool</code><code class="p">:</code>
+    <code class="sd">"""</code>
+<code class="sd">    Lazily constructed pool by name.</code>
+<code class="sd">    """</code>
+
+    <code class="k">def</code> <code class="fm">__init__</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code> <code class="n">name</code><code class="p">,</code> <code class="n">size</code><code class="p">,</code> <code class="n">min_size</code><code class="o">=</code><code class="mi">1</code><code class="p">):</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">_actors</code> <code class="o">=</code> <code class="p">[]</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">name</code> <code class="o">=</code> <code class="n">name</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">size</code> <code class="o">=</code> <code class="n">size</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">min_actors</code> <code class="o">=</code> <code class="n">min_size</code>
+
+    <code class="k">def</code> <code class="nf">_get_actor</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code> <code class="n">idx</code><code class="p">):</code>
+        <code class="n">actor_name</code> <code class="o">=</code> <code class="sa">f</code><code class="s2">"</code><code class="si">{</code><code class="bp">self</code><code class="o">.</code><code class="n">name</code><code class="si">}</code><code class="s2">_</code><code class="si">{</code><code class="n">idx</code><code class="si">}</code><code class="s2">"</code>
+        <code class="k">try</code><code class="p">:</code>
+            <code class="k">return</code> <code class="p">[</code><code class="n">ray</code><code class="o">.</code><code class="n">get_actor</code><code class="p">(</code><code class="n">actor_name</code><code class="p">)]</code>
+        <code class="k">except</code> <code class="ne">Exception</code> <code class="k">as</code> <code class="n">e</code><code class="p">:</code>
+            <code class="nb">print</code><code class="p">(</code><code class="sa">f</code><code class="s2">"Failed to fetch </code><code class="si">{</code><code class="n">actor_name</code><code class="si">}</code><code class="s2">: </code><code class="si">{</code><code class="n">e</code><code class="si">}</code><code class="s2"> (</code><code class="si">{</code><code class="nb">type</code><code class="p">(</code><code class="n">e</code><code class="p">)</code><code class="si">}</code><code class="s2">)"</code><code class="p">)</code>
+            <code class="k">return</code> <code class="p">[]</code>
+
+    <code class="k">def</code> <code class="nf">_get_actors</code><code class="p">(</code><code class="bp">self</code><code class="p">):</code>
+        <code class="sd">"""</code>
+<code class="sd">        Get actors by name, caches result once we have the "full" set.</code>
+<code class="sd">        """</code>
+        <code class="k">if</code> <code class="nb">len</code><code class="p">(</code><code class="bp">self</code><code class="o">.</code><code class="n">_actors</code><code class="p">)</code> <code class="o">&lt;</code> <code class="bp">self</code><code class="o">.</code><code class="n">size</code><code class="p">:</code>
+            <code class="k">return</code> <code class="nb">list</code><code class="p">(</code><code class="n">flat_map</code><code class="p">(</code><code class="bp">self</code><code class="o">.</code><code class="n">_get_actor</code><code class="p">,</code> <code class="nb">range</code><code class="p">(</code><code class="mi">0</code><code class="p">,</code> <code class="bp">self</code><code class="o">.</code><code class="n">size</code><code class="p">)))</code>
+
+    <code class="k">def</code> <code class="nf">get_pool</code><code class="p">(</code><code class="bp">self</code><code class="p">):</code>
+        <code class="n">new_actors</code> <code class="o">=</code> <code class="bp">self</code><code class="o">.</code><code class="n">_get_actors</code><code class="p">()</code>
+        <code class="c1"># Wait for at least min_actors to show up</code>
+        <code class="n">c</code> <code class="o">=</code> <code class="mi">0</code>
+        <code class="k">while</code> <code class="nb">len</code><code class="p">(</code><code class="n">new_actors</code><code class="p">)</code> <code class="o">&lt;</code> <code class="bp">self</code><code class="o">.</code><code class="n">min_actors</code> <code class="ow">and</code> <code class="n">c</code> <code class="o">&lt;</code> <code class="mi">10</code><code class="p">:</code>
+            <code class="nb">print</code><code class="p">(</code><code class="sa">f</code><code class="s2">"Have </code><code class="si">{</code><code class="n">new_actors</code><code class="si">}</code><code class="s2"> waiting for </code><code class="si">{</code><code class="bp">self</code><code class="o">.</code><code class="n">min_actors</code><code class="si">}</code><code class="s2">"</code><code class="p">)</code>
+            <code class="n">time</code><code class="o">.</code><code class="n">sleep</code><code class="p">(</code><code class="mi">2</code><code class="p">)</code>
+            <code class="n">new_actors</code> <code class="o">=</code> <code class="bp">self</code><code class="o">.</code><code class="n">_get_actors</code><code class="p">()</code>
+            <code class="n">c</code> <code class="o">=</code> <code class="n">c</code> <code class="o">+</code> <code class="mi">1</code>
+        <code class="c1"># If we got more actors</code>
+        <code class="k">if</code> <code class="p">(</code><code class="nb">len</code><code class="p">(</code><code class="n">new_actors</code><code class="p">)</code> <code class="o">&gt;</code> <code class="nb">len</code><code class="p">(</code><code class="bp">self</code><code class="o">.</code><code class="n">_actors</code><code class="p">)):</code>
+            <code class="bp">self</code><code class="o">.</code><code class="n">_actors</code> <code class="o">=</code> <code class="n">new_actors</code>
+            <code class="bp">self</code><code class="o">.</code><code class="n">_pool</code> <code class="o">=</code> <code class="n">ActorPool</code><code class="p">(</code><code class="n">new_actors</code><code class="p">)</code>
+        <code class="k">if</code> <code class="nb">len</code><code class="p">(</code><code class="n">new_actors</code><code class="p">)</code> <code class="o">&lt;</code> <code class="bp">self</code><code class="o">.</code><code class="n">min_actors</code><code class="p">:</code>
+            <code class="k">raise</code> <code class="ne">Exception</code><code class="p">(</code><code class="s2">"Could not find enough actors to launch pool."</code><code class="p">)</code>
+        <code class="k">return</code> <code class="bp">self</code><code class="o">.</code><code class="n">_pool</code></pre></div>
+
+<p>The other shared pattern we use is <em>graceful shutdown</em>, where<a data-primary="graceful shutdown in Space Beaver case study" data-type="indexterm" id="idm45354760171168"/> we ask the actors to stop processing new messages. Once the actors stop accepting new messages, the existing messages in the queue will drain out—either to the satellite network or SMTP network as needed. Then the actors can be deleted without having to persist and recover the messages the actor was processing. In the mail server, which we will look at next, this pattern is implemented as shown<a data-primary="Space Beaver case study" data-secondary="shared actor patterns" data-startref="space-share-actor" data-type="indexterm" id="idm45354760170432"/><a data-primary="shared actor patterns (Space Beaver case study)" data-startref="share-actor" data-type="indexterm" id="idm45354760169280"/><a data-primary="remote actors" data-secondary="in Space Beaver case study" data-secondary-sortas="Space Beaver" data-startref="remote-actor-space-share" data-tertiary="shared actor patterns" data-type="indexterm" id="idm45354760168368"/> in <a data-type="xref" href="#prepare_for_shutdown">Example A-3</a>.</p>
+<div data-type="example" id="prepare_for_shutdown">
+<h5><span class="label">Example A-3. </span><a href="https://oreil.ly/0PAD1">Stop for upgrade</a></h5>
+
+<pre data-code-language="python" data-type="programlisting">    <code class="k">async</code> <code class="k">def</code> <code class="nf">prepare_for_shutdown</code><code class="p">(</code><code class="bp">self</code><code class="p">):</code>
+        <code class="sd">"""</code>
+<code class="sd">        Prepare for shutdown, so stop remove pod label (if present) </code>
+<code class="sd">        then stop accepting connections.</code>
+<code class="sd">        """</code>
+        <code class="k">if</code> <code class="bp">self</code><code class="o">.</code><code class="n">label</code> <code class="ow">is</code> <code class="ow">not</code> <code class="kc">None</code><code class="p">:</code>
+            <code class="k">try</code><code class="p">:</code>
+                <code class="bp">self</code><code class="o">.</code><code class="n">update_label</code><code class="p">(</code><code class="n">opp</code><code class="o">=</code><code class="s2">"remove"</code><code class="p">)</code>
+                <code class="k">await</code> <code class="n">asyncio</code><code class="o">.</code><code class="n">sleep</code><code class="p">(</code><code class="mi">120</code><code class="p">)</code>
+            <code class="k">except</code> <code class="ne">Exception</code><code class="p">:</code>
+                <code class="k">pass</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">server</code><code class="o">.</code><code class="n">stop</code><code class="p">()</code></pre></div>
+</div></section>
+
+
+
+
+
+
+
+
+<section data-pdf-bookmark="Mail Server Actor" data-type="sect2"><div class="sect2" id="idm45354759923872">
+<h2>Mail Server Actor</h2>
+
+<p>The<a data-primary="Space Beaver case study" data-secondary="mail server actor" data-type="indexterm" id="space-mail-server"/><a data-primary="remote actors" data-secondary="in Space Beaver case study" data-secondary-sortas="Space Beaver" data-tertiary="mail server" data-type="indexterm" id="remote-actor-space-mail-server"/><a data-primary="mail server actor (Space Beaver case study)" data-type="indexterm" id="mail-server-actor"/> mail server actor is responsible for accepting new inbound messages and passing them along to the user actor. This is implemented as an aiosmtpd server handler, as shown in <a data-type="xref" href="#handle_data">Example A-4</a>.</p>
+<div data-type="example" id="handle_data">
+<h5><span class="label">Example A-4. </span><a href="https://oreil.ly/0PAD1">Mail server message handling</a></h5>
+
+<pre data-code-language="python" data-type="programlisting">    <code class="k">async</code> <code class="k">def</code> <code class="nf">handle_RCPT</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code> <code class="n">server</code><code class="p">,</code> <code class="n">session</code><code class="p">,</code> <code class="n">envelope</code><code class="p">,</code> <code class="n">address</code><code class="p">,</code> <code class="n">rcpt_options</code><code class="p">):</code>
+        <code class="sd">"""</code>
+<code class="sd">        Call back for RCPT. This only accepts email for us, no relaying.</code>
+<code class="sd">        """</code>
+        <code class="n">logging</code><code class="o">.</code><code class="n">info</code><code class="p">(</code><code class="sa">f</code><code class="s2">"RCPT to with </code><code class="si">{</code><code class="n">address</code><code class="si">}</code><code class="s2"> received."</code><code class="p">)</code>
+        <code class="k">if</code> <code class="ow">not</code> <code class="n">address</code><code class="o">.</code><code class="n">endswith</code><code class="p">(</code><code class="sa">f</code><code class="s2">"@</code><code class="si">{</code><code class="bp">self</code><code class="o">.</code><code class="n">domain</code><code class="si">}</code><code class="s2">"</code><code class="p">):</code>
+            <code class="bp">self</code><code class="o">.</code><code class="n">emails_rejected</code><code class="o">.</code><code class="n">inc</code><code class="p">()</code>
+            <code class="k">return</code> <code class="s1">'550 not relaying to that domain'</code>
+        <code class="c1"># Do we really want to support multiple emails? idk.</code>
+        <code class="n">envelope</code><code class="o">.</code><code class="n">rcpt_tos</code><code class="o">.</code><code class="n">append</code><code class="p">(</code><code class="n">address</code><code class="p">)</code>
+        <code class="k">return</code> <code class="s1">'250 OK'</code>
+
+    <code class="k">async</code> <code class="k">def</code> <code class="nf">handle_DATA</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code> <code class="n">server</code><code class="p">,</code> <code class="n">session</code><code class="p">,</code> <code class="n">envelope</code><code class="p">):</code>
+        <code class="sd">"""</code>
+<code class="sd">        Call back for the message data.</code>
+<code class="sd">        """</code>
+        <code class="n">logging</code><code class="o">.</code><code class="n">info</code><code class="p">(</code><code class="sa">f</code><code class="s2">"Received message </code><code class="si">{</code><code class="n">envelope</code><code class="si">}</code><code class="s2">"</code><code class="p">)</code>
+        <code class="nb">print</code><code class="p">(</code><code class="s1">'Message for </code><code class="si">%s</code><code class="s1">'</code> <code class="o">%</code> <code class="n">envelope</code><code class="o">.</code><code class="n">rcpt_tos</code><code class="p">)</code>
+        <code class="n">parsed_email</code> <code class="o">=</code> <code class="n">message_from_bytes</code><code class="p">(</code><code class="n">envelope</code><code class="o">.</code><code class="n">content</code><code class="p">,</code> <code class="n">policy</code><code class="o">=</code><code class="n">policy</code><code class="o">.</code><code class="n">SMTPUTF8</code><code class="p">)</code>
+        <code class="n">text</code> <code class="o">=</code> <code class="s2">""</code>
+        <code class="k">if</code> <code class="s2">"subject"</code> <code class="ow">in</code> <code class="n">parsed_email</code><code class="p">:</code>
+            <code class="n">subject</code> <code class="o">=</code> <code class="n">parsed_email</code><code class="p">[</code><code class="s2">"subject"</code><code class="p">]</code>
+            <code class="n">text</code> <code class="o">=</code> <code class="sa">f</code><code class="s2">"</code><code class="si">{</code><code class="n">subject</code><code class="si">}</code><code class="se">\n</code><code class="s2">"</code>
+        <code class="n">body</code> <code class="o">=</code> <code class="kc">None</code>
+        <code class="c1"># You would think "get_body" would give us the body but...maybe not? ugh</code>
+        <code class="k">try</code><code class="p">:</code>
+            <code class="n">body</code> <code class="o">=</code> <code class="p">(</code><code class="n">parsed_email</code><code class="o">.</code><code class="n">get_body</code><code class="p">(</code><code class="n">preferencelist</code><code class="o">=</code><code class="p">(</code><code class="s1">'plain'</code><code class="p">,</code> <code class="s1">'html'</code><code class="p">,))</code><code class="o">.</code>
+                    <code class="n">get_content</code><code class="p">())</code>
+        <code class="k">except</code> <code class="ne">Exception</code><code class="p">:</code>
+            <code class="k">if</code> <code class="n">parsed_email</code><code class="o">.</code><code class="n">is_multipart</code><code class="p">():</code>
+                <code class="k">for</code> <code class="n">part</code> <code class="ow">in</code> <code class="n">parsed_email</code><code class="o">.</code><code class="n">walk</code><code class="p">():</code>
+                    <code class="n">ctype</code> <code class="o">=</code> <code class="n">part</code><code class="o">.</code><code class="n">get_content_type</code><code class="p">()</code>
+                    <code class="n">cdispo</code> <code class="o">=</code> <code class="nb">str</code><code class="p">(</code><code class="n">part</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="s1">'Content-Disposition'</code><code class="p">))</code>
+
+                    <code class="c1"># skip any text/plain (txt) attachments</code>
+                    <code class="k">if</code> <code class="n">ctype</code> <code class="o">==</code> <code class="s1">'text/plain'</code> <code class="ow">and</code> <code class="s1">'attachment'</code> <code class="ow">not</code> <code class="ow">in</code> <code class="n">cdispo</code><code class="p">:</code>
+                        <code class="n">body</code> <code class="o">=</code> <code class="n">part</code><code class="o">.</code><code class="n">get_payload</code><code class="p">(</code><code class="n">decode</code><code class="o">=</code><code class="kc">True</code><code class="p">)</code>  <code class="c1"># decode</code>
+                        <code class="k">break</code>
+                    <code class="c1"># not multipart - i.e. plain text, no attachments, </code>
+                    <code class="c1"># keeping fingers crossed</code>
+            <code class="k">else</code><code class="p">:</code>
+                <code class="n">body</code> <code class="o">=</code> <code class="n">parsed_email</code><code class="o">.</code><code class="n">get_payload</code><code class="p">(</code><code class="n">decode</code><code class="o">=</code><code class="kc">True</code><code class="p">)</code>
+        <code class="n">text</code> <code class="o">=</code> <code class="sa">f</code><code class="s2">"</code><code class="si">{</code><code class="n">text</code><code class="si">}{</code><code class="n">body</code><code class="si">}</code><code class="s2">"</code>
+        <code class="n">text</code> <code class="o">=</code> <code class="n">text</code><code class="o">.</code><code class="n">replace</code><code class="p">(</code><code class="s2">"</code><code class="se">\r\n</code><code class="s2">"</code><code class="p">,</code> <code class="s2">"</code><code class="se">\n</code><code class="s2">"</code><code class="p">)</code><code class="o">.</code><code class="n">rstrip</code><code class="p">(</code><code class="s2">"</code><code class="se">\n</code><code class="s2">"</code><code class="p">)</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">emails_forwaded</code><code class="o">.</code><code class="n">inc</code><code class="p">()</code>
+        <code class="k">for</code> <code class="n">rcpt</code> <code class="ow">in</code> <code class="n">envelope</code><code class="o">.</code><code class="n">rcpt_tos</code><code class="p">:</code>
+            <code class="n">message</code> <code class="o">=</code> <code class="n">CombinedMessage</code><code class="p">(</code>
+                <code class="n">text</code><code class="o">=</code><code class="n">text</code><code class="p">,</code>
+                <code class="n">to</code><code class="o">=</code><code class="n">parseaddr</code><code class="p">(</code><code class="n">rcpt</code><code class="p">)[</code><code class="mi">1</code><code class="p">]</code><code class="o">.</code><code class="n">split</code><code class="p">(</code><code class="s1">'@'</code><code class="p">)[</code><code class="mi">0</code><code class="p">],</code>
+                <code class="n">msg_from</code><code class="o">=</code><code class="n">envelope</code><code class="o">.</code><code class="n">mail_from</code><code class="p">,</code>
+                <code class="n">from_device</code><code class="o">=</code><code class="kc">False</code><code class="p">,</code>
+                <code class="n">protocol</code><code class="o">=</code><code class="n">EMAIL_PROTOCOL</code><code class="p">)</code>
+            <code class="bp">self</code><code class="o">.</code><code class="n">user_pool</code><code class="o">.</code><code class="n">get_pool</code><code class="p">()</code><code class="o">.</code><code class="n">submit</code><code class="p">(</code>
+                <code class="k">lambda</code> <code class="n">actor</code><code class="p">,</code> <code class="n">message</code><code class="p">:</code> <code class="n">actor</code><code class="o">.</code><code class="n">handle_message</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="n">message</code><code class="p">),</code>
+                <code class="n">message</code><code class="p">)</code>
+        <code class="k">return</code> <code class="s1">'250 Message accepted for delivery'</code></pre></div>
+
+<p>An important part of having a mail server is that external users can make connections to the server. For HTTP services, like the inference server, you can use <a data-primary="Ray Serve" data-type="indexterm" id="idm45354759783216"/>Ray Serve to expose your service. However, the mail server uses SMTP, which cannot currently be exposed with Ray Serve. So, to allow Kubernetes to route requests to the correct hosts, the mail actor tags itself as shown<a data-primary="Space Beaver case study" data-secondary="mail server actor" data-startref="space-mail-server" data-type="indexterm" id="idm45354759782480"/><a data-primary="remote actors" data-secondary="in Space Beaver case study" data-secondary-sortas="Space Beaver" data-startref="remote-actor-space-mail-server" data-tertiary="mail server" data-type="indexterm" id="idm45354759781360"/><a data-primary="mail server actor (Space Beaver case study)" data-startref="mail-server-actor" data-type="indexterm" id="idm45354759779568"/> in <a data-type="xref" href="#update_label">Example A-5</a>.</p>
+<div data-type="example" id="update_label">
+<h5><span class="label">Example A-5. </span><a href="https://oreil.ly/0PAD1">Mail server Kubernetes labeling</a></h5>
+
+<pre data-code-language="python" data-type="programlisting">    <code class="k">def</code> <code class="nf">update_label</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code> <code class="n">opp</code><code class="o">=</code><code class="s2">"add"</code><code class="p">):</code>
+        <code class="n">label</code> <code class="o">=</code> <code class="bp">self</code><code class="o">.</code><code class="n">label</code>
+        <code class="n">patch_json</code> <code class="o">=</code> <code class="p">(</code>
+            <code class="s2">"[{"</code> <code class="o">+</code>
+            <code class="sa">f</code><code class="s2">""" "op": "</code><code class="si">{</code><code class="n">opp</code><code class="si">}</code><code class="s2">", "path": "/metadata/labels/</code><code class="si">{</code><code class="n">label</code><code class="si">}</code><code class="s2">", """</code> <code class="o">+</code> 
+            <code class="sa">f</code><code class="s2">""" "value": "present" """</code> <code class="o">+</code>
+            <code class="s2">"}]"</code><code class="p">)</code>
+        <code class="nb">print</code><code class="p">(</code><code class="sa">f</code><code class="s2">"Preparing to patch with </code><code class="si">{</code><code class="n">patch_json</code><code class="si">}</code><code class="s2">"</code><code class="p">)</code>
+        <code class="k">try</code><code class="p">:</code>
+            <code class="n">kube_host</code> <code class="o">=</code> <code class="n">os</code><code class="o">.</code><code class="n">getenv</code><code class="p">(</code><code class="s2">"KUBERNETES_SERVICE_HOST"</code><code class="p">)</code>
+            <code class="n">kube_port</code> <code class="o">=</code> <code class="n">os</code><code class="o">.</code><code class="n">getenv</code><code class="p">(</code><code class="s2">"KUBERNETES_PORT_443_TCP_PORT"</code><code class="p">,</code> <code class="s2">"443"</code><code class="p">)</code>
+            <code class="n">pod_namespace</code> <code class="o">=</code> <code class="n">os</code><code class="o">.</code><code class="n">getenv</code><code class="p">(</code><code class="s2">"POD_NAMESPACE"</code><code class="p">)</code>
+            <code class="n">pod_name</code> <code class="o">=</code> <code class="n">os</code><code class="o">.</code><code class="n">getenv</code><code class="p">(</code><code class="s2">"POD_NAME"</code><code class="p">)</code>
+            <code class="n">url</code> <code class="o">=</code> <code class="sa">f</code><code class="s2">"http://</code><code class="si">{</code><code class="n">kube_host</code><code class="si">}</code><code class="s2">:</code><code class="si">{</code><code class="n">kube_port</code><code class="si">}</code><code class="s2">/api/v1/namespace/"</code> <code class="o">+</code> 
+                  <code class="sa">f</code><code class="s2">"</code><code class="si">{</code><code class="n">pod_namespace</code><code class="si">}</code><code class="s2">/pods/</code><code class="si">{</code><code class="n">pod_name</code><code class="si">}</code><code class="s2">"</code>
+            <code class="n">headers</code> <code class="o">=</code> <code class="p">{</code><code class="s2">"Content-Type"</code><code class="p">:</code> <code class="s2">"application/json-patch+json"</code><code class="p">}</code>
+            <code class="nb">print</code><code class="p">(</code><code class="sa">f</code><code class="s2">"Patching with url </code><code class="si">{</code><code class="n">url</code><code class="si">}</code><code class="s2">"</code><code class="p">)</code>
+            <code class="n">result</code> <code class="o">=</code> <code class="n">requests</code><code class="o">.</code><code class="n">post</code><code class="p">(</code><code class="n">url</code><code class="p">,</code> <code class="n">data</code><code class="o">=</code><code class="n">patch_json</code><code class="p">,</code> <code class="n">headers</code><code class="o">=</code><code class="n">headers</code><code class="p">)</code>
+            <code class="n">logging</code><code class="o">.</code><code class="n">info</code><code class="p">(</code><code class="sa">f</code><code class="s2">"Got back </code><code class="si">{</code><code class="n">result</code><code class="si">}</code><code class="s2"> updating header."</code><code class="p">)</code>
+            <code class="nb">print</code><code class="p">(</code><code class="sa">f</code><code class="s2">"Got patch result </code><code class="si">{</code><code class="n">result</code><code class="si">}</code><code class="s2">"</code><code class="p">)</code>
+            <code class="k">if</code> <code class="n">result</code><code class="o">.</code><code class="n">status_code</code> <code class="o">!=</code> <code class="mi">200</code><code class="p">:</code>
+                <code class="k">raise</code> <code class="ne">Exception</code><code class="p">(</code><code class="sa">f</code><code class="s2">"Got back a bad status code </code><code class="si">{</code><code class="n">result</code><code class="o">.</code><code class="n">status_code</code><code class="si">}</code><code class="s2">"</code><code class="p">)</code>
+        <code class="k">except</code> <code class="ne">Exception</code> <code class="k">as</code> <code class="n">e</code><code class="p">:</code>
+            <code class="nb">print</code><code class="p">(</code><code class="sa">f</code><code class="s2">"Got an error trying to patch with https API </code><code class="si">{</code><code class="n">e</code><code class="si">}</code><code class="s2">"</code><code class="p">)</code>
+            <code class="n">patch_cmd</code> <code class="o">=</code> <code class="p">[</code>
+                <code class="s2">"kubectl"</code><code class="p">,</code>
+                <code class="s2">"patch"</code><code class="p">,</code>
+                <code class="s2">"pod"</code><code class="p">,</code>
+                <code class="s2">"-n"</code><code class="p">,</code>
+                <code class="n">pod_namespace</code><code class="p">,</code>
+                <code class="n">pod_name</code><code class="p">,</code>
+                <code class="s2">"--type=json"</code><code class="p">,</code>
+                <code class="sa">f</code><code class="s2">"-p=</code><code class="si">{</code><code class="n">patch_json</code><code class="si">}</code><code class="s2">"</code><code class="p">]</code>
+            <code class="nb">print</code><code class="p">(</code><code class="s2">"Running cmd:"</code><code class="p">)</code>
+            <code class="nb">print</code><code class="p">(</code><code class="s2">" "</code><code class="o">.</code><code class="n">join</code><code class="p">(</code><code class="n">patch_cmd</code><code class="p">))</code>
+            <code class="n">out</code> <code class="o">=</code> <code class="n">subprocess</code><code class="o">.</code><code class="n">check_output</code><code class="p">(</code><code class="n">patch_cmd</code><code class="p">)</code>
+            <code class="nb">print</code><code class="p">(</code><code class="sa">f</code><code class="s2">"Got </code><code class="si">{</code><code class="n">out</code><code class="si">}</code><code class="s2"> from patching pod."</code><code class="p">)</code>
+        <code class="nb">print</code><code class="p">(</code><code class="s2">"Pod patched?"</code><code class="p">)</code></pre></div>
+</div></section>
+
+
+
+
+
+
+
+
+<section data-pdf-bookmark="Satellite Actor" data-type="sect2"><div class="sect2" id="idm45354759332736">
+<h2>Satellite Actor</h2>
+
+<p>The <em>satellite actor</em> is <a data-primary="Space Beaver case study" data-secondary="satellite actor" data-type="indexterm" id="space-satellite"/><a data-primary="remote actors" data-secondary="in Space Beaver case study" data-secondary-sortas="Space Beaver" data-tertiary="satellite" data-type="indexterm" id="remote-actor-space-satellite"/><a data-primary="satellite actor (Space Beaver case study)" data-type="indexterm" id="satellite-actor"/><a data-primary="polling" data-type="indexterm" id="polling"/>similar to the mail server actor, except instead of accepting inbound requests, it gets new messages by polling, and we also send messages through it. Polling is like driving with a six-year-old in the car who keeps asking, “Are we there yet?” Except in our case, the question is “Do you have any new messages?” In Ray, async actors are the best option to implement polling, as the polling loop runs forever, but you still want to be able to process other messages. <a data-type="xref" href="#poll_for_msgs">Example A-6</a> shows the  satellite actors’ polling implementation.</p>
+<div data-type="example" id="poll_for_msgs">
+<h5><span class="label">Example A-6. </span><a href="https://oreil.ly/kqkxU">Satellite actor polling</a></h5>
+
+<pre data-code-language="python" data-type="programlisting">    <code class="k">async</code> <code class="k">def</code> <code class="nf">run</code><code class="p">(</code><code class="bp">self</code><code class="p">):</code>
+        <code class="nb">print</code><code class="p">(</code><code class="s2">"Prepairing to run."</code><code class="p">)</code>
+        <code class="n">internal_retries</code> <code class="o">=</code> <code class="mi">0</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">running</code> <code class="o">=</code> <code class="kc">True</code>
+        <code class="k">while</code> <code class="bp">self</code><code class="o">.</code><code class="n">running</code><code class="p">:</code>
+            <code class="k">try</code><code class="p">:</code>
+                <code class="bp">self</code><code class="o">.</code><code class="n">_login</code><code class="p">()</code>
+                <code class="k">while</code> <code class="kc">True</code><code class="p">:</code>
+                    <code class="k">await</code> <code class="n">asyncio</code><code class="o">.</code><code class="n">sleep</code><code class="p">(</code><code class="bp">self</code><code class="o">.</code><code class="n">delay</code><code class="p">)</code>
+                    <code class="k">await</code> <code class="bp">self</code><code class="o">.</code><code class="n">check_msgs</code><code class="p">()</code>
+                    <code class="n">internal_retries</code> <code class="o">=</code> <code class="mi">0</code>  <code class="c1"># On success reset retry counter.</code>
+            <code class="k">except</code> <code class="ne">Exception</code> <code class="k">as</code> <code class="n">e</code><code class="p">:</code>
+                <code class="nb">print</code><code class="p">(</code><code class="sa">f</code><code class="s2">"Error </code><code class="si">{</code><code class="n">e</code><code class="si">}</code><code class="s2"> while checking messages."</code><code class="p">)</code>
+                <code class="n">logging</code><code class="o">.</code><code class="n">error</code><code class="p">(</code><code class="sa">f</code><code class="s2">"Error </code><code class="si">{</code><code class="n">e</code><code class="si">}</code><code class="s2">, retrying"</code><code class="p">)</code>
+                <code class="n">internal_retries</code> <code class="o">=</code> <code class="n">internal_retries</code> <code class="o">+</code> <code class="mi">1</code>
+                <code class="k">if</code> <code class="p">(</code><code class="n">internal_retries</code> <code class="o">&gt;</code> <code class="bp">self</code><code class="o">.</code><code class="n">max_internal_retries</code><code class="p">):</code>
+                    <code class="k">raise</code> <code class="n">e</code></pre></div>
+
+<p>This polling loop delegates most of the logic to <code>check_msgs</code>, as shown in 
+<span class="keep-together"><a data-type="xref" href="#check_msgs">Example A-7</a></span>.</p>
+<div data-type="example" id="check_msgs">
+<h5><span class="label">Example A-7. </span><a href="https://oreil.ly/kqkxU">Satellite check for messages</a></h5>
+
+<pre data-code-language="python" data-type="programlisting">    <code class="k">async</code> <code class="k">def</code> <code class="nf">check_msgs</code><code class="p">(</code><code class="bp">self</code><code class="p">):</code>
+        <code class="nb">print</code><code class="p">(</code><code class="s2">"Checking messages..."</code><code class="p">)</code>
+        <code class="n">res</code> <code class="o">=</code> <code class="bp">self</code><code class="o">.</code><code class="n">session</code><code class="o">.</code><code class="n">get</code><code class="p">(</code>
+            <code class="bp">self</code><code class="o">.</code><code class="n">_getMessageURL</code><code class="p">,</code>
+            <code class="n">headers</code><code class="o">=</code><code class="bp">self</code><code class="o">.</code><code class="n">hdrs</code><code class="p">,</code>
+            <code class="n">params</code><code class="o">=</code><code class="p">{</code><code class="s1">'count'</code><code class="p">:</code> <code class="bp">self</code><code class="o">.</code><code class="n">_page_request_size</code><code class="p">,</code> <code class="s1">'status'</code><code class="p">:</code> <code class="mi">0</code><code class="p">})</code>
+        <code class="n">messages</code> <code class="o">=</code> <code class="n">res</code><code class="o">.</code><code class="n">json</code><code class="p">()</code>
+        <code class="k">for</code> <code class="n">item</code> <code class="ow">in</code> <code class="n">messages</code><code class="p">:</code>
+            <code class="c1"># Is this a message we are responsible for</code>
+            <code class="k">if</code> <code class="nb">int</code><code class="p">(</code><code class="n">item</code><code class="p">[</code><code class="s2">"messageId"</code><code class="p">])</code> <code class="o">%</code> <code class="bp">self</code><code class="o">.</code><code class="n">poolsize</code> <code class="o">==</code> <code class="bp">self</code><code class="o">.</code><code class="n">idx</code><code class="p">:</code>
+                <code class="k">try</code><code class="p">:</code>
+                    <code class="k">await</code> <code class="bp">self</code><code class="o">.</code><code class="n">_process_mesage</code><code class="p">(</code><code class="n">item</code><code class="p">)</code>
+                <code class="k">except</code> <code class="ne">Exception</code> <code class="k">as</code> <code class="n">e</code><code class="p">:</code>
+                    <code class="n">logging</code><code class="o">.</code><code class="n">error</code><code class="p">(</code><code class="sa">f</code><code class="s2">"Error </code><code class="si">{</code><code class="n">e</code><code class="si">}</code><code class="s2"> processing </code><code class="si">{</code><code class="n">item</code><code class="si">}</code><code class="s2">"</code><code class="p">)</code>
+                <code class="bp">self</code><code class="o">.</code><code class="n">session</code><code class="o">.</code><code class="n">post</code><code class="p">(</code>
+                    <code class="bp">self</code><code class="o">.</code><code class="n">_ackMessageURL</code><code class="o">.</code><code class="n">format</code><code class="p">(</code><code class="n">item</code><code class="p">[</code><code class="s1">'packetId'</code><code class="p">]),</code>
+                    <code class="n">headers</code><code class="o">=</code><code class="bp">self</code><code class="o">.</code><code class="n">hdrs</code><code class="p">)</code>
+        <code class="nb">print</code><code class="p">(</code><code class="s2">"Done!"</code><code class="p">)</code></pre></div>
+
+<p>Another interesting pattern we used in the satellite actor is to expose serializable results for testing, but keep the data in the more efficient async representation in the normal flow. This pattern is shown in the way messages are decoded <a data-primary="Space Beaver case study" data-secondary="satellite actor" data-startref="space-satellite" data-type="indexterm" id="idm45354758938704"/><a data-primary="remote actors" data-secondary="in Space Beaver case study" data-secondary-sortas="Space Beaver" data-startref="remote-actor-space-satellite" data-tertiary="satellite" data-type="indexterm" id="idm45354758937616"/><a data-primary="satellite actor (Space Beaver case study)" data-startref="satellite-actor" data-type="indexterm" id="idm45354758898832"/><a data-primary="polling" data-startref="polling" data-type="indexterm" id="idm45354758897920"/>in <a data-type="xref" href="#process_msgs">Example A-8</a>.</p>
+<div data-type="example" id="process_msgs">
+<h5><span class="label">Example A-8. </span><a href="https://oreil.ly/kqkxU">Satellite process message</a></h5>
+
+<pre data-code-language="python" data-type="programlisting">    <code class="k">async</code> <code class="k">def</code> <code class="nf">_decode_message</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code> <code class="n">item</code><code class="p">:</code> <code class="nb">dict</code><code class="p">)</code> <code class="o">-&gt;</code> <code class="n">AsyncIterator</code><code class="p">[</code><code class="n">CombinedMessage</code><code class="p">]:</code>
+        <code class="sd">"""</code>
+<code class="sd">        Decode a message. Note: result is not serializable.</code>
+<code class="sd">        """</code>
+        <code class="n">raw_msg_data</code> <code class="o">=</code> <code class="n">item</code><code class="p">[</code><code class="s2">"data"</code><code class="p">]</code>
+        <code class="n">logging</code><code class="o">.</code><code class="n">info</code><code class="p">(</code><code class="sa">f</code><code class="s2">"msg: </code><code class="si">{</code><code class="n">raw_msg_data</code><code class="si">}</code><code class="s2">"</code><code class="p">)</code>
+        <code class="n">messagedata</code> <code class="o">=</code> <code class="n">MessageDataPB</code><code class="p">()</code>  <code class="c1"># noqa</code>
+        <code class="n">bin_data</code> <code class="o">=</code> <code class="n">base64</code><code class="o">.</code><code class="n">b64decode</code><code class="p">(</code><code class="n">raw_msg_data</code><code class="p">)</code>
+        <code class="c1"># Note: this really does no validation, so if it gets a message instead</code>
+        <code class="c1"># of MessageDataPb it just gives back nothing</code>
+        <code class="n">messagedata</code><code class="o">.</code><code class="n">ParseFromString</code><code class="p">(</code><code class="n">bin_data</code><code class="p">)</code>
+        <code class="n">logging</code><code class="o">.</code><code class="n">info</code><code class="p">(</code><code class="sa">f</code><code class="s2">"Formatted: </code><code class="si">{</code><code class="n">text_format</code><code class="o">.</code><code class="n">MessageToString</code><code class="p">(</code><code class="n">messagedata</code><code class="p">)</code><code class="si">}</code><code class="s2">"</code><code class="p">)</code>
+        <code class="k">if</code> <code class="p">(</code><code class="nb">len</code><code class="p">(</code><code class="n">messagedata</code><code class="o">.</code><code class="n">message</code><code class="p">)</code> <code class="o">&lt;</code> <code class="mi">1</code><code class="p">):</code>
+            <code class="n">logging</code><code class="o">.</code><code class="n">warn</code><code class="p">(</code><code class="sa">f</code><code class="s2">"Received </code><code class="si">{</code><code class="n">raw_msg_data</code><code class="si">}</code><code class="s2"> with no messages?"</code><code class="p">)</code>
+        <code class="k">for</code> <code class="n">message</code> <code class="ow">in</code> <code class="n">messagedata</code><code class="o">.</code><code class="n">message</code><code class="p">:</code>
+            <code class="k">yield</code> <code class="n">CombinedMessage</code><code class="p">(</code>
+                <code class="n">text</code><code class="o">=</code><code class="n">message</code><code class="o">.</code><code class="n">text</code><code class="p">,</code> <code class="n">to</code><code class="o">=</code><code class="n">message</code><code class="o">.</code><code class="n">to</code><code class="p">,</code> <code class="n">protocol</code><code class="o">=</code><code class="n">message</code><code class="o">.</code><code class="n">protocol</code><code class="p">,</code>
+                <code class="n">msg_from</code><code class="o">=</code><code class="n">item</code><code class="p">[</code><code class="s2">"deviceId"</code><code class="p">],</code> <code class="n">from_device</code><code class="o">=</code><code class="kc">True</code>
+            <code class="p">)</code>
+
+    <code class="k">async</code> <code class="k">def</code> <code class="nf">_ser_decode_message</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code> <code class="n">item</code><code class="p">:</code> <code class="nb">dict</code><code class="p">)</code> <code class="o">-&gt;</code> <code class="n">List</code><code class="p">[</code><code class="n">CombinedMessage</code><code class="p">]:</code>
+        <code class="sd">"""</code>
+<code class="sd">        Decode a message. Serializeable but blocking. Exposed for testing.</code>
+<code class="sd">        """</code>
+        <code class="n">gen</code> <code class="o">=</code> <code class="bp">self</code><code class="o">.</code><code class="n">_decode_message</code><code class="p">(</code><code class="n">item</code><code class="p">)</code>
+        <code class="c1"># See PEP-0530</code>
+        <code class="k">return</code> <code class="p">[</code><code class="n">i</code> <code class="k">async</code> <code class="k">for</code> <code class="n">i</code> <code class="ow">in</code> <code class="n">gen</code><code class="p">]</code>
+
+    <code class="k">async</code> <code class="k">def</code> <code class="nf">_process_message</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code> <code class="n">item</code><code class="p">:</code> <code class="nb">dict</code><code class="p">):</code>
+        <code class="n">messages</code> <code class="o">=</code> <code class="bp">self</code><code class="o">.</code><code class="n">_decode_message</code><code class="p">(</code><code class="n">item</code><code class="p">)</code>
+        <code class="k">async</code> <code class="k">for</code> <code class="n">message</code> <code class="ow">in</code> <code class="n">messages</code><code class="p">:</code>
+            <code class="bp">self</code><code class="o">.</code><code class="n">user_pool</code><code class="o">.</code><code class="n">get_pool</code><code class="p">()</code><code class="o">.</code><code class="n">submit</code><code class="p">(</code>
+                <code class="k">lambda</code> <code class="n">actor</code><code class="p">,</code> <code class="n">msg</code><code class="p">:</code> <code class="n">actor</code><code class="o">.</code><code class="n">handle_message</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="n">msg</code><code class="p">),</code>
+                <code class="n">message</code><code class="p">)</code></pre></div>
+</div></section>
+
+
+
+
+
+
+
+
+<section data-pdf-bookmark="User Actor" data-type="sect2"><div class="sect2" id="idm45354758890144">
+<h2>User Actor</h2>
+
+<p>While <a data-primary="Space Beaver case study" data-secondary="user actor" data-type="indexterm" id="space-user"/><a data-primary="remote actors" data-secondary="in Space Beaver case study" data-secondary-sortas="Space Beaver" data-tertiary="user" data-type="indexterm" id="user-actor-space-satellite"/><a data-primary="user actor (Space Beaver case study)" data-type="indexterm" id="user-actor"/>the other actors are all async, allowing parallelism within the actor, the user actors are synchronous since the ORM does not yet handle async execution. The user actor code is shown relatively completely in <a data-type="xref" href="#user_actor">Example A-9</a>, so you can see the shared patterns (which were used in the other actors but skipped for brevity).</p>
+<div data-type="example" id="user_actor">
+<h5><span class="label">Example A-9. </span><a href="https://oreil.ly/oym1M">User actor</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="k">class</code> <code class="nc">UserActorBase</code><code class="p">():</code>
+    <code class="sd">"""</code>
+<code class="sd">    Base client class for talking to the swarm.space APIs.</code>
+<code class="sd">    Note: this actor is not async because Django's ORM is not happy with</code>
+<code class="sd">    async.</code>
+<code class="sd">    """</code>
+
+    <code class="k">def</code> <code class="fm">__init__</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code> <code class="n">settings</code><code class="p">:</code> <code class="n">Settings</code><code class="p">,</code> <code class="n">idx</code><code class="p">:</code> <code class="nb">int</code><code class="p">,</code> <code class="n">poolsize</code><code class="p">:</code> <code class="nb">int</code><code class="p">):</code>
+        <code class="nb">print</code><code class="p">(</code><code class="sa">f</code><code class="s2">"Running on </code><code class="si">{</code><code class="n">platform</code><code class="o">.</code><code class="n">machine</code><code class="p">()</code><code class="si">}</code><code class="s2">"</code><code class="p">)</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">settings</code> <code class="o">=</code> <code class="n">settings</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">idx</code> <code class="o">=</code> <code class="n">idx</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">poolsize</code> <code class="o">=</code> <code class="n">poolsize</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">satellite_pool</code> <code class="o">=</code> <code class="n">utils</code><code class="o">.</code><code class="n">LazyNamedPool</code><code class="p">(</code><code class="s2">"satellite"</code><code class="p">,</code> <code class="n">poolsize</code><code class="p">)</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">outbound_sms</code> <code class="o">=</code> <code class="n">utils</code><code class="o">.</code><code class="n">LazyNamedPool</code><code class="p">(</code><code class="s2">"sms"</code><code class="p">,</code> <code class="n">poolsize</code><code class="p">)</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">mail_client</code> <code class="o">=</code> <code class="n">MailClient</code><code class="p">(</code><code class="bp">self</code><code class="o">.</code><code class="n">settings</code><code class="p">)</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">messages_forwarded</code> <code class="o">=</code> <code class="n">Counter</code><code class="p">(</code>
+            <code class="s2">"messages_forwarded"</code><code class="p">,</code>
+            <code class="n">description</code><code class="o">=</code><code class="s2">"Messages forwarded"</code><code class="p">,</code>
+            <code class="n">tag_keys</code><code class="o">=</code><code class="p">(</code><code class="s2">"idx"</code><code class="p">,),</code>
+        <code class="p">)</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">messages_forwarded</code><code class="o">.</code><code class="n">set_default_tags</code><code class="p">(</code>
+            <code class="p">{</code><code class="s2">"idx"</code><code class="p">:</code> <code class="nb">str</code><code class="p">(</code><code class="n">idx</code><code class="p">)})</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">messages_rejected</code> <code class="o">=</code> <code class="n">Counter</code><code class="p">(</code>
+            <code class="s2">"messages_rejected"</code><code class="p">,</code>
+            <code class="n">description</code><code class="o">=</code><code class="s2">"Rejected messages"</code><code class="p">,</code>
+            <code class="n">tag_keys</code><code class="o">=</code><code class="p">(</code><code class="s2">"idx"</code><code class="p">,),</code>
+        <code class="p">)</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">messages_rejected</code><code class="o">.</code><code class="n">set_default_tags</code><code class="p">(</code>
+            <code class="p">{</code><code class="s2">"idx"</code><code class="p">:</code> <code class="nb">str</code><code class="p">(</code><code class="n">idx</code><code class="p">)})</code>
+        <code class="nb">print</code><code class="p">(</code><code class="sa">f</code><code class="s2">"Starting user actor </code><code class="si">{</code><code class="n">idx</code><code class="si">}</code><code class="s2">"</code><code class="p">)</code>
+
+    <code class="k">def</code> <code class="nf">_fetch_user</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code> <code class="n">msg</code><code class="p">:</code> <code class="n">CombinedMessage</code><code class="p">)</code> <code class="o">-&gt;</code> <code class="n">User</code><code class="p">:</code>
+        <code class="sd">"""</code>
+<code class="sd">        Find the user associated with the message.</code>
+<code class="sd">        """</code>
+        <code class="k">if</code> <code class="p">(</code><code class="n">msg</code><code class="o">.</code><code class="n">from_device</code><code class="p">):</code>
+            <code class="n">device</code> <code class="o">=</code> <code class="n">Device</code><code class="o">.</code><code class="n">objects</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="n">serial_number</code><code class="o">=</code><code class="n">msg</code><code class="o">.</code><code class="n">msg_from</code><code class="p">)</code>
+            <code class="k">return</code> <code class="n">device</code><code class="o">.</code><code class="n">user</code>
+        <code class="k">elif</code> <code class="p">(</code><code class="n">msg</code><code class="o">.</code><code class="n">protocol</code> <code class="o">==</code> <code class="n">EMAIL_PROTOCOL</code><code class="p">):</code>
+            <code class="n">username</code> <code class="o">=</code> <code class="n">msg</code><code class="o">.</code><code class="n">to</code>
+            <code class="nb">print</code><code class="p">(</code><code class="sa">f</code><code class="s2">"Fetching user </code><code class="si">{</code><code class="n">msg</code><code class="o">.</code><code class="n">to</code><code class="si">}</code><code class="s2">"</code><code class="p">)</code>
+            <code class="k">try</code><code class="p">:</code>
+                <code class="k">return</code> <code class="n">User</code><code class="o">.</code><code class="n">objects</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="n">username</code><code class="o">=</code><code class="n">username</code><code class="p">)</code>
+            <code class="k">except</code> <code class="ne">Exception</code> <code class="k">as</code> <code class="n">e</code><code class="p">:</code>
+                <code class="nb">print</code><code class="p">(</code><code class="sa">f</code><code class="s2">"Failed to get user: </code><code class="si">{</code><code class="n">username</code><code class="si">}</code><code class="s2">?"</code><code class="p">)</code>
+                <code class="k">raise</code> <code class="n">e</code>
+        <code class="k">elif</code> <code class="p">(</code><code class="n">msg</code><code class="o">.</code><code class="n">protocol</code> <code class="o">==</code> <code class="n">SMS_PROTOCOL</code><code class="p">):</code>
+            <code class="nb">print</code><code class="p">(</code><code class="sa">f</code><code class="s2">"Looking up user for phone </code><code class="si">{</code><code class="n">msg</code><code class="o">.</code><code class="n">to</code><code class="si">}</code><code class="s2">"</code><code class="p">)</code>
+            <code class="k">try</code><code class="p">:</code>
+                <code class="k">return</code> <code class="n">User</code><code class="o">.</code><code class="n">objects</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="n">twillion_number</code><code class="o">=</code><code class="nb">str</code><code class="p">(</code><code class="n">msg</code><code class="o">.</code><code class="n">to</code><code class="p">))</code>
+            <code class="k">except</code> <code class="ne">Exception</code> <code class="k">as</code> <code class="n">e</code><code class="p">:</code>
+                <code class="nb">print</code><code class="p">(</code><code class="sa">f</code><code class="s2">"Failed to get user: </code><code class="si">{</code><code class="n">username</code><code class="si">}</code><code class="s2">?"</code><code class="p">)</code>
+                <code class="k">raise</code> <code class="n">e</code>
+        <code class="k">else</code><code class="p">:</code>
+            <code class="k">raise</code> <code class="ne">Exception</code><code class="p">(</code><code class="sa">f</code><code class="s2">"Unhandled protocol? - </code><code class="si">{</code><code class="n">msg</code><code class="o">.</code><code class="n">protocol</code><code class="si">}</code><code class="s2">"</code><code class="p">)</code>
+
+    <code class="k">def</code> <code class="nf">prepare_for_shutdown</code><code class="p">(</code><code class="bp">self</code><code class="p">):</code>
+        <code class="sd">"""</code>
+<code class="sd">        Prepare for shutdown (not needed for sync DB connection)</code>
+<code class="sd">        """</code>
+        <code class="k">pass</code>
+
+    <code class="k">def</code> <code class="nf">handle_message</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code> <code class="n">input_msg</code><code class="p">:</code> <code class="n">CombinedMessage</code><code class="p">):</code>
+        <code class="sd">"""</code>
+<code class="sd">        Handle messages.</code>
+<code class="sd">        """</code>
+        <code class="nb">print</code><code class="p">(</code><code class="sa">f</code><code class="s2">"Handling message </code><code class="si">{</code><code class="n">input_msg</code><code class="si">}</code><code class="s2">"</code><code class="p">)</code>
+        <code class="n">user</code> <code class="o">=</code> <code class="bp">self</code><code class="o">.</code><code class="n">_fetch_user</code><code class="p">(</code><code class="n">input_msg</code><code class="p">)</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">messages_forwarded</code><code class="o">.</code><code class="n">inc</code><code class="p">()</code>
+        <code class="k">if</code> <code class="p">(</code><code class="n">input_msg</code><code class="o">.</code><code class="n">from_device</code><code class="p">):</code>
+            <code class="n">msg</code> <code class="o">=</code> <code class="p">{</code>
+                <code class="s2">"data"</code><code class="p">:</code> <code class="n">input_msg</code><code class="o">.</code><code class="n">text</code><code class="p">,</code>
+                <code class="s2">"msg_from"</code><code class="p">:</code> <code class="sa">f</code><code class="s2">"</code><code class="si">{</code><code class="n">user</code><code class="o">.</code><code class="n">username</code><code class="si">}</code><code class="s2">@spacebeaver.com"</code><code class="p">,</code>
+                <code class="s2">"msg_to"</code><code class="p">:</code> <code class="n">input_msg</code><code class="o">.</code><code class="n">to</code>
+            <code class="p">}</code>
+            <code class="c1"># Underneath this calls a ray.remote method.</code>
+            <code class="bp">self</code><code class="o">.</code><code class="n">mail_client</code><code class="o">.</code><code class="n">send_message</code><code class="p">(</code><code class="o">**</code><code class="n">msg</code><code class="p">)</code>
+        <code class="k">else</code><code class="p">:</code>
+            <code class="n">msg</code> <code class="o">=</code> <code class="p">{</code>
+                <code class="s2">"protocol"</code><code class="p">:</code> <code class="n">input_msg</code><code class="o">.</code><code class="n">protocol</code><code class="p">,</code>
+                <code class="s2">"msg_from"</code><code class="p">:</code> <code class="n">input_msg</code><code class="o">.</code><code class="n">msg_from</code><code class="p">,</code>
+                <code class="s2">"msg_to"</code><code class="p">:</code> <code class="n">user</code><code class="o">.</code><code class="n">device</code><code class="o">.</code><code class="n">serial_number</code><code class="p">,</code>
+                <code class="s2">"data"</code><code class="p">:</code> <code class="n">input_msg</code><code class="o">.</code><code class="n">text</code>
+            <code class="p">}</code>
+            <code class="bp">self</code><code class="o">.</code><code class="n">satellite_pool</code><code class="o">.</code><code class="n">get_pool</code><code class="p">()</code><code class="o">.</code><code class="n">submit</code><code class="p">(</code>
+                <code class="k">lambda</code> <code class="n">actor</code><code class="p">,</code> <code class="n">msg</code><code class="p">:</code> <code class="n">actor</code><code class="o">.</code><code class="n">send_message</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="o">**</code><code class="n">msg</code><code class="p">),</code>
+                <code class="n">msg</code><code class="p">)</code>
+
+
+<code class="nd">@ray</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="n">max_restarts</code><code class="o">=-</code><code class="mi">1</code><code class="p">)</code>
+<code class="k">class</code> <code class="nc">UserActor</code><code class="p">(</code><code class="n">UserActorBase</code><code class="p">):</code>
+    <code class="sd">"""</code>
+<code class="sd">    Routes messages and checks the user account info.</code>
+<code class="sd">    """</code></pre></div>
+<div data-type="note" epub:type="note"><h6>Note</h6>
+<p>Django is a popular Python web development framework that includes many components, including the ORM we are<a data-primary="Space Beaver case study" data-secondary="user actor" data-startref="space-user" data-type="indexterm" id="idm45354757920928"/><a data-primary="remote actors" data-secondary="in Space Beaver case study" data-secondary-sortas="Space Beaver" data-startref="user-actor-space-satellite" data-tertiary="user" data-type="indexterm" id="idm45354757919776"/><a data-primary="user actor (Space Beaver case study)" data-startref="user-actor" data-type="indexterm" id="idm45354757918080"/><a data-primary="Django" data-type="indexterm" id="idm45354757917168"/> using.</p>
+</div>
+</div></section>
+
+
+
+
+
+
+
+
+<section data-pdf-bookmark="SMS Actor and Serve Implementation" data-type="sect2"><div class="sect2" id="idm45354758146288">
+<h2>SMS Actor and Serve Implementation</h2>
+
+<p>In <a data-primary="Space Beaver case study" data-secondary="SMS actor" data-type="indexterm" id="idm45354758144992"/><a data-primary="remote actors" data-secondary="in Space Beaver case study" data-secondary-sortas="Space Beaver" data-tertiary="SMS" data-type="indexterm" id="idm45354758143984"/><a data-primary="SMS actor (Space Beaver case study)" data-type="indexterm" id="idm45354758142528"/><a data-primary="Ray Serve" data-type="indexterm" id="idm45354758141888"/>addition to the actors for satellite and email gateways, Space Beaver also uses Ray Serve to expose <code>phone-api</code>, as shown in <a data-type="xref" href="#phone_serve">Example A-10</a>.</p>
+<div data-type="example" id="phone_serve">
+<h5><span class="label">Example A-10. </span><a href="https://oreil.ly/BkdmL">Using Ray Serve to handle inbound SMS</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="kn">from</code> <code class="nn">messaging.utils</code> <code class="kn">import</code> <code class="n">utils</code>
+<code class="kn">from</code> <code class="nn">pydantic</code> <code class="kn">import</code> <code class="n">BaseModel</code><code class="p">,</code> <code class="n">Field</code>
+<code class="kn">from</code> <code class="nn">fastapi</code> <code class="kn">import</code> <code class="n">FastAPI</code><code class="p">,</code> <code class="n">HTTPException</code><code class="p">,</code> <code class="n">Request</code>
+<code class="kn">from</code> <code class="nn">ray</code> <code class="kn">import</code> <code class="n">serve</code>
+<code class="kn">from</code> <code class="nn">messaging.settings.settings</code> <code class="kn">import</code> <code class="n">Settings</code>
+<code class="kn">from</code> <code class="nn">messaging.proto.MessageDataPB_pb2</code> <code class="kn">import</code> <code class="n">SMS</code> <code class="k">as</code> <code class="n">SMS_PROTOCOL</code>
+<code class="kn">from</code> <code class="nn">messaging.internal_types</code> <code class="kn">import</code> <code class="n">CombinedMessage</code>
+<code class="kn">from</code> <code class="nn">typing</code> <code class="kn">import</code> <code class="n">Optional</code>
+<code class="kn">from</code> <code class="nn">twilio.request_validator</code> <code class="kn">import</code> <code class="n">RequestValidator</code>
+
+
+<code class="c1"># 1: Define a FastAPI app and wrap it in a deployment with a route handler.</code>
+<code class="n">app</code> <code class="o">=</code> <code class="n">FastAPI</code><code class="p">()</code>
+
+
+<code class="k">class</code> <code class="nc">InboundMessage</code><code class="p">(</code><code class="n">BaseModel</code><code class="p">):</code>
+    <code class="n">x_twilio_signature</code><code class="p">:</code> <code class="nb">str</code>
+    <code class="n">message_from</code><code class="p">:</code> <code class="nb">str</code> <code class="o">=</code> <code class="n">Field</code><code class="p">(</code><code class="kc">None</code><code class="p">,</code> <code class="n">alias</code><code class="o">=</code><code class="s1">'from'</code><code class="p">)</code>
+    <code class="n">to</code><code class="p">:</code> <code class="nb">str</code>
+    <code class="n">body</code><code class="p">:</code> <code class="nb">str</code>
+    <code class="n">msg_type</code><code class="p">:</code> <code class="n">Optional</code><code class="p">[</code><code class="nb">str</code><code class="p">]</code> <code class="o">=</code> <code class="n">Field</code><code class="p">(</code><code class="kc">None</code><code class="p">,</code> <code class="n">alias</code><code class="o">=</code><code class="s2">"type"</code><code class="p">)</code>
+
+
+<code class="nd">@serve</code><code class="o">.</code><code class="n">deployment</code><code class="p">(</code><code class="n">num_replicas</code><code class="o">=</code><code class="mi">3</code><code class="p">,</code> <code class="n">route_prefix</code><code class="o">=</code><code class="s2">"/"</code><code class="p">)</code>
+<code class="nd">@serve</code><code class="o">.</code><code class="n">ingress</code><code class="p">(</code><code class="n">app</code><code class="p">)</code>
+<code class="k">class</code> <code class="nc">PhoneWeb</code><code class="p">:</code>
+    <code class="k">def</code> <code class="fm">__init__</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code> <code class="n">settings</code><code class="p">:</code> <code class="n">Settings</code><code class="p">,</code> <code class="n">poolsize</code><code class="p">:</code> <code class="nb">int</code><code class="p">):</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">settings</code> <code class="o">=</code> <code class="n">settings</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">poolsize</code> <code class="o">=</code> <code class="n">poolsize</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">user_pool</code> <code class="o">=</code> <code class="n">utils</code><code class="o">.</code><code class="n">LazyNamedPool</code><code class="p">(</code><code class="s2">"user"</code><code class="p">,</code> <code class="n">poolsize</code><code class="p">)</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">validator</code> <code class="o">=</code> <code class="n">RequestValidator</code><code class="p">(</code><code class="n">settings</code><code class="o">.</code><code class="n">TW_AUTH_TOKEN</code><code class="p">)</code>
+
+    <code class="c1"># FastAPI will automatically parse the HTTP request for us.</code>
+    <code class="nd">@app</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="s2">"/sms"</code><code class="p">)</code>
+    <code class="k">async</code> <code class="k">def</code> <code class="nf">inbound_message</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code> <code class="n">request</code><code class="p">:</code> <code class="n">Request</code><code class="p">,</code> 
+    <code class="n">message</code><code class="p">:</code> <code class="n">InboundMessage</code><code class="p">)</code> <code class="o">-&gt;</code> <code class="nb">str</code><code class="p">:</code>
+        <code class="c1"># Validate the message</code>
+        <code class="n">request_valid</code> <code class="o">=</code> <code class="bp">self</code><code class="o">.</code><code class="n">validator</code><code class="o">.</code><code class="n">validate</code><code class="p">(</code>
+            <code class="n">request</code><code class="o">.</code><code class="n">url</code><code class="p">,</code>
+            <code class="n">request</code><code class="o">.</code><code class="n">form</code><code class="p">,</code>
+            <code class="n">request</code><code class="o">.</code><code class="n">headers</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="s1">'X-TWILIO-SIGNATURE'</code><code class="p">,</code> <code class="s1">''</code><code class="p">))</code>
+        <code class="k">if</code> <code class="n">request_valid</code><code class="p">:</code>
+            <code class="n">internal_message</code> <code class="o">=</code> <code class="n">CombinedMessage</code><code class="p">(</code>
+                <code class="n">text</code><code class="o">=</code><code class="n">message</code><code class="o">.</code><code class="n">body</code><code class="p">,</code> <code class="n">to</code><code class="o">=</code><code class="n">message</code><code class="o">.</code><code class="n">to</code><code class="p">,</code> <code class="n">protocol</code><code class="o">=</code><code class="n">SMS_PROTOCOL</code><code class="p">,</code>
+                <code class="n">msg_from</code><code class="o">=</code><code class="n">message</code><code class="o">.</code><code class="n">message_from</code><code class="p">,</code> <code class="n">from_device</code><code class="o">=</code><code class="kc">False</code>
+            <code class="p">)</code>
+            <code class="bp">self</code><code class="o">.</code><code class="n">user_pool</code><code class="o">.</code><code class="n">get_pool</code><code class="p">()</code><code class="o">.</code><code class="n">submit</code><code class="p">(</code>
+                <code class="k">lambda</code> <code class="n">actor</code><code class="p">,</code> <code class="n">msg</code><code class="p">:</code> <code class="n">actor</code><code class="o">.</code><code class="n">handle_message</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="n">msg</code><code class="p">),</code> 
+                <code class="n">internal_message</code><code class="p">)</code>
+            <code class="k">return</code> <code class="s2">""</code>
+        <code class="k">else</code><code class="p">:</code>
+            <code class="k">raise</code> <code class="n">HTTPException</code><code class="p">(</code><code class="n">status_code</code><code class="o">=</code><code class="mi">403</code><code class="p">,</code> <code class="n">detail</code><code class="o">=</code><code class="s2">"Validation failed."</code><code class="p">)</code></pre></div>
+</div></section>
+</div></section>
+
+
+
+
+
+
+<section data-pdf-bookmark="Testing" data-type="sect1"><div class="sect1" id="idm45354757577120">
+<h1>Testing</h1>
+
+<p>To <a data-primary="Space Beaver case study" data-secondary="testing" data-type="indexterm" id="idm45354757575744"/><a data-primary="remote actors" data-secondary="in Space Beaver case study" data-secondary-sortas="Space Beaver" data-tertiary="testing" data-type="indexterm" id="idm45354757574768"/><a data-primary="testing Space Beaver case study" data-type="indexterm" id="idm45354757573312"/>facilitate testing, the actor code was broken into a base class and then extended into an actor class. This allowed for testing the mail server independently from its deployment on Ray, as shown in <a data-type="xref" href="#standalone_mail_test">Example A-11</a>.</p>
+<div data-type="example" id="standalone_mail_test">
+<h5><span class="label">Example A-11. </span><a href="https://oreil.ly/7RwYR">Standalone mail test</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="k">class</code> <code class="nc">StandaloneMailServerActorTests</code><code class="p">(</code><code class="n">unittest</code><code class="o">.</code><code class="n">TestCase</code><code class="p">):</code>
+    <code class="n">port</code> <code class="o">=</code> <code class="mi">7779</code> <code class="o">+</code> <code class="mi">100</code> <code class="o">*</code> <code class="n">random</code><code class="o">.</code><code class="n">randint</code><code class="p">(</code><code class="mi">0</code><code class="p">,</code> <code class="mi">9</code><code class="p">)</code>
+
+    <code class="k">def</code> <code class="nf">setUp</code><code class="p">(</code><code class="bp">self</code><code class="p">):</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">port</code> <code class="o">=</code> <code class="bp">self</code><code class="o">.</code><code class="n">port</code> <code class="o">+</code> <code class="mi">1</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">actor</code> <code class="o">=</code> <code class="n">mailserver_actor</code><code class="o">.</code><code class="n">MailServerActorBase</code><code class="p">(</code>
+            <code class="n">idx</code><code class="o">=</code><code class="mi">1</code><code class="p">,</code> <code class="n">poolsize</code><code class="o">=</code><code class="mi">1</code><code class="p">,</code> <code class="n">port</code><code class="o">=</code><code class="bp">self</code><code class="o">.</code><code class="n">port</code><code class="p">,</code> <code class="n">hostname</code><code class="o">=</code><code class="s2">"0.0.0.0"</code><code class="p">,</code>
+            <code class="n">label</code><code class="o">=</code><code class="kc">None</code><code class="p">)</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">actor</code><code class="o">.</code><code class="n">user_pool</code> <code class="o">=</code> <code class="n">test_utils</code><code class="o">.</code><code class="n">FakeLazyNamedPool</code><code class="p">(</code><code class="s2">"u"</code><code class="p">,</code> <code class="mi">1</code><code class="p">)</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">pool</code> <code class="o">=</code> <code class="bp">self</code><code class="o">.</code><code class="n">actor</code><code class="o">.</code><code class="n">user_pool</code><code class="o">.</code><code class="n">get_pool</code><code class="p">()</code>
+
+    <code class="k">def</code> <code class="nf">tearDown</code><code class="p">(</code><code class="bp">self</code><code class="p">):</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">actor</code><code class="o">.</code><code class="n">server</code><code class="o">.</code><code class="n">stop</code><code class="p">()</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">server</code> <code class="o">=</code> <code class="kc">None</code>
+
+    <code class="k">def</code> <code class="nf">test_constructor_makes_server</code><code class="p">(</code><code class="bp">self</code><code class="p">):</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">assertEquals</code><code class="p">(</code><code class="bp">self</code><code class="o">.</code><code class="n">actor</code><code class="o">.</code><code class="n">server</code><code class="o">.</code><code class="n">hostname</code><code class="p">,</code> <code class="s2">"0.0.0.0"</code><code class="p">)</code>
+
+    <code class="k">def</code> <code class="nf">test_extract_body_and_connect</code><code class="p">(</code><code class="bp">self</code><code class="p">):</code>
+        <code class="n">client</code> <code class="o">=</code> <code class="n">Client</code><code class="p">(</code><code class="s2">"localhost"</code><code class="p">,</code> <code class="bp">self</code><code class="o">.</code><code class="n">port</code><code class="p">)</code>
+        <code class="n">msg_text</code> <code class="o">=</code> <code class="s2">"Hi Boop, this is timbit."</code>
+        <code class="n">client</code><code class="o">.</code><code class="n">sendmail</code><code class="p">(</code><code class="s2">"c@gull.com"</code><code class="p">,</code> <code class="s2">"boop@spacebeaver.com"</code><code class="p">,</code>
+                        <code class="n">msg_text</code><code class="p">)</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">assertEquals</code><code class="p">(</code><code class="bp">self</code><code class="o">.</code><code class="n">pool</code><code class="o">.</code><code class="n">submitted</code><code class="p">[</code><code class="mi">0</code><code class="p">][</code><code class="mi">1</code><code class="p">]</code><code class="o">.</code><code class="n">text</code><code class="p">,</code> <code class="n">msg_text</code><code class="p">)</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">assertEquals</code><code class="p">(</code><code class="bp">self</code><code class="o">.</code><code class="n">pool</code><code class="o">.</code><code class="n">submitted</code><code class="p">[</code><code class="mi">0</code><code class="p">][</code><code class="mi">1</code><code class="p">]</code><code class="o">.</code><code class="n">protocol</code><code class="p">,</code> <code class="n">EMAIL_PROTOCOL</code><code class="p">)</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">assertEquals</code><code class="p">(</code><code class="bp">self</code><code class="o">.</code><code class="n">pool</code><code class="o">.</code><code class="n">submitted</code><code class="p">[</code><code class="mi">0</code><code class="p">][</code><code class="mi">1</code><code class="p">]</code><code class="o">.</code><code class="n">from_device</code><code class="p">,</code> <code class="kc">False</code><code class="p">)</code></pre></div>
+
+<p>While these standalone tests can run with less overhead, it’s a good idea to have some full-actor tests. You can often speed them up by reusing the Ray context across tests (although when it goes wrong, the debugging is painful), as in <a data-type="xref" href="#full_mail_test">Example A-12</a>.</p>
+<div data-type="example" id="full_mail_test">
+<h5><span class="label">Example A-12. </span><a href="https://oreil.ly/VOvbo">Full-actor test</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="nd">@ray</code><code class="o">.</code><code class="n">remote</code>
+<code class="k">class</code> <code class="nc">MailServerActorForTesting</code><code class="p">(</code><code class="n">mailserver_actor</code><code class="o">.</code><code class="n">MailServerActorBase</code><code class="p">):</code>
+    <code class="k">def</code> <code class="fm">__init__</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code> <code class="n">idx</code><code class="p">,</code> <code class="n">poolsize</code><code class="p">,</code> <code class="n">port</code><code class="p">,</code> <code class="n">hostname</code><code class="p">):</code>
+        <code class="n">mailserver_actor</code><code class="o">.</code><code class="n">MailServerActorBase</code><code class="o">.</code><code class="fm">__init__</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code> <code class="n">idx</code><code class="p">,</code> <code class="n">poolsize</code><code class="p">,</code> 
+                                                      <code class="n">port</code><code class="p">,</code> <code class="n">hostname</code><code class="p">)</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">user_pool</code> <code class="o">=</code> <code class="n">test_utils</code><code class="o">.</code><code class="n">FakeLazyNamedPool</code><code class="p">(</code><code class="s2">"user"</code><code class="p">,</code> <code class="mi">1</code><code class="p">)</code>
+
+
+<code class="k">class</code> <code class="nc">MailServerActorTestCases</code><code class="p">(</code><code class="n">unittest</code><code class="o">.</code><code class="n">TestCase</code><code class="p">):</code>
+    <code class="nd">@classmethod</code>
+    <code class="k">def</code> <code class="nf">setUpClass</code><code class="p">(</code><code class="bp">cls</code><code class="p">):</code>
+        <code class="n">ray</code><code class="o">.</code><code class="n">init</code><code class="p">()</code>
+
+    <code class="nd">@classmethod</code>
+    <code class="k">def</code> <code class="nf">tearDownClass</code><code class="p">(</code><code class="bp">cls</code><code class="p">):</code>
+        <code class="n">ray</code><code class="o">.</code><code class="n">shutdown</code><code class="p">()</code>
+
+    <code class="k">def</code> <code class="nf">test_mail_server_actor_construct</code><code class="p">(</code><code class="bp">self</code><code class="p">):</code>
+        <code class="n">mailserver_actor</code><code class="o">.</code><code class="n">MailServerActor</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="mi">0</code><code class="p">,</code> <code class="mi">1</code><code class="p">,</code> <code class="mi">7587</code><code class="p">,</code> <code class="s2">"localhost"</code><code class="p">)</code></pre></div>
+</div></section>
+
+
+
+
+
+
+<section data-pdf-bookmark="Deployment" data-type="sect1"><div class="sect1" id="idm45354757148320">
+<h1>Deployment</h1>
+
+<p>While <a data-primary="Space Beaver case study" data-secondary="deployment" data-type="indexterm" id="space-deploy"/><a data-primary="deployments" data-secondary="Space Beaver case study" data-type="indexterm" id="deploy-space"/>Ray handles most of the deployment, we need to create a Kubernetes service to make our SMTP and SMS services reachable. On our test cluster, we do this by exposing a load balancer service, as shown in <a data-type="xref" href="#smtp_service">Example A-13</a>.</p>
+<div data-type="example" id="smtp_service">
+<h5><span class="label">Example A-13. </span><a href="https://oreil.ly/3pGrx">SMTP and SMS services</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="n">apiVersion</code><code class="p">:</code> <code class="n">v1</code>
+<code class="n">kind</code><code class="p">:</code> <code class="n">Service</code>
+<code class="n">metadata</code><code class="p">:</code>
+  <code class="n">name</code><code class="p">:</code> <code class="n">message</code><code class="o">-</code><code class="n">backend</code><code class="o">-</code><code class="n">svc</code>
+  <code class="n">namespace</code><code class="p">:</code> <code class="n">spacebeaver</code>
+<code class="n">spec</code><code class="p">:</code>
+  <code class="n">selector</code><code class="p">:</code>
+    <code class="n">mail_ingress</code><code class="p">:</code> <code class="n">present</code>
+  <code class="n">ports</code><code class="p">:</code>
+    <code class="o">-</code> <code class="n">name</code><code class="p">:</code> <code class="n">smtp</code>
+      <code class="n">protocol</code><code class="p">:</code> <code class="n">TCP</code>
+      <code class="n">port</code><code class="p">:</code> <code class="mi">25</code>
+      <code class="n">targetPort</code><code class="p">:</code> <code class="mi">7420</code>
+  <code class="nb">type</code><code class="p">:</code> <code class="n">LoadBalancer</code>
+  <code class="n">loadBalancerIP</code><code class="p">:</code> <code class="mf">23.177.16.210</code>
+  <code class="n">sessionAffinity</code><code class="p">:</code> <code class="kc">None</code>
+<code class="o">---</code>
+<code class="n">apiVersion</code><code class="p">:</code> <code class="n">v1</code>
+<code class="n">kind</code><code class="p">:</code> <code class="n">Service</code>
+<code class="n">metadata</code><code class="p">:</code>
+  <code class="n">name</code><code class="p">:</code> <code class="n">phone</code><code class="o">-</code><code class="n">api</code><code class="o">-</code><code class="n">svc</code>
+  <code class="n">namespace</code><code class="p">:</code> <code class="n">spacebeaver</code>
+<code class="n">spec</code><code class="p">:</code>
+  <code class="n">selector</code><code class="p">:</code>
+    <code class="n">ray</code><code class="o">-</code><code class="n">cluster</code><code class="o">-</code><code class="n">name</code><code class="p">:</code> <code class="n">spacebeaver</code>
+  <code class="n">ports</code><code class="p">:</code>
+    <code class="o">-</code> <code class="n">name</code><code class="p">:</code> <code class="n">http</code>
+      <code class="n">protocol</code><code class="p">:</code> <code class="n">TCP</code>
+      <code class="n">port</code><code class="p">:</code> <code class="mi">80</code>
+      <code class="n">targetPort</code><code class="p">:</code> <code class="mi">8000</code>
+  <code class="nb">type</code><code class="p">:</code> <code class="n">LoadBalancer</code>
+  <code class="n">sessionAffinity</code><code class="p">:</code> <code class="kc">None</code>
+<code class="o">---</code>
+<code class="n">apiVersion</code><code class="p">:</code> <code class="n">networking</code><code class="o">.</code><code class="n">k8s</code><code class="o">.</code><code class="n">io</code><code class="o">/</code><code class="n">v1</code>
+<code class="n">kind</code><code class="p">:</code> <code class="n">Ingress</code>
+<code class="n">metadata</code><code class="p">:</code>
+  <code class="n">name</code><code class="p">:</code> <code class="n">spacebeaver</code><code class="o">-</code><code class="n">phone</code><code class="o">-</code><code class="n">api</code><code class="o">-</code><code class="n">ingress</code>
+  <code class="n">namespace</code><code class="p">:</code> <code class="n">spacebeaver</code>
+  <code class="n">annotations</code><code class="p">:</code>
+    <code class="n">cert</code><code class="o">-</code><code class="n">manager</code><code class="o">.</code><code class="n">io</code><code class="o">/</code><code class="n">cluster</code><code class="o">-</code><code class="n">issuer</code><code class="p">:</code> <code class="n">letsencrypt</code>
+    <code class="n">cert</code><code class="o">-</code><code class="n">manager</code><code class="o">.</code><code class="n">io</code><code class="o">/</code><code class="n">issue</code><code class="o">-</code><code class="n">temporary</code><code class="o">-</code><code class="n">certificate</code><code class="p">:</code> <code class="s2">"true"</code>
+    <code class="n">acme</code><code class="o">.</code><code class="n">cert</code><code class="o">-</code><code class="n">manager</code><code class="o">.</code><code class="n">io</code><code class="o">/</code><code class="n">http01</code><code class="o">-</code><code class="n">edit</code><code class="o">-</code><code class="ow">in</code><code class="o">-</code><code class="n">place</code><code class="p">:</code> <code class="s2">"true"</code>
+<code class="n">spec</code><code class="p">:</code>
+  <code class="n">ingressClassName</code><code class="p">:</code> <code class="n">nginx</code>
+  <code class="n">tls</code><code class="p">:</code>
+  <code class="o">-</code> <code class="n">hosts</code><code class="p">:</code>
+      <code class="o">-</code> <code class="n">phone</code><code class="o">-</code><code class="n">api</code><code class="o">.</code><code class="n">spacebeaver</code><code class="o">.</code><code class="n">com</code>
+    <code class="n">secretName</code><code class="p">:</code> <code class="n">phone</code><code class="o">-</code><code class="n">api</code><code class="o">-</code><code class="n">tls</code><code class="o">-</code><code class="n">secret</code>
+  <code class="n">rules</code><code class="p">:</code>
+    <code class="o">-</code> <code class="n">host</code><code class="p">:</code> <code class="s2">"phone-api.spacebeaver.com"</code>
+      <code class="n">http</code><code class="p">:</code>
+        <code class="n">paths</code><code class="p">:</code>
+        <code class="o">-</code> <code class="n">pathType</code><code class="p">:</code> <code class="n">Prefix</code>
+          <code class="n">path</code><code class="p">:</code> <code class="s2">"/"</code>
+          <code class="n">backend</code><code class="p">:</code>
+            <code class="n">service</code><code class="p">:</code>
+              <code class="n">name</code><code class="p">:</code> <code class="n">phone</code><code class="o">-</code><code class="n">api</code><code class="o">-</code><code class="n">svc</code>
+              <code class="n">port</code><code class="p">:</code>
+                <code class="n">number</code><code class="p">:</code> <code class="mi">80</code></pre></div>
+
+<p>As shown, the SMTP and SMS services use different node selectors to route the requests to the correct<a data-primary="Space Beaver case study" data-secondary="deployment" data-startref="space-deploy" data-type="indexterm" id="idm45354756722784"/><a data-primary="deployments" data-secondary="Space Beaver case study" data-startref="deploy-space" data-type="indexterm" id="idm45354756721696"/> pods.</p>
+</div></section>
+
+
+
+
+
+
+<section data-pdf-bookmark="Conclusion" data-type="sect1"><div class="sect1" id="idm45354756720128">
+<h1>Conclusion</h1>
+
+<p>The Ray port of the Space Beaver messaging backend substantially reduces deployment and packaging complexity while increasing code reuse. Some of this comes from the broad Python ecosystem (popular frontend tools and backend tools), but much of the rest comes from Ray’s serverless nature. The equivalent system in Akka requires user intention around scheduling actors, whereas with Ray, we can leave that up to the scheduler. Of course, Akka carries many benefits, like the powerful JVM ecosystem, but hopefully, this case study has shown you some interesting ways you can use Ray.</p>
+</div></section>
+<div data-type="footnotes"><p data-type="footnote" id="idm45354760655264"><sup><a href="app01.html#idm45354760655264-marker">1</a></sup> Holden Karau is the managing partner of Pigs Can Fly Labs, and while she really hopes you will buy the off-the-grid messaging device, she realizes the intersection of people reading programming books and people needing low-cost open source satellite email messaging is pretty small. Also, in practice, <a href="https://oreil.ly/M7DEs">Garmin inReach Mini2</a> or Apple are probably better for many consumer use cases.</p><p data-type="footnote" id="idm45354760653232"><sup><a href="app01.html#idm45354760653232-marker">2</a></sup> In Akka on Kubernetes, the user is responsible for scheduling the actors on separate containers manually and restarting actors, whereas Ray can handle this for us.</p><p data-type="footnote" id="idm45354760421728"><sup><a href="app01.html#idm45354760421728-marker">3</a></sup> An alternate solution is to have the main or launching program call the actors with the references as they are created.</p></div></div></section></body></html>

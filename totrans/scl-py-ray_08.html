@@ -1,0 +1,640 @@
+<html><head></head><body><section data-pdf-bookmark="Chapter 7. Implementing Microservices" data-type="chapter" epub:type="chapter"><div class="chapter" id="ch07">
+<h1><span class="label">Chapter 7. </span>Implementing Microservices</h1>
+
+
+<p>Initially, Ray was created as a framework for implementing <a href="https://oreil.ly/xRIXk">reinforcement learning</a> but gradually morphed into a full-fledged serverless platform. Similarly, initially introduced as a <a href="https://oreil.ly/tFneS">better way to serve ML models</a>, <a href="https://oreil.ly/970jH">Ray Serve</a> has recently evolved into a full-fledged microservices framework. In this chapter, you will learn how to use Ray Serve for implementing a general-purpose microservice framework and how to use this framework for model serving.</p>
+
+<p>Complete code of all examples used in this chapter can be found in the folder <a href="https://oreil.ly/truUQ"><span class="keep-together"><em>/ray_examples/serving</em></span></a> in the book’s GitHub repo.</p>
+
+
+
+
+
+
+<section data-pdf-bookmark="Understanding Microservice Architecture in Ray" data-type="sect1"><div class="sect1" id="idm45354773587440">
+<h1>Understanding Microservice Architecture in Ray</h1>
+
+<p>Ray <a data-primary="Ray Serve" data-secondary="actor types for" data-type="indexterm" id="idm45354773585968"/><a data-primary="microservices" data-secondary="actor types for" data-type="indexterm" id="idm45354773584960"/><a data-primary="remote actors" data-secondary="for microservices" data-secondary-sortas="microservices" data-type="indexterm" id="idm45354773584016"/>microservice architecture (Ray Serve) is implemented on top of Ray by leveraging <a href="https://oreil.ly/12pG5">Ray actors</a>. Three kinds of actors are created to make up a Serve instance:</p>
+<dl>
+<dt>Controller</dt>
+<dd>
+<p>A global actor unique to each Serve instance that manages the control plane. It is responsible for creating, updating, and destroying other actors. All of the Serve API calls (e.g., creating or getting a deployment) use the controller for their execution.</p>
+</dd>
+<dt>Router</dt>
+<dd>
+<p>There is one router per node. Each router is a <a href="https://oreil.ly/IexLX">Uvicorn HTTP server</a> that accepts incoming requests, forwards them to replicas, and responds after they are 
+<span class="keep-together">completed.</span></p>
+</dd>
+<dt>Worker replica</dt>
+<dd>
+<p>Worker replicas execute the user-defined code in response to a request. Each replica processes individual requests from the routers.</p>
+</dd>
+</dl>
+
+<p>User-defined code is implemented using a Ray <a href="https://oreil.ly/6UnLe">deployment</a>, an extension of a Ray actor with additional features. We will start by examining the deployment itself.</p>
+
+
+
+
+
+
+
+
+<section data-pdf-bookmark="Deployment" data-type="sect2"><div class="sect2" id="idm45354773574608">
+<h2>Deployment</h2>
+
+<p>The <a data-primary="Ray Serve" data-secondary="deployments" data-tertiary="explained" data-type="indexterm" id="ray-serve-deploy-explain"/><a data-primary="microservices" data-secondary="deployments" data-tertiary="explained" data-type="indexterm" id="microservice-deploy-explain"/><a data-primary="deployments" data-secondary="explained" data-type="indexterm" id="deploy-explain"/>central concept in Ray Serve is the deployment, defining business logic that will handle incoming requests and the way this logic is exposed over HTTP or in Python. Let’s start with a simple deployment implementing a temperature controller (<a data-type="xref" href="#tc_control_basic">Example 7-1</a>).</p>
+<div data-type="example" id="tc_control_basic">
+<h5><span class="label">Example 7-1. </span><a href="https://oreil.ly/8pbXQ">Temperature controller deployment</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="nd">@serve</code><code class="o">.</code><code class="n">deployment</code>
+<code class="k">class</code> <code class="nc">Converter</code><code class="p">:</code>
+    <code class="k">def</code> <code class="fm">__call__</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code> <code class="n">request</code><code class="p">):</code>
+        <code class="k">if</code> <code class="n">request</code><code class="o">.</code><code class="n">query_params</code><code class="p">[</code><code class="s2">"type"</code><code class="p">]</code> <code class="o">==</code> <code class="s1">'CF'</code> <code class="p">:</code>
+            <code class="k">return</code> <code class="p">{</code><code class="s2">"Fahrenheit temperature"</code><code class="p">:</code>
+                        <code class="mf">9.0</code><code class="o">/</code><code class="mf">5.0</code> <code class="o">*</code> <code class="nb">float</code><code class="p">(</code><code class="n">request</code><code class="o">.</code><code class="n">query_params</code><code class="p">[</code><code class="s2">"temp"</code><code class="p">])</code> <code class="o">+</code> <code class="mf">32.0</code><code class="p">}</code>
+        <code class="k">elif</code> <code class="n">request</code><code class="o">.</code><code class="n">query_params</code><code class="p">[</code><code class="s2">"type"</code><code class="p">]</code> <code class="o">==</code> <code class="s1">'FC'</code> <code class="p">:</code>
+            <code class="k">return</code> <code class="p">{</code><code class="s2">"Celsius temperature"</code><code class="p">:</code>
+                        <code class="p">(</code><code class="nb">float</code><code class="p">(</code><code class="n">request</code><code class="o">.</code><code class="n">query_params</code><code class="p">[</code><code class="s2">"temp"</code><code class="p">])</code> <code class="o">-</code> <code class="mf">32.0</code><code class="p">)</code> <code class="o">*</code> <code class="mf">5.0</code><code class="o">/</code><code class="mf">9.0</code> <code class="p">}</code>
+        <code class="k">else</code><code class="p">:</code>
+            <code class="k">return</code> <code class="p">{</code><code class="s2">"Unknown conversion code"</code> <code class="p">:</code> <code class="n">request</code><code class="o">.</code><code class="n">query_params</code><code class="p">[</code><code class="s2">"type"</code><code class="p">]}</code>
+
+<code class="n">Converter</code><code class="o">.</code><code class="n">deploy</code><code class="p">()</code></pre></div>
+
+<p>The implementation is decorated <a data-primary="@serve.deployment" data-type="indexterm" id="idm45354773561952"/><a data-primary="decorators" data-secondary="@serve.deployment" data-type="indexterm" id="idm45354773561344"/>by an <code>@serve.deployment</code> annotation, telling Ray that this is a deployment. This deployment implements a single method, <code>call</code>, which has a special meaning in deployment: it is invoked via HTTP. It is a class method taking a <a href="https://oreil.ly/F76fs"><code>starlette</code> request</a>, which provides a convenient interface for the incoming HTTP request. In the case of the temperature controller, the request contains two parameters: the temperature and the conversion type.</p>
+
+<p>Once the deployment is defined, you need to deploy it using <code>Converter.deploy</code>, similar to <code>.remote</code> when deploying an actor. You can then immediately access it via an HTTP interface (<a data-type="xref" href="#call_http">Example 7-2</a>).</p>
+<div data-type="example" id="call_http">
+<h5><span class="label">Example 7-2. </span><a href="https://oreil.ly/8pbXQ">Accessing converter over HTTP</a></h5>
+
+<pre class="pagebreak-after" data-code-language="python" data-type="programlisting"><code class="nb">print</code><code class="p">(</code><code class="n">requests</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="s2">"http://127.0.0.1:8000/Converter?temp=100.0&amp;type=CF"</code><code class="p">)</code><code class="o">.</code><code class="n">text</code><code class="p">)</code>
+<code class="nb">print</code><code class="p">(</code><code class="n">requests</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="s2">"http://127.0.0.1:8000/Converter?temp=100.0&amp;type=FC"</code><code class="p">)</code><code class="o">.</code><code class="n">text</code><code class="p">)</code>
+<code class="nb">print</code><code class="p">(</code><code class="n">requests</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="s2">"http://127.0.0.1:8000/Converter?temp=100.0&amp;type=CC"</code><code class="p">)</code><code class="o">.</code><code class="n">text</code><code class="p">)</code></pre></div>
+
+<p>Note here that we are using URL parameters (query strings) to specify parameters. Also, because the services are exposed externally via HTTP, the requester can run anywhere, including in code that is running outside Ray.</p>
+
+<p><a data-type="xref" href="#output_ex1">Example 7-3</a> shows the results of this invocation.</p>
+<div data-type="example" id="output_ex1">
+<h5><span class="label">Example 7-3. </span>Results of HTTP invocations of deployment</h5>
+
+<pre data-code-language="yaml" data-type="programlisting"><code class="p-Indicator">{</code><code class="w"/>
+<code class="w">  </code><code class="s">"Fahrenheit</code><code class="nv"> </code><code class="s">temperature"</code><code class="p-Indicator">:</code><code class="w"> </code><code class="nv">212.0</code><code class="w"/>
+<code class="p-Indicator">}</code><code class="w"/>
+<code class="p-Indicator">{</code><code class="w"/>
+<code class="w">  </code><code class="s">"Celsius</code><code class="nv"> </code><code class="s">temperature"</code><code class="p-Indicator">:</code><code class="w"> </code><code class="nv">37.77777777777778</code><code class="w"/>
+<code class="p-Indicator">}</code><code class="w"/>
+<code class="p-Indicator">{</code><code class="w"/>
+<code class="w">  </code><code class="s">"Unknown</code><code class="nv"> </code><code class="s">conversion</code><code class="nv"> </code><code class="s">code"</code><code class="p-Indicator">:</code><code class="w"> </code><code class="s">"CC"</code><code class="w"/>
+<code class="p-Indicator">}</code><code class="w"/></pre></div>
+
+<p>In addition to being able to invoke a deployment over HTTP, you can invoke it directly using Python. To do this, you need to get a <em>handle</em> to the deployment and then use it for invocation, as shown in <a data-type="xref" href="#direct_invoke">Example 7-4</a>.</p>
+<div data-type="example" id="direct_invoke">
+<h5><span class="label">Example 7-4. </span><a href="https://oreil.ly/8pbXQ">Invoking a deployment via a handle</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="kn">from</code> <code class="nn">starlette.requests</code> <code class="kn">import</code> <code class="n">Request</code>
+<code class="n">handle</code> <code class="o">=</code> <code class="n">serve</code><code class="o">.</code><code class="n">get_deployment</code><code class="p">(</code><code class="s1">'Converter'</code><code class="p">)</code><code class="o">.</code><code class="n">get_handle</code><code class="p">()</code>
+
+<code class="nb">print</code><code class="p">(</code><code class="n">ray</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="n">handle</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="n">Request</code><code class="p">(</code>
+<code class="p">{</code><code class="s2">"type"</code><code class="p">:</code> <code class="s2">"http"</code><code class="p">,</code> <code class="s2">"query_string"</code><code class="p">:</code> <code class="sa">b</code><code class="s2">"temp=100.0&amp;type=CF"</code><code class="p">}))))</code>
+<code class="nb">print</code><code class="p">(</code><code class="n">ray</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="n">handle</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="n">Request</code><code class="p">(</code>
+<code class="p">{</code><code class="s2">"type"</code><code class="p">:</code> <code class="s2">"http"</code><code class="p">,</code> <code class="s2">"query_string"</code><code class="p">:</code> <code class="sa">b</code><code class="s2">"temp=100.0&amp;type=FC"</code><code class="p">}))))</code>
+<code class="nb">print</code><code class="p">(</code><code class="n">ray</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="n">handle</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="n">Request</code><code class="p">(</code>
+<code class="p">{</code><code class="s2">"type"</code><code class="p">:</code> <code class="s2">"http"</code><code class="p">,</code> <code class="s2">"query_string"</code><code class="p">:</code> <code class="sa">b</code><code class="s2">"temp=100.0&amp;type=CC"</code><code class="p">}))))</code></pre></div>
+
+<p>Note that in this code, we are manually creating <code>starlette</code> requests by specifying the request type and a query string.</p>
+
+<p class="pagebreak-after">Once executed, this code returns the same results as in <a data-type="xref" href="#output_ex1">Example 7-3</a>. This example uses the same <code>call</code> method for both HTTP and Python requests. Although this works, the <a href="https://oreil.ly/LqkPK">best practice</a> is to implement additional methods for Python invocation to avoid the usage of <code>Request</code> objects in the Python invocation. In our example, we can extend our initial deployment in <a data-type="xref" href="#tc_control_basic">Example 7-1</a> with additional methods for Python invocations in <a data-type="xref" href="#tc_control_ext">Example 7-5</a>.</p>
+<div class="example-margin-5 less_space" data-type="example" id="tc_control_ext">
+<h5><span class="label">Example 7-5. </span><a href="https://oreil.ly/8pbXQ">Implementing additional methods for Python invocation</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="nd">@serve</code><code class="o">.</code><code class="n">deployment</code>
+<code class="k">class</code> <code class="nc">Converter</code><code class="p">:</code>
+    <code class="k">def</code> <code class="fm">__call__</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code> <code class="n">request</code><code class="p">):</code>
+        <code class="k">if</code> <code class="n">request</code><code class="o">.</code><code class="n">query_params</code><code class="p">[</code><code class="s2">"type"</code><code class="p">]</code> <code class="o">==</code> <code class="s1">'CF'</code> <code class="p">:</code>
+            <code class="k">return</code> <code class="p">{</code><code class="s2">"Fahrenheit temperature"</code><code class="p">:</code>
+                        <code class="mf">9.0</code><code class="o">/</code><code class="mf">5.0</code> <code class="o">*</code> <code class="nb">float</code><code class="p">(</code><code class="n">request</code><code class="o">.</code><code class="n">query_params</code><code class="p">[</code><code class="s2">"temp"</code><code class="p">])</code> <code class="o">+</code> <code class="mf">32.0</code><code class="p">}</code>
+        <code class="k">elif</code> <code class="n">request</code><code class="o">.</code><code class="n">query_params</code><code class="p">[</code><code class="s2">"type"</code><code class="p">]</code> <code class="o">==</code> <code class="s1">'FC'</code> <code class="p">:</code>
+            <code class="k">return</code> <code class="p">{</code><code class="s2">"Celsius temperature"</code><code class="p">:</code>
+                        <code class="p">(</code><code class="nb">float</code><code class="p">(</code><code class="n">request</code><code class="o">.</code><code class="n">query_params</code><code class="p">[</code><code class="s2">"temp"</code><code class="p">])</code> <code class="o">-</code> <code class="mf">32.0</code><code class="p">)</code> <code class="o">*</code> <code class="mf">5.0</code><code class="o">/</code><code class="mf">9.0</code> <code class="p">}</code>
+        <code class="k">else</code><code class="p">:</code>
+            <code class="k">return</code> <code class="p">{</code><code class="s2">"Unknown conversion code"</code> <code class="p">:</code> <code class="n">request</code><code class="o">.</code><code class="n">query_params</code><code class="p">[</code><code class="s2">"type"</code><code class="p">]}</code>
+    <code class="k">def</code> <code class="nf">celcius_fahrenheit</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code> <code class="n">temp</code><code class="p">):</code>
+        <code class="k">return</code> <code class="mf">9.0</code><code class="o">/</code><code class="mf">5.0</code> <code class="o">*</code> <code class="n">temp</code> <code class="o">+</code> <code class="mf">32.0</code>
+
+    <code class="k">def</code> <code class="nf">fahrenheit_celcius</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code> <code class="n">temp</code><code class="p">):</code>
+        <code class="k">return</code> <code class="p">(</code><code class="n">temp</code> <code class="o">-</code> <code class="mf">32.0</code><code class="p">)</code> <code class="o">*</code> <code class="mf">5.0</code><code class="o">/</code><code class="mf">9.0</code>
+
+
+<code class="n">Converter</code><code class="o">.</code><code class="n">deploy</code><code class="p">()</code>
+<code class="c1"># list current deploymente</code>
+<code class="nb">print</code><code class="p">(</code><code class="n">serve</code><code class="o">.</code><code class="n">list_deployments</code><code class="p">())</code></pre></div>
+
+<p>With these additional methods in place, Python invocations can be significantly simplified (<a data-type="xref" href="#simpler_call">Example 7-6</a>).</p>
+<div class="example-margin-5" data-type="example" id="simpler_call">
+<h5><span class="label">Example 7-6. </span><a href="https://oreil.ly/8pbXQ">Using additional methods for handle-based invocation</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="nb">print</code><code class="p">(</code><code class="n">ray</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="n">handle</code><code class="o">.</code><code class="n">celcius_fahrenheit</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="mf">100.0</code><code class="p">)))</code>
+<code class="nb">print</code><code class="p">(</code><code class="n">ray</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="n">handle</code><code class="o">.</code><code class="n">fahrenheit_celcius</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="mf">100.0</code><code class="p">)))</code></pre></div>
+
+<p>Unlike <a data-type="xref" href="#direct_invoke">Example 7-4</a>, which uses the default <code>call</code> method, these invocation methods are explicitly specified (instead of putting the request type in the request itself, the request type here is implicit—​it’s a method name).</p>
+
+<p>Ray offers <a data-primary="handles, types of" data-type="indexterm" id="idm45354772309504"/><a data-primary="synchronous handles" data-type="indexterm" id="idm45354772308832"/>synchronous and asynchronous handles. A <em>sync</em> flag, <code>Deployment.get​_han⁠dle(…​, sync=True|False)</code>, can be used to specify a handle type:</p>
+
+<ul>
+<li>
+<p>The default handle is synchronous. In this case, calling <code>handle.remote</code> returns a Ray <code>ObjectRef</code>.</p>
+</li>
+<li>
+<p>To create<a data-primary="asynchronous handles" data-type="indexterm" id="idm45354772304192"/> an asynchronous handle, set <code>sync=False</code>. As its name indicates, async handle invocation is asynchronous, and you will have to use <code>await</code> to get a Ray <code>ObjectRef</code>. To use <code>await</code>, you have to run <code>deployment.get_handle</code> and <code>handle.remote</code> in the Python <code>asyncio</code> event loop.</p>
+</li>
+</ul>
+
+<p>We will demonstrate the use of async handles later in this chapter.</p>
+
+<p>Finally, deployments can be updated by simply modifying the code or configuration options and calling <code>deploy</code> again. In addition to HTTP and direct Python invocation, described here, you can use the Python APIs to invoke deployment with<a data-primary="Ray Serve" data-secondary="deployments" data-startref="ray-serve-deploy-explain" data-tertiary="explained" data-type="indexterm" id="idm45354772297600"/><a data-primary="microservices" data-secondary="deployments" data-startref="microservice-deploy-explain" data-tertiary="explained" data-type="indexterm" id="idm45354772296112"/><a data-primary="deployments" data-secondary="explained" data-startref="deploy-explain" data-type="indexterm" id="idm45354772294656"/> Kafka (see <a data-type="xref" href="ch06.html#ch06">Chapter 6</a> for the Kafka integration approach).</p>
+
+<p>Now that you know the basics of deployment, let’s take a look at additional capabilities available for deployments.</p>
+</div></section>
+
+
+
+
+
+
+
+
+<section data-pdf-bookmark="Additional Deployment Capabilities" data-type="sect2"><div class="sect2" id="idm45354773573664">
+<h2>Additional Deployment Capabilities</h2>
+
+<p>Additional deployment capabilities are provided in three ways:</p>
+
+<ul>
+<li>
+<p>Adding parameters to annotations</p>
+</li>
+<li>
+<p>Using FastAPI HTTP deployments</p>
+</li>
+<li>
+<p>Using deployment composition</p>
+</li>
+</ul>
+
+<p>Of course, you can combine all three to achieve your goals. Let’s take a close look at the options provided by each approach.</p>
+
+
+
+
+
+
+
+
+
+
+<section data-pdf-bookmark="Adding parameters to annotations" data-type="sect3"><div class="sect3" id="idm45354772287296">
+<h3>Adding parameters to annotations</h3>
+
+<p>The <code>@serve.deployment</code> annotation<a data-primary="Ray Serve" data-secondary="deployments" data-tertiary="adding parameters to annotations" data-type="indexterm" id="ray-serve-deploy-addparam"/><a data-primary="microservices" data-secondary="deployments" data-tertiary="adding parameters to annotations" data-type="indexterm" id="microservice-deploy-addparam"/><a data-primary="deployments" data-secondary="adding parameters to annotations" data-type="indexterm" id="deploy-addparam"/><a data-primary="parameters, adding to annotations" data-type="indexterm" id="param-add"/><a data-primary="annotations, adding parameters to" data-type="indexterm" id="annotate-addparam"/> can take several <a href="https://oreil.ly/mcUML">parameters</a>. The most widely used is the number of replicas and resource requirements.</p>
+</div></section>
+
+
+
+
+
+
+
+
+
+
+<section data-pdf-bookmark="Improving scalability with resource replicas" data-type="sect3"><div class="sect3" id="idm45354772278176">
+<h3>Improving scalability with resource replicas</h3>
+
+<p>By <a data-primary="resource replicas" data-type="indexterm" id="resource-replica"/>default, <code>deployment.deploy</code> creates a single instance of a deployment. By specifying the number of replicas in <code>@serve.deployment</code>, you can scale out a deployment to many processes. When the requests are sent to such a replicated deployment, Ray uses round-robin scheduling to invoke individual replicas. You can modify <a data-type="xref" href="#tc_control_basic">Example 7-1</a> to add multiple replicas and IDs for individual instances (<a data-type="xref" href="#tc_control_scaled">Example 7-7</a>).</p>
+<div data-type="example" id="tc_control_scaled">
+<h5><span class="label">Example 7-7. </span><a href="https://oreil.ly/zImkU">Scaled deployment</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="nd">@serve</code><code class="o">.</code><code class="n">deployment</code><code class="p">(</code><code class="n">num_replicas</code><code class="o">=</code><code class="mi">3</code><code class="p">)</code>
+<code class="k">class</code> <code class="nc">Converter</code><code class="p">:</code>
+    <code class="k">def</code> <code class="fm">__init__</code><code class="p">(</code><code class="bp">self</code><code class="p">):</code>
+        <code class="kn">from</code> <code class="nn">uuid</code> <code class="kn">import</code> <code class="n">uuid4</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">id</code> <code class="o">=</code> <code class="nb">str</code><code class="p">(</code><code class="n">uuid4</code><code class="p">())</code>
+    <code class="k">def</code> <code class="fm">__call__</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code> <code class="n">request</code><code class="p">):</code>
+        <code class="k">if</code> <code class="n">request</code><code class="o">.</code><code class="n">query_params</code><code class="p">[</code><code class="s2">"type"</code><code class="p">]</code> <code class="o">==</code> <code class="s1">'CF'</code> <code class="p">:</code>
+            <code class="k">return</code> <code class="p">{</code><code class="s2">"Deployment"</code><code class="p">:</code> <code class="bp">self</code><code class="o">.</code><code class="n">id</code><code class="p">,</code> <code class="s2">"Fahrenheit temperature"</code><code class="p">:</code>
+                <code class="mf">9.0</code><code class="o">/</code><code class="mf">5.0</code> <code class="o">*</code> <code class="nb">float</code><code class="p">(</code><code class="n">request</code><code class="o">.</code><code class="n">query_params</code><code class="p">[</code><code class="s2">"temp"</code><code class="p">])</code> <code class="o">+</code> <code class="mf">32.0</code><code class="p">}</code>
+        <code class="k">elif</code> <code class="n">request</code><code class="o">.</code><code class="n">query_params</code><code class="p">[</code><code class="s2">"type"</code><code class="p">]</code> <code class="o">==</code> <code class="s1">'FC'</code> <code class="p">:</code>
+            <code class="k">return</code> <code class="p">{</code><code class="s2">"Deployment"</code><code class="p">:</code> <code class="bp">self</code><code class="o">.</code><code class="n">id</code><code class="p">,</code> <code class="s2">"Celsius temperature"</code><code class="p">:</code>
+                <code class="p">(</code><code class="nb">float</code><code class="p">(</code><code class="n">request</code><code class="o">.</code><code class="n">query_params</code><code class="p">[</code><code class="s2">"temp"</code><code class="p">])</code> <code class="o">-</code> <code class="mf">32.0</code><code class="p">)</code> <code class="o">*</code> <code class="mf">5.0</code><code class="o">/</code><code class="mf">9.0</code> <code class="p">}</code>
+        <code class="k">else</code><code class="p">:</code>
+            <code class="k">return</code> <code class="p">{</code><code class="s2">"Deployment"</code><code class="p">:</code> <code class="bp">self</code><code class="o">.</code><code class="n">id</code><code class="p">,</code> <code class="s2">"Unknown conversion code"</code><code class="p">:</code>
+                <code class="n">request</code><code class="o">.</code><code class="n">query_params</code><code class="p">[</code><code class="s2">"type"</code><code class="p">]}</code>
+    <code class="k">def</code> <code class="nf">celcius_fahrenheit</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code> <code class="n">temp</code><code class="p">):</code>
+        <code class="k">return</code> <code class="mf">9.0</code><code class="o">/</code><code class="mf">5.0</code> <code class="o">*</code> <code class="n">temp</code> <code class="o">+</code> <code class="mf">32.0</code>
+
+    <code class="k">def</code> <code class="nf">fahrenheit_celcius</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code> <code class="n">temp</code><code class="p">):</code>
+        <code class="k">return</code> <code class="p">(</code><code class="n">temp</code> <code class="o">-</code> <code class="mf">32.0</code><code class="p">)</code> <code class="o">*</code> <code class="mf">5.0</code><code class="o">/</code><code class="mf">9.0</code>
+
+<code class="n">Converter</code><code class="o">.</code><code class="n">deploy</code><code class="p">()</code>
+<code class="c1"># list current deployments</code>
+<code class="nb">print</code><code class="p">(</code><code class="n">serve</code><code class="o">.</code><code class="n">list_deployments</code><code class="p">())</code></pre></div>
+
+<p>Now the usage of either HTTP or handle-based invocation produces the result in <a data-type="xref" href="#invoke_scaled_result">Example 7-8</a>.</p>
+<div data-type="example" id="invoke_scaled_result">
+<h5><span class="label">Example 7-8. </span>Invoking scaled deployment</h5>
+
+<pre data-type="programlisting">{'Deployment': '1d...0d', 'Fahrenheit temperature': 212.0}
+{'Deployment': '4d...b9', 'Celsius temperature': 37.8}
+{'Deployment': '00...aa', 'Unknown conversion code': 'CC'}</pre></div>
+
+<p>Looking at this result, you can see that every request is processed by a different deployment instance (a different ID).</p>
+
+<p>This is manual scaling of deployment. What about autoscaling? Similar to the autoscaling of Kafka listeners (discussed in <a data-type="xref" href="ch06.html#ch06">Chapter 6</a>), Ray’s approach to autoscaling is different from the one taken by Kubernetes natively—​see, for example, <a href="https://oreil.ly/2Tj0l">Knative</a>. Instead of creating a new instance, Ray’s autoscaling approach is to create more Ray nodes and redistribute deployments appropriately.</p>
+
+<p>If your deployments begin to exceed about three thousand requests per second, you should also scale the HTTP ingress to Ray. By default, the ingress HTTP server is started on only the head node, but you can also start an HTTP server on every node by using <code>serve.start(http_options=\{"location": "EveryNode"})</code>. If you scale the number of HTTP ingresses, you will also need to deploy a load balancer, available from your cloud provider or installed<a data-primary="resource replicas" data-startref="resource-replica" data-type="indexterm" id="idm45354772174048"/> locally.</p>
+</div></section>
+
+
+
+
+
+
+
+
+
+
+<section data-pdf-bookmark="Resource requirements for deployments" data-type="sect3"><div class="sect3" id="idm45354772172848">
+<h3>Resource requirements for deployments</h3>
+
+<p>You can <a data-primary="resource requirements for deployments" data-type="indexterm" id="idm45354772171312"/>request specific resource requirements in <code>@serve.deployment</code>. For example, two CPUs and one GPU would be indicated as follows:</p>
+
+<pre class="pagebreak-after" data-code-language="python" data-type="programlisting"><code class="nd">@serve</code><code class="o">.</code><code class="n">deployment</code><code class="p">(</code><code class="n">ray_actor_options</code><code class="o">=</code><code class="p">{</code><code class="s2">"num_cpus"</code><code class="p">:</code> <code class="mi">2</code><code class="p">,</code> <code class="s2">"num_gpus"</code><code class="p">:</code> <code class="mi">1</code><code class="p">})</code></pre>
+
+<p>Another useful parameter of <code>@serve.deployment</code> is <code>route_prefix</code>. As you can see from <a data-type="xref" href="#call_http">Example 7-2</a>, the default prefix is the name of the Python class used in this deployment. Using <code>route_prefix</code>, for example, allows you to explicitly specify a prefix used by HTTP requests:</p>
+
+<pre data-code-language="python" data-type="programlisting"><code class="nd">@serve</code><code class="o">.</code><code class="n">deployment</code><code class="p">(</code><code class="n">route_prefix</code><code class="o">=</code><code class="s2">"/converter"</code><code class="p">)</code></pre>
+
+<p>For descriptions of additional configuration parameters, <a data-primary="Ray Serve" data-secondary="deployments" data-startref="ray-serve-deploy-addparam" data-tertiary="adding parameters to annotations" data-type="indexterm" id="idm45354771996064"/><a data-primary="microservices" data-secondary="deployments" data-startref="microservice-deploy-addparam" data-tertiary="adding parameters to annotations" data-type="indexterm" id="idm45354771994736"/><a data-primary="deployments" data-secondary="adding parameters to annotations" data-startref="deploy-addparam" data-type="indexterm" id="idm45354771990560"/><a data-primary="parameters, adding to annotations" data-startref="param-add" data-type="indexterm" id="idm45354771989376"/><a data-primary="annotations, adding parameters to" data-startref="annotate-addparam" data-type="indexterm" id="idm45354771988464"/>refer to the <a href="https://oreil.ly/3NWgQ">“Ray Core API” documentation</a>.</p>
+</div></section>
+
+
+
+
+
+
+
+
+
+
+<section data-pdf-bookmark="Implementing request routing with FastAPI" data-type="sect3"><div class="sect3" id="idm45354771986608">
+<h3>Implementing request routing with FastAPI</h3>
+
+<p>Although <a data-primary="Ray Serve" data-secondary="deployments" data-tertiary="request routing with FastAPI" data-type="indexterm" id="idm45354771984848"/><a data-primary="microservices" data-secondary="deployments" data-tertiary="request routing with Fast API" data-type="indexterm" id="idm45354771983600"/><a data-primary="deployments" data-secondary="request routing with FastAPI" data-type="indexterm" id="idm45354771949136"/><a data-primary="request routing with FastAPI" data-type="indexterm" id="idm45354771948288"/><a data-primary="FastAPI, request routing with" data-type="indexterm" id="idm45354771947680"/>the initial example of a temperature converter deployment in <a data-type="xref" href="#tc_control_basic">Example 7-1</a> works fine, it is not convenient to use. You need to specify the transformation type with every request. A better approach is to have two separate endpoints (URLs) for the API—​one for Celsius-to-Fahrenheit transformation and one for Fahrenheit-to-Celsius transformation. You can achieve this by leveraging <a href="https://oreil.ly/ue4Mz">Serve integration</a> with <a href="https://oreil.ly/h8QKh">FastAPI</a>. With this, you can rewrite <a data-type="xref" href="#tc_control_basic">Example 7-1</a> as shown in <a data-type="xref" href="#tc_control_http">Example 7-9</a>.</p>
+<div class="example-margin-7" data-type="example" id="tc_control_http">
+<h5><span class="label">Example 7-9. </span><a href="https://oreil.ly/OuurE">Implementing multiple HTTP APIs in a deployment</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="nd">@serve</code><code class="o">.</code><code class="n">deployment</code><code class="p">(</code><code class="n">route_prefix</code><code class="o">=</code><code class="s2">"/converter"</code><code class="p">)</code>
+<code class="nd">@serve</code><code class="o">.</code><code class="n">ingress</code><code class="p">(</code><code class="n">app</code><code class="p">)</code>
+<code class="k">class</code> <code class="nc">Converter</code><code class="p">:</code>
+    <code class="nd">@app</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="s2">"/cf"</code><code class="p">)</code>
+    <code class="k">def</code> <code class="nf">celcius_fahrenheit</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code> <code class="n">temp</code><code class="p">):</code>
+        <code class="k">return</code> <code class="p">{</code><code class="s2">"Fahrenheit temperature"</code><code class="p">:</code> <code class="mf">9.0</code><code class="o">/</code><code class="mf">5.0</code> <code class="o">*</code> <code class="nb">float</code><code class="p">(</code><code class="n">temp</code><code class="p">)</code> <code class="o">+</code> <code class="mf">32.0</code><code class="p">}</code>
+
+    <code class="nd">@app</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="s2">"/fc"</code><code class="p">)</code>
+    <code class="k">def</code> <code class="nf">fahrenheit_celcius</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code> <code class="n">temp</code><code class="p">):</code>
+        <code class="k">return</code> <code class="p">{</code><code class="s2">"Celsius temperature"</code><code class="p">:</code> <code class="p">(</code><code class="nb">float</code><code class="p">(</code><code class="n">temp</code><code class="p">)</code> <code class="o">-</code> <code class="mf">32.0</code><code class="p">)</code> <code class="o">*</code> <code class="mf">5.0</code><code class="o">/</code><code class="mf">9.0</code><code class="p">}</code></pre></div>
+
+<p>Note that here, we have introduced two HTTP-accessible APIs with two different URLs (effectively converting the second query string parameter to a set of URLs)—one per conversion type. (We also leverage the <code>route_prefix</code> parameter described previously.) This can simplify HTTP access; compare <a data-type="xref" href="#call_multi">Example 7-10</a> to the original in <a data-type="xref" href="#call_http">Example 7-2</a>.</p>
+<div class="example-margin-5 pagebreak-after" data-type="example" id="call_multi">
+<h5><span class="label">Example 7-10. </span><a href="https://oreil.ly/OuurE">Invoking deployment with multiple HTTP endpoints</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="nb">print</code><code class="p">(</code><code class="n">requests</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="s2">"http://127.0.0.1:8000/converter/cf?temp=100.0&amp;"</code><code class="p">)</code><code class="o">.</code><code class="n">text</code><code class="p">)</code>
+<code class="nb">print</code><code class="p">(</code><code class="n">requests</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="s2">"http://127.0.0.1:8000/converter/fc?temp=100.0"</code><code class="p">)</code><code class="o">.</code><code class="n">text</code><code class="p">)</code></pre></div>
+
+<p>Additional features provided through FastAPI implementation include variable routes, automatic type validation, dependency injection (e.g., for database connections), <a href="https://oreil.ly/atwGv">security support</a>, and more. Refer to the <a href="https://oreil.ly/3pw0k">FastAPI documentation</a> on how to use these features.</p>
+</div></section>
+</div></section>
+
+
+
+
+
+
+
+
+<section data-pdf-bookmark="Deployment Composition" data-type="sect2"><div class="sect2" id="idm45354771798272">
+<h2>Deployment Composition</h2>
+
+<p>Deployments <a data-primary="Ray Serve" data-secondary="deployments" data-tertiary="composition" data-type="indexterm" id="ray-serve-deploy-compose"/><a data-primary="microservices" data-secondary="deployments" data-tertiary="composition" data-type="indexterm" id="microservice-deploy-compose"/><a data-primary="deployments" data-secondary="composition" data-type="indexterm" id="deploy-compose"/><a data-primary="composition of deployments" data-type="indexterm" id="compose-deploy"/>can be built as a composition of other deployments. This allows for building powerful deployment pipelines.</p>
+
+<p>Let’s take a look at the specific example: <a href="https://oreil.ly/YT27x">canary deployment</a>. In this deployment strategy, you deploy a new version of your code or model in a limited fashion to see how it behaves. You can easily build this type of deployment by using deployment composition. We will start by defining and deploying two simple deployments in <a data-type="xref" href="#versioned_deploy">Example 7-11</a>.</p>
+<div data-type="example" id="versioned_deploy">
+<h5><span class="label">Example 7-11. </span><a href="https://oreil.ly/EaD6e">Two basic deployments</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="nd">@serve</code><code class="o">.</code><code class="n">deployment</code>
+<code class="k">def</code> <code class="nf">version_one</code><code class="p">(</code><code class="n">data</code><code class="p">):</code>
+    <code class="k">return</code> <code class="p">{</code><code class="s2">"result"</code><code class="p">:</code> <code class="s2">"version1"</code><code class="p">}</code>
+
+
+<code class="n">version_one</code><code class="o">.</code><code class="n">deploy</code><code class="p">()</code>
+
+
+<code class="nd">@serve</code><code class="o">.</code><code class="n">deployment</code>
+<code class="k">def</code> <code class="nf">version_two</code><code class="p">(</code><code class="n">data</code><code class="p">):</code>
+    <code class="k">return</code> <code class="p">{</code><code class="s2">"result"</code><code class="p">:</code> <code class="s2">"version2"</code><code class="p">}</code>
+
+
+<code class="n">version_two</code><code class="o">.</code><code class="n">deploy</code><code class="p">()</code></pre></div>
+
+<p>These deployments take any data and return a string: <code>"result": "version1"</code> for deployment 1 and <code>"result": “version2"</code> for deployment 2. You can combine these two deployments by implementing a canary deployment (<a data-type="xref" href="#canary_deploy">Example 7-12</a>).</p>
+<div class="widows_7" data-type="example" id="canary_deploy">
+<h5><span class="label">Example 7-12. </span><a href="https://oreil.ly/EaD6e">Canary deployment</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="nd">@serve</code><code class="o">.</code><code class="n">deployment</code><code class="p">(</code><code class="n">route_prefix</code><code class="o">=</code><code class="s2">"/versioned"</code><code class="p">)</code>
+<code class="k">class</code> <code class="nc">Canary</code><code class="p">:</code>
+    <code class="k">def</code> <code class="fm">__init__</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code> <code class="n">canary_percent</code><code class="p">):</code>
+        <code class="kn">from</code> <code class="nn">random</code> <code class="kn">import</code> <code class="n">random</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">version_one</code> <code class="o">=</code> <code class="n">version_one</code><code class="o">.</code><code class="n">get_handle</code><code class="p">()</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">version_two</code> <code class="o">=</code> <code class="n">version_two</code><code class="o">.</code><code class="n">get_handle</code><code class="p">()</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">canary_percent</code> <code class="o">=</code> <code class="n">canary_percent</code>
+
+    <code class="c1"># This method can be called concurrently!</code>
+    <code class="k">async</code> <code class="k">def</code> <code class="fm">__call__</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code> <code class="n">request</code><code class="p">):</code>
+        <code class="n">data</code> <code class="o">=</code> <code class="k">await</code> <code class="n">request</code><code class="o">.</code><code class="n">body</code><code class="p">()</code>
+        <code class="k">if</code><code class="p">(</code><code class="n">random</code><code class="p">()</code> <code class="o">&lt;</code> <code class="bp">self</code><code class="o">.</code><code class="n">canary_percent</code><code class="p">):</code>
+            <code class="k">return</code> <code class="k">await</code> <code class="bp">self</code><code class="o">.</code><code class="n">version_one</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="n">data</code><code class="o">=</code><code class="n">data</code><code class="p">)</code>
+        <code class="k">else</code><code class="p">:</code>
+            <code class="k">return</code> <code class="k">await</code> <code class="bp">self</code><code class="o">.</code><code class="n">version_two</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="n">data</code><code class="o">=</code><code class="n">data</code><code class="p">)</code></pre></div>
+
+<p>This deployment illustrates several points. First, it demonstrates a constructor with parameters, which is useful for deployment, allowing a single definition to be deployed with different parameters. Second, we define the <code>call</code> function as <code>async</code>, to process queries concurrently. The implementation of the <code>call</code> function is simple: generate a new random number and, depending on its value and a value of <code>canary_percent</code>, you will invoke either the version 1 or version 2 deployment.</p>
+
+<p>Once the <code>Canary</code> class is deployed (by using <code>Canary.deploy(.3)</code>, you can invoke it using HTTP. The result of invoking canary deployment 10 times is shown in <a data-type="xref" href="#res_canary">Example 7-13</a>.</p>
+<div data-type="example" id="res_canary">
+<h5><span class="label">Example 7-13. </span>Results of the canary deployment invocation</h5>
+
+<pre data-type="programlisting">{'result': 'version2'}
+{'result': 'version2'}
+{'result': 'version1'}
+{'result': 'version2'}
+{'result': 'version1'}
+{'result': 'version2'}
+{'result': 'version2'}
+{'result': 'version1'}
+{'result': 'version2'}
+{'result': 'version2'}</pre></div>
+
+<p>As you can see here, the canary model works fairly well and does exactly what you need. Now that you know how to build and use Ray-based microservices, let’s see how you can use them for <a data-primary="Ray Serve" data-secondary="deployments" data-startref="ray-serve-deploy-compose" data-tertiary="composition" data-type="indexterm" id="idm45354771591424"/><a data-primary="microservices" data-secondary="deployments" data-startref="microservice-deploy-compose" data-tertiary="composition" data-type="indexterm" id="idm45354771589936"/><a data-primary="deployments" data-secondary="composition" data-startref="deploy-compose" data-type="indexterm" id="idm45354771543728"/><a data-primary="composition of deployments" data-startref="compose-deploy" data-type="indexterm" id="idm45354771542640"/>model serving.</p>
+</div></section>
+</div></section>
+
+
+
+
+
+
+<section data-pdf-bookmark="Using Ray Serve for Model Serving" data-type="sect1"><div class="sect1" id="idm45354771797680">
+<h1>Using Ray Serve for Model Serving</h1>
+
+<p>In a nutshell, serving a model is no different from invoking any other microservice (we will talk about specific model-serving requirements later in this chapter). As long as you can get an ML-generated model in some shape or form compatible with Ray’s runtime—e.g., in <a href="https://oreil.ly/DWVE7">pickle format</a>, straight Python code, or binary format along with a Python library for its processing—you can use this model to process inference requests. Let’s start with a simple example of model serving.</p>
+
+
+
+
+
+
+
+
+<section data-pdf-bookmark="Simple Model Service Example" data-type="sect2"><div class="sect2" id="idm45354771539536">
+<h2>Simple Model Service Example</h2>
+
+<p>One <a data-primary="Ray Serve" data-secondary="model serving" data-tertiary="example" data-type="indexterm" id="ray-serve-model-example"/><a data-primary="microservices" data-secondary="model serving" data-tertiary="example" data-type="indexterm" id="microservice-model-example"/><a data-primary="model serving" data-secondary="example" data-type="indexterm" id="model-serve-example"/>popular model-learning application is predicting the quality of red wine, based on the <a href="https://oreil.ly/yvPRp">Kaggle Red Wine Quality dataset</a>. Numerous blog posts use this dataset to build ML implementations of wine quality—​for example, see articles by <a href="https://oreil.ly/9yLZ9">Mayur Badole</a> and <a href="https://oreil.ly/JWwgO">Dexter Nguyen</a>. For our example, we have built several classification models for the Red Wine Quality dataset, based on Terence Shin’s <a href="https://oreil.ly/M6lc4">“Predicting Wine Quality with Several Classification Techniques”</a>; the actual code can be found in the book’s <a href="https://oreil.ly/ChZtD">GitHub repo</a>. The code uses several techniques for building a classification model of the red wine quality, including the following:</p>
+
+<ul>
+<li>
+<p><a href="https://oreil.ly/Qnx8W">Decision trees</a></p>
+</li>
+<li>
+<p><a href="https://oreil.ly/yXqZz">Random forest</a></p>
+</li>
+<li>
+<p><a href="https://oreil.ly/gerOD">AdaBoost</a></p>
+</li>
+<li>
+<p><a href="https://oreil.ly/bTNNZ">Gradient boost</a></p>
+</li>
+<li>
+<p><a href="https://oreil.ly/csAzq">XGBoost</a></p>
+</li>
+</ul>
+
+<p>All implementations leverage the scikit-learn Python library, which allows you to generate a model and export it using pickle. When validating the models, we saw the best results from the random forest, gradient boost, and XGBoost classifications, so we saved only these models locally—​generated models are available in the book’s <a href="https://oreil.ly/VY9NE">GitHub repo</a>. With the models in place, you can use a simple deployment that allows serving the red wine quality model using random forest classification (<a data-type="xref" href="#rf_serve">Example 7-14</a>).</p>
+<div class="example-margin-2" data-type="example" id="rf_serve">
+<h5><span class="label">Example 7-14. </span><a href="https://oreil.ly/52qR4">Implementing model serving using random forest classification</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="nd">@serve</code><code class="o">.</code><code class="n">deployment</code><code class="p">(</code><code class="n">route_prefix</code><code class="o">=</code><code class="s2">"/randomforest"</code><code class="p">)</code>
+<code class="k">class</code> <code class="nc">RandomForestModel</code><code class="p">:</code>
+    <code class="k">def</code> <code class="fm">__init__</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code> <code class="n">path</code><code class="p">):</code>
+        <code class="k">with</code> <code class="nb">open</code><code class="p">(</code><code class="n">path</code><code class="p">,</code> <code class="s2">"rb"</code><code class="p">)</code> <code class="k">as</code> <code class="n">f</code><code class="p">:</code>
+            <code class="bp">self</code><code class="o">.</code><code class="n">model</code> <code class="o">=</code> <code class="n">pickle</code><code class="o">.</code><code class="n">load</code><code class="p">(</code><code class="n">f</code><code class="p">)</code>
+    <code class="k">async</code> <code class="k">def</code> <code class="fm">__call__</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code> <code class="n">request</code><code class="p">):</code>
+        <code class="n">payload</code> <code class="o">=</code> <code class="k">await</code> <code class="n">request</code><code class="o">.</code><code class="n">json</code><code class="p">()</code>
+        <code class="k">return</code> <code class="bp">self</code><code class="o">.</code><code class="n">serve</code><code class="p">(</code><code class="n">payload</code><code class="p">)</code>
+
+    <code class="k">def</code> <code class="nf">serve</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code> <code class="n">request</code><code class="p">):</code>
+        <code class="n">input_vector</code> <code class="o">=</code> <code class="p">[</code>
+            <code class="n">request</code><code class="p">[</code><code class="s2">"fixed acidity"</code><code class="p">],</code>
+            <code class="n">request</code><code class="p">[</code><code class="s2">"volatile acidity"</code><code class="p">],</code>
+            <code class="n">request</code><code class="p">[</code><code class="s2">"citric acid"</code><code class="p">],</code>
+            <code class="n">request</code><code class="p">[</code><code class="s2">"residual sugar"</code><code class="p">],</code>
+            <code class="n">request</code><code class="p">[</code><code class="s2">"chlorides"</code><code class="p">],</code>
+            <code class="n">request</code><code class="p">[</code><code class="s2">"free sulfur dioxide"</code><code class="p">],</code>
+            <code class="n">request</code><code class="p">[</code><code class="s2">"total sulfur dioxide"</code><code class="p">],</code>
+            <code class="n">request</code><code class="p">[</code><code class="s2">"density"</code><code class="p">],</code>
+            <code class="n">request</code><code class="p">[</code><code class="s2">"pH"</code><code class="p">],</code>
+            <code class="n">request</code><code class="p">[</code><code class="s2">"sulphates"</code><code class="p">],</code>
+            <code class="n">request</code><code class="p">[</code><code class="s2">"alcohol"</code><code class="p">],</code>
+        <code class="p">]</code>
+        <code class="n">prediction</code> <code class="o">=</code> <code class="bp">self</code><code class="o">.</code><code class="n">model</code><code class="o">.</code><code class="n">predict</code><code class="p">([</code><code class="n">input_vector</code><code class="p">])[</code><code class="mi">0</code><code class="p">]</code>
+        <code class="k">return</code> <code class="p">{</code><code class="s2">"result"</code><code class="p">:</code> <code class="nb">str</code><code class="p">(</code><code class="n">prediction</code><code class="p">)}</code></pre></div>
+
+<p>This deployment has three methods:</p>
+<dl>
+<dt>The constructor</dt>
+<dd>
+<p>Loads a model and stores it locally. We are using model location as a parameter so we can redeploy this deployment when a model changes.</p>
+</dd>
+<dt><code>call</code></dt>
+<dd>
+<p>Invoked by HTTP requests, this method retrieves the features (as a dictionary) and invokes the <code>serve</code> method for the actual processing. By defining it as async, it can process multiple requests simultaneously.</p>
+</dd>
+<dt><code>serve</code></dt>
+<dd>
+<p>Can be used to invoke deployment via a handle. It converts the incoming dictionary into a vector and calls the underlying model for inference.</p>
+</dd>
+</dl>
+
+<p>Once the implementation is deployed, it can be used for model serving. If invoked via HTTP, it takes a JSON string as a payload; for direct invocation, the request is in the form of a dictionary. Implementations for <a href="https://oreil.ly/Kc2oH">XGBoost</a> and <a href="https://oreil.ly/UbrD7">gradient boost</a> look pretty much the same, with the exception that a generated model in these cases takes a two-dimensional array instead of a vector, so you need to do this transformation before invoking the model.</p>
+
+<p>Additionally, you can take a look at Ray’s documentation for <a href="https://oreil.ly/qouwp">serving other types of models</a>, including TensorFlow and PyTorch.</p>
+
+<p>Now that you know how to build a simple model-serving implementation, the question is whether Ray-based microservices are a good platform for<a data-primary="Ray Serve" data-secondary="model serving" data-startref="ray-serve-model-example" data-tertiary="example" data-type="indexterm" id="idm45354771359888"/><a data-primary="microservices" data-secondary="model serving" data-startref="microservice-model-example" data-tertiary="example" data-type="indexterm" id="idm45354771358368"/><a data-primary="model serving" data-secondary="example" data-startref="model-serve-example" data-type="indexterm" id="idm45354771356912"/> model serving.</p>
+</div></section>
+
+
+
+
+
+
+
+
+<section data-pdf-bookmark="Considerations for Model-Serving Implementations" data-type="sect2"><div class="sect2" id="idm45354771538944">
+<h2>Considerations for Model-Serving Implementations</h2>
+
+<p>When it <a data-primary="Ray Serve" data-secondary="model serving" data-tertiary="requirements" data-type="indexterm" id="ray-serve-model-require"/><a data-primary="microservices" data-secondary="model serving" data-tertiary="requirements" data-type="indexterm" id="microservice-model-require"/><a data-primary="model serving" data-secondary="requirements" data-type="indexterm" id="model-serve-require"/>comes to model serving, a few specific requirements are important. A good definition of requirements specific to model serving can be found in <a class="orm:hideurl" href="https://oreil.ly/sikPG"><em>Kubeflow for Machine Learning</em></a> by Trevor Grant et al. (O’Reilly). These requirements are as follows:</p>
+<ol>
+<li>
+<p>The implementation has to be flexible. It should allow for your training to be implementation agnostic (i.e., TensorFlow versus PyTorch, versus scikit-learn). For an inference service invocation, it should not matter if the underlying model was trained using PyTorch, scikit-learn, or TensorFlow: the service interface should be shared so that the user’s API remains consistent.</p>
+</li>
+<li>
+<p>It is sometimes advantageous to be able to batch requests in a variety of settings in order to realize better throughput. The implementation should make it simple to support batching of model-serving requests.</p>
+</li>
+<li>
+<p>The implementation should provide the ability to leverage hardware optimizers that match the needs of the algorithm. Sometimes in the evaluation phase, you would benefit from hardware optimizers like GPUs to infer the models.</p>
+</li>
+<li>
+<p>The implementation should be able to seamlessly include additional components of an <a href="https://oreil.ly/9Gr2X">inference graph</a>. An inference graph could comprise feature transformers, predictors, explainers, and drift detectors.</p>
+</li>
+<li>
+<p>Implementation should allow scaling of serving instances, both explicitly and using autoscalers, regardless of the underlying hardware.</p>
+</li>
+<li>
+<p>It should be possible to expose model-serving functionality via different protocols including HTTP and Kafka.</p>
+</li>
+<li>
+<p>ML models traditionally do not extrapolate well outside the training data distribution. As a result, if data drift occurs, the model performance can deteriorate, and it should be retrained and redeployed. Implementation should support an easy redeployment of models.</p>
+</li>
+<li>
+<p>Flexible deployment strategy implementations (including canary deployment, blue-green deployments, and A/B testing) are required to ensure that new versions of models will not behave worse than the existing ones.</p>
+</li>
+
+</ol>
+
+<p>Let’s see how these requirements are satisfied by Ray’s microservice framework:</p>
+<ol>
+<li>
+<p>Ray’s deployment cleanly separates deployment APIs from model APIs. Thus, Ray “standardizes” deployment APIs and provides support for converting incoming data to the format required for the model. See <a data-type="xref" href="#rf_serve">Example 7-14</a>.</p>
+</li>
+<li>
+<p>Ray’s deployment makes it easy to implement request batching. Refer to the Ray <a href="https://oreil.ly/K3up4">“Batching Tutorial” guide</a> for details on how to implement and deploy a Ray Serve deployment that accepts batches, configure the batch size, and query the model in Python.</p>
+</li>
+<li>
+<p>As described earlier in this chapter, deployments support configurations that allow specifying hardware resources (CPU/GPU) required for its execution.</p>
+</li>
+<li>
+<p>Deployment composition, described earlier in this chapter, allows for easy creation of the model-serving graphs, mixing and matching plain Python code and existing deployments. We will present an additional example of deployment compositions later in this chapter.</p>
+</li>
+<li>
+<p>As described earlier in this chapter, deployments support setting the number of replicas, thus easily scaling deployments. Coupled with Ray’s autoscaling and the ability to define the number of HTTP servers, the microservice framework allows for very efficient scaling of model serving.</p>
+</li>
+<li>
+<p>As we’ve described, deployments can be exposed via HTTP or straight Python. The latter option allows for integration with any required transport.</p>
+</li>
+<li>
+<p>As described earlier in this chapter, a simple redeployment of deployment allows you to update models without restarting the Ray cluster and interrupting applications that are leveraging model serving.</p>
+</li>
+<li>
+<p>As shown in <a data-type="xref" href="#canary_deploy">Example 7-12</a>, using deployment composition allows for easy implementation of any deployment strategy.</p>
+</li>
+
+</ol>
+
+<p>As we have shown here, the Ray microservice framework is a solid foundation for model serving that satisfies all of the main requirements for model serving.</p>
+
+<p>The last thing that you are going to learn in this chapter is<a data-primary="Ray Serve" data-secondary="model serving" data-startref="ray-serve-model-require" data-tertiary="requirements" data-type="indexterm" id="idm45354771287520"/><a data-primary="microservices" data-secondary="model serving" data-startref="microservice-model-require" data-tertiary="requirements" data-type="indexterm" id="idm45354771285968"/><a data-primary="model serving" data-secondary="requirements" data-startref="model-serve-require" data-type="indexterm" id="idm45354771284512"/> the implementation of one of the advanced model-serving techniques—<a href="https://oreil.ly/KH8EZ">speculative model serving</a>—using the Ray microservices framework.</p>
+</div></section>
+
+
+
+
+
+
+
+
+<section data-pdf-bookmark="Speculative Model Serving Using the Ray Microservice Framework" data-type="sect2"><div class="sect2" id="idm45354771282256">
+<h2>Speculative Model Serving Using the Ray Microservice Framework</h2>
+
+<p>Speculative model serving <a data-primary="Ray Serve" data-secondary="model serving" data-tertiary="speculative execution" data-type="indexterm" id="ray-serve-model-speculate"/><a data-primary="microservices" data-secondary="model serving" data-tertiary="speculative execution" data-type="indexterm" id="microservice-model-speculate"/><a data-primary="model serving" data-secondary="speculative execution" data-type="indexterm" id="model-serve-speculate"/><a data-primary="speculative model serving" data-type="indexterm" id="speculate-model-serve"/>is an application of <a href="https://oreil.ly/RRvzK">speculative execution</a>. In this optimization technique, a computer system performs a task that may not be needed. The work is done before knowing whether it is actually required. This allows getting results up front, so if they are actually needed, they will be available with no delay. Speculative execution is important in model serving because it provides the following features for machine-serving applications:</p>
+<dl>
+<dt>Guaranteed execution time</dt>
+<dd>
+<p>Assuming that you have several models, with the fastest providing a fixed execution time, it is possible to provide a model-serving implementation with a fixed upper limit on execution time, as long as that time is larger than the execution time of the simplest model.</p>
+</dd>
+<dt>Consensus-based model serving</dt>
+<dd>
+<p>Assuming that you have several models, you can implement model serving in such a way that prediction is the one returned by the majority of the models.</p>
+</dd>
+<dt>Quality-based model serving</dt>
+<dd>
+<p>Assuming that you have a metric allowing you to evaluate the quality of model-serving results, this approach allows you to pick the result with the best quality.</p>
+</dd>
+</dl>
+
+<p>Here you will learn how to implement consensus-based model serving using Ray’s microservice framework.</p>
+
+<p>You learned earlier in this chapter how to implement quality scoring of red wine using three models: random forest, gradient boost, and XGBoost. Now let’s try to produce an implementation that returns a result on which at least two models agree. The basic implementation is shown in <a data-type="xref" href="#spec_serve">Example 7-15</a>.</p>
+<div data-type="example" id="spec_serve">
+<h5><span class="label">Example 7-15. </span><a href="https://oreil.ly/2RyYu">Consensus-based model serving</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="nd">@serve</code><code class="o">.</code><code class="n">deployment</code><code class="p">(</code><code class="n">route_prefix</code><code class="o">=</code><code class="s2">"/speculative"</code><code class="p">)</code>
+<code class="k">class</code> <code class="nc">Speculative</code><code class="p">:</code>
+    <code class="k">def</code> <code class="fm">__init__</code><code class="p">(</code><code class="bp">self</code><code class="p">):</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">rfhandle</code> <code class="o">=</code> <code class="n">RandomForestModel</code><code class="o">.</code><code class="n">get_handle</code><code class="p">(</code><code class="n">sync</code><code class="o">=</code><code class="kc">False</code><code class="p">)</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">xgboosthandle</code> <code class="o">=</code> <code class="n">XGBoostModel</code><code class="o">.</code><code class="n">get_handle</code><code class="p">(</code><code class="n">sync</code><code class="o">=</code><code class="kc">False</code><code class="p">)</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">grboosthandle</code> <code class="o">=</code> <code class="n">GRBoostModel</code><code class="o">.</code><code class="n">get_handle</code><code class="p">(</code><code class="n">sync</code><code class="o">=</code><code class="kc">False</code><code class="p">)</code>
+    <code class="k">async</code> <code class="k">def</code> <code class="fm">__call__</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code> <code class="n">request</code><code class="p">):</code>
+        <code class="n">payload</code> <code class="o">=</code> <code class="k">await</code> <code class="n">request</code><code class="o">.</code><code class="n">json</code><code class="p">()</code>
+        <code class="n">f1</code><code class="p">,</code> <code class="n">f2</code><code class="p">,</code> <code class="n">f3</code> <code class="o">=</code> <code class="k">await</code> <code class="n">asyncio</code><code class="o">.</code><code class="n">gather</code><code class="p">(</code><code class="bp">self</code><code class="o">.</code><code class="n">rfhandle</code><code class="o">.</code><code class="n">serve</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="n">payload</code><code class="p">),</code>
+                <code class="bp">self</code><code class="o">.</code><code class="n">xgboosthandle</code><code class="o">.</code><code class="n">serve</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="n">payload</code><code class="p">),</code> 
+                <code class="bp">self</code><code class="o">.</code><code class="n">grboosthandle</code><code class="o">.</code><code class="n">serve</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="n">payload</code><code class="p">))</code>
+
+        <code class="n">rfresurlt</code> <code class="o">=</code> <code class="n">ray</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="n">f1</code><code class="p">)[</code><code class="s1">'result'</code><code class="p">]</code>
+        <code class="n">xgresurlt</code> <code class="o">=</code> <code class="n">ray</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="n">f2</code><code class="p">)[</code><code class="s1">'result'</code><code class="p">]</code>
+        <code class="n">grresult</code> <code class="o">=</code> <code class="n">ray</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="n">f3</code><code class="p">)[</code><code class="s1">'result'</code><code class="p">]</code>
+        <code class="n">ones</code> <code class="o">=</code> <code class="p">[]</code>
+        <code class="n">zeros</code> <code class="o">=</code> <code class="p">[]</code>
+        <code class="k">if</code> <code class="n">rfresurlt</code> <code class="o">==</code> <code class="s2">"1"</code><code class="p">:</code>
+            <code class="n">ones</code><code class="o">.</code><code class="n">append</code><code class="p">(</code><code class="s2">"Random forest"</code><code class="p">)</code>
+        <code class="k">else</code><code class="p">:</code>
+            <code class="n">zeros</code><code class="o">.</code><code class="n">append</code><code class="p">(</code><code class="s2">"Random forest"</code><code class="p">)</code>
+        <code class="k">if</code> <code class="n">xgresurlt</code> <code class="o">==</code> <code class="s2">"1"</code><code class="p">:</code>
+            <code class="n">ones</code><code class="o">.</code><code class="n">append</code><code class="p">(</code><code class="s2">"XGBoost"</code><code class="p">)</code>
+        <code class="k">else</code><code class="p">:</code>
+            <code class="n">zeros</code><code class="o">.</code><code class="n">append</code><code class="p">(</code><code class="s2">"XGBoost"</code><code class="p">)</code>
+        <code class="k">if</code> <code class="n">grresult</code> <code class="o">==</code> <code class="s2">"1"</code><code class="p">:</code>
+            <code class="n">ones</code><code class="o">.</code><code class="n">append</code><code class="p">(</code><code class="s2">"Gradient boost"</code><code class="p">)</code>
+        <code class="k">else</code><code class="p">:</code>
+            <code class="n">zeros</code><code class="o">.</code><code class="n">append</code><code class="p">(</code><code class="s2">"Gradient boost"</code><code class="p">)</code>
+        <code class="k">if</code> <code class="nb">len</code><code class="p">(</code><code class="n">ones</code><code class="p">)</code> <code class="o">&gt;=</code> <code class="mi">2</code><code class="p">:</code>
+            <code class="k">return</code> <code class="p">{</code><code class="s2">"result"</code><code class="p">:</code> <code class="s2">"1"</code><code class="p">,</code> <code class="s2">"methods"</code><code class="p">:</code> <code class="n">ones</code><code class="p">}</code>
+        <code class="k">else</code><code class="p">:</code>
+            <code class="k">return</code> <code class="p">{</code><code class="s2">"result"</code><code class="p">:</code> <code class="s2">"0"</code><code class="p">,</code> <code class="s2">"methods"</code><code class="p">:</code> <code class="n">zeros</code><code class="p">}</code></pre></div>
+
+<p>The constructor of this deployment creates handles for all of your deployments implementing individual models. Note that here we are creating async handles that allow parallel execution of each deployment.</p>
+
+<p>The <code>call</code> method gets the payload and starts executing all three models in parallel and then waits for all to complete—see <a href="https://oreil.ly/pKovE">“Waiting in asyncio”</a> by Hynek Schlawack for information on using <code>asyncio</code> for the execution of many coroutines and running them concurrently. Once you have all the results, you 
+<span class="keep-together">implement</span> the consensus calculations and return the<a data-primary="Ray Serve" data-secondary="model serving" data-startref="ray-serve-model-speculate" data-tertiary="speculative execution" data-type="indexterm" id="idm45354770977024"/><a data-primary="microservices" data-secondary="model serving" data-startref="microservice-model-speculate" data-tertiary="speculative execution" data-type="indexterm" id="idm45354770975536"/><a data-primary="model serving" data-secondary="speculative execution" data-startref="model-serve-speculate" data-type="indexterm" id="idm45354770974080"/><a data-primary="speculative model serving" data-startref="speculate-model-serve" data-type="indexterm" id="idm45354770972864"/> result (along with methods that voted for it).<sup><a data-type="noteref" href="ch07.html#idm45354770971824" id="idm45354770971824-marker">1</a></sup></p>
+</div></section>
+</div></section>
+
+
+
+
+
+
+<section data-pdf-bookmark="Conclusion" data-type="sect1"><div class="sect1" id="idm45354770970496">
+<h1>Conclusion</h1>
+
+<p>In this chapter, you learned Ray’s implementation of the microservice framework and how this framework can be used by model serving. We started by describing a basic microservices deployment and extensions allowing for better control, scale, and extending of the deployment’s execution. We then showed an example of how this framework can be used to implement model serving, analyzed typical model-serving requirements, and showed how they can be satisfied by Ray. Finally, you learned how to implement an advanced model-serving example—consensus-based model serving—allowing you to improve the quality of individual model-serving methods. The article <a href="https://oreil.ly/y9BuV">“Building Highly Available and Scalable Online Applications on Ray at Ant Group”</a> by Tengwei Cai et al. shows how to bring together the basic building blocks described here into more complex implementations.</p>
+
+<p>In the next chapter, you will learn about workflow implementation in Ray and how to use workflows to automate your application execution.</p>
+</div></section>
+<div data-type="footnotes"><p data-type="footnote" id="idm45354770971824"><sup><a href="ch07.html#idm45354770971824-marker">1</a></sup> You can also implement different policies for waiting for the model’s execution. You could, for example, use at least one model’s result via <code>asyncio.wait(tasks). return_when=asyncio.FIRST_COMPLETED)</code> or just wait for a given time interval by using <code>asyncio.wait(tasks, interval)</code>.</p></div></div></section></body></html>

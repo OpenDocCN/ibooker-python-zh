@@ -1,0 +1,423 @@
+<html><head></head><body><section data-pdf-bookmark="Chapter 12. Ray in the Enterprise" data-type="chapter" epub:type="chapter"><div class="chapter" id="ch12">
+<h1><span class="label">Chapter 12. </span>Ray in the Enterprise</h1>
+
+
+<p>Deploying software in enterprise environments often comes with additional requirements, especially regarding security. Enterprise deployments tend to involve multiple stakeholders and need to provide service to a larger group of scientists/engineers. While not required, many enterprise clusters tend to have some form of multitenancy to allow more efficient use of resources (including human resources, such as operational staff).</p>
+
+
+
+
+
+
+<section data-pdf-bookmark="Ray Dependency Security Issues" data-type="sect1"><div class="sect1" id="idm45354761693792">
+<h1>Ray Dependency Security Issues</h1>
+
+<p>Unfortunately, <a data-primary="Ray" data-secondary="enterprise deployment" data-tertiary="dependency security" data-type="indexterm" id="idm45354761692496"/><a data-primary="enterprise deployment" data-secondary="dependency security" data-type="indexterm" id="idm45354761691216"/><a data-primary="dependencies" data-secondary="security issues" data-type="indexterm" id="idm45354761690272"/><a data-primary="security and dependencies" data-type="indexterm" id="idm45354761689328"/>Ray’s default requirements file brings in some insecure libraries. Many enterprise environments have some kind of container scanning or similar system to detect such issues.<sup><a data-type="noteref" href="ch12.html#idm45354761688512" id="idm45354761688512-marker">1</a></sup> In some cases, you can simply remove or upgrade the dependency issues flagged, but when Ray includes the dependencies in its wheel (e.g., the Apache Log4j issue), limiting yourself to prebuilt wheels has serious drawbacks. If you find a Java or native library flagged, you will need to rebuild Ray from source with the version upgraded. Derwen.ai has an example of doing this for Docker in its <a href="https://oreil.ly/Qef7S">ray_base repo</a>.</p>
+</div></section>
+
+
+
+
+
+
+<section data-pdf-bookmark="Interacting with the Existing Tools" data-type="sect1"><div class="sect1" id="idm45354761686944">
+<h1>Interacting with the Existing Tools</h1>
+
+<p>Enterprise deployments <a data-primary="Ray" data-secondary="enterprise deployment" data-tertiary="interaction with existing tools" data-type="indexterm" id="idm45354761685616"/><a data-primary="enterprise deployment" data-secondary="interaction with existing tools" data-type="indexterm" id="idm45354761684272"/>often involve interaction with existing tools and the data they produce. Some potential points for integration here are using Ray’s dataset-generic Arrow interface to interact with other tools. When data is stored “at rest,” Parquet is the best format for interaction with other tools.</p>
+</div></section>
+
+
+
+
+
+
+<section data-pdf-bookmark="Using Ray with CI/CD Tools" data-type="sect1"><div class="sect1" id="idm45354761682624">
+<h1>Using Ray with CI/CD Tools</h1>
+
+<p>When <a data-primary="Ray" data-secondary="enterprise deployment" data-tertiary="with CI/CD tools" data-tertiary-sortas="CI/CD tools" data-type="indexterm" id="idm45354761681360"/><a data-primary="enterprise deployment" data-secondary="with CI/CD tools" data-secondary-sortas="CI/CD tools" data-type="indexterm" id="idm45354761679808"/><a data-primary="CI/CD tools, enterprise deployment with" data-type="indexterm" id="idm45354761678592"/>working in large teams, continuous integration and delivery (CI/CD) are important parts of effective collaboration on projects. The simplest option for using Ray with CI/CD is to use Ray in local mode and treat it as a normal Python project. Alternatively, you can submit test jobs by using Ray’s job submission API and verify the result. This can allow you to test Ray jobs beyond the scale of a single machine. Regardless of whether you use Ray’s job API or Ray’s local mode, you can use Ray with any CI/CD tool and virtual environment.</p>
+</div></section>
+
+
+
+
+
+
+<section data-pdf-bookmark="Authentication with Ray" data-type="sect1"><div class="sect1" id="idm45354761677472">
+<h1>Authentication with Ray</h1>
+
+<p>Ray’s <a data-primary="Ray" data-secondary="enterprise deployment" data-tertiary="authentication" data-type="indexterm" id="ray-enterprise-authenticate"/><a data-primary="enterprise deployment" data-secondary="authentication" data-type="indexterm" id="enterprise-authenticate"/><a data-primary="authentication in enterprise deployment" data-type="indexterm" id="authenticate-enterprise"/>default deployment makes it easy for you to get started, and as such, it leaves out any authentication between the client and server. This lack of authentication means that anyone who can connect to your Ray server can potentially submit jobs and execute arbitrary code. Generally, enterprise environments require a higher level of access control than the default configuration provides.</p>
+
+<p>Ray’s gRPC endpoints, not the job server, can be configured to use Transport Layer Security (TLS) for mutual authentication between the client and the server. Ray uses the same TLS communication mechanism between the client and head node as between the workers.</p>
+<div data-type="warning" epub:type="warning"><h6>Warning</h6>
+<p>Ray’s TLS implementation requires that the clients have the private key. You should consider Ray’s TLS implementation to be akin to shared secret encryption, but slower.</p>
+</div>
+
+<p>Another option, which works the job server, is to leave the endpoints insecure but restrict who can talk to the endpoint.<sup><a data-type="noteref" href="ch12.html#idm45354761670192" id="idm45354761670192-marker">2</a></sup> This can be done using ingress controllers, networking rules, or even as an integrated part of a virtual private network (VPN) like <a href="https://oreil.ly/M5O7q">Tailscale’s RBAC rules example for Grafana</a>.<sup><a data-type="noteref" href="ch12.html#idm45354761668848" id="idm45354761668848-marker">3</a></sup> Thankfully, Ray’s dashboard—and by extension, the job server endpoint—already binds to <em>local​host/127.0.0.1</em> and runs on port 8265. For example, if you have your Ray head node on Kubernetes using Traefik for ingress, you could expose the job API with basic authentication as shown here:</p>
+
+<pre class="pagebreak-before" data-code-language="yaml" data-type="programlisting"><code class="nt">apiVersion</code><code class="p">:</code><code class="w"> </code><code class="l-Scalar-Plain">traefik.containo.us/v1alpha1</code><code class="w"/>
+<code class="nt">kind</code><code class="p">:</code><code class="w"> </code><code class="l-Scalar-Plain">Middleware</code><code class="w"/>
+<code class="nt">metadata</code><code class="p">:</code><code class="w"/>
+<code class="w">  </code><code class="nt">name</code><code class="p">:</code><code class="w"> </code><code class="l-Scalar-Plain">basicauth</code><code class="w"/>
+<code class="w">  </code><code class="nt">namespace</code><code class="p">:</code><code class="w"> </code><code class="l-Scalar-Plain">ray-cluster</code><code class="w"/>
+<code class="nt">spec</code><code class="p">:</code><code class="w"/>
+<code class="w">  </code><code class="nt">basicAuth</code><code class="p">:</code><code class="w"/>
+<code class="w">    </code><code class="nt">secret</code><code class="p">:</code><code class="w"> </code><code class="l-Scalar-Plain">basic-auth</code><code class="w"/>
+<code class="p-Indicator">-</code><code class="w"/>
+<code class="nt">apiVersion</code><code class="p">:</code><code class="w"> </code><code class="l-Scalar-Plain">networking.k8s.io/v1</code><code class="w"/>
+<code class="nt">kind</code><code class="p">:</code><code class="w"> </code><code class="l-Scalar-Plain">Ingress</code><code class="w"/>
+<code class="nt">metadata</code><code class="p">:</code><code class="w"/>
+<code class="w">  </code><code class="nt">name</code><code class="p">:</code><code class="w"> </code><code class="l-Scalar-Plain">longhorn-ingress</code><code class="w"/>
+<code class="w">  </code><code class="nt">namespace</code><code class="p">:</code><code class="w"> </code><code class="l-Scalar-Plain">longhorn-system</code><code class="w"/>
+<code class="nt">annotations</code><code class="p">:</code><code class="w"/>
+<code class="w">  </code><code class="nt">traefik.ingress.kubernetes.io/router.entrypoints</code><code class="p">:</code><code class="w"> </code><code class="l-Scalar-Plain">websecure</code><code class="w"/>
+<code class="w">  </code><code class="nt">traefik.ingress.kubernetes.io/router.tls.certresolver</code><code class="p">:</code><code class="w"> </code><code class="l-Scalar-Plain">le</code><code class="w"/>
+<code class="w">  </code><code class="nt">traefik.ingress.kubernetes.io/router.tls</code><code class="p">:</code><code class="w"> </code><code class="s">"true"</code><code class="w"/>
+<code class="w">  </code><code class="nt">kubernetes.io/ingress.class</code><code class="p">:</code><code class="w"> </code><code class="l-Scalar-Plain">traefik</code><code class="w"/>
+<code class="w">  </code><code class="nt">traefik.ingress.kubernetes.io/router.middlewares</code><code class="p">:</code><code class="w"> </code><code class="l-Scalar-Plain">ba-ray-cluster@kubernetescrd</code><code class="w"/>
+<code class="w">        </code><code class="l-Scalar-Plain">spec</code><code class="p-Indicator">:</code><code class="w"/>
+<code class="w">          </code><code class="nt">rules</code><code class="p">:</code><code class="w"/>
+<code class="w">            </code><code class="p-Indicator">-</code><code class="w"> </code><code class="nt">host</code><code class="p">:</code><code class="w"> </code><code class="s">"mymagicendpoints.pigscanfly.ca"</code><code class="w"/>
+<code class="w">              </code><code class="nt">http</code><code class="p">:</code><code class="w"/>
+<code class="w">                </code><code class="nt">paths</code><code class="p">:</code><code class="w"/>
+<code class="w">                </code><code class="p-Indicator">-</code><code class="w"> </code><code class="nt">pathType</code><code class="p">:</code><code class="w"> </code><code class="l-Scalar-Plain">Prefix</code><code class="w"/>
+<code class="w">                  </code><code class="nt">path</code><code class="p">:</code><code class="w"> </code><code class="s">"/"</code><code class="w"/>
+<code class="w">                  </code><code class="nt">backend</code><code class="p">:</code><code class="w"/>
+<code class="w">                    </code><code class="nt">service</code><code class="p">:</code><code class="w"/>
+<code class="w">                      </code><code class="nt">name</code><code class="p">:</code><code class="w"> </code><code class="l-Scalar-Plain">ray-head-svc</code><code class="w"/>
+<code class="w">                      </code><code class="nt">port</code><code class="p">:</code><code class="w"/>
+<code class="w">                        </code><code class="nt">number</code><code class="p">:</code><code class="w"> </code><code class="l-Scalar-Plain">8265</code><code class="w"/></pre>
+
+<p>Dependence on restricting endpoint access has the downside that anyone who can access that computer can submit jobs to your cluster, so it does not work well for shared compute <a data-primary="Ray" data-secondary="enterprise deployment" data-startref="ray-enterprise-authenticate" data-tertiary="authentication" data-type="indexterm" id="idm45354761663920"/><a data-primary="enterprise deployment" data-secondary="authentication" data-startref="enterprise-authenticate" data-type="indexterm" id="idm45354761662592"/><a data-primary="authentication in enterprise deployment" data-startref="authenticate-enterprise" data-type="indexterm" id="idm45354761534064"/>resources.</p>
+</div></section>
+
+
+
+
+
+
+<section data-pdf-bookmark="Multitenancy on Ray" data-type="sect1"><div class="sect1" id="idm45354761532896">
+<h1>Multitenancy on Ray</h1>
+
+<p>Out of <a data-primary="Ray" data-secondary="enterprise deployment" data-tertiary="multitenancy" data-type="indexterm" id="ray-enterprise-multiten"/><a data-primary="enterprise deployment" data-secondary="multitenancy" data-type="indexterm" id="enterprise-multiten"/><a data-primary="multitenancy" data-type="indexterm" id="multiten"/>the box, Ray clusters support multiple running jobs. When all jobs are from the same user and you are not concerned about isolating jobs, you don’t need to consider multitenancy implications.</p>
+
+<p>In our opinion, tenant isolation is less developed than other parts of Ray. Ray 
+<span class="keep-together">achieves</span> per user multitenancy security by binding separate workers to a job, reducing the chance of accidental information leakage between separate users. As with Ray’s execution environments, your users can have different Python libraries installed, but Ray does not isolate system-level libraries (like, for example, CUDA).</p>
+
+<p>We like to think of tenant isolation in Ray as locks on doors. It’s there to keep honest people honest and prevent accidental disclosures. However, named resources, such as named actors, can be called from any other job. This is an intended function of named actors, but as cloudpickle is used frequently throughout Ray, you should consider any named actor as having the <em>potential</em> of allowing a malicious actor on the same cluster to be able to execute arbitrary code in your job.</p>
+<div data-type="warning" epub:type="warning"><h6>Warning</h6>
+<p>Named resources break Ray’s tenant isolation.</p>
+</div>
+
+<p>While Ray does have some support for multitenancy, we instead recommend deploying multitenant Kubernetes or Yarn clusters. Multitenancy leads nicely into the next problem of providing credentials for<a data-primary="Ray" data-secondary="enterprise deployment" data-startref="ray-enterprise-multiten" data-tertiary="multitenancy" data-type="indexterm" id="idm45354761523920"/><a data-primary="enterprise deployment" data-secondary="multitenancy" data-startref="enterprise-multiten" data-type="indexterm" id="idm45354761522400"/><a data-primary="multitenancy" data-startref="multiten" data-type="indexterm" id="idm45354761521184"/> data sources.</p>
+</div></section>
+
+
+
+
+
+
+<section data-pdf-bookmark="Credentials for Data Sources" data-type="sect1"><div class="sect1" id="idm45354761519984">
+<h1>Credentials for Data Sources</h1>
+
+<p>Multitenancy <a data-primary="Ray" data-secondary="enterprise deployment" data-tertiary="data source credentials" data-type="indexterm" id="idm45354761518800"/><a data-primary="enterprise deployment" data-secondary="data source credentials" data-type="indexterm" id="idm45354761517520"/><a data-primary="data sources, credentials for" data-type="indexterm" id="idm45354761516576"/><a data-primary="credentials for data sources" data-type="indexterm" id="idm45354761515936"/>complicates credentials for datasources as you cannot fall back on instance-based roles/profiles. By adding <code>env_vars</code> to your runtime environment, you can specify credentials across the entirety of your job. Ideally, you should not hardcode these credentials in your source code, but instead, fetch them from something like a Kubernetes secret and propagate the values through:</p>
+
+<pre data-code-language="python" data-type="programlisting"><code class="n">ray</code><code class="o">.</code><code class="n">init</code><code class="p">(</code>
+                <code class="n">runtime_env</code><code class="o">=</code><code class="p">{</code>
+                    <code class="s2">"env_vars"</code><code class="p">:</code> <code class="p">{</code>
+                        <code class="s2">"AWS_ACCESS_KEY_ID"</code><code class="p">:</code> <code class="s2">"key"</code><code class="p">,</code>
+                        <code class="s2">"AWS_SECRET_ACCESS_KEY"</code><code class="p">:</code> <code class="s2">"secret"</code><code class="p">,</code>
+                    <code class="p">}</code>
+                <code class="p">}</code>
+            <code class="p">)</code></pre>
+
+<p>You can also use this same technique to assign credentials per function (e.g., if only one actor should have write permissions) by assigning a runtime environment with <code>.option</code>. However, in practice, keeping track of the separate credentials can become a headache.</p>
+</div></section>
+
+
+
+
+
+
+<section data-pdf-bookmark="Permanent Versus Ephemeral Clusters" data-type="sect1"><div class="sect1" id="idm45354761429264">
+<h1>Permanent Versus Ephemeral Clusters</h1>
+
+<p>When <a data-primary="Ray" data-secondary="enterprise deployment" data-tertiary="permanent versus ephemeral clusters" data-type="indexterm" id="ray-enterprise-perm-ephem"/><a data-primary="enterprise deployment" data-secondary="permanent versus ephemeral clusters" data-type="indexterm" id="enterprise-perm-ephem"/><a data-primary="permanent clusters versus ephemeral clusters" data-type="indexterm" id="perm-ephem"/><a data-primary="ephemeral clusters versus permanent clusters" data-type="indexterm" id="ephem-perm"/><a data-primary="clusters" data-secondary="permanent versus ephemeral" data-type="indexterm" id="cluster-perm-ephem"/>deploying Ray, you have to choose between permanent and ephemeral clusters. With permanent clusters, issues of multitenancy and ensuring that the autoscaler can scale down (e.g., no hanging resources) are especially important. However, as more enterprises have adopted Kubernetes or other cloud-native technologies, we think that ephemeral clusters will increase in appeal.</p>
+
+
+
+
+
+
+
+
+<section data-pdf-bookmark="Ephemeral Clusters" data-type="sect2"><div class="sect2" id="idm45354761404432">
+<h2>Ephemeral Clusters</h2>
+
+<p>Ephemeral clusters have many benefits. Two of the most important are low cost and not needing multitenant clusters. Ephemeral clusters allow for resources to be fully released when the computation is finished. You can often avoid multitenancy issues by provisioning ephemeral clusters, which can reduce the operational burden. Ephemeral clusters make experimenting with new versions of Ray and new native libraries comparatively lightweight. This can also serve to prevent the issues that come with forced migrations, where each team can run its own versions of Ray.<sup><a data-type="noteref" href="ch12.html#idm45354761403136" id="idm45354761403136-marker">4</a></sup></p>
+
+<p>Ephemeral clusters have some drawbacks you should be aware of when making this choice. Two of the clearest drawbacks are having to wait for the cluster to start up, on top of your application start time, and not being able to use cache/persistence on the cluster. Starting an ephemeral cluster depends on being able to allocate compute resources, which depending on your environment and budget can take anywhere from seconds to days (during cloud issues). If your computations depend on a large amount of state or data, each time your application is started on a new cluster, it starts by reading back a lot of information, which can be quite slow.</p>
+</div></section>
+
+
+
+
+
+
+
+
+<section data-pdf-bookmark="Permanent Clusters" data-type="sect2"><div class="sect2" id="idm45354761401824">
+<h2>Permanent Clusters</h2>
+
+<p>In addition to cost and multitenancy issues, permanent clusters bring additional drawbacks. Permanent clusters are more likely to accumulate configuration “artifacts” that can be harder to re-create when it comes time to migrate to a new cluster. These clusters can become brittle with time as the underlying hardware ages. This is true even in the cloud, where long-running instances become increasingly likely to experience outages. Long-lived resources in permanent clusters may end up containing information that needs to be purged for regulatory reasons.</p>
+
+<p>Permanent clusters also have important benefits that can be useful. From a developer’s point of view, one advantage is the ability to have long-lived actors or other resources. From an operations point of view, permanent clusters do not take the same spin-up time, so if you find yourself needing to do a new task, you don’t have to wait for a cluster to become available. <a data-type="xref" href="#comparing-transient-permanent">Table 12-1</a> summarizes the differences between transient and permanent clusters.</p>
+<table class="pagebreak-before less_space" id="comparing-transient-permanent">
+<caption><span class="label">Table 12-1. </span>Transient- and permanent-cluster comparison chart</caption>
+<thead>
+<tr>
+<th/>
+<th>Transient/ephemeral clusters</th>
+<th>Permanent clusters</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><p><strong>Resource cost</strong></p></td>
+<td><p>Normally lower unless running, unless workloads could bin-pack or share resources between users</p></td>
+<td><p>Higher when resource leaks prevent the autoscaler from scaling down</p></td>
+</tr>
+<tr>
+<td><p><strong>Library isolation</strong></p></td>
+<td><p>Flexible (including native)</p></td>
+<td><p>Only venv/Conda env-level isolation</p></td>
+</tr>
+<tr>
+<td><p><strong>Ability to try new versions 
+<span class="keep-together">of Ray</span></strong></p></td>
+<td><p>Yes, may require code changes for new APIs</p></td>
+<td><p>Higher overhead</p></td>
+</tr>
+<tr>
+<td><p><strong>Longest actor life</strong></p></td>
+<td><p>Ephemeral (with the cluster)</p></td>
+<td><p>“Permanent” (excluding cluster crashes/redeploys)</p></td>
+</tr>
+<tr>
+<td><p><strong>Shared actors</strong></p></td>
+<td><p>No</p></td>
+<td><p>Yes</p></td>
+</tr>
+<tr>
+<td><p><strong>Time to launch new application</strong></p></td>
+<td><p>Potentially long (cloud-dependent)</p></td>
+<td><p>Varies (if the cluster has nearly instant spare capacity; otherwise, cloud-dependent)</p></td>
+</tr>
+<tr>
+<td><p><strong>Data read amortization</strong></p></td>
+<td><p>No (each cluster must read in any shared datasets)</p></td>
+<td><p>Possible (if well structured)</p></td>
+</tr>
+</tbody>
+</table>
+
+<p>The choice between ephemeral and permanent clusters depends on your use cases and requirements. In some deployments, a mix of ephemeral clusters and permanent clusters could offer the <a data-primary="Ray" data-secondary="enterprise deployment" data-startref="ray-enterprise-perm-ephem" data-tertiary="permanent versus ephemeral clusters" data-type="indexterm" id="idm45354761352496"/><a data-primary="enterprise deployment" data-secondary="permanent versus ephemeral clusters" data-startref="enterprise-perm-ephem" data-type="indexterm" id="idm45354761350944"/><a data-primary="permanent clusters versus ephemeral clusters" data-startref="perm-ephem" data-type="indexterm" id="idm45354761349712"/><a data-primary="ephemeral clusters versus permanent clusters" data-startref="ephem-perm" data-type="indexterm" id="idm45354761348672"/><a data-primary="clusters" data-secondary="permanent versus ephemeral" data-startref="cluster-perm-ephem" data-type="indexterm" id="idm45354761347696"/>correct trade-offs.</p>
+</div></section>
+</div></section>
+
+
+
+
+
+
+<section data-pdf-bookmark="Monitoring" data-type="sect1"><div class="sect1" id="idm45354761346080">
+<h1>Monitoring</h1>
+
+<p>As the<a data-primary="Ray" data-secondary="enterprise deployment" data-tertiary="cluster monitoring in" data-type="indexterm" id="ray-enterprise-monitor"/><a data-primary="enterprise deployment" data-secondary="cluster monitoring in" data-type="indexterm" id="enterprise-monitor"/><a data-primary="monitoring in enterprise deployment" data-secondary="cluster monitoring" data-type="indexterm" id="monitor-enterprise-cluster"/><a data-primary="clusters" data-secondary="monitoring in enterprise deployment" data-tertiary-sortas="enterprise deployment" data-type="indexterm" id="cluster-monitor-enterprise"/><a data-primary="metrics" data-see="monitoring in enterprise deployment" data-type="indexterm" id="idm45354761338928"/> size or number of Ray clusters in your organization grows, monitoring becomes increasingly important. Ray has built-in metrics reporting through its internal dashboard or Prometheus, although Prometheus is disabled by default.</p>
+<div data-type="note" epub:type="note"><h6>Note</h6>
+<p>Ray’s internal dashboard is installed when you install <code>ray​[default]</code>, but not if you simply install <code>ray</code>.</p>
+</div>
+
+<p>Ray’s dashboard is excellent when you are working by yourself or debugging a production issue. If it’s installed, Ray will print an info log message with a link to the dashboard (e.g., <code>View the Ray dashboard at http://127.0.0.1:8265</code>). In addition, the <code>ray.init</code> result contains <code>webui_url</code>, which points to the metrics dashboard. However, Ray’s dashboard does not have the ability to create alerts and is therefore helpful only when you know something is wrong. Ray’s dashboard UI is being upgraded in Ray 2; <a data-type="xref" href="#old_dashboard">Figure 12-1</a> shows the old dashboard, and <a data-type="xref" href="#new_dashboard">Figure 12-2</a> shows the new one.</p>
+
+<figure><div class="figure" id="old_dashboard">
+<img alt="spwr 1201" src="assets/spwr_1201.png"/>
+<h6><span class="label">Figure 12-1. </span>The old (pre-2.0) Ray dashboard</h6>
+</div></figure>
+
+<figure><div class="figure" id="new_dashboard">
+<img alt="spwr 1202" src="assets/spwr_1202.png"/>
+<h6><span class="label">Figure 12-2. </span>The new Ray dashboard</h6>
+</div></figure>
+
+<p>As you can see, the new dashboard did not evolve organically; rather, it was intentionally designed and contains new information. Both versions of the dashboard contain information about the executor processes and memory usage. The new dashboard also has a web UI for looking up objects by ID.</p>
+<div data-type="warning" epub:type="warning"><h6>Warning</h6>
+<p>The dashboard should not be exposed publicly, and the same port is used for the job API.</p>
+</div>
+
+<p>Ray metrics can also be exported to Prometheus, and by default, Ray will pick a random port for this. You can find the port by looking at <code>metrics_export_port</code> in the result of <em>ray.init</em>, or specify a fixed port when launching Ray’s head node with <code>--metrics-export-port=</code>. Ray’s integration with Prometheus not only provides integration with metrics visualization tools, like Grafana (see <a data-type="xref" href="#sample-grafana-dashboard-for-ray">Figure 12-3</a>), but importantly adds alerting capabilities when some of the parameters are going outside predetermined ranges.</p>
+
+<figure><div class="figure" id="sample-grafana-dashboard-for-ray">
+<img alt="spwr 1203" src="assets/spwr_1203.png"/>
+<h6><span class="label">Figure 12-3. </span>Sample Grafana dashboard for Ray<sup><a data-type="noteref" href="ch12.html#idm45354761321968" id="idm45354761321968-marker">5</a></sup></h6>
+</div></figure>
+
+<p>To obtain exported metrics, Prometheus needs to be configured for which hosts or pods to scrape. For users with a static cluster, this is as simple as providing a host file, but for dynamic users, you have <a href="https://oreil.ly/RR0kf">many options</a>. Kubernetes users can use <a href="https://oreil.ly/85MrY">pod monitors</a> to configure Prometheus pod scraping. Because a Ray cluster does not have a unifying label for all nodes, here we are using two pod monitors—one for the head node and one for workers.</p>
+
+<p>Non-Kubernetes users can use Prometheus <a href="https://oreil.ly/eYXbq">file-based discovery</a> to use files that 
+<span class="keep-together">Ray automatically</span> generates on the head node at <em>/tmp/ray/prom_metrics_service​_dis⁠covery.json</em> for this.</p>
+
+<p>In addition to monitoring Ray itself, you can instrument your code inside Ray. You can either add your own metrics to Ray’s Prometheus metrics or integrate with OpenTelemetry. The correct metrics and instrumentation largely depend on what the rest of your organization uses. Comparing OpenTelemetry and Prometheus is beyond the scope of <a data-primary="Ray" data-secondary="enterprise deployment" data-startref="ray-enterprise-monitor" data-tertiary="cluster monitoring in" data-type="indexterm" id="idm45354761315744"/><a data-primary="enterprise deployment" data-secondary="cluster monitoring in" data-startref="enterprise-monitor" data-type="indexterm" id="idm45354761314416"/><a data-primary="monitoring in enterprise deployment" data-secondary="cluster monitoring" data-startref="monitor-enterprise-cluster" data-type="indexterm" id="idm45354761313328"/><a data-primary="clusters" data-secondary="monitoring in enterprise deployment" data-startref="cluster-monitor-enterprise" data-tertiary-sortas="enterprise deployment" data-type="indexterm" id="idm45354761312192"/>this book.</p>
+</div></section>
+
+
+
+
+
+
+<section data-pdf-bookmark="Instrumenting Your Code with Ray Metrics" data-type="sect1"><div class="sect1" id="idm45354761345488">
+<h1>Instrumenting Your Code with Ray Metrics</h1>
+
+<p>Ray’s <a data-primary="Ray" data-secondary="enterprise deployment" data-tertiary="application monitoring in" data-type="indexterm" id="ray-enterprise-monitor-apps"/><a data-primary="enterprise deployment" data-secondary="application monitoring in" data-type="indexterm" id="enterprise-monitor-apps"/><a data-primary="monitoring in enterprise deployment" data-secondary="application monitoring" data-type="indexterm" id="monitor-enterprise-apps"/><a data-primary="applications" data-secondary="monitoring in enterprise deployment" data-tertiary-sortas="enterprise deployment" data-type="indexterm" id="apps-monitor-enterprise"/>built-in metrics do an excellent job of reporting cluster health, but we often care about application health. For example, a cluster with low memory usage because all the jobs are stuck might look good at the cluster level, but what we actually care about (serving users, training models, etc.) isn’t happening. Thankfully, you can add your own metrics to Ray to monitor your application usage.</p>
+<div data-type="tip"><h6>Tip</h6>
+<p>The metrics that you add to Ray metrics are exposed as Prometheus metrics, just like Ray’s built in metrics.</p>
+</div>
+
+<p>Ray metrics support the <a href="https://oreil.ly/aW2y9">counter</a>, <a href="https://oreil.ly/xBLAh">gauge</a>, and <a href="https://oreil.ly/tNiTX">histogram</a> metrics types inside <code>ray.util​.met⁠rics</code>. These metrics objects are not serializable, as they reference C objects. You need to explicitly create the metric before you can record any values in it. When creating a new metric, you can specify a name, description, and tags. A common tag used is the name of the actor a metric is used inside of, for actor sharding. Since they are not serializable, you need to either create and use them inside actors, as in <a data-type="xref" href="#ray_counters_actor">Example 12-1</a>, or use the <a href="https://oreil.ly/zKck9">lazy singleton pattern</a>, as in <a data-type="xref" href="#ray_counters_singleton">Example 12-2</a>.</p>
+<div data-type="example" id="ray_counters_actor">
+<h5><span class="label">Example 12-1. </span><a href="https://oreil.ly/LEzXb">Using Ray counters inside an actor</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="c1"># Singleton for reporting a Ray metric</code>
+
+<code class="nd">@ray</code><code class="o">.</code><code class="n">remote</code>
+<code class="k">class</code> <code class="nc">MySpecialActor</code><code class="p">(</code><code class="nb">object</code><code class="p">):</code>
+    <code class="k">def</code> <code class="fm">__init__</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code> <code class="n">name</code><code class="p">):</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">total</code> <code class="o">=</code> <code class="mi">0</code>
+        <code class="kn">from</code> <code class="nn">ray.util.metrics</code> <code class="kn">import</code> <code class="n">Counter</code><code class="p">,</code> <code class="n">Gauge</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">failed_withdrawls</code> <code class="o">=</code> <code class="n">Counter</code><code class="p">(</code>
+            <code class="s2">"failed_withdrawls"</code><code class="p">,</code> <code class="n">description</code><code class="o">=</code><code class="s2">"Number of failed withdrawls."</code><code class="p">,</code>
+            <code class="n">tag_keys</code><code class="o">=</code><code class="p">(</code><code class="s2">"actor_name"</code><code class="p">,),</code> <code class="c1"># Useful if you end up sharding actors</code>
+        <code class="p">)</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">failed_withdrawls</code><code class="o">.</code><code class="n">set_default_tags</code><code class="p">({</code><code class="s2">"actor_name"</code><code class="p">:</code> <code class="n">name</code><code class="p">})</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">total_guage</code> <code class="o">=</code> <code class="n">Gauge</code><code class="p">(</code>
+            <code class="s2">"money"</code><code class="p">,</code>
+            <code class="n">description</code><code class="o">=</code><code class="s2">"How much money we have in total. Goes up and down."</code><code class="p">,</code>
+            <code class="n">tag_keys</code><code class="o">=</code><code class="p">(</code><code class="s2">"actor_name"</code><code class="p">,),</code> <code class="c1"># Useful if you end up sharding actors</code>
+        <code class="p">)</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">total_guage</code><code class="o">.</code><code class="n">set_default_tags</code><code class="p">({</code><code class="s2">"actor_name"</code><code class="p">:</code> <code class="n">name</code><code class="p">})</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">accounts</code> <code class="o">=</code> <code class="p">{}</code>
+
+    <code class="k">def</code> <code class="nf">deposit</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code> <code class="n">account</code><code class="p">,</code> <code class="n">amount</code><code class="p">):</code>
+        <code class="k">if</code> <code class="n">account</code> <code class="ow">not</code> <code class="ow">in</code> <code class="bp">self</code><code class="o">.</code><code class="n">accounts</code><code class="p">:</code>
+            <code class="bp">self</code><code class="o">.</code><code class="n">accounts</code><code class="p">[</code><code class="n">account</code><code class="p">]</code> <code class="o">=</code> <code class="mi">0</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">accounts</code><code class="p">[</code><code class="n">account</code><code class="p">]</code> <code class="o">+=</code> <code class="n">amount</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">total</code> <code class="o">+=</code> <code class="n">amount</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">total_guage</code><code class="o">.</code><code class="n">set</code><code class="p">(</code><code class="bp">self</code><code class="o">.</code><code class="n">total</code><code class="p">)</code>
+        
+    <code class="k">def</code> <code class="nf">withdrawl</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code> <code class="n">account</code><code class="p">,</code> <code class="n">amount</code><code class="p">):</code>
+        <code class="k">if</code> <code class="n">account</code> <code class="ow">not</code> <code class="ow">in</code> <code class="bp">self</code><code class="o">.</code><code class="n">accounts</code><code class="p">:</code>
+            <code class="bp">self</code><code class="o">.</code><code class="n">failed_withdrawls</code><code class="o">.</code><code class="n">inc</code><code class="p">()</code>
+            <code class="k">raise</code> <code class="ne">Exception</code><code class="p">(</code><code class="s2">"No account"</code><code class="p">)</code>
+        <code class="k">if</code> <code class="bp">self</code><code class="o">.</code><code class="n">accounts</code><code class="p">[</code><code class="n">account</code><code class="p">]</code> <code class="o">&lt;</code> <code class="n">amount</code><code class="p">:</code>
+            <code class="bp">self</code><code class="o">.</code><code class="n">failed_withdrawls</code><code class="o">.</code><code class="n">inc</code><code class="p">()</code>
+            <code class="k">raise</code> <code class="ne">Exception</code><code class="p">(</code><code class="s2">"Not enough money"</code><code class="p">)</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">accounts</code><code class="p">[</code><code class="n">account</code><code class="p">]</code> <code class="o">-=</code> <code class="n">amount</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">total</code> <code class="o">-=</code> <code class="n">amount</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">total_guage</code><code class="o">.</code><code class="n">set</code><code class="p">(</code><code class="bp">self</code><code class="o">.</code><code class="n">total</code><code class="p">)</code></pre></div>
+<div data-type="example" id="ray_counters_singleton">
+<h5><span class="label">Example 12-2. </span><a href="https://oreil.ly/LEzXb">Using the global singleton hack to use Ray counters with remote functions</a></h5>
+
+<pre class="pagebreak-after" data-code-language="python" data-type="programlisting"><code class="c1"># Singleton for reporting a Ray metric</code>
+
+<code class="k">class</code> <code class="nc">FailureCounter</code><code class="p">(</code><code class="nb">object</code><code class="p">):</code>
+    <code class="n">_instance</code> <code class="o">=</code> <code class="kc">None</code>
+
+    <code class="k">def</code> <code class="fm">__new__</code><code class="p">(</code><code class="bp">cls</code><code class="p">):</code>
+        <code class="k">if</code> <code class="bp">cls</code><code class="o">.</code><code class="n">_instance</code> <code class="ow">is</code> <code class="kc">None</code><code class="p">:</code>
+            <code class="nb">print</code><code class="p">(</code><code class="s1">'Creating the object'</code><code class="p">)</code>
+            <code class="bp">cls</code><code class="o">.</code><code class="n">_instance</code> <code class="o">=</code> <code class="nb">super</code><code class="p">(</code><code class="n">FailureCounter</code><code class="p">,</code> <code class="bp">cls</code><code class="p">)</code><code class="o">.</code><code class="fm">__new__</code><code class="p">(</code><code class="bp">cls</code><code class="p">)</code>
+            <code class="kn">from</code> <code class="nn">ray.util.metrics</code> <code class="kn">import</code> <code class="n">Counter</code>
+            <code class="bp">cls</code><code class="o">.</code><code class="n">_instance</code><code class="o">.</code><code class="n">counter</code> <code class="o">=</code> <code class="n">Counter</code><code class="p">(</code>
+                <code class="s2">"failure"</code><code class="p">,</code>
+                <code class="n">description</code><code class="o">=</code><code class="s2">"Number of failures (goes up only)."</code><code class="p">)</code>
+        <code class="k">return</code> <code class="bp">cls</code><code class="o">.</code><code class="n">_instance</code>
+
+<code class="c1"># This will fail with every zero because divide by zero</code>
+<code class="nd">@ray</code><code class="o">.</code><code class="n">remote</code>
+<code class="k">def</code> <code class="nf">remote_fun</code><code class="p">(</code><code class="n">x</code><code class="p">):</code>
+    <code class="k">try</code><code class="p">:</code>
+        <code class="k">return</code> <code class="mi">10</code> <code class="o">/</code> <code class="n">x</code>
+    <code class="k">except</code><code class="p">:</code>
+        <code class="n">FailureCounter</code><code class="p">()</code><code class="o">.</code><code class="n">counter</code><code class="o">.</code><code class="n">inc</code><code class="p">()</code>
+        <code class="k">return</code> <code class="kc">None</code></pre></div>
+
+<p>OpenTelemetry is available across many languages, including Python. Ray has a basic open-telemetry implementation, but it is not used as widely as its Prometheus<a data-primary="Ray" data-secondary="enterprise deployment" data-startref="ray-enterprise-monitor-apps" data-tertiary="application monitoring in" data-type="indexterm" id="idm45354760863408"/><a data-primary="enterprise deployment" data-secondary="application monitoring in" data-startref="enterprise-monitor-apps" data-type="indexterm" id="idm45354760893936"/><a data-primary="monitoring in enterprise deployment" data-secondary="application monitoring" data-startref="monitor-enterprise-apps" data-type="indexterm" id="idm45354760892816"/><a data-primary="applications" data-secondary="monitoring in enterprise deployment" data-startref="apps-monitor-enterprise" data-tertiary-sortas="enterprise deployment" data-type="indexterm" id="idm45354760891632"/> plug-in.</p>
+</div></section>
+
+
+
+
+
+
+<section data-pdf-bookmark="Wrapping Custom Programs with Ray" data-type="sect1"><div class="sect1" id="sec-wrapping-custom-programs">
+<h1>Wrapping Custom Programs with Ray</h1>
+
+<p>One of<a data-primary="Ray" data-secondary="enterprise deployment" data-tertiary="wrapping custom programs" data-type="indexterm" id="ray-enterprise-wrap"/><a data-primary="enterprise deployment" data-secondary="wrapping custom programs" data-type="indexterm" id="enterprise-wrap"/><a data-primary="wrapping custom programs with Ray" data-type="indexterm" id="wrap-custom"/><a data-primary="applications" data-secondary="wrapping custom with Ray" data-type="indexterm" id="apps-wrap"/><a data-primary="custom applications, wrapping with Ray" data-type="indexterm" id="custom-apps-wrap"/> the powerful features of Python is the ability to launch child processes using the <a href="https://oreil.ly/rRlWj">subprocess module</a>.<sup><a data-type="noteref" href="ch12.html#idm45354760850704" id="idm45354760850704-marker">6</a></sup> These processes can be any shell command or any application on your system. This capability allows for a lot of interesting options within Ray implementations. One of the options, which we will show here, is the ability to run any custom Docker image as part of Ray execution.<sup><a data-type="noteref" href="ch12.html#idm45354760849856" id="idm45354760849856-marker">7</a></sup> <a data-type="xref" href="#executing-docker-image-inside-ray-function">Example 12-3</a> demonstrates how this can be done.</p>
+<div class="example-margin-5" data-type="example" id="executing-docker-image-inside-ray-function">
+<h5><span class="label">Example 12-3. </span><a href="https://oreil.ly/gacKK">Executing a Docker image inside a Ray remote function</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="n">ray</code><code class="o">.</code><code class="n">init</code><code class="p">(</code><code class="n">address</code><code class="o">=</code><code class="s1">'</code><code class="s1">ray://&lt;</code><em><code class="s1">your IP</code></em><code class="s1">&gt;:10001</code><code class="s1">'</code><code class="p">)</code><code>
+</code><code>
+</code><code class="nd">@ray</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="n">num_cpus</code><code class="o">=</code><code class="mi">6</code><code class="p">)</code><code>
+</code><code class="k">def</code><code> </code><code class="nf">runDocker</code><code class="p">(</code><code class="n">cmd</code><code class="p">)</code><code class="p">:</code><code>
+</code><code>   </code><code class="k">with</code><code> </code><code class="nb">open</code><code class="p">(</code><code class="s2">"</code><code class="s2">result.txt</code><code class="s2">"</code><code class="p">,</code><code> </code><code class="s2">"</code><code class="s2">w</code><code class="s2">"</code><code class="p">)</code><code> </code><code class="k">as</code><code> </code><code class="n">output</code><code class="p">:</code><code>
+</code><code>       </code><code class="n">result</code><code> </code><code class="o">=</code><code> </code><code class="n">subprocess</code><code class="o">.</code><code class="n">run</code><code class="p">(</code><code>
+</code><code>           </code><code class="n">cmd</code><code class="p">,</code><code>
+</code><code>           </code><code class="n">shell</code><code class="o">=</code><code class="kc">True</code><code class="p">,</code><code>  </code><code class="c1"># Pass single string to shell, let it handle.</code><code>
+</code><code>           </code><code class="n">stdout</code><code class="o">=</code><code class="n">output</code><code class="p">,</code><code>
+</code><code>           </code><code class="n">stderr</code><code class="o">=</code><code class="n">output</code><code>
+</code><code>       </code><code class="p">)</code><code>
+</code><code>
+</code><code>   </code><code class="nb">print</code><code class="p">(</code><code class="sa">f</code><code class="s2">"</code><code class="s2">return code </code><code class="si">{</code><code class="n">result</code><code class="o">.</code><code class="n">returncode</code><code class="si">}</code><code class="s2">"</code><code class="p">)</code><code>
+</code><code>   </code><code class="k">with</code><code> </code><code class="nb">open</code><code class="p">(</code><code class="s2">"</code><code class="s2">result.txt</code><code class="s2">"</code><code class="p">,</code><code> </code><code class="s2">"</code><code class="s2">r</code><code class="s2">"</code><code class="p">)</code><code> </code><code class="k">as</code><code> </code><code class="n">output</code><code class="p">:</code><code>
+</code><code>       </code><code class="n">log</code><code> </code><code class="o">=</code><code> </code><code class="n">output</code><code class="o">.</code><code class="n">read</code><code class="p">(</code><code class="p">)</code><code>
+</code><code>   </code><code class="k">return</code><code> </code><code class="n">log</code><code>
+</code><code>
+</code><code class="n">cmd</code><code class="o">=</code><code class="s1">'</code><code class="s1">docker run --rm busybox echo </code><code class="s1">"</code><code class="s1">Hello world</code><code class="s1">"</code><code class="s1">'</code><code>
+</code><code>
+</code><code class="n">result</code><code class="o">=</code><code class="n">runDocker</code><code class="o">.</code><code class="n">remote</code><code class="p">(</code><code class="n">cmd</code><code class="p">)</code><code>
+</code><code class="nb">print</code><code class="p">(</code><code class="sa">f</code><code class="s2">"</code><code class="s2">result: </code><code class="si">{</code><code class="n">ray</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="n">result</code><code class="p">)</code><code class="si">}</code><code class="s2">"</code><code class="p">)</code></pre></div>
+
+<p class="pagebreak-after">This code contains a simple remote function that executes an external command and returns the execution result. The main function passes to it a simple <code>docker run</code> command and then prints the invocation result.</p>
+
+<p>This approach allows you to execute any existing Docker image as part of Ray remote function execution, which in turn allows polyglot Ray implementations or even executing Python with specific library requirements needing to create a virtual environment for this remote function run. It also allows for easy inclusion of prebuilt images in the Ray execution.</p>
+
+<p>Running Docker images is just one of the useful applications of using <code>subprocess</code> inside Ray. In general, any application installed on the Ray node can be invoked using this<a data-primary="Ray" data-secondary="enterprise deployment" data-startref="ray-enterprise-wrap" data-tertiary="wrapping custom programs" data-type="indexterm" id="idm45354760812800"/><a data-primary="enterprise deployment" data-secondary="wrapping custom programs" data-startref="enterprise-wrap" data-type="indexterm" id="idm45354760827088"/><a data-primary="wrapping custom programs with Ray" data-startref="wrap-custom" data-type="indexterm" id="idm45354760825904"/><a data-primary="applications" data-secondary="wrapping custom with Ray" data-startref="apps-wrap" data-type="indexterm" id="idm45354760824992"/><a data-primary="custom applications, wrapping with Ray" data-startref="custom-apps-wrap" data-type="indexterm" id="idm45354760823808"/> approach.</p>
+</div></section>
+
+
+
+
+
+
+<section data-pdf-bookmark="Conclusion" data-type="sect1"><div class="sect1" id="idm45354760838144">
+<h1>Conclusion</h1>
+
+<p>Although Ray was initially created in a research lab, you can start bringing Ray to the mainstream enterprise computing infrastructure with the implementation enchancements described here. Specifically, be sure to do the following:</p>
+
+<ul>
+<li>
+<p>Carefully evaluate the security and multitenancy issues that this can create.</p>
+</li>
+<li>
+<p>Be mindful of integration with CI/CD and observability tools.</p>
+</li>
+<li>
+<p>Decide whether you need permanent or ephemeral Ray clusters.</p>
+</li>
+</ul>
+
+<p>These considerations will change based on your enterprise environment and specific use cases for Ray.</p>
+
+<p>At this point in the book, you should have a solid grasp of all of the Ray basics as well as pointers on where to go next. We certainly hope to see you in the Ray community and encourage you to check out the <a href="https://oreil.ly/9xrm8">community resources</a>, including <a href="https://oreil.ly/PnLJO">Ray’s Slack channel</a>. If you want to see one of the ways you can put the pieces of Ray together, <a data-type="xref" href="app01.html#appA">Appendix A</a> explores how to build a backend for an open source satellite communication system.</p>
+</div></section>
+<div data-type="footnotes"><p data-type="footnote" id="idm45354761688512"><sup><a href="ch12.html#idm45354761688512-marker">1</a></sup> Some common security scanners include Grype, Anchore, and Dagda.</p><p data-type="footnote" id="idm45354761670192"><sup><a href="ch12.html#idm45354761670192-marker">2</a></sup> Making this work with the gRPC client is more complicated, as Ray’s workers need to be able to talk to the head node and Redis server, which breaks when using localhost for binding.</p><p data-type="footnote" id="idm45354761668848"><sup><a href="ch12.html#idm45354761668848-marker">3</a></sup> One of the authors has friends who work at Tailscale, and other solutions are totally OK too.</p><p data-type="footnote" id="idm45354761403136"><sup><a href="ch12.html#idm45354761403136-marker">4</a></sup> In practice, we recommend supporting only a few versions of Ray, as it is quickly evolving.</p><p data-type="footnote" id="idm45354761321968"><sup><a href="ch12.html#idm45354761321968-marker">5</a></sup> See <a href="https://oreil.ly/oKtmW"><em>Ray metrics-1650932823424.json</em></a> for the configuration.</p><p data-type="footnote" id="idm45354760850704"><sup><a href="ch12.html#idm45354760850704-marker">6</a></sup> Special thanks to Michael Behrendt for suggesting the implementation approach discussed in this section.</p><p data-type="footnote" id="idm45354760849856"><sup><a href="ch12.html#idm45354760849856-marker">7</a></sup> This will work only for the cloud installations where Ray nodes are using Ray installation on the VM. Refer to <a data-type="xref" href="app02.html#appB">Appendix B</a> to see how to do this on IBM Cloud and AWS.</p></div></div></section></body></html>

@@ -1,0 +1,245 @@
+<html><head></head><body><div id="sbo-rt-content"><section data-type="appendix" epub:type="appendix" data-pdf-bookmark="Appendix B. Scalable DataFrames: A Comparison &#10;and Some History"><div class="appendix" id="appB">
+<h1><span class="label">Appendix B. </span>Scalable DataFrames: A Comparison 
+<span class="keep-together">and Some History</span></h1>
+
+
+<p>Dask’s distributed pandas-like DataFrame is, in our opinion, one of its key features. Various approaches exist to provide scalable DataFrame-like functionality. One of the big things that made Dask’s DataFrames stand out is the high level of support of the pandas APIs, which other projects are rapidly trying to catch up on. This appendix compares some of the different current and historical DataFrame libraries.</p>
+
+<p>To understand the differences, we will look at a few key factors, some of which are similar to techniques we suggest in <a data-type="xref" href="ch08.xhtml#ch08">Chapter 8</a>. The first one is what the API looks like, and how much of your existing skills and code using pandas can be transferred. Then we’ll look at how much work is forced to happen on a single thread, on the driver/head node, and then on a single worker node.</p>
+
+<p>Scalable DataFrames does not have to mean distributed, although distributed scaling often allows for affordable handling of larger datasets than the single-machine options—and at truly massive scales, it’s the only practical option.</p>
+
+
+
+
+
+
+<section data-type="sect1" data-pdf-bookmark="Tools"><div class="sect1" id="id135">
+<h1>Tools</h1>
+
+<p>One of the common dependencies <a data-type="indexterm" data-primary="scaling DataFrames" data-secondary="tools" id="sclbdftls"/>you’ll see in many of the tools is that they are built on top of ASF Arrow. While Arrow is a fantastic project, and we hope to see its continued adoption, it has some <a href="https://oreil.ly/VPyAL">type differences</a>, especially with respect to nullability.<sup><a data-type="noteref" id="id1044-marker" href="app02.xhtml#id1044">1</a></sup> These differences mean that most of the systems built using Arrow share some common restrictions.</p>
+
+<p>Open Multi-Processing (OpenMP) and <a data-type="indexterm" data-primary="OpenMP (Open Multi-Processing)" id="id1045"/><a data-type="indexterm" data-primary="OpenMPI (Open Message Passing Interface)" id="id1046"/>Open Message Passing Interface (OpenMPI) are two other common dependencies many of these tools depend on. Despite their similar acronyms, by which you’ll see them referred to most commonly, they take fundamentally different approaches to parallelism. OpenMP is a single-machine tool focused on shared memory (with potentially non-uniform access). OpenMPI supports multiple machines and instead of shared memory uses message passing (conceptually similar to Dask’s actor system) for parallelization.</p>
+
+
+
+
+
+
+
+
+<section data-type="sect2" data-pdf-bookmark="One Machine Only"><div class="sect2" id="id282">
+<h2>One Machine Only</h2>
+
+<p>The one-machine scalable DataFrames focus on either parallelizing computation or allowing data to not all reside in memory at the same time (e.g., some can reside on disk). To a certain extent, this “data can reside on disk” approach can be solved with swap files at the OS level, but in practice having the library do intelligent paging in and out of elements has its benefits.</p>
+
+
+
+
+
+
+
+
+
+
+<section data-type="sect3" data-pdf-bookmark="Pandas"><div class="sect3" id="id136">
+<h3>Pandas</h3>
+
+<p>It may seem silly to mention <a data-type="indexterm" data-primary="scaling DataFrames" data-secondary="one-machine" data-tertiary="pandas" id="id1047"/><a data-type="indexterm" data-primary="pandas" id="id1048"/><a data-type="indexterm" data-primary="one-machine scalable DataFrames" data-secondary="pandas" id="id1049"/>pandas in a section on scaling DataFrames, but it’s useful to remember what the baseline is that we’re comparing against. Pandas is, generally, single threaded and requires that all of the data fits in memory on a single machine. There are various tricks that you can use to handle larger datasets in pandas, such as creating huge swap files or serially processing smaller chunks. It’s good to note that many of these techniques are incorporated in the tools for scaling pandas, so if you need to do that, it’s probably time to start exploring the options to scale. On the other hand, if everything is working fine in pandas, you get 100% pandas API compatibility by using pandas itself, something none of the other options are able to guarantee. Also, <a href="https://oreil.ly/IzYDb">pandas is a direct requirement more than any of the scalable pandas tools are</a>.</p>
+</div></section>
+
+
+
+
+
+
+
+
+
+
+<section data-type="sect3" data-pdf-bookmark="H2O’s DataTable"><div class="sect3" id="id137">
+<h3>H2O’s DataTable</h3>
+
+<p>DataTable is a single-machine <a data-type="indexterm" data-primary="scaling DataFrames" data-secondary="one-machine" data-tertiary="DataTable" id="id1050"/><a data-type="indexterm" data-primary="one-machine scalable DataFrames" data-secondary="DataTable" id="id1051"/><a data-type="indexterm" data-primary="DataTable" id="id1052"/>DataFrame-like attempt to scale processing up to 
+<span class="keep-together">100 GB</span> (while the project authors describe this as “big data,” we view it as more along the lines of medium-sized data). Despite being for Python, DataTable, instead of copying the pandas APIs, aims to inherit much of R’s <code>data.table</code> APIs. This can make it a great choice for a team coming from R, but for dedicated pandas users it is likely less appealing. DataTable is also a single-company open source project, residing under H2O’s GitHub rather than in a foundation or on its own. At the time of this writing, it has a <a href="https://oreil.ly/8vgA5">relatively concentrated location of developer activity</a>. It has active CI (being run on incoming PRs), which we believe suggests higher-quality software. DataTable can use OpenMP to parallelize computation on a single machine, but it does not require OpenMP.</p>
+</div></section>
+
+
+
+
+
+
+
+
+
+
+<section data-type="sect3" data-pdf-bookmark="Polars"><div class="sect3" id="id138">
+<h3>Polars</h3>
+
+<p>Polars is another single-machine <a data-type="indexterm" data-primary="scaling DataFrames" data-secondary="one-machine" data-tertiary="polars" id="id1053"/><a data-type="indexterm" data-primary="one-machine scalable DataFrames" data-secondary="polars" id="id1054"/><a data-type="indexterm" data-primary="polars" id="id1055"/>scalable DataFrame, but it takes the approach of writing its core functionality in Rust instead of 
+<span class="keep-together">C/C++</span> or Fortran. Like many of the distributed DataFrame tools, polars uses the ASF’s Arrow project for storing the DataFrames. Similarly, polars uses lazy evaluation to pipeline operations and internally partition/chunk the DataFrame, so (most of the time) it needs to have only a subset of the data in memory at any one time. Polars has one of the <a href="https://oreil.ly/zxoFJ">largest developer communities among all single-machine scalable DataFrames</a>. Polars links to benchmarks from its main page, showing it to be substantially faster than many of the distributed tools—but this comparison makes sense only when the distributed tools are constrained to a single machine, which is unlikely. It achieves its parallelism by using all of the cores in a single machine. Polars has <a href="https://oreil.ly/QW5s2">extensive documentation</a>, and it also has an explicit section on what to expect when coming from regular pandas. Not only does it have CI, but it has also integrated benchmark testing as part of each PR and tests against multiple versions of Python and environments.</p>
+</div></section>
+</div></section>
+
+
+
+
+
+
+
+
+<section data-type="sect2" data-pdf-bookmark="Distributed"><div class="sect2" id="id200">
+<h2>Distributed</h2>
+
+<p>The majority of tools for scaling <a data-type="indexterm" data-primary="scaling DataFrames" data-secondary="distributed" id="id1056"/>DataFrames are distributed in nature, since all of the fancy tricks on a single machine can get you only so far.</p>
+
+
+
+
+
+
+
+
+
+
+<section data-type="sect3" data-pdf-bookmark="ASF Spark DataFrame"><div class="sect3" id="id139">
+<h3>ASF Spark DataFrame</h3>
+
+<p>Spark started out with what it <a data-type="indexterm" data-primary="scaling DataFrames" data-secondary="Spark" id="id1057"/><a data-type="indexterm" data-primary="Spark DataFrames" id="id1058"/>called a resilient distributed dataset (RDD) and then quickly added a more DataFrame-like API called DataFrames. This caused much excitement, but many folks interpreted it to mean “pandas-like,” whereas Spark’s (initial) DataFrames was more akin to “SQL-like” DataFrames. Spark is written primarily in Scala and Java, both of which run on the <a data-type="indexterm" data-primary="JVM (Java Virtual Machine)" id="id1059"/><a data-type="indexterm" data-primary="Java Virtual Machine (JVM)" id="id1060"/>Java Virtual Machine (JVM). While Spark has a Python API, it involves substantial data transfer between the JVM and Python, which can be slow and can increase memory requirements. Spark DataFrames was created before ASF Arrow, and so it has its own in-memory storage format, but it has since added support for using Arrow for communication between the JVM and Python.</p>
+
+<p>PySpark errors are especially difficult to debug, since when anything goes wrong you get a Java exception along with a Python exception.</p>
+</div></section>
+
+
+
+
+
+
+
+
+
+
+<section data-type="sect3" data-pdf-bookmark="SparklingPandas"><div class="sect3" id="id140">
+<h3>SparklingPandas</h3>
+
+<p>Since Holden co-wrote SparklingPandas, it is the one <a data-type="indexterm" data-primary="scaling DataFrames" data-secondary="SparklingPandas" id="id1061"/><a data-type="indexterm" data-primary="SparklingPandas" id="id1062"/>library we can confidently say not to use without having to worry about people being upset.<sup><a data-type="noteref" id="id1063-marker" href="app02.xhtml#id1063">2</a></sup> SparklingPandas is built on top of ASF Spark’s RDD and DataFrame APIs to provide a more Python-like API, but as the logo is a panda eating bamboo on a sticky note, you can see that we didn’t get all the way. SparklingPandas did show it was possible to provide a pandas-like experience by reusing parts of pandas itself.</p>
+
+<p>For embarrassingly parallel types of operations, adding each function from the pandas API by using <code>map</code> to delegate the Python code on each DataFrame was very fast. Some operations, like dtypes, were evaluated on just the first DataFrame. Grouped and window operations were more complicated.</p>
+
+<p>Since the initial co-authors had day jobs with other focus areas, the project failed to move beyond proof-of-concept.</p>
+</div></section>
+
+
+
+
+
+
+
+
+
+
+<section data-type="sect3" data-pdf-bookmark="Spark Koalas/Spark pandas DataFrames"><div class="sect3" id="id141">
+<h3>Spark Koalas/Spark pandas DataFrames</h3>
+
+<p>The Koalas project, which was <a data-type="indexterm" data-primary="scaling DataFrames" data-secondary="Koalas" id="id1064"/><a data-type="indexterm" data-primary="Koalas" id="id1065"/><a data-type="indexterm" data-primary="scaling DataFrames" data-secondary="pandas" id="id1066"/><a data-type="indexterm" data-primary="pandas" id="id1067"/>integrated into Spark 3.2, initially came out of Databricks. Koalas follows a similar approach of chunking pandas DataFrames, but these DataFrames are represented as Spark DataFrames rather than Arrow DataFrames. Like most of the systems, the DataFrames are lazily evaluated to allow for pipelining. Arrow is used to transfer data to and from the JVM, so you still have all of the type restrictions of Arrow. This project benefits from being part of a large community and being interoperable with much of the traditional big data stack. This comes from being a part of the JVM and Hadoop ecosystem, which also comes with some downsides for performance. At present, moving data between the JVM and Python increases overhead, and in general, Spark is focused on supporting heavier-weight tasks.</p>
+
+<p>Grouped operations on Spark Koalas/Spark pandas DataFrames do not yet support partial aggregations. This means that all the data for one key must fit on one node.</p>
+</div></section>
+
+
+
+
+
+
+
+
+
+
+<section data-type="sect3" data-pdf-bookmark="Cylon"><div class="sect3" id="id142">
+<h3>Cylon</h3>
+
+<p>Cylon’s home page is very focused <a data-type="indexterm" data-primary="scaling DataFrames" data-secondary="Cylon" id="id1068"/><a data-type="indexterm" data-primary="Cylon" id="id1069"/>on benchmarks, but the benchmark it has chosen (comparing Cylon to Spark on a single machine) is one that is easy to meet, since Spark is designed for distributed usage instead of single-machine usage. Cylon uses PyArrow for storage along with OpenMPI for managing its task parallelism. Cylon also has a GPU backend called GCylon. PyClon’s documentation has a lot of room for growth, and the link to its API documentation is currently broken.</p>
+
+<p>The Cylon community seems to have ~30 messages per year, and attempting to find any open source users of the DataFrame library <a href="https://oreil.ly/uroxr">comes up empty</a>. The <a href="https://oreil.ly/dWC16">contributor file</a> and LinkedIn show the majority of contributors all share a common university.</p>
+
+<p>The project follows several software engineering best practices, like having CI enabled. That being said, the comparatively small (visibly active) community and lack of clear documentation mean that, in our mind, depending on Cylon would be more involved than some other options.</p>
+</div></section>
+
+
+
+
+
+
+
+
+
+
+<section data-type="sect3" data-pdf-bookmark="Ibis"><div class="sect3" id="id143">
+<h3>Ibis</h3>
+
+<p>The Ibis project <a href="https://oreil.ly/9OL2f">promises</a> “the flexibility of Python analytics with the scale and <a data-type="indexterm" data-primary="scaling DataFrames" data-secondary="Ibis" id="id1070"/><a data-type="indexterm" data-primary="Ibis" id="id1071"/>performance of modern SQL.” It compiles your somewhat pandas-like code (as much as possible) into SQL. This is convenient, as not only do many big data systems (like Hive, Spark, BigQuery, etc.) support SQL, but it is also the de facto query language for the majority of databases out there. Unfortunately, SQL is not uniformly implemented, so moving between backend engines may result in breakages, but Ibis does a great job of <a href="https://oreil.ly/g2E_W">tracking which APIs work with which backends</a>. Of course, this design limits you to the kinds of expressions that can be expressed in SQL.</p>
+</div></section>
+
+
+
+
+
+
+
+
+
+
+<section data-type="sect3" data-pdf-bookmark="Modin"><div class="sect3" id="id144">
+<h3>Modin</h3>
+
+<p>Like Ibis, Modin is slightly different <a data-type="indexterm" data-primary="scaling DataFrames" data-secondary="Modin" id="id1072"/><a data-type="indexterm" data-primary="Modin" id="id1073"/>from many of the other tools in that it has multiple distributed backends, including Ray, Dask, and OpenMPI. Modin has the stated goal of handling from 1 MB to 1+ TB, which is a wide range to attempt to cover. <a href="https://modin.org">Modin’s home page</a> also makes a claim to “Scale your pandas workflows by changing a single line of code,” which, while catchy, in our opinion overpromises on the API compatibility and knowledge required to take advantage of parallel and distributed systems.<sup><a data-type="noteref" id="id1074-marker" href="app02.xhtml#id1074">3</a></sup> In our opinion, Modin is very exciting since it seems silly for each distributed computing engine to have its own re-implementation of the pandas APIs. Modin has a very active developer community, with core developers from multiple companies and backgrounds. On the other hand, we feel that the current documentation does not do a good enough job of setting users up for success with understanding the limitations of Modin. Thankfully, much of the intuition you will have developed around Dask DataFrames still applies to Modin. We think Modin is ideal for individuals who need to move between different computation engines.</p>
+<div data-type="warning" epub:type="warning"><h6>Warning</h6>
+<p>Unlike the other systems, Modin is eagerly evaluated, meaning it can’t take advantage of automatic pipelining of your computation.</p>
+</div>
+</div></section>
+
+
+
+
+
+
+
+
+
+
+<section data-type="sect3" data-pdf-bookmark="Vanilla Dask DataFrame"><div class="sect3" id="id201">
+<h3>Vanilla Dask DataFrame</h3>
+
+<p>We are biased here, but we think <a data-type="indexterm" data-primary="scaling DataFrames" data-secondary="vanilla" id="id1075"/>that Dask’s DataFrame library does an excellent job of striking a balance between being an easy on-ramp and being clear about its limitations. Dask’s DataFrames have a large number of contributors from a variety of different companies. Dask DataFrames also have a relatively high level of parallelism, including for grouped operations, not found in many of the other systems.</p>
+</div></section>
+
+
+
+
+
+
+
+
+
+
+<section data-type="sect3" data-pdf-bookmark="cuDF"><div class="sect3" id="id145">
+<h3>cuDF</h3>
+
+<p>cuDF extends Dask DataFrame <a data-type="indexterm" data-primary="scaling DataFrames" data-secondary="cuDF" id="id1076"/><a data-type="indexterm" data-primary="cuDF" id="id1077"/>to add support for GPUs. It is, however, primarily a single-company project, from NVIDIA. This makes sense since NVIDIA wants to sell you more GPUs, but it also does mean it is unlikely to, say, add support for AMD GPUs anytime soon. This project is likely to be maintained if NVIDIA continues to see a future in selling more GPUs for data analytics as best served with pandas-like interfaces.</p>
+
+<p>cuDF not only has CI but also has a strong <a data-type="indexterm" data-primary="scaling DataFrames" data-secondary="tools" data-startref="sclbdftls" id="id1078"/>culture of code review with per-area responsibilities.</p>
+</div></section>
+</div></section>
+</div></section>
+
+
+
+
+
+
+<section data-type="sect1" data-pdf-bookmark="Conclusion"><div class="sect1" id="id283">
+<h1>Conclusion</h1>
+
+<p>In an ideal world, there would be a clear winner, but as you can see, the different scalable DataFrame libraries serve different purposes, and except those already abandoned, all have potential uses. We think all of these libraries have their place, depending on your exact needs.</p>
+</div></section>
+<div data-type="footnotes"><p data-type="footnote" id="id1044"><sup><a href="app02.xhtml#id1044-marker">1</a></sup> Arrow allows all data types to be null. Pandas does not allow integer columns to contain nulls. When reading Arrow files as pandas, if an Int column does not contain nulls, it will be read as Int in the pandas DataFrame, but if at runtime it encounters a null, the entire column will be read as a float.</p><p data-type="footnote" id="id1063"><sup><a href="app02.xhtml#id1063-marker">2</a></sup> Besides ourselves, and if you’re reading this you’ve likely helped Holden buy a cup of coffee and that’s enough. :)</p><p data-type="footnote" id="id1074"><sup><a href="app02.xhtml#id1074-marker">3</a></sup> For example, see the confusion around the limitation with groupBy + apply, which is not otherwise documented besides a <a href="https://oreil.ly/rIeam">GitHub issue</a>.</p></div></div></section></div></body></html>

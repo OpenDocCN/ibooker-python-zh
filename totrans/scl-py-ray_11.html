@@ -1,0 +1,1028 @@
+<html><head></head><body><section data-pdf-bookmark="Chapter 10. How Ray Powers Machine Learning" data-type="chapter" epub:type="chapter"><div class="chapter" id="ch10">
+<h1><span class="label">Chapter 10. </span>How Ray Powers Machine Learning</h1>
+
+
+<p>You now have a solid grasp of everything in Ray needed to get your data ready to train ML models. In this chapter, you will learn how to use the popular Ray libraries <a href="https://oreil.ly/2a56M">scikit-learn</a>, <a href="https://oreil.ly/TAofd">XGBoost</a>, and <a href="https://oreil.ly/ziXhR">PyTorch</a>. This chapter is not intended to introduce these libraries, so if you aren’t familiar with any of them, you should pick one (and we suggest scikit-learn) to read up on first. Even for those familiar with these libraries, refreshing your memory by consulting your favorite tools’ documentation will be beneficial. This chapter is about how Ray is used to power ML, rather than a tutorial on ML.</p>
+<div data-type="note" epub:type="note"><h6>Note</h6>
+<p>If you are interested in going deeper into ML with Ray, <a class="orm:hideurl" href="https://oreil.ly/k5ItW"><em>Learning Ray</em></a> by Max Pumperla et al. (O’Reilly) is a full-length book focused on ML with Ray that can expand your ML skillset.</p>
+</div>
+
+<p>Ray has two built-in libraries for ML. You will learn how to use Ray’s reinforcement learning library, <a href="https://oreil.ly/3Rv0B">RLlib</a>, with TensorFlow and use generic hyperparameter tuning via <a href="https://oreil.ly/9ISlc">Tune</a>, which can be used with any ML library.</p>
+
+
+
+
+
+
+<section data-pdf-bookmark="Using scikit-learn with Ray" data-type="sect1"><div class="sect1" id="idm45354765785888">
+<h1>Using scikit-learn with Ray</h1>
+
+<p>scikit-learn is <a data-primary="ML (machine learning)" data-secondary="scikit-learn" data-type="indexterm" id="ml-scikit"/><a data-primary="machine learning (ML)" data-secondary="scikit-learn" data-type="indexterm" id="machine-scikit"/><a data-primary="scikit-learn" data-type="indexterm" id="scikit-learn"/>one of the most widely used tools in the ML community, offering dozens of easy-to-use ML algorithms. It was initially developed by David Cournapeau as a Google Summer of Code project in 2007. It provides a wide range of supervised and unsupervised learning algorithms via a consistent interface.</p>
+
+<p class="pagebreak-before">The scikit-learn ML algorithms include the following:</p>
+<dl>
+<dt>Clustering</dt>
+<dd>
+<p>For grouping unlabeled data such as k-means</p>
+</dd>
+<dt>Supervised models</dt>
+<dd>
+<p>Including generalized linear models, discriminant analysis, naive Bayes, lazy methods, neural networks, support vector machines, and decision trees</p>
+</dd>
+<dt>Ensemble methods</dt>
+<dd>
+<p>For combining the predictions of multiple supervised models</p>
+</dd>
+</dl>
+
+<p>scikit-learn also contains important tooling to support ML:</p>
+<dl>
+<dt>Cross-validation</dt>
+<dd>
+<p>For estimating the performance of supervised models on unseen data</p>
+</dd>
+<dt>Datasets</dt>
+<dd>
+<p>For test datasets and for generating datasets with specific properties for investigating model behavior</p>
+</dd>
+<dt>Dimensionality reduction</dt>
+<dd>
+<p>For reducing the number of attributes in data for summarization, visualization, and feature selection such as principal component analysis</p>
+</dd>
+<dt>Feature extraction</dt>
+<dd>
+<p>For defining attributes in image and text data</p>
+</dd>
+<dt>Feature selection</dt>
+<dd>
+<p>For identifying meaningful attributes from which to create supervised models</p>
+</dd>
+<dt>Parameter tuning</dt>
+<dd>
+<p>For getting the most out of supervised models</p>
+</dd>
+<dt>Manifold learning</dt>
+<dd>
+<p>For summarizing and depicting complex multidimensional data</p>
+</dd>
+</dl>
+
+<p>Although you can use most of the scikit-learn APIs directly with Ray for tuning the model’s hyperparameters, things get a bit more involved when you want to parallelize execution.</p>
+
+<p>If we take the basic code used for the creation of the model in <a data-type="xref" href="ch07.html#ch07">Chapter 7</a>, and try to optimize parameters for the decision tree, our code will look like <a data-type="xref" href="#skex">Example 10-1</a>.</p>
+<div class="example-margin-7" data-type="example" id="skex">
+<h5><span class="label">Example 10-1. </span><a href="https://oreil.ly/z1KPe">Using scikit-learn to build our wine-quality model</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="c1"># Get data</code>
+<code class="n">df</code> <code class="o">=</code> <code class="n">pd</code><code class="o">.</code><code class="n">read_csv</code><code class="p">(</code><code class="s2">"winequality-red.csv"</code><code class="p">,</code> <code class="n">delimiter</code><code class="o">=</code><code class="s2">";"</code><code class="p">)</code>
+<code class="nb">print</code><code class="p">(</code><code class="sa">f</code><code class="s2">"Rows, columns: </code><code class="si">{</code><code class="nb">str</code><code class="p">(</code><code class="n">df</code><code class="o">.</code><code class="n">shape</code><code class="p">)</code><code class="si">}</code><code class="s2">"</code><code class="p">)</code>
+<code class="nb">print</code><code class="p">(</code><code class="n">df</code><code class="o">.</code><code class="n">head</code><code class="p">)</code>
+<code class="nb">print</code><code class="p">(</code><code class="n">df</code><code class="o">.</code><code class="n">isna</code><code class="p">()</code><code class="o">.</code><code class="n">sum</code><code class="p">())</code>
+
+<code class="c1"># Create Classification version of target variable</code>
+<code class="n">df</code><code class="p">[</code><code class="s1">'goodquality'</code><code class="p">]</code> <code class="o">=</code> <code class="p">[</code><code class="mi">1</code> <code class="k">if</code> <code class="n">x</code> <code class="o">&gt;=</code> <code class="mi">6</code> <code class="k">else</code> <code class="mi">0</code> <code class="k">for</code> <code class="n">x</code> <code class="ow">in</code> <code class="n">df</code><code class="p">[</code><code class="s1">'quality'</code><code class="p">]]</code>
+<code class="n">X</code> <code class="o">=</code> <code class="n">df</code><code class="o">.</code><code class="n">drop</code><code class="p">([</code><code class="s1">'quality'</code><code class="p">,</code><code class="s1">'goodquality'</code><code class="p">],</code> <code class="n">axis</code> <code class="o">=</code> <code class="mi">1</code><code class="p">)</code>
+<code class="n">y</code> <code class="o">=</code> <code class="n">df</code><code class="p">[</code><code class="s1">'goodquality'</code><code class="p">]</code>
+<code class="nb">print</code><code class="p">(</code><code class="n">df</code><code class="p">[</code><code class="s1">'goodquality'</code><code class="p">]</code><code class="o">.</code><code class="n">value_counts</code><code class="p">())</code>
+
+<code class="c1"># Normalize feature variables</code>
+<code class="n">X_features</code> <code class="o">=</code> <code class="n">X</code>
+<code class="n">X</code> <code class="o">=</code> <code class="n">StandardScaler</code><code class="p">()</code><code class="o">.</code><code class="n">fit_transform</code><code class="p">(</code><code class="n">X</code><code class="p">)</code>
+<code class="c1"># Splitting the data</code>
+<code class="n">X_train</code><code class="p">,</code> <code class="n">X_test</code><code class="p">,</code> <code class="n">y_train</code><code class="p">,</code> <code class="n">y_test</code> <code class="o">=</code> \
+    <code class="n">train_test_split</code><code class="p">(</code><code class="n">X</code><code class="p">,</code> <code class="n">y</code><code class="p">,</code> <code class="n">test_size</code><code class="o">=</code><code class="mf">.25</code><code class="p">,</code> <code class="n">random_state</code><code class="o">=</code><code class="mi">0</code><code class="p">)</code>
+
+<code class="n">param_model</code> <code class="o">=</code> <code class="p">{</code><code class="s1">'max_depth'</code><code class="p">:</code><code class="nb">range</code><code class="p">(</code><code class="mi">10</code><code class="p">,</code> <code class="mi">20</code><code class="p">),</code>
+                <code class="s1">'max_features'</code><code class="p">:</code> <code class="nb">range</code><code class="p">(</code><code class="mi">3</code><code class="p">,</code><code class="mi">11</code><code class="p">)}</code>
+
+<code class="n">start</code> <code class="o">=</code> <code class="n">time</code><code class="o">.</code><code class="n">time</code><code class="p">()</code>
+<code class="n">model</code> <code class="o">=</code> <code class="n">GridSearchCV</code><code class="p">(</code><code class="n">DecisionTreeClassifier</code><code class="p">(</code><code class="n">random_state</code><code class="o">=</code><code class="mi">1</code><code class="p">),</code>
+                     <code class="n">param_grid</code><code class="o">=</code><code class="n">param_model</code><code class="p">,</code>
+                     <code class="n">scoring</code><code class="o">=</code><code class="s1">'accuracy'</code><code class="p">,</code>
+                     <code class="n">n_jobs</code><code class="o">=-</code><code class="mi">1</code><code class="p">)</code>
+
+<code class="n">model</code> <code class="o">=</code> <code class="n">model</code><code class="o">.</code><code class="n">fit</code><code class="p">(</code><code class="n">X_train</code><code class="p">,</code> <code class="n">y_train</code><code class="p">)</code>
+<code class="nb">print</code><code class="p">(</code><code class="sa">f</code><code class="s2">"executed in </code><code class="si">{</code><code class="n">time</code><code class="o">.</code><code class="n">time</code><code class="p">()</code> <code class="o">-</code> <code class="n">start</code><code class="si">}</code><code class="s2">, "</code>
+      <code class="sa">f</code><code class="s2">"nodes </code><code class="si">{</code><code class="n">model</code><code class="o">.</code><code class="n">best_estimator_</code><code class="o">.</code><code class="n">tree_</code><code class="o">.</code><code class="n">node_count</code><code class="si">}</code><code class="s2">, "</code>
+      <code class="sa">f</code><code class="s2">"max_depth </code><code class="si">{</code><code class="n">model</code><code class="o">.</code><code class="n">best_estimator_</code><code class="o">.</code><code class="n">tree_</code><code class="o">.</code><code class="n">max_depth</code><code class="si">}</code><code class="s2">"</code><code class="p">)</code>
+
+<code class="n">y_pred</code> <code class="o">=</code> <code class="n">model</code><code class="o">.</code><code class="n">predict</code><code class="p">(</code><code class="n">X_test</code><code class="p">)</code>
+<code class="nb">print</code><code class="p">(</code><code class="n">classification_report</code><code class="p">(</code><code class="n">y_test</code><code class="p">,</code> <code class="n">y_pred</code><code class="p">))</code></pre></div>
+
+<p>Note that here, in <code>GridSearchCV</code>, we are using the parameter <code>n_jobs=-1</code>, which instructs the implementation to run model evaluation in parallel using all available processors.<sup><a data-type="noteref" href="ch10.html#idm45354765564752" id="idm45354765564752-marker">1</a></sup> Running model evaluation in parallel, even on a single machine, can result in an order-of-magnitude performance improvement.</p>
+
+<p>Unfortunately, this does not work out of the box with Ray clusters. <code>GridSearchCV</code> uses <a href="https://oreil.ly/s9x0Y">Joblib</a> for parallel execution (as do many other scikit-learn algorithms). Joblib does not work with Ray out of the box.</p>
+
+<p>Ray <a href="https://oreil.ly/80Dwb">implements a backend for Joblib</a> with a Ray actors pool (see <a data-type="xref" href="ch04.html#ch04">Chapter 4</a>) instead of local processes. This allows you to simply change the Joblib backend to switch scikit-learn from using local processes to Ray.</p>
+
+<p>Concretely, to make <a data-type="xref" href="#skex">Example 10-1</a> run using Ray, you need to register the Ray backend for Joblib and use it for the <code>GridSearchCV</code> execution, as in <a data-type="xref" href="#skex_joblib">Example 10-2</a>.</p>
+<div data-type="example" id="skex_joblib">
+<h5><span class="label">Example 10-2. </span><a href="https://oreil.ly/cqR34">Using a Ray Joblib backend with scikit-learn to build the wine-quality model</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="c1"># Get data</code>
+<code class="n">df</code> <code class="o">=</code> <code class="n">pd</code><code class="o">.</code><code class="n">read_csv</code><code class="p">(</code><code class="s2">"winequality-red.csv"</code><code class="p">,</code> <code class="n">delimiter</code><code class="o">=</code><code class="s2">";"</code><code class="p">)</code>
+<code class="nb">print</code><code class="p">(</code><code class="sa">f</code><code class="s2">"Rows, columns: </code><code class="si">{</code><code class="nb">str</code><code class="p">(</code><code class="n">df</code><code class="o">.</code><code class="n">shape</code><code class="p">)</code><code class="si">}</code><code class="s2">"</code><code class="p">)</code>
+<code class="nb">print</code><code class="p">(</code><code class="n">df</code><code class="o">.</code><code class="n">head</code><code class="p">)</code>
+<code class="nb">print</code><code class="p">(</code><code class="n">df</code><code class="o">.</code><code class="n">isna</code><code class="p">()</code><code class="o">.</code><code class="n">sum</code><code class="p">())</code>
+
+<code class="c1"># Create Classification version of target variable</code>
+<code class="n">df</code><code class="p">[</code><code class="s1">'goodquality'</code><code class="p">]</code> <code class="o">=</code> <code class="p">[</code><code class="mi">1</code> <code class="k">if</code> <code class="n">x</code> <code class="o">&gt;=</code> <code class="mi">6</code> <code class="k">else</code> <code class="mi">0</code> <code class="k">for</code> <code class="n">x</code> <code class="ow">in</code> <code class="n">df</code><code class="p">[</code><code class="s1">'quality'</code><code class="p">]]</code>
+<code class="n">X</code> <code class="o">=</code> <code class="n">df</code><code class="o">.</code><code class="n">drop</code><code class="p">([</code><code class="s1">'quality'</code><code class="p">,</code><code class="s1">'goodquality'</code><code class="p">],</code> <code class="n">axis</code> <code class="o">=</code> <code class="mi">1</code><code class="p">)</code>
+<code class="n">y</code> <code class="o">=</code> <code class="n">df</code><code class="p">[</code><code class="s1">'goodquality'</code><code class="p">]</code>
+<code class="nb">print</code><code class="p">(</code><code class="n">df</code><code class="p">[</code><code class="s1">'goodquality'</code><code class="p">]</code><code class="o">.</code><code class="n">value_counts</code><code class="p">())</code>
+
+<code class="c1"># Normalize feature variables</code>
+<code class="n">X_features</code> <code class="o">=</code> <code class="n">X</code>
+<code class="n">X</code> <code class="o">=</code> <code class="n">StandardScaler</code><code class="p">()</code><code class="o">.</code><code class="n">fit_transform</code><code class="p">(</code><code class="n">X</code><code class="p">)</code>
+<code class="c1"># Splitting the data</code>
+<code class="n">X_train</code><code class="p">,</code> <code class="n">X_test</code><code class="p">,</code> <code class="n">y_train</code><code class="p">,</code> <code class="n">y_test</code> <code class="o">=</code> <code class="n">train_test_split</code><code class="p">(</code><code class="n">X</code><code class="p">,</code> <code class="n">y</code><code class="p">,</code> <code class="n">test_size</code><code class="o">=</code><code class="mf">.25</code><code class="p">,</code> 
+                                                    <code class="n">random_state</code><code class="o">=</code><code class="mi">0</code><code class="p">)</code>
+
+<code class="n">param_model</code> <code class="o">=</code> <code class="p">{</code><code class="s1">'max_depth'</code><code class="p">:</code><code class="nb">range</code><code class="p">(</code><code class="mi">10</code><code class="p">,</code> <code class="mi">20</code><code class="p">),</code>
+               <code class="s1">'max_features'</code><code class="p">:</code> <code class="nb">range</code><code class="p">(</code><code class="mi">3</code><code class="p">,</code><code class="mi">11</code><code class="p">)}</code>
+
+<code class="n">start</code> <code class="o">=</code> <code class="n">time</code><code class="o">.</code><code class="n">time</code><code class="p">()</code>
+
+<code class="n">mode</code> <code class="o">=</code> <code class="n">GridSearchCV</code><code class="p">(</code><code class="n">DecisionTreeClassifier</code><code class="p">(</code><code class="n">random_state</code><code class="o">=</code><code class="mi">1</code><code class="p">),</code>
+                     <code class="n">param_grid</code><code class="o">=</code><code class="n">param_model</code><code class="p">,</code>
+                     <code class="n">scoring</code><code class="o">=</code><code class="s1">'accuracy'</code><code class="p">,</code>
+                     <code class="n">n_jobs</code><code class="o">=-</code><code class="mi">1</code><code class="p">)</code>
+
+<code class="n">register_ray</code><code class="p">()</code>
+<code class="k">with</code> <code class="n">joblib</code><code class="o">.</code><code class="n">parallel_backend</code><code class="p">(</code><code class="s1">'ray'</code><code class="p">):</code>
+    <code class="n">model</code> <code class="o">=</code> <code class="n">mode</code><code class="o">.</code><code class="n">fit</code><code class="p">(</code><code class="n">X_train</code><code class="p">,</code> <code class="n">y_train</code><code class="p">)</code>
+
+<code class="n">model</code> <code class="o">=</code> <code class="n">model</code><code class="o">.</code><code class="n">fit</code><code class="p">(</code><code class="n">X_train</code><code class="p">,</code> <code class="n">y_train</code><code class="p">)</code>
+<code class="nb">print</code><code class="p">(</code><code class="sa">f</code><code class="s2">"executed in </code><code class="si">{</code><code class="n">time</code><code class="o">.</code><code class="n">time</code><code class="p">()</code> <code class="o">-</code> <code class="n">start</code><code class="si">}</code><code class="s2">, "</code>
+      <code class="sa">f</code><code class="s2">"nodes </code><code class="si">{</code><code class="n">model</code><code class="o">.</code><code class="n">best_estimator_</code><code class="o">.</code><code class="n">tree_</code><code class="o">.</code><code class="n">node_count</code><code class="si">}</code><code class="s2">, "</code>
+      <code class="sa">f</code><code class="s2">"max_depth </code><code class="si">{</code><code class="n">model</code><code class="o">.</code><code class="n">best_estimator_</code><code class="o">.</code><code class="n">tree_</code><code class="o">.</code><code class="n">max_depth</code><code class="si">}</code><code class="s2">"</code><code class="p">)</code>
+
+<code class="n">y_pred</code> <code class="o">=</code> <code class="n">model</code><code class="o">.</code><code class="n">predict</code><code class="p">(</code><code class="n">X_test</code><code class="p">)</code>
+<code class="nb">print</code><code class="p">(</code><code class="n">classification_report</code><code class="p">(</code><code class="n">y_test</code><code class="p">,</code> <code class="n">y_pred</code><code class="p">))</code></pre></div>
+<aside data-type="sidebar" epub:type="sidebar"><div class="sidebar" id="idm45354765104208">
+<h5>Using the Ray Joblib Backend for scikit-learn</h5>
+<p>This code works, but if we compare the execution time for the default and Ray backends, you can see that using the Ray backend is slower in our example (during testing, we saw 8.2 seconds with Joblib and 25.1 seconds with Ray). To understand this difference, you need to return to <a data-type="xref" href="ch03.html#ch03">Chapter 3</a>, which explains the overhead incurred when using Ray’s remote functions.</p>
+
+<p>This result basically reemphasizes that Ray remote execution is advantageous only when remote execution takes enough time to offset such an overhead, which is not the case for this toy example. The advantage of Ray’s implementation starts to grow as the sizes of the model, data, and <a data-primary="ML (machine learning)" data-secondary="scikit-learn" data-startref="ml-scikit" data-type="indexterm" id="idm45354765101920"/><a data-primary="machine learning (ML)" data-secondary="scikit-learn" data-startref="machine-scikit" data-type="indexterm" id="idm45354765100672"/><a data-primary="scikit-learn" data-startref="scikit-learn" data-type="indexterm" id="idm45354765099456"/><a data-primary="Joblib" data-startref="joblib" data-type="indexterm" id="idm45354765213072"/>cluster grow.</p>
+</div></aside>
+</div></section>
+
+
+
+
+
+
+<section data-pdf-bookmark="Using Boosting Algorithms with Ray" data-type="sect1"><div class="sect1" id="idm45354765785264">
+<h1>Using Boosting Algorithms with Ray</h1>
+
+<p>Boosting <a data-primary="ML (machine learning)" data-secondary="boosting algorithms" data-type="indexterm" id="idm45354765210368"/><a data-primary="machine learning (ML)" data-secondary="boosting algorithms" data-type="indexterm" id="idm45354765209360"/><a data-primary="boosting algorithms" data-type="indexterm" id="idm45354765208416"/>algorithms are well suited to parallel computing as they train multiple models. You can train each submodel independently and then train another model on how to combine the results. These are the two most popular boosting libraries today:</p>
+<dl>
+<dt>XGBoost</dt>
+<dd>
+<p>An optimized distributed gradient boosting library designed to be highly efficient, flexible, and portable. It implements ML algorithms under the <a href="https://oreil.ly/ceOze">gradient boosting framework</a>. XGBoost provides a parallel tree boosting—also known as gradient boosting decision tree (GBDT) and gradient boosting machines <span class="keep-together">(GBM)—</span>that solves many data science problems quickly and accurately. The same code runs on many distributed environments—including Hadoop, Sun Grid Engine (SGE), and Message Passing Interface (MPI)—and can solve problems beyond billions of examples.</p>
+</dd>
+<dt><a href="https://oreil.ly/PdV9o">LightGBM</a></dt>
+<dd>
+<p>A <a data-primary="LightGBM" data-type="indexterm" id="idm45354765202928"/>fast, distributed, high-performance <a href="https://oreil.ly/XZdQD">gradient boosting framework</a> based on a decision tree algorithm, used for ranking, classification, and many other ML tasks.</p>
+</dd>
+</dl>
+
+<p>We will compare how Ray parallelizes training with XGBoost and LightGBM, but comparing the details of the libraries is beyond the scope of this book. If you’re interested in the difference between the libraries, a good comparison is found in <a href="https://oreil.ly/yk800">“XGBoost vs. LighGBM: How Are They Different”</a> by Sumit Saha.</p>
+
+
+
+
+
+
+
+
+<section class="pagebreak-before less_space" data-pdf-bookmark="Using XGBoost" data-type="sect2"><div class="sect2" id="idm45354765199840">
+<h2>Using XGBoost</h2>
+
+<p>Continuing <a data-primary="ML (machine learning)" data-secondary="boosting algorithms" data-tertiary="XGBoost" data-type="indexterm" id="ml-boost-xgboost"/><a data-primary="machine learning (ML)" data-secondary="boosting algorithms" data-tertiary="XGBoost" data-type="indexterm" id="machine-boost-xgboost"/><a data-primary="boosting algorithms" data-secondary="XGBoost" data-type="indexterm" id="boost-xgboost"/><a data-primary="XGBoost" data-type="indexterm" id="xgboost"/>with our wine-quality example, we build a model using XGBoost, and the code to do so is presented in <a data-type="xref" href="#xgboost_example">Example 10-3</a>.</p>
+<div data-type="example" id="xgboost_example">
+<h5><span class="label">Example 10-3. </span><a href="https://oreil.ly/s6ORf">Using XGBoost to build our wine-quality model</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="c1"># Get data</code>
+<code class="n">df</code> <code class="o">=</code> <code class="n">pd</code><code class="o">.</code><code class="n">read_csv</code><code class="p">(</code><code class="s2">"winequality-red.csv"</code><code class="p">,</code> <code class="n">delimiter</code><code class="o">=</code><code class="s2">";"</code><code class="p">)</code>
+<code class="nb">print</code><code class="p">(</code><code class="sa">f</code><code class="s2">"Rows, columns: </code><code class="si">{</code><code class="nb">str</code><code class="p">(</code><code class="n">df</code><code class="o">.</code><code class="n">shape</code><code class="p">)</code><code class="si">}</code><code class="s2">"</code><code class="p">)</code>
+<code class="nb">print</code><code class="p">(</code><code class="n">df</code><code class="o">.</code><code class="n">head</code><code class="p">)</code>
+<code class="nb">print</code><code class="p">(</code><code class="n">df</code><code class="o">.</code><code class="n">isna</code><code class="p">()</code><code class="o">.</code><code class="n">sum</code><code class="p">())</code>
+
+<code class="c1"># Create Classification version of target variable</code>
+<code class="n">df</code><code class="p">[</code><code class="s1">'goodquality'</code><code class="p">]</code> <code class="o">=</code> <code class="p">[</code><code class="mi">1</code> <code class="k">if</code> <code class="n">x</code> <code class="o">&gt;=</code> <code class="mi">6</code> <code class="k">else</code> <code class="mi">0</code> <code class="k">for</code> <code class="n">x</code> <code class="ow">in</code> <code class="n">df</code><code class="p">[</code><code class="s1">'quality'</code><code class="p">]]</code>
+<code class="n">X</code> <code class="o">=</code> <code class="n">df</code><code class="o">.</code><code class="n">drop</code><code class="p">([</code><code class="s1">'quality'</code><code class="p">,</code><code class="s1">'goodquality'</code><code class="p">],</code> <code class="n">axis</code> <code class="o">=</code> <code class="mi">1</code><code class="p">)</code>
+<code class="n">y</code> <code class="o">=</code> <code class="n">df</code><code class="p">[</code><code class="s1">'goodquality'</code><code class="p">]</code>
+<code class="nb">print</code><code class="p">(</code><code class="n">df</code><code class="p">[</code><code class="s1">'goodquality'</code><code class="p">]</code><code class="o">.</code><code class="n">value_counts</code><code class="p">())</code>
+
+<code class="c1"># Normalize feature variables</code>
+<code class="n">X_features</code> <code class="o">=</code> <code class="n">X</code>
+<code class="n">X</code> <code class="o">=</code> <code class="n">StandardScaler</code><code class="p">()</code><code class="o">.</code><code class="n">fit_transform</code><code class="p">(</code><code class="n">X</code><code class="p">)</code>
+<code class="c1"># Splitting the data</code>
+<code class="n">X_train</code><code class="p">,</code> <code class="n">X_test</code><code class="p">,</code> <code class="n">y_train</code><code class="p">,</code> <code class="n">y_test</code> <code class="o">=</code> \
+    <code class="n">train_test_split</code><code class="p">(</code><code class="n">X</code><code class="p">,</code> <code class="n">y</code><code class="p">,</code> <code class="n">test_size</code><code class="o">=</code><code class="mf">.25</code><code class="p">,</code> <code class="n">random_state</code><code class="o">=</code><code class="mi">0</code><code class="p">)</code>
+
+<code class="n">start</code> <code class="o">=</code> <code class="n">time</code><code class="o">.</code><code class="n">time</code><code class="p">()</code>
+<code class="n">model</code> <code class="o">=</code> <code class="n">xgb</code><code class="o">.</code><code class="n">XGBClassifier</code><code class="p">(</code><code class="n">random_state</code><code class="o">=</code><code class="mi">1</code><code class="p">)</code>
+<code class="n">model</code><code class="o">.</code><code class="n">fit</code><code class="p">(</code><code class="n">X_train</code><code class="p">,</code> <code class="n">y_train</code><code class="p">)</code>
+<code class="nb">print</code><code class="p">(</code><code class="sa">f</code><code class="s2">"executed XGBoost in </code><code class="si">{</code><code class="n">time</code><code class="o">.</code><code class="n">time</code><code class="p">()</code> <code class="o">-</code> <code class="n">start</code><code class="si">}</code><code class="s2">"</code><code class="p">)</code>
+<code class="n">y_pred</code> <code class="o">=</code> <code class="n">model</code><code class="o">.</code><code class="n">predict</code><code class="p">(</code><code class="n">X_test</code><code class="p">)</code>
+<code class="nb">print</code><code class="p">(</code><code class="n">classification_report</code><code class="p">(</code><code class="n">y_test</code><code class="p">,</code> <code class="n">y_pred</code><code class="p">))</code></pre></div>
+
+<p>One of the reasons XGBoost is so performant is that it uses <a href="https://oreil.ly/saVa9">OpenMP</a> to <a data-primary="OpenMP" data-type="indexterm" id="idm45354765046112"/>create tree branches independently, which does not directly support Ray. Ray integrates with XGBoost by providing an xgboost-ray library that replaces OpenMP with Ray actor pools. You can use this library either with XGBoost or scikit-learn APIs. In the latter case, the library provides a drop-in replacement for the following estimators:</p>
+
+<ul>
+<li>
+<p><code>RayXGBClassifier</code></p>
+</li>
+<li>
+<p><code>RayXGRegressor</code></p>
+</li>
+<li>
+<p><code>RayXGBRFClassifier</code></p>
+</li>
+<li>
+<p><code>RayXGBRFRegressor</code></p>
+</li>
+<li>
+<p><code>RayXGBRanker</code></p>
+</li>
+</ul>
+
+<p>It also provides <code>RayParams</code>, which allows you to explicitly define the execution parameters for Ray. Using this library, we can modify <a data-type="xref" href="#xgboost_example">Example 10-3</a> to make it work with Ray as shown in <a data-type="xref" href="#xgboost_ray">Example 10-4</a>.</p>
+<div class="example-margin-2" data-type="example" id="xgboost_ray">
+<h5><span class="label">Example 10-4. </span><a href="https://oreil.ly/EgHdZ">Using the XGBoost Ray library to build our wine-quality model</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="n">start</code> <code class="o">=</code> <code class="n">time</code><code class="o">.</code><code class="n">time</code><code class="p">()</code>
+<code class="n">model</code> <code class="o">=</code> <code class="n">RayXGBClassifier</code><code class="p">(</code>
+    <code class="n">n_jobs</code><code class="o">=</code><code class="mi">10</code><code class="p">,</code>  <code class="c1"># In XGBoost-Ray, n_jobs sets the number of actors</code>
+    <code class="n">random_state</code><code class="o">=</code><code class="mi">1</code>
+<code class="p">)</code>
+
+<code class="n">model</code><code class="o">.</code><code class="n">fit</code><code class="p">(</code><code class="n">X</code><code class="o">=</code><code class="n">X_train</code><code class="p">,</code> <code class="n">y</code><code class="o">=</code><code class="n">y_train</code><code class="p">,</code> <code class="n">ray_params</code><code class="o">=</code><code class="n">RayParams</code><code class="p">(</code><code class="n">num_actors</code><code class="o">=</code><code class="mi">3</code><code class="p">))</code>
+<code class="nb">print</code><code class="p">(</code><code class="sa">f</code><code class="s2">"executed XGBoost in </code><code class="si">{</code><code class="n">time</code><code class="o">.</code><code class="n">time</code><code class="p">()</code> <code class="o">-</code> <code class="n">start</code><code class="si">}</code><code class="s2">"</code><code class="p">)</code></pre></div>
+
+<p>Here we used <code>RayParams</code> to specify the size of Ray’s actor pool used for parallelization. Alternatively, you can use the <code>n_jobs</code> parameter in <code>RayXGBClassifier</code> to achieve the<a data-primary="ML (machine learning)" data-secondary="boosting algorithms" data-startref="ml-boost-xgboost" data-tertiary="XGBoost" data-type="indexterm" id="idm45354764712336"/><a data-primary="machine learning (ML)" data-secondary="boosting algorithms" data-startref="machine-boost-xgboost" data-tertiary="XGBoost" data-type="indexterm" id="idm45354764710848"/><a data-primary="boosting algorithms" data-secondary="XGBoost" data-startref="boost-xgboost" data-type="indexterm" id="idm45354764709360"/><a data-primary="XGBoost" data-startref="xgboost" data-type="indexterm" id="idm45354764708144"/> same.</p>
+</div></section>
+
+
+
+
+
+
+
+
+<section data-pdf-bookmark="Using LightGBM" data-type="sect2"><div class="sect2" id="idm45354764707072">
+<h2>Using LightGBM</h2>
+
+<p>Building <a data-primary="ML (machine learning)" data-secondary="boosting algorithms" data-tertiary="LightGBM" data-type="indexterm" id="ml-boost-LightGBM"/><a data-primary="machine learning (ML)" data-secondary="boosting algorithms" data-tertiary="LightGBM" data-type="indexterm" id="machine-boost-LightGBM"/><a data-primary="boosting algorithms" data-secondary="LightGBM" data-type="indexterm" id="boost-LightGBM"/><a data-primary="LightGBM" data-type="indexterm" id="LightGBM"/>our wine-quality model using LightGBM is presented in <a data-type="xref" href="#lightGBM">Example 10-5</a>.</p>
+<div data-type="example" id="lightGBM">
+<h5><span class="label">Example 10-5. </span><a href="https://oreil.ly/oHzxy">Using LightGBM to build our wine-quality model</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="c1"># Get data</code>
+<code class="n">df</code> <code class="o">=</code> <code class="n">pd</code><code class="o">.</code><code class="n">read_csv</code><code class="p">(</code><code class="s2">"winequality-red.csv"</code><code class="p">,</code> <code class="n">delimiter</code><code class="o">=</code><code class="s2">";"</code><code class="p">)</code>
+<code class="nb">print</code><code class="p">(</code><code class="sa">f</code><code class="s2">"Rows, columns: </code><code class="si">{</code><code class="nb">str</code><code class="p">(</code><code class="n">df</code><code class="o">.</code><code class="n">shape</code><code class="p">)</code><code class="si">}</code><code class="s2">"</code><code class="p">)</code>
+<code class="nb">print</code><code class="p">(</code><code class="n">df</code><code class="o">.</code><code class="n">head</code><code class="p">)</code>
+<code class="nb">print</code><code class="p">(</code><code class="n">df</code><code class="o">.</code><code class="n">isna</code><code class="p">()</code><code class="o">.</code><code class="n">sum</code><code class="p">())</code>
+
+<code class="c1"># Create Classification version of target variable</code>
+<code class="n">df</code><code class="p">[</code><code class="s1">'goodquality'</code><code class="p">]</code> <code class="o">=</code> <code class="p">[</code><code class="mi">1</code> <code class="k">if</code> <code class="n">x</code> <code class="o">&gt;=</code> <code class="mi">6</code> <code class="k">else</code> <code class="mi">0</code> <code class="k">for</code> <code class="n">x</code> <code class="ow">in</code> <code class="n">df</code><code class="p">[</code><code class="s1">'quality'</code><code class="p">]]</code>
+<code class="n">X</code> <code class="o">=</code> <code class="n">df</code><code class="o">.</code><code class="n">drop</code><code class="p">([</code><code class="s1">'quality'</code><code class="p">,</code><code class="s1">'goodquality'</code><code class="p">],</code> <code class="n">axis</code> <code class="o">=</code> <code class="mi">1</code><code class="p">)</code>
+<code class="n">y</code> <code class="o">=</code> <code class="n">df</code><code class="p">[</code><code class="s1">'goodquality'</code><code class="p">]</code>
+<code class="nb">print</code><code class="p">(</code><code class="n">df</code><code class="p">[</code><code class="s1">'goodquality'</code><code class="p">]</code><code class="o">.</code><code class="n">value_counts</code><code class="p">())</code>
+
+<code class="c1"># Normalize feature variables</code>
+<code class="n">X_features</code> <code class="o">=</code> <code class="n">X</code>
+<code class="n">X</code> <code class="o">=</code> <code class="n">StandardScaler</code><code class="p">()</code><code class="o">.</code><code class="n">fit_transform</code><code class="p">(</code><code class="n">X</code><code class="p">)</code>
+<code class="c1"># Splitting the data</code>
+<code class="n">X_train</code><code class="p">,</code> <code class="n">X_test</code><code class="p">,</code> <code class="n">y_train</code><code class="p">,</code> <code class="n">y_test</code> <code class="o">=</code> \
+    <code class="n">train_test_split</code><code class="p">(</code><code class="n">X</code><code class="p">,</code> <code class="n">y</code><code class="p">,</code> <code class="n">test_size</code><code class="o">=</code><code class="mf">.25</code><code class="p">,</code> <code class="n">random_state</code><code class="o">=</code><code class="mi">0</code><code class="p">)</code>
+
+<code class="n">train_data</code> <code class="o">=</code> <code class="n">lgb</code><code class="o">.</code><code class="n">Dataset</code><code class="p">(</code><code class="n">X_train</code><code class="p">,</code><code class="n">label</code><code class="o">=</code><code class="n">y_train</code><code class="p">)</code>
+<code class="n">param</code> <code class="o">=</code> <code class="p">{</code><code class="s1">'num_leaves'</code><code class="p">:</code><code class="mi">150</code><code class="p">,</code> <code class="s1">'objective'</code><code class="p">:</code><code class="s1">'binary'</code><code class="p">,</code><code class="s1">'learning_rate'</code><code class="p">:</code><code class="mf">.05</code><code class="p">,</code><code class="s1">'max_bin'</code><code class="p">:</code><code class="mi">200</code><code class="p">}</code>
+<code class="n">param</code><code class="p">[</code><code class="s1">'metric'</code><code class="p">]</code> <code class="o">=</code> <code class="p">[</code><code class="s1">'auc'</code><code class="p">,</code> <code class="s1">'binary_logloss'</code><code class="p">]</code>
+
+<code class="n">start</code> <code class="o">=</code> <code class="n">time</code><code class="o">.</code><code class="n">time</code><code class="p">()</code>
+<code class="n">model</code> <code class="o">=</code> <code class="n">lgb</code><code class="o">.</code><code class="n">train</code><code class="p">(</code><code class="n">param</code><code class="p">,</code><code class="n">train_data</code><code class="p">,</code><code class="mi">100</code><code class="p">)</code>
+<code class="nb">print</code><code class="p">(</code><code class="sa">f</code><code class="s2">"executed LightGBM in </code><code class="si">{</code><code class="n">time</code><code class="o">.</code><code class="n">time</code><code class="p">()</code> <code class="o">-</code> <code class="n">start</code><code class="si">}</code><code class="s2">"</code><code class="p">)</code>
+<code class="n">y_pred</code> <code class="o">=</code> <code class="n">model</code><code class="o">.</code><code class="n">predict</code><code class="p">(</code><code class="n">X_test</code><code class="p">)</code>
+
+<code class="c1"># Converting probabilities into 0 or 1</code>
+
+<code class="k">for</code> <code class="n">i</code> <code class="ow">in</code> <code class="nb">range</code><code class="p">(</code><code class="nb">len</code><code class="p">(</code><code class="n">y_pred</code><code class="p">)):</code>
+    <code class="k">if</code> <code class="n">y_pred</code><code class="p">[</code><code class="n">i</code><code class="p">]</code> <code class="o">&gt;=</code> <code class="mf">.5</code><code class="p">:</code>       <code class="c1"># Setting threshold to .5</code>
+        <code class="n">y_pred</code><code class="p">[</code><code class="n">i</code><code class="p">]</code> <code class="o">=</code> <code class="mi">1</code>
+    <code class="k">else</code><code class="p">:</code>
+        <code class="n">y_pred</code><code class="p">[</code><code class="n">i</code><code class="p">]</code> <code class="o">=</code> <code class="mi">0</code>
+<code class="nb">print</code><code class="p">(</code><code class="n">classification_report</code><code class="p">(</code><code class="n">y_test</code><code class="p">,</code> <code class="n">y_pred</code><code class="p">))</code></pre></div>
+
+<p>Similar to XGBoost, LightGBM uses OpenMP for parallelization. As a result, Ray offers the <a href="https://oreil.ly/l6wuQ">Distributed LightGBM on Ray library</a>, which implements parallelization using Ray’s actor pool. Similar to the xgboost-ray library, this library supports both native and scikit-learn APIs. In the latter case, the library implements the following estimators:</p>
+
+<ul>
+<li>
+<p><code>RayLGBMClassifier</code></p>
+</li>
+<li>
+<p><code>RayLGBMRegressor</code></p>
+</li>
+</ul>
+
+<p>As with XGBoost, <code>RayParams</code> is provided, allowing you to define execution parameters for Ray. Using this library, we can modify <a data-type="xref" href="#lightGBM">Example 10-5</a> to make it work with Ray as in <a data-type="xref" href="#lightGBM_ray">Example 10-6</a>.</p>
+<div data-type="example" id="lightGBM_ray">
+<h5><span class="label">Example 10-6. </span><a href="https://oreil.ly/pocKo">Using the LightGBM Ray library to build our wine-quality model</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="n">model</code> <code class="o">=</code> <code class="n">RayLGBMClassifier</code><code class="p">(</code>
+    <code class="n">random_state</code><code class="o">=</code><code class="mi">42</code><code class="p">)</code>
+
+<code class="n">start</code> <code class="o">=</code> <code class="n">time</code><code class="o">.</code><code class="n">time</code><code class="p">()</code>
+<code class="n">model</code><code class="o">.</code><code class="n">fit</code><code class="p">(</code><code class="n">X</code><code class="o">=</code><code class="n">X_train</code><code class="p">,</code> <code class="n">y</code><code class="o">=</code><code class="n">y_train</code><code class="p">,</code> <code class="n">ray_params</code><code class="o">=</code><code class="n">RayParams</code><code class="p">(</code><code class="n">num_actors</code><code class="o">=</code><code class="mi">3</code><code class="p">))</code>
+<code class="nb">print</code><code class="p">(</code><code class="sa">f</code><code class="s2">"executed LightGBM in </code><code class="si">{</code><code class="n">time</code><code class="o">.</code><code class="n">time</code><code class="p">()</code> <code class="o">-</code> <code class="n">start</code><code class="si">}</code><code class="s2">"</code><code class="p">)</code></pre></div>
+
+<p>Here we used <code>RayParams</code> to specify the size of Ray’s actor pool used for parallelization. Alternatively, you can use the <code>n_jobs</code> parameter in <code>RayLGBMClassifier</code> to achieve the same.</p>
+<aside class="pagebreak-before less_space" data-type="sidebar" epub:type="sidebar"><div class="sidebar" id="idm45354764271504">
+<h5>Using the Ray Boosting Libraries</h5>
+<p>This code works, but if we compare the execution time using<a data-primary="OpenMP" data-type="indexterm" id="idm45354764269968"/> OpenMP and the Ray actor pool, we will see that using OpenMP for our toy example is much faster.<sup><a data-type="noteref" href="ch10.html#idm45354764269024" id="idm45354764269024-marker">2</a></sup> As with scikit-learn, this is due to the overhead of remoting and changes as data<a data-primary="ML (machine learning)" data-secondary="boosting algorithms" data-startref="ml-boost-LightGBM" data-tertiary="LightGBM" data-type="indexterm" id="idm45354764268368"/><a data-primary="machine learning (ML)" data-secondary="boosting algorithms" data-startref="machine-boost-LightGBM" data-tertiary="LightGBM" data-type="indexterm" id="idm45354764266880"/><a data-primary="boosting algorithms" data-secondary="LightGBM" data-startref="boost-LightGBM" data-type="indexterm" id="idm45354764265392"/><a data-primary="LightGBM" data-startref="LightGBM" data-type="indexterm" id="idm45354764264176"/> and model sizes grow.</p>
+</div></aside>
+</div></section>
+</div></section>
+
+
+
+
+
+
+<section data-pdf-bookmark="Using PyTorch with Ray" data-type="sect1"><div class="sect1" id="idm45354764248416">
+<h1>Using PyTorch with Ray</h1>
+
+<p>Another <a data-primary="ML (machine learning)" data-secondary="PyTorch" data-type="indexterm" id="ml-pytorch"/><a data-primary="machine learning (ML)" data-secondary="PyTorch" data-type="indexterm" id="machine-pytorch"/><a data-primary="PyTorch" data-type="indexterm" id="pytorch"/>very popular machine learning framework is <a href="https://oreil.ly/fMTL8">PyTorch</a>, an open source Python library for deep learning developed and maintained by Facebook. PyTorch is simple and flexible, making it a favorite for many academics and researchers in the development of new deep learning models and applications.</p>
+
+<p>Many extensions for specific applications (such as text, computer vision, and audio data) have been implemented for PyTorch. A lot of pretrained models also exist that you can use directly. If you are not familiar with PyTorch, take a look at Jason Brownlee’s <a href="https://oreil.ly/zzXb6">PyTorch tutorial</a> for an introduction to its structure, capabilities, and usage for solving various problems.</p>
+
+<p>We will continue with our wine-quality problem and show how to use PyTorch to build a multilayer perceptron (MLP) model for predicting wine quality. To do this, you need to start from creating a custom PyTorch <a href="https://oreil.ly/E1MGh">Dataset class</a> that can be extended and customized to load your dataset. For our wine-quality example, the custom dataset class is shown in <a data-type="xref" href="#torch_data">Example 10-7</a>.</p>
+<div class="example-margin-7" data-type="example" id="torch_data">
+<h5><span class="label">Example 10-7. </span><a href="https://oreil.ly/hkLLE">PyTorch dataset class for loading wine-quality data</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="c1"># dataset</code>
+<code class="k">class</code> <code class="nc">WineQualityDataset</code><code class="p">(</code><code class="n">Dataset</code><code class="p">):</code>
+    <code class="c1"># load the dataset</code>
+    <code class="k">def</code> <code class="fm">__init__</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code> <code class="n">path</code><code class="p">):</code>
+        <code class="c1"># load the csv file as a dataframe</code>
+        <code class="n">df</code> <code class="o">=</code> <code class="n">pd</code><code class="o">.</code><code class="n">read_csv</code><code class="p">(</code><code class="n">path</code><code class="p">,</code> <code class="n">delimiter</code><code class="o">=</code><code class="s2">";"</code><code class="p">)</code>
+        <code class="nb">print</code><code class="p">(</code><code class="sa">f</code><code class="s2">"Rows, columns: </code><code class="si">{</code><code class="nb">str</code><code class="p">(</code><code class="n">df</code><code class="o">.</code><code class="n">shape</code><code class="p">)</code><code class="si">}</code><code class="s2">"</code><code class="p">)</code>
+        <code class="nb">print</code><code class="p">(</code><code class="n">df</code><code class="o">.</code><code class="n">head</code><code class="p">)</code>
+        <code class="c1"># create Classification version of target variable</code>
+        <code class="n">df</code><code class="p">[</code><code class="s1">'goodquality'</code><code class="p">]</code> <code class="o">=</code> <code class="p">[</code><code class="mi">1</code> <code class="k">if</code> <code class="n">x</code> <code class="o">&gt;=</code> <code class="mi">6</code> <code class="k">else</code> <code class="mi">0</code> <code class="k">for</code> <code class="n">x</code> <code class="ow">in</code> <code class="n">df</code><code class="p">[</code><code class="s1">'quality'</code><code class="p">]]</code>
+        <code class="n">df</code> <code class="o">=</code> <code class="n">df</code><code class="o">.</code><code class="n">drop</code><code class="p">([</code><code class="s1">'quality'</code><code class="p">],</code> <code class="n">axis</code> <code class="o">=</code> <code class="mi">1</code><code class="p">)</code>
+        <code class="nb">print</code><code class="p">(</code><code class="n">df</code><code class="p">[</code><code class="s1">'goodquality'</code><code class="p">]</code><code class="o">.</code><code class="n">value_counts</code><code class="p">())</code>
+        <code class="c1"># store the inputs and outputs</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">X</code> <code class="o">=</code> <code class="n">StandardScaler</code><code class="p">()</code><code class="o">.</code><code class="n">fit_transform</code><code class="p">(</code><code class="n">df</code><code class="o">.</code><code class="n">values</code><code class="p">[:,</code> <code class="p">:</code><code class="o">-</code><code class="mi">1</code><code class="p">])</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">y</code> <code class="o">=</code> <code class="n">df</code><code class="o">.</code><code class="n">values</code><code class="p">[:,</code> <code class="o">-</code><code class="mi">1</code><code class="p">]</code>
+        <code class="c1"># ensure input data is floats</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">X</code> <code class="o">=</code> <code class="bp">self</code><code class="o">.</code><code class="n">X</code><code class="o">.</code><code class="n">astype</code><code class="p">(</code><code class="s1">'float32'</code><code class="p">)</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">y</code> <code class="o">=</code> <code class="bp">self</code><code class="o">.</code><code class="n">y</code><code class="o">.</code><code class="n">astype</code><code class="p">(</code><code class="s1">'float32'</code><code class="p">)</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">y</code> <code class="o">=</code> <code class="bp">self</code><code class="o">.</code><code class="n">y</code><code class="o">.</code><code class="n">reshape</code><code class="p">((</code><code class="nb">len</code><code class="p">(</code><code class="bp">self</code><code class="o">.</code><code class="n">y</code><code class="p">),</code> <code class="mi">1</code><code class="p">))</code>
+
+    <code class="c1"># number of rows in the dataset</code>
+    <code class="k">def</code> <code class="fm">__len__</code><code class="p">(</code><code class="bp">self</code><code class="p">):</code>
+        <code class="k">return</code> <code class="nb">len</code><code class="p">(</code><code class="bp">self</code><code class="o">.</code><code class="n">X</code><code class="p">)</code>
+
+    <code class="c1"># get a row at an index</code>
+    <code class="k">def</code> <code class="fm">__getitem__</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code> <code class="n">idx</code><code class="p">):</code>
+        <code class="k">return</code> <code class="p">[</code><code class="bp">self</code><code class="o">.</code><code class="n">X</code><code class="p">[</code><code class="n">idx</code><code class="p">],</code> <code class="bp">self</code><code class="o">.</code><code class="n">y</code><code class="p">[</code><code class="n">idx</code><code class="p">]]</code>
+
+    <code class="c1"># get indexes for train and test rows</code>
+    <code class="k">def</code> <code class="nf">get_splits</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code> <code class="n">n_test</code><code class="o">=</code><code class="mf">0.33</code><code class="p">):</code>
+        <code class="c1"># determine sizes</code>
+        <code class="n">test_size</code> <code class="o">=</code> <code class="nb">round</code><code class="p">(</code><code class="n">n_test</code> <code class="o">*</code> <code class="nb">len</code><code class="p">(</code><code class="bp">self</code><code class="o">.</code><code class="n">X</code><code class="p">))</code>
+        <code class="n">train_size</code> <code class="o">=</code> <code class="nb">len</code><code class="p">(</code><code class="bp">self</code><code class="o">.</code><code class="n">X</code><code class="p">)</code> <code class="o">-</code> <code class="n">test_size</code>
+        <code class="c1"># calculate the split</code>
+        <code class="k">return</code> <code class="n">random_split</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code> <code class="p">[</code><code class="n">train_size</code><code class="p">,</code> <code class="n">test_size</code><code class="p">])</code></pre></div>
+
+<p>Note that here, in addition to the minimum requirements, we have implemented <code>get_splits</code>, a method that splits an original dataset into two: one for training and one for testing.</p>
+
+<p>Once you have defined your data class, you can use PyTorch to make a model. To define a model in PyTorch, you extend the base PyTorch <a href="https://oreil.ly/ShyFD">Module class</a>. The model class for our purposes is presented in <a data-type="xref" href="#torch_model">Example 10-8</a>.</p>
+<div data-type="example" id="torch_model">
+<h5><span class="label">Example 10-8. </span><a href="https://oreil.ly/CZX2A">PyTorch model class for wine quality</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="c1"># model definition</code>
+<code class="k">class</code> <code class="nc">WineQualityModel</code><code class="p">(</code><code class="n">Module</code><code class="p">):</code>
+    <code class="c1"># define model elements</code>
+    <code class="k">def</code> <code class="fm">__init__</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code> <code class="n">n_inputs</code><code class="p">):</code>
+        <code class="nb">super</code><code class="p">(</code><code class="n">WineQualityModel</code><code class="p">,</code> <code class="bp">self</code><code class="p">)</code><code class="o">.</code><code class="fm">__init__</code><code class="p">()</code>
+        <code class="c1"># input to first hidden layer</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">hidden1</code> <code class="o">=</code> <code class="n">Linear</code><code class="p">(</code><code class="n">n_inputs</code><code class="p">,</code> <code class="mi">10</code><code class="p">)</code>
+        <code class="n">kaiming_uniform_</code><code class="p">(</code><code class="bp">self</code><code class="o">.</code><code class="n">hidden1</code><code class="o">.</code><code class="n">weight</code><code class="p">,</code> <code class="n">nonlinearity</code><code class="o">=</code><code class="s1">'relu'</code><code class="p">)</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">act1</code> <code class="o">=</code> <code class="n">ReLU</code><code class="p">()</code>
+        <code class="c1"># second hidden layer</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">hidden2</code> <code class="o">=</code> <code class="n">Linear</code><code class="p">(</code><code class="mi">10</code><code class="p">,</code> <code class="mi">8</code><code class="p">)</code>
+        <code class="n">kaiming_uniform_</code><code class="p">(</code><code class="bp">self</code><code class="o">.</code><code class="n">hidden2</code><code class="o">.</code><code class="n">weight</code><code class="p">,</code> <code class="n">nonlinearity</code><code class="o">=</code><code class="s1">'relu'</code><code class="p">)</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">act2</code> <code class="o">=</code> <code class="n">ReLU</code><code class="p">()</code>
+        <code class="c1"># third hidden layer and output</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">hidden3</code> <code class="o">=</code> <code class="n">Linear</code><code class="p">(</code><code class="mi">8</code><code class="p">,</code> <code class="mi">1</code><code class="p">)</code>
+        <code class="n">xavier_uniform_</code><code class="p">(</code><code class="bp">self</code><code class="o">.</code><code class="n">hidden3</code><code class="o">.</code><code class="n">weight</code><code class="p">)</code>
+        <code class="bp">self</code><code class="o">.</code><code class="n">act3</code> <code class="o">=</code> <code class="n">Sigmoid</code><code class="p">()</code>
+
+    <code class="c1"># forward-propagate input</code>
+    <code class="k">def</code> <code class="nf">forward</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code> <code class="n">X</code><code class="p">):</code>
+        <code class="c1"># input to first hidden layer</code>
+        <code class="n">X</code> <code class="o">=</code> <code class="bp">self</code><code class="o">.</code><code class="n">hidden1</code><code class="p">(</code><code class="n">X</code><code class="p">)</code>
+        <code class="n">X</code> <code class="o">=</code> <code class="bp">self</code><code class="o">.</code><code class="n">act1</code><code class="p">(</code><code class="n">X</code><code class="p">)</code>
+        <code class="c1"># second hidden layer</code>
+        <code class="n">X</code> <code class="o">=</code> <code class="bp">self</code><code class="o">.</code><code class="n">hidden2</code><code class="p">(</code><code class="n">X</code><code class="p">)</code>
+        <code class="n">X</code> <code class="o">=</code> <code class="bp">self</code><code class="o">.</code><code class="n">act2</code><code class="p">(</code><code class="n">X</code><code class="p">)</code>
+        <code class="c1"># third hidden layer and output</code>
+        <code class="n">X</code> <code class="o">=</code> <code class="bp">self</code><code class="o">.</code><code class="n">hidden3</code><code class="p">(</code><code class="n">X</code><code class="p">)</code>
+        <code class="n">X</code> <code class="o">=</code> <code class="bp">self</code><code class="o">.</code><code class="n">act3</code><code class="p">(</code><code class="n">X</code><code class="p">)</code>
+        <code class="k">return</code> <code class="n">X</code></pre></div>
+
+<p>This class constructor builds the model by defining its layers and their connectivity. The <code>forward</code> method defines how to forward-propagate input through the model. With these two classes in place, the overall code looks like <a data-type="xref" href="#torch_train">Example 10-9</a>.</p>
+<div class="example-margin-5" data-type="example" id="torch_train">
+<h5><span class="label">Example 10-9. </span><a href="https://oreil.ly/6TIHG">PyTorch implementation of wine-quality model building</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="c1"># ensure reproducibility</code>
+<code class="n">torch</code><code class="o">.</code><code class="n">manual_seed</code><code class="p">(</code><code class="mi">42</code><code class="p">)</code>
+<code class="c1"># load the dataset</code>
+<code class="n">dataset</code> <code class="o">=</code> <code class="n">WineQualityDataset</code><code class="p">(</code><code class="s2">"winequality-red.csv"</code><code class="p">)</code>
+
+<code class="c1"># calculate split</code>
+<code class="n">train</code><code class="p">,</code> <code class="n">test</code> <code class="o">=</code> <code class="n">dataset</code><code class="o">.</code><code class="n">get_splits</code><code class="p">()</code>
+<code class="c1"># prepare data loaders</code>
+<code class="n">train_dl</code> <code class="o">=</code> <code class="n">DataLoader</code><code class="p">(</code><code class="n">train</code><code class="p">,</code> <code class="n">batch_size</code><code class="o">=</code><code class="mi">32</code><code class="p">,</code> <code class="n">shuffle</code><code class="o">=</code><code class="kc">True</code><code class="p">)</code>
+<code class="n">test_dl</code> <code class="o">=</code> <code class="n">DataLoader</code><code class="p">(</code><code class="n">test</code><code class="p">,</code> <code class="n">batch_size</code><code class="o">=</code><code class="mi">32</code><code class="p">,</code> <code class="n">shuffle</code><code class="o">=</code><code class="kc">False</code><code class="p">)</code>
+
+<code class="c1"># train the model</code>
+<code class="n">model</code> <code class="o">=</code> <code class="n">WineQualityModel</code><code class="p">(</code><code class="mi">11</code><code class="p">)</code>
+<code class="c1"># define the optimization</code>
+<code class="n">criterion</code> <code class="o">=</code> <code class="n">BCELoss</code><code class="p">()</code>
+<code class="n">optimizer</code> <code class="o">=</code> <code class="n">SGD</code><code class="p">(</code><code class="n">model</code><code class="o">.</code><code class="n">parameters</code><code class="p">(),</code> <code class="n">lr</code><code class="o">=</code><code class="mf">0.01</code><code class="p">,</code> <code class="n">momentum</code><code class="o">=</code><code class="mf">0.9</code><code class="p">)</code>
+<code class="n">start</code> <code class="o">=</code> <code class="n">time</code><code class="o">.</code><code class="n">time</code><code class="p">()</code>
+<code class="c1"># enumerate epochs</code>
+<code class="k">for</code> <code class="n">epoch</code> <code class="ow">in</code> <code class="nb">range</code><code class="p">(</code><code class="mi">500</code><code class="p">):</code>
+    <code class="c1"># enumerate mini batches</code>
+    <code class="k">for</code> <code class="n">i</code><code class="p">,</code> <code class="p">(</code><code class="n">inputs</code><code class="p">,</code> <code class="n">targets</code><code class="p">)</code> <code class="ow">in</code> <code class="nb">enumerate</code><code class="p">(</code><code class="n">train_dl</code><code class="p">):</code>
+        <code class="c1"># clear the gradients</code>
+        <code class="n">optimizer</code><code class="o">.</code><code class="n">zero_grad</code><code class="p">()</code>
+        <code class="c1"># compute the model output</code>
+        <code class="n">yhat</code> <code class="o">=</code> <code class="n">model</code><code class="p">(</code><code class="n">inputs</code><code class="p">)</code>
+        <code class="c1"># calculate loss</code>
+        <code class="n">loss</code> <code class="o">=</code> <code class="n">criterion</code><code class="p">(</code><code class="n">yhat</code><code class="p">,</code> <code class="n">targets</code><code class="p">)</code>
+        <code class="c1"># credit assignment</code>
+        <code class="n">loss</code><code class="o">.</code><code class="n">backward</code><code class="p">()</code>
+        <code class="c1"># update model weights</code>
+        <code class="n">optimizer</code><code class="o">.</code><code class="n">step</code><code class="p">()</code>
+<code class="nb">print</code><code class="p">(</code><code class="sa">f</code><code class="s2">"Build model in </code><code class="si">{</code><code class="n">time</code><code class="o">.</code><code class="n">time</code><code class="p">()</code> <code class="o">-</code> <code class="n">start</code><code class="si">}</code><code class="s2">"</code><code class="p">)</code>
+<code class="nb">print</code><code class="p">(</code><code class="n">model</code><code class="p">)</code>
+<code class="c1"># evaluate a model</code>
+<code class="n">predictions</code><code class="p">,</code> <code class="n">actuals</code> <code class="o">=</code> <code class="nb">list</code><code class="p">(),</code> <code class="nb">list</code><code class="p">()</code>
+<code class="k">for</code> <code class="n">i</code><code class="p">,</code> <code class="p">(</code><code class="n">inputs</code><code class="p">,</code> <code class="n">targets</code><code class="p">)</code> <code class="ow">in</code> <code class="nb">enumerate</code><code class="p">(</code><code class="n">test_dl</code><code class="p">):</code>
+    <code class="c1"># evaluate the model on the test set</code>
+    <code class="n">yhat</code> <code class="o">=</code> <code class="n">model</code><code class="p">(</code><code class="n">inputs</code><code class="p">)</code>
+    <code class="c1"># retrieve numpy array</code>
+    <code class="n">yhat</code> <code class="o">=</code> <code class="n">yhat</code><code class="o">.</code><code class="n">detach</code><code class="p">()</code><code class="o">.</code><code class="n">numpy</code><code class="p">()</code>
+    <code class="n">actual</code> <code class="o">=</code> <code class="n">targets</code><code class="o">.</code><code class="n">numpy</code><code class="p">()</code>
+    <code class="n">actual</code> <code class="o">=</code> <code class="n">actual</code><code class="o">.</code><code class="n">reshape</code><code class="p">((</code><code class="nb">len</code><code class="p">(</code><code class="n">actual</code><code class="p">),</code> <code class="mi">1</code><code class="p">))</code>
+    <code class="c1"># round to class values</code>
+    <code class="n">yhat</code> <code class="o">=</code> <code class="n">yhat</code><code class="o">.</code><code class="n">round</code><code class="p">()</code>
+    <code class="c1"># store</code>
+    <code class="n">predictions</code><code class="o">.</code><code class="n">append</code><code class="p">(</code><code class="n">yhat</code><code class="p">)</code>
+    <code class="n">actuals</code><code class="o">.</code><code class="n">append</code><code class="p">(</code><code class="n">actual</code><code class="p">)</code>
+<code class="n">predictions</code><code class="p">,</code> <code class="n">actuals</code> <code class="o">=</code> <code class="n">vstack</code><code class="p">(</code><code class="n">predictions</code><code class="p">),</code> <code class="n">vstack</code><code class="p">(</code><code class="n">actuals</code><code class="p">)</code>
+<code class="c1"># calculate accuracy</code>
+<code class="n">acc</code> <code class="o">=</code> <code class="n">accuracy_score</code><code class="p">(</code><code class="n">actuals</code><code class="p">,</code> <code class="n">predictions</code><code class="p">)</code>
+<code class="nb">print</code><code class="p">(</code><code class="s2">"Model accuracy"</code><code class="p">,</code> <code class="n">acc</code><code class="p">)</code></pre></div>
+
+<p><a data-type="xref" href="#torch_train">Example 10-9</a> works, <a data-primary="ML (machine learning)" data-secondary="Lightning" data-type="indexterm" id="ml-Lightning"/><a data-primary="machine learning (ML)" data-secondary="Lightning" data-type="indexterm" id="machine-Lightning"/><a data-primary="Lightning" data-type="indexterm" id="Lightning"/>but Ray is integrated with <a href="https://oreil.ly/SCakx">Lightning</a> (formerly called PyTorch Lightning), not PyTorch. Lightning structures your PyTorch code so it can abstract the details of training. This makes AI research scalable and fast to iterate on.</p>
+
+<p>To convert <a data-type="xref" href="#torch_train">Example 10-9</a> to Lightning, we first need to modify <a data-type="xref" href="#torch_model">Example 10-8</a>. In Lightning, it needs to be derived from <a href="https://oreil.ly/sFSCd"><code>lightning_module</code></a>, not <code>module</code>, which means that we need to add two methods to our model 
+<span class="keep-together">(<a data-type="xref" href="#ltorch_add">Example 10-10</a>).</span></p>
+<div class="example-margin-5" data-type="example" id="ltorch_add">
+<h5><span class="label">Example 10-10. </span><a href="https://oreil.ly/1eTnI">Lightning model’s additional functions for wine quality</a></h5>
+
+<pre data-code-language="python" data-type="programlisting">    <code class="c1"># training step</code>
+    <code class="k">def</code> <code class="nf">training_step</code><code class="p">(</code><code class="bp">self</code><code class="p">,</code> <code class="n">batch</code><code class="p">,</code> <code class="n">batch_idx</code><code class="p">):</code>
+        <code class="n">x</code><code class="p">,</code> <code class="n">y</code> <code class="o">=</code> <code class="n">batch</code>
+        <code class="n">y_hat</code> <code class="o">=</code> <code class="bp">self</code><code class="p">(</code><code class="n">x</code><code class="p">)</code>
+        <code class="n">loss</code> <code class="o">=</code> <code class="bp">self</code><code class="o">.</code><code class="n">bce</code><code class="p">(</code><code class="n">y_hat</code><code class="p">,</code> <code class="n">y</code><code class="p">)</code>
+        <code class="k">return</code> <code class="n">loss</code>
+    <code class="c1"># optimizer</code>
+    <code class="k">def</code> <code class="nf">configure_optimizers</code><code class="p">(</code><code class="bp">self</code><code class="p">):</code>
+        <code class="k">return</code> <code class="n">Adam</code><code class="p">(</code><code class="bp">self</code><code class="o">.</code><code class="n">parameters</code><code class="p">(),</code> <code class="n">lr</code><code class="o">=</code><code class="mf">0.02</code><code class="p">)</code></pre></div>
+
+<p>Here the <code>training_step</code> method defines a single step, while <code>configure_optimized</code> defines which optimizer to use. When you compare this to <a data-type="xref" href="#torch_model">Example 10-8</a>, you will notice that some of that example’s code is moved into these two methods (here instead of the <code>BCELoss</code> optimizer, we are using the <code>Adam</code> optimizer). With this updated model class, the model training looks like <a data-type="xref" href="#ltorch_train">Example 10-11</a>.</p>
+<div class="example-margin-2" data-type="example" id="ltorch_train">
+<h5><span class="label">Example 10-11. </span><a href="https://oreil.ly/T7xza">Lightning implementation of wine-quality model building</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="c1"># train</code>
+<code class="n">trainer</code> <code class="o">=</code> <code class="n">Trainer</code><code class="p">(</code><code class="n">max_steps</code><code class="o">=</code><code class="mi">1000</code><code class="p">)</code>
+<code class="n">trainer</code><code class="o">.</code><code class="n">fit</code><code class="p">(</code><code class="n">model</code><code class="p">,</code> <code class="n">train_dl</code><code class="p">)</code></pre></div>
+
+<p>Note that unlike <a data-type="xref" href="#torch_train">Example 10-9</a>, where training is implemented programmatically, Lightning introduces a trainer class, which internally implements a trainer loop. This approach allows all required optimization to be in the training loop.</p>
+
+<p>Both PyTorch and Lightning are using Joblib to distribute training through the built-in <a href="https://oreil.ly/RNLuq"><code>ddp_cpu</code> backend</a> or, more generally, <a href="https://oreil.ly/x8Ba2">Horovod</a>. As with other libraries, to allow distributed Lightning on Ray, Ray has a library <a href="https://oreil.ly/Ii51T">Distributed PyTorch Lightning Training</a> that adds new Lightning plug-ins for distributed training using Ray. These plug-ins allow you to quickly and easily parallelize training while still getting all the benefits of Lightning and using your desired training protocol, either <code>ddp_cpu</code> or Horovod.</p>
+
+<p>Once you add the plug-ins to your Lightning trainer, you can configure them to parallelize training to all the cores in your laptop, or across a massive multinode, multi-GPU cluster with no additional code changes. This library also comes with integration with <a href="https://oreil.ly/ZJDeP">Ray Tune</a> so you can perform distributed hyperparameter tuning experiments.</p>
+
+<p>The <code>RayPlugin</code> class provides Distributed Data Parallel (DDP) training on a Ray cluster. PyTorch DDP is used as the distributed training protocol by PyTorch, and Ray is used in this case to launch and manage the training worker processes. The base code using this plug-in is shown in <a data-type="xref" href="#ltorch_train_2">Example 10-12</a>.</p>
+<div data-type="example" id="ltorch_train_2">
+<h5><span class="label">Example 10-12. </span><a href="https://oreil.ly/oF44p">Enabling the Lightning implementation of our wine-quality model building to run on Ray</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="c1"># train</code>
+<code class="n">plugin</code> <code class="o">=</code> <code class="n">RayPlugin</code><code class="p">(</code><code class="n">num_workers</code><code class="o">=</code><code class="mi">6</code><code class="p">)</code>
+<code class="n">trainer</code> <code class="o">=</code> <code class="n">Trainer</code><code class="p">(</code><code class="n">max_steps</code><code class="o">=</code><code class="mi">1000</code><code class="p">,</code> <code class="n">plugins</code><code class="o">=</code><code class="p">[</code><code class="n">plugin</code><code class="p">])</code>
+<code class="n">trainer</code><code class="o">.</code><code class="n">fit</code><code class="p">(</code><code class="n">model</code><code class="p">,</code> <code class="n">train_dl</code><code class="p">)</code>
+<code class="nb">print</code><code class="p">(</code><code class="sa">f</code><code class="s2">"Build model in </code><code class="si">{</code><code class="n">time</code><code class="o">.</code><code class="n">time</code><code class="p">()</code> <code class="o">-</code> <code class="n">start</code><code class="si">}</code><code class="s2">"</code><code class="p">)</code>
+<code class="nb">print</code><code class="p">(</code><code class="n">model</code><code class="p">)</code></pre></div>
+
+<p class="pagebreak-before">The two additional plug-ins included in the library are as follows:</p>
+<dl>
+<dt>HorovodRayPlugin</dt>
+<dd>
+<p>Integrates with Horovod as the distributed training protocol.</p>
+</dd>
+<dt>RayShardedPlugin</dt>
+<dd>
+<p>Integrates with <a href="https://oreil.ly/drOkZ">FairScale</a> to provide sharded DDP training on a Ray cluster. With sharded training, you can leverage the scalability of data-parallel training while drastically reducing memory usage when training large models.</p>
+</dd>
+</dl>
+<aside data-type="sidebar" epub:type="sidebar"><div class="sidebar" id="idm45354763116736">
+<h5>Using the Distributed PyTorch Lightning Training</h5>
+<p>This code works, but if we compare the execution time using all three implementations, we will see that using PyTorch for our toy example takes 16.6 seconds, Lightning takes 8.2 seconds, and distributed Lightning with Ray takes 25.2 seconds. Similar to the previous two cases—​scikit-learn and boosting algorithms—​this is due to the overhead of<a data-primary="ML (machine learning)" data-secondary="PyTorch" data-startref="ml-pytorch" data-type="indexterm" id="idm45354763115440"/><a data-primary="machine learning (ML)" data-secondary="PyTorch" data-startref="machine-pytorch" data-type="indexterm" id="idm45354763114192"/><a data-primary="PyTorch" data-startref="pytorch" data-type="indexterm" id="idm45354763112976"/><a data-primary="ML (machine learning)" data-secondary="Lightning" data-startref="ml-Lightning" data-type="indexterm" id="idm45354763079184"/><a data-primary="machine learning (ML)" data-secondary="Lightning" data-startref="machine-Lightning" data-type="indexterm" id="idm45354763078096"/><a data-primary="Lightning" data-startref="Lightning" data-type="indexterm" id="idm45354763076944"/> remoting.</p>
+</div></aside>
+</div></section>
+
+
+
+
+
+
+<section data-pdf-bookmark="Reinforcement Learning with Ray" data-type="sect1"><div class="sect1" id="idm45354764247504">
+<h1>Reinforcement Learning with Ray</h1>
+
+<p>Ray was <a data-primary="ML (machine learning)" data-secondary="reinforcement learning" data-type="indexterm" id="ml-reinforce"/><a data-primary="machine learning (ML)" data-secondary="reinforcement learning" data-type="indexterm" id="machine-reinforce"/><a data-primary="reinforcement learning" data-type="indexterm" id="reinforce"/>initially created as a platform for <em>reinforcement learning</em> (RL), which is one of the hottest research topics in the field of modern artificial intelligence, and its popularity is only growing. RL is a type of machine learning technique that enables an agent to learn in an interactive environment by trial and error using feedback from its own actions and experiences; see <a data-type="xref" href="#different-types-of-machine-learning">Figure 10-1</a>.</p>
+
+<figure><div class="figure" id="different-types-of-machine-learning">
+<img alt="spwr 1001" src="assets/spwr_1001.png"/>
+<h6><span class="label">Figure 10-1. </span>Types of machine learning</h6>
+</div></figure>
+
+<p>Both supervised and reinforcement learning create a mapping between input and output. But whereas supervised learning uses a set of known inputs and output for training, reinforcement learning uses rewards and punishments as signals for 
+<span class="keep-together">positive</span> and negative behavior. Both unsupervised and reinforcement learning 
+<span class="keep-together">leverage</span> experiment data, but they have different goals. While in unsupervised learning we are finding similarities and differences between data points, in reinforcement learning we are trying to find a suitable action model that would maximize the total cumulative reward and improve the model.</p>
+
+<p>The key components of an RL implementation are as follows and are depicted in <a data-type="xref" href="#reinforcement-model-implementation">Figure 10-2</a>:</p>
+<dl>
+<dt>Environment</dt>
+<dd>
+<p>Physical world in which the agent operates</p>
+</dd>
+<dt>State</dt>
+<dd>
+<p>Current state of the agent</p>
+</dd>
+<dt>Reward</dt>
+<dd>
+<p>Feedback to the agent from the environment</p>
+</dd>
+<dt>Policy</dt>
+<dd>
+<p>Method to map the agent’s state to the actions</p>
+</dd>
+<dt>Value</dt>
+<dd>
+<p>Future reward that an agent would receive by taking an action in a particular state</p>
+</dd>
+</dl>
+
+<figure><div class="figure" id="reinforcement-model-implementation">
+<img alt="spwr 1002" src="assets/spwr_1002.png"/>
+<h6><span class="label">Figure 10-2. </span>Reinforcement model implementation</h6>
+</div></figure>
+
+<p>RL is a huge topic, and its details are beyond the scope of this book (we are just trying to explain how to start using the library with a simple example), but if you are interested in learning more about it, <a href="https://oreil.ly/YvgzA">“Reinforcement Learning 101”</a> by Shweta Bhatt is an excellent starting point.</p>
+
+<p class="pagebreak-after">Ray’s RLlib is<a data-primary="RLlib" data-type="indexterm" id="rllib"/> a library for RL, which allows for production-level, highly distributed RL workloads while providing unified and simple APIs for a large variety of applications for different industries. It supports both <a href="https://oreil.ly/tA22j">model-free</a> and <a href="https://oreil.ly/n7mB9">model-based</a> reinforcement learning.</p>
+
+<p>As shown in <a data-type="xref" href="#rllib-components">Figure 10-3</a>, RLlib is built on top of Ray and offers off-the-shelf, highly distributed algorithms, policies, loss functions, and default models.</p>
+
+<figure><div class="figure" id="rllib-components">
+<img alt="spwr 1003" src="assets/spwr_1003.png"/>
+<h6><span class="label">Figure 10-3. </span>RLlib components</h6>
+</div></figure>
+
+<p class="pagebreak-after">A <em>policy</em> encapsulates<a data-primary="policies in RLlib" data-type="indexterm" id="idm45354763046240"/> the core numerical components of RL algorithms. It includes a policy model that determines actions based on environment changes and a loss function defining the result of the action based on the post-processed environment. Depending on the environment, RL can have a single agent and property, a single policy for multiple agents, or multiple policies, each controlling one or more agents.</p>
+
+<p>Everything agents<a data-primary="environments in RLlib" data-type="indexterm" id="idm45354763044992"/> interact with is called an <em>environment</em>. The environment is the outside world and comprises everything outside the agent.</p>
+<aside data-type="sidebar" epub:type="sidebar"><div class="sidebar" id="idm45354763043568">
+<h5>Environment Types</h5>
+<p>There are different types of environments:</p>
+<dl>
+<dt>Deterministic</dt>
+<dd>
+<p>The outcome is known based on the current state.</p>
+</dd>
+<dt>Stochastic</dt>
+<dd>
+<p>The outcome is uncertain based on the current state.</p>
+</dd>
+<dt>Fully observable</dt>
+<dd>
+<p>An agent can determine the state of the system at all times.</p>
+</dd>
+<dt>Partially observable</dt>
+<dd>
+<p>An agent cannot determine the state of the system at all times.</p>
+</dd>
+<dt>Discrete</dt>
+<dd>
+<p>Only a finite state of actions is available for moving from one state to another.</p>
+</dd>
+<dt>Continuous</dt>
+<dd>
+<p>An infinite state of actions is available for moving from one state to another.</p>
+</dd>
+<dt>Episodic and nonepisodic</dt>
+<dd>
+<p>In an episodic environment, an agent’s current action will not affect a future action, whereas in a nonepisodic environment, an agent’s current action will affect future action.</p>
+</dd>
+<dt>Single and multiagent</dt>
+<dd>
+<p>A single-agent environment has only a single agent, and a multiagent environment has multiple agents.</p>
+</dd>
+</dl>
+</div></aside>
+
+<p>Given an environment and policy, policy evaluation is done by<a data-primary="workers in RLlib" data-type="indexterm" id="idm45354763030384"/> the <em>worker</em>. RLlib provides a <a href="https://oreil.ly/WgnmE">RolloutWorker class</a> that is used in most RLlib algorithms.</p>
+
+<p>At a high level, RLlib provides <a href="https://oreil.ly/JRjMw">trainer classes</a> that hold a policy for environment interaction. Through the trainer interface, the policy can be trained, checkpointed, or an action computed. In multiagent training, the trainer manages the querying and optimization of multiple policies at once. The trainer classes coordinate the distributed workflow of running rollouts and optimizing policies. They do this by leveraging Ray <a href="https://oreil.ly/2TTeo">parallel iterators</a>.</p>
+
+<p>Beyond environments defined in Python, Ray supports batch training on <a href="https://oreil.ly/u88nx">offline datasets</a> through <em>input readers</em>. This is an important use case for RL when it’s not possible to run traditional training and roll out in a physical environment (like a chemical plant or assembly line) and a suitable simulator doesn’t exist. In this approach, data for past activity is used to train a policy.</p>
+
+<p>From single processes to large clusters, all data interchange in RLlib uses <a href="https://oreil.ly/kP0sH">sample batches</a>. Sample batches encode one or more fragments of data. Typically, RLlib collects batches of size <code>rollout_fragment_length</code> from rollout workers and concatenates one or more of these batches into a batch of size <code>train_batch_size</code> that is the input to stochastic gradient descent (SGD).</p>
+
+<p>The main features of RLlib are as follows:</p>
+
+<ul>
+<li>
+<p>Support for the most popular deep-learning frameworks including PyTorch and TensorFlow.</p>
+</li>
+<li>
+<p>Implementation of highly distributed learning, RLlib algorithms—<a href="https://oreil.ly/5oJU8">PPO</a> or <a href="https://oreil.ly/dkaNw">IMPALA</a>—allow you to set the <code>num_workers</code> config parameter, such that your workloads can run on hundreds of CPUs or nodes, thus parallelizing and speeding up learning.</p>
+</li>
+<li>
+<p>Support for <a href="https://oreil.ly/wc9dO">multiagent RL</a> allows for training your agents supporting any of the following strategies:</p>
+
+<ul>
+<li>
+<p>Cooperative with <a href="https://oreil.ly/XZDTC">shared</a> or <a href="https://oreil.ly/ofB4R">separate</a> policies and/or value functions</p>
+</li>
+<li>
+<p>Adversarial scenarios using <a href="https://oreil.ly/c7hyz">self-play</a> and <a href="https://oreil.ly/wBnHl">league-based training</a></p>
+</li>
+<li>
+<p><a href="https://oreil.ly/2RRS2">Independent learning</a> of neutral/coexisting agents</p>
+</li>
+</ul>
+</li>
+<li>
+<p>Support APIs for an external pluggable simulators environment that comes with a pluggable, off-the-shelf <a href="https://oreil.ly/aaQ6s">client</a> ∕ <a href="https://oreil.ly/eMn1j">server</a> setup that allows you to run hundreds of independent simulators on the “outside” connecting to a central RLlib policy-server that learns and serves actions.</p>
+</li>
+</ul>
+
+<p>Additionally, RLlib provides simple APIs to customize all aspects of your training and experimental workflows. For example, you may code your own <a href="https://oreil.ly/15Cx0">environments</a> in Python by using <a href="https://oreil.ly/ECLhC">OpenAI’s Gym</a> or <a href="https://oreil.ly/eI9y9">DeepMind’s OpenSpiel</a>, provide custom <a href="https://oreil.ly/EQUpK">TensorFlow/Keras</a> or <a href="https://oreil.ly/nE4r3">PyTorch</a> models, and write your own <a href="https://oreil.ly/pbPyT">policy and loss definitions</a> or define custom <a href="https://oreil.ly/QUtq7">exploratory behavior</a>.</p>
+
+<p class="pagebreak-after">Simple code for implementing RL training to address the inverted pendulum—i.e., <a href="https://oreil.ly/lJIDX">CartPole</a>—problem (the environment exists in OpenAI’s Gym) is shown in 
+<span class="keep-together"><a data-type="xref" href="#rl_train">Example 10-13</a>.</span></p>
+<div class="less_space" data-type="example" id="rl_train">
+<h5><span class="label">Example 10-13. </span><a href="https://oreil.ly/d6tHJ">CartPole reinforcement learning</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="n">ray</code><code class="o">.</code><code class="n">init</code><code class="p">()</code>
+<code class="n">config</code> <code class="o">=</code> <code class="p">{</code>
+    <code class="c1"># Environment (RLlib understands OpenAI Gym registered strings).</code>
+    <code class="s1">'env'</code><code class="p">:</code> <code class="s1">'CartPole-v0'</code><code class="p">,</code>
+    <code class="c1"># Use 4 environment workers (aka "rollout workers") that parallelly</code>
+    <code class="c1"># collect samples from their own environment clone(s).</code>
+    <code class="s2">"num_workers"</code><code class="p">:</code> <code class="mi">4</code><code class="p">,</code>
+    <code class="s1">'framework'</code><code class="p">:</code> <code class="s1">'tf2'</code><code class="p">,</code>
+    <code class="s1">'eager_tracing'</code><code class="p">:</code> <code class="kc">True</code><code class="p">,</code>
+    <code class="c1"># This is just our model arch, choosing the right one is beyond the scope</code>
+    <code class="c1"># of this book.</code>
+    <code class="s1">'model'</code><code class="p">:</code> <code class="p">{</code>
+        <code class="s1">'fcnet_hiddens'</code><code class="p">:</code> <code class="p">[</code><code class="mi">64</code><code class="p">,</code> <code class="mi">64</code><code class="p">],</code>
+        <code class="s1">'fcnet_activation'</code><code class="p">:</code> <code class="s1">'relu'</code><code class="p">,</code>
+    <code class="p">},</code>
+    <code class="c1"># Set up a separate evaluation worker set for the</code>
+    <code class="c1"># `trainer.evaluate()` call after training.</code>
+    <code class="s1">'evaluation_num_workers'</code><code class="p">:</code> <code class="mi">1</code><code class="p">,</code>
+    <code class="c1"># Only for evaluation runs, render the env.</code>
+    <code class="s1">'evaluation_config'</code><code class="p">:</code> <code class="p">{</code>
+        <code class="s2">"render_env"</code><code class="p">:</code> <code class="kc">True</code><code class="p">,</code>
+    <code class="p">},</code>
+    <code class="s1">'gamma'</code><code class="p">:</code> <code class="mf">0.9</code><code class="p">,</code>
+    <code class="s1">'lr'</code><code class="p">:</code> <code class="mf">1e-2</code><code class="p">,</code>
+    <code class="s1">'train_batch_size'</code><code class="p">:</code> <code class="mi">256</code><code class="p">,</code>
+<code class="p">}</code>
+
+<code class="c1"># Create RLlib Trainer.</code>
+<code class="n">trainer</code> <code class="o">=</code> <code class="n">agents</code><code class="o">.</code><code class="n">ppo</code><code class="o">.</code><code class="n">PPOTrainer</code><code class="p">(</code><code class="n">config</code><code class="o">=</code><code class="n">config</code><code class="p">)</code>
+
+<code class="c1"># Run it for n training iterations. A training iteration includes</code>
+<code class="c1"># parallel sample collection by the environment workers as well as</code>
+<code class="c1"># loss calculation on the collected batch and a model update.</code>
+<code class="k">for</code> <code class="n">i</code> <code class="ow">in</code> <code class="nb">range</code><code class="p">(</code><code class="mi">5</code><code class="p">):</code>
+    <code class="nb">print</code><code class="p">(</code><code class="sa">f</code><code class="s2">"Iteration </code><code class="si">{</code><code class="n">i</code><code class="si">}</code><code class="s2">, training results </code><code class="si">{</code><code class="n">trainer</code><code class="o">.</code><code class="n">train</code><code class="p">()</code><code class="si">}</code><code class="s2">"</code><code class="p">)</code>
+
+<code class="c1"># Evaluate the trained Trainer (and render each timestep to the shell's</code>
+<code class="c1"># output).</code>
+<code class="n">trainer</code><code class="o">.</code><code class="n">evaluate</code><code class="p">()</code></pre></div>
+
+<p><a data-type="xref" href="#rl_train">Example 10-13</a> starts by creating a configuration for a trainer. The configuration defines an environment,<sup><a data-type="noteref" href="ch10.html#idm45354762991600" id="idm45354762991600-marker">3</a></sup> the number of workers (we use four), framework (we use TensorFlow 2), model, train batch size, and additional execution parameters. This configuration is used for the creation of the trainer. We then execute several training iterations and display results. That’s all it takes to implement simple RL.</p>
+
+<p>You can easily extend this simple example by creating your specific <a href="https://oreil.ly/APjBE">environment</a> or introducing your own <a href="https://oreil.ly/OFzk0">algorithms</a>.</p>
+
+<p>Numerous examples of Ray RLlIB usage are described<a data-primary="ML (machine learning)" data-secondary="reinforcement learning" data-startref="ml-reinforce" data-type="indexterm" id="idm45354762925200"/><a data-primary="machine learning (ML)" data-secondary="reinforcement learning" data-startref="machine-reinforce" data-type="indexterm" id="idm45354762923952"/><a data-primary="reinforcement learning" data-startref="reinforce" data-type="indexterm" id="idm45354762922736"/><a data-primary="RLlib" data-startref="rllib" data-type="indexterm" id="idm45354762921792"/> in <a href="https://oreil.ly/4I1Dv">“Best Reinforcement Learning Talks from Ray Summit 2021”</a> by Michael Galarnyk.</p>
+</div></section>
+
+
+
+
+
+
+<section data-pdf-bookmark="Hyperparameter Tuning with Ray" data-type="sect1"><div class="sect1" id="idm45354763074832">
+<h1>Hyperparameter Tuning with Ray</h1>
+
+<p>When <a data-primary="ML (machine learning)" data-secondary="hyperparameter tuning" data-type="indexterm" id="ml-hyper"/><a data-primary="machine learning (ML)" data-secondary="hyperparameter tuning" data-type="indexterm" id="machine-hyper"/><a data-primary="hyperparameter tuning" data-type="indexterm" id="hyper-tune"/>creating an ML model, you are often faced with a variety of choices, from the type of model to feature selection techniques. A natural extension of ML is to use similar techniques to find the right values (or parameters) for the choices in building our model. Parameters that define the model architecture are referred to as <em>hyperparameters</em>, and the process of searching for the ideal model architecture is referred to as <em>hyperparameter tuning</em>. Unlike the model parameters that specify how to transform the input data into the desired output, hyperparameters define how to structure the model.</p>
+<aside data-type="sidebar" epub:type="sidebar"><div class="sidebar" id="idm45354762913808">
+<h5>Popular Hyperparameter Tuning Approaches</h5>
+<p>The most popular hyperparameter tuning methods are as follows:</p>
+<dl>
+<dt>Grid search</dt>
+<dd>
+<p>This<a data-primary="grid search (hyperparameter tuning)" data-type="indexterm" id="idm45354762804784"/> is the most basic method. In this case, a model is built for each possible combination of provided hyperparameter values. Every model is evaluated for given criteria, and the one producing the best result is selected.</p>
+</dd>
+<dt>Random search</dt>
+<dd>
+<p>Unlike <a data-primary="random search (hyperparameter tuning)" data-type="indexterm" id="idm45354762802832"/>grid search, which uses a discrete set of hyperparameter values, random search leverages a statistical distribution for each hyperparameter from which values may be randomly sampled. This approach defines the number of iterations for search. For each iteration, hyperparameter values are picked by sampling-defined statistical distribution.</p>
+</dd>
+<dt>Bayesian optimization</dt>
+<dd>
+<p>In<a data-primary="Bayesian optimization (hyperparameter tuning)" data-type="indexterm" id="idm45354762800720"/> the preceding methods, individual experiments are building models for different parameters’ hyperparameter values. Such experiments are embarrassingly parallel and can be executed very efficiently. But the disadvantage of such an approach is that it does not take advantage of information from previous experiments. Bayesian optimization belongs to a class of sequential model-based optimization (SMBO) algorithms that use the results of the previous iteration to improve the sampling method of the next iteration. This approach builds a probability model of the objective function and uses it to select the most promising hyperparameters to evaluate.</p>
+</dd>
+</dl>
+</div></aside>
+
+<p>As with boosting algorithms, hyperparameter tuning is especially well suited to parallelization because it involves training and comparing many models. Depending on the search technique, training these separate models can be an “embarrassingly parallel” problem, as there is little to no communication needed between them.</p>
+
+<p>Here are some examples of hyperparameters:</p>
+
+<ul>
+<li>
+<p>The degree of the polynomial feature that should be used for the linear model</p>
+</li>
+<li>
+<p>The maximum depth allowed for a decision tree</p>
+</li>
+<li>
+<p>The minimum number of samples required at a leaf node in a decision tree</p>
+</li>
+<li>
+<p>The number of neurons for a neural network layer</p>
+</li>
+<li>
+<p>The number of layers for a neural network</p>
+</li>
+<li>
+<p>The learning rate for gradient descent</p>
+</li>
+</ul>
+
+<p><a href="https://oreil.ly/PzkxQ">Ray Tune</a> is <a data-primary="Ray Tune" data-type="indexterm" id="ray-tune"/><a data-primary="Tune" data-type="indexterm" id="tune"/>the Ray-based native library for hyperparameter tuning. The main features of Tune are as follows:</p>
+
+<ul>
+<li>
+<p>It provides distributed, asynchronous optimization out of the box leveraging Ray.</p>
+</li>
+<li>
+<p>The same code can be scaled from a single machine to a large, distributed cluster.</p>
+</li>
+<li>
+<p>It offers state-of-the-art algorithms including (but not limited to) <a href="https://oreil.ly/lY6nX">ASHA</a>, <a href="https://oreil.ly/iAiK9">BOHB</a>, and <a href="https://oreil.ly/PrsmS">Population-Based Training</a>.</p>
+</li>
+<li>
+<p>It integrates with <a href="https://oreil.ly/FM7uR">TensorBoard</a> or <a href="https://oreil.ly/pzYA6">MLflow</a> to visualize tuning results.</p>
+</li>
+<li>
+<p>It integrates with many optimization libraries such as <a href="https://oreil.ly/25sEx">Ax/Botorch</a>, <a href="https://oreil.ly/gCJ2I">Hyperopt</a>, and <a href="https://oreil.ly/xA9nC">Bayesian Optimization</a> and enables their transparently scaling.</p>
+</li>
+<li>
+<p>It supports many ML frameworks, including PyTorch, TensorFlow, XGBoost, LightGBM, and Keras.</p>
+</li>
+</ul>
+
+<p>The following are the main components of Tune:</p>
+<dl class="pagebreak-after-2">
+<dt>Trainable</dt>
+<dd>
+<p>A training function, with an objective function. Tune offers two interface APIs for a trainable: functional and class.</p>
+</dd>
+<dt>Search space</dt>
+<dd>
+<p>Valid values for your hyperparameters, and you can specify how these values are sampled (e.g., from a uniform distribution or a normal distribution). Tune offers various functions to define search spaces and sampling methods.</p>
+</dd>
+<dt>Search algorithm</dt>
+<dd>
+<p>An algorithm used for the optimization of hyperparameters. Tune has Search Algorithms that integrate with many popular optimization libraries, such as <a href="https://oreil.ly/x5oaM">Nevergrad</a> and <a href="https://oreil.ly/G2bGl">Hyperopt</a>. Tune automatically converts the provided search space into the search spaces the search algorithms/underlying library expect.</p>
+</dd>
+<dt>Trial</dt>
+<dd>
+<p>Execution or run of a logical representation of a single hyperparameter configuration. Each trial is associated with an instance of a trainable. And a collection of trials make up an experiment. Tune uses Ray actors as a worker node’s processes to run multiple trials in parallel.</p>
+</dd>
+<dt>Experiment analysis</dt>
+<dd>
+<p>An object, returned by Tune, that has methods that can be used for analyzing your training. It can be integrated with TensorBoard and MLflow for results visualization.</p>
+</dd>
+</dl>
+
+<p>To show how to use Tune, let’s optimize our PyTorch implementation of wine-quality model building (<a data-type="xref" href="#torch_model">Example 10-8</a>). We will try to optimize two parameters of the optimizer used to build the model: <code>lr</code> and <code>momentum</code>.</p>
+<aside data-type="sidebar" epub:type="sidebar"><div class="sidebar" id="idm45354762765504">
+<h5>Meaning of the Parameters We Are Optimizing</h5>
+<p><code>lr</code> stands for <a href="https://oreil.ly/mX0u0">learning rate</a>. Deep learning neural networks are trained using the SGD algorithm. This algorithm estimates the error gradient for the current state of the model by using examples from the training dataset, then updates the weights of the model by using the backpropagation-of-errors algorithm, referred to as simply <em>backpropagation</em>.</p>
+
+<p>The amount that the weights are updated during training is referred to as the <em>step size</em>, or the <em>learning rate</em>.</p>
+
+<p><code>momentum</code> is a <a href="https://oreil.ly/hN5wh">hyperparameter</a> of the SGD algorithm. It is an exponentially weighted average of the prior updates to the weight that can be included when the weights are updated. This change to SGD is called <em>momentum</em> and adds inertia to the update procedure, causing many past updates in one direction to continue in that direction in the future.</p>
+</div></aside>
+
+<p class="pagebreak-after">First we restructure our code (<a data-type="xref" href="#torch_train">Example 10-9</a>) to introduce three additional functions (<a data-type="xref" href="#tune_additions">Example 10-14</a>).</p>
+<div class="less_space" data-type="example" id="tune_additions">
+<h5><span class="label">Example 10-14. </span><a href="https://oreil.ly/dEMDF">Implementing support functions for our PyTorch wine-quality model</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="c1"># train function</code>
+<code class="k">def</code> <code class="nf">model_train</code><code class="p">(</code><code class="n">model</code><code class="p">,</code> <code class="n">optimizer</code><code class="p">,</code> <code class="n">criterion</code><code class="p">,</code> <code class="n">train_loader</code><code class="p">):</code>
+    <code class="c1"># for every mini batch</code>
+    <code class="k">for</code> <code class="n">i</code><code class="p">,</code> <code class="p">(</code><code class="n">inputs</code><code class="p">,</code> <code class="n">targets</code><code class="p">)</code> <code class="ow">in</code> <code class="nb">enumerate</code><code class="p">(</code><code class="n">train_loader</code><code class="p">):</code>
+        <code class="c1"># clear the gradients</code>
+        <code class="n">optimizer</code><code class="o">.</code><code class="n">zero_grad</code><code class="p">()</code>
+        <code class="c1"># compute the model output</code>
+        <code class="n">yhat</code> <code class="o">=</code> <code class="n">model</code><code class="p">(</code><code class="n">inputs</code><code class="p">)</code>
+        <code class="c1"># calculate loss</code>
+        <code class="n">loss</code> <code class="o">=</code> <code class="n">criterion</code><code class="p">(</code><code class="n">yhat</code><code class="p">,</code> <code class="n">targets</code><code class="p">)</code>
+        <code class="c1"># credit assignment</code>
+        <code class="n">loss</code><code class="o">.</code><code class="n">backward</code><code class="p">()</code>
+        <code class="c1"># update model weights</code>
+        <code class="n">optimizer</code><code class="o">.</code><code class="n">step</code><code class="p">()</code>
+
+<code class="c1"># test model</code>
+<code class="k">def</code> <code class="nf">model_test</code><code class="p">(</code><code class="n">model</code><code class="p">,</code> <code class="n">test_loader</code><code class="p">):</code>
+    <code class="n">predictions</code><code class="p">,</code> <code class="n">actuals</code> <code class="o">=</code> <code class="nb">list</code><code class="p">(),</code> <code class="nb">list</code><code class="p">()</code>
+    <code class="k">for</code> <code class="n">i</code><code class="p">,</code> <code class="p">(</code><code class="n">inputs</code><code class="p">,</code> <code class="n">targets</code><code class="p">)</code> <code class="ow">in</code> <code class="nb">enumerate</code><code class="p">(</code><code class="n">test_loader</code><code class="p">):</code>
+        <code class="c1"># evaluate the model on the test set</code>
+        <code class="n">yhat</code> <code class="o">=</code> <code class="n">model</code><code class="p">(</code><code class="n">inputs</code><code class="p">)</code>
+        <code class="c1"># retrieve numpy array</code>
+        <code class="n">yhat</code> <code class="o">=</code> <code class="n">yhat</code><code class="o">.</code><code class="n">detach</code><code class="p">()</code><code class="o">.</code><code class="n">numpy</code><code class="p">()</code>
+        <code class="n">actual</code> <code class="o">=</code> <code class="n">targets</code><code class="o">.</code><code class="n">numpy</code><code class="p">()</code>
+        <code class="n">actual</code> <code class="o">=</code> <code class="n">actual</code><code class="o">.</code><code class="n">reshape</code><code class="p">((</code><code class="nb">len</code><code class="p">(</code><code class="n">actual</code><code class="p">),</code> <code class="mi">1</code><code class="p">))</code>
+        <code class="c1"># round to class values</code>
+        <code class="n">yhat</code> <code class="o">=</code> <code class="n">yhat</code><code class="o">.</code><code class="n">round</code><code class="p">()</code>
+        <code class="c1"># store</code>
+        <code class="n">predictions</code><code class="o">.</code><code class="n">append</code><code class="p">(</code><code class="n">yhat</code><code class="p">)</code>
+        <code class="n">actuals</code><code class="o">.</code><code class="n">append</code><code class="p">(</code><code class="n">actual</code><code class="p">)</code>
+    <code class="n">predictions</code><code class="p">,</code> <code class="n">actuals</code> <code class="o">=</code> <code class="n">vstack</code><code class="p">(</code><code class="n">predictions</code><code class="p">),</code> <code class="n">vstack</code><code class="p">(</code><code class="n">actuals</code><code class="p">)</code>
+    <code class="c1"># calculate accuracy</code>
+    <code class="k">return</code> <code class="n">accuracy_score</code><code class="p">(</code><code class="n">actuals</code><code class="p">,</code> <code class="n">predictions</code><code class="p">)</code>
+
+<code class="c1"># train wine quality model</code>
+<code class="k">def</code> <code class="nf">train_winequality</code><code class="p">(</code><code class="n">config</code><code class="p">):</code>
+
+    <code class="c1"># calculate split</code>
+    <code class="n">train</code><code class="p">,</code> <code class="n">test</code> <code class="o">=</code> <code class="n">dataset</code><code class="o">.</code><code class="n">get_splits</code><code class="p">()</code>
+    <code class="n">train_dl</code> <code class="o">=</code> <code class="n">DataLoader</code><code class="p">(</code><code class="n">train</code><code class="p">,</code> <code class="n">batch_size</code><code class="o">=</code><code class="mi">32</code><code class="p">,</code> <code class="n">shuffle</code><code class="o">=</code><code class="kc">True</code><code class="p">)</code>
+    <code class="n">test_dl</code> <code class="o">=</code> <code class="n">DataLoader</code><code class="p">(</code><code class="n">test</code><code class="p">,</code> <code class="n">batch_size</code><code class="o">=</code><code class="mi">32</code><code class="p">,</code> <code class="n">shuffle</code><code class="o">=</code><code class="kc">False</code><code class="p">)</code>
+
+    <code class="c1"># model</code>
+    <code class="n">model</code> <code class="o">=</code> <code class="n">WineQualityModel</code><code class="p">(</code><code class="mi">11</code><code class="p">)</code>
+    <code class="c1"># define the optimization</code>
+    <code class="n">criterion</code> <code class="o">=</code> <code class="n">BCELoss</code><code class="p">()</code>
+    <code class="n">optimizer</code> <code class="o">=</code> <code class="n">SGD</code><code class="p">(</code>
+        <code class="n">model</code><code class="o">.</code><code class="n">parameters</code><code class="p">(),</code> <code class="n">lr</code><code class="o">=</code><code class="n">config</code><code class="p">[</code><code class="s2">"lr"</code><code class="p">],</code> <code class="n">momentum</code><code class="o">=</code><code class="n">config</code><code class="p">[</code><code class="s2">"momentum"</code><code class="p">])</code>
+    <code class="k">for</code> <code class="n">i</code> <code class="ow">in</code> <code class="nb">range</code><code class="p">(</code><code class="mi">50</code><code class="p">):</code>
+        <code class="n">model_train</code><code class="p">(</code><code class="n">model</code><code class="p">,</code> <code class="n">optimizer</code><code class="p">,</code> <code class="n">criterion</code><code class="p">,</code> <code class="n">train_dl</code><code class="p">)</code>
+        <code class="n">acc</code> <code class="o">=</code> <code class="n">model_test</code><code class="p">(</code><code class="n">model</code><code class="p">,</code> <code class="n">test_dl</code><code class="p">)</code>
+
+        <code class="c1"># send the current training result back to Tune</code>
+        <code class="n">tune</code><code class="o">.</code><code class="n">report</code><code class="p">(</code><code class="n">mean_accuracy</code><code class="o">=</code><code class="n">acc</code><code class="p">)</code>
+
+        <code class="k">if</code> <code class="n">i</code> <code class="o">%</code> <code class="mi">5</code> <code class="o">==</code> <code class="mi">0</code><code class="p">:</code>
+            <code class="c1"># this saves the model to the trial directory</code>
+            <code class="n">torch</code><code class="o">.</code><code class="n">save</code><code class="p">(</code><code class="n">model</code><code class="o">.</code><code class="n">state_dict</code><code class="p">(),</code> <code class="s2">"./model.pth"</code><code class="p">)</code></pre></div>
+
+<p>In this code, we have introduced three supporting functions:</p>
+<dl>
+<dt><code>model_train</code></dt>
+<dd>
+<p>Encapsulates model training.</p>
+</dd>
+<dt><code>model_test</code></dt>
+<dd>
+<p>Encapsulates model-quality evaluation.</p>
+</dd>
+<dt><code>train_winequality</code></dt>
+<dd>
+<p>Implements all steps for model training and reports them to Tune. This allows Tune to make decisions in the middle of training.</p>
+</dd>
+</dl>
+
+<p>With these three functions in place, integration with Tune is very straightforward (<a data-type="xref" href="#tune_additions_2">Example 10-15</a>).</p>
+<div data-type="example" id="tune_additions_2">
+<h5><span class="label">Example 10-15. </span><a href="https://oreil.ly/1zhR6">Integrating model building with Tune</a></h5>
+
+<pre data-code-language="python" data-type="programlisting"><code class="c1"># load the dataset</code>
+<code class="n">dataset</code> <code class="o">=</code> <code class="n">WineQualityDataset</code><code class="p">(</code><code class="s2">"winequality-red.csv"</code><code class="p">)</code>
+
+<code class="n">search_space</code> <code class="o">=</code> <code class="p">{</code>
+    <code class="s2">"lr"</code><code class="p">:</code> <code class="n">tune</code><code class="o">.</code><code class="n">sample_from</code><code class="p">(</code><code class="k">lambda</code> <code class="n">spec</code><code class="p">:</code> <code class="mi">10</code><code class="o">**</code><code class="p">(</code><code class="o">-</code><code class="mi">10</code> <code class="o">*</code> <code class="n">np</code><code class="o">.</code><code class="n">random</code><code class="o">.</code><code class="n">rand</code><code class="p">())),</code>
+    <code class="s2">"momentum"</code><code class="p">:</code> <code class="n">tune</code><code class="o">.</code><code class="n">uniform</code><code class="p">(</code><code class="mf">0.1</code><code class="p">,</code> <code class="mf">0.9</code><code class="p">)</code>
+<code class="p">}</code>
+
+<code class="n">analysis</code> <code class="o">=</code> <code class="n">tune</code><code class="o">.</code><code class="n">run</code><code class="p">(</code>
+    <code class="n">train_winequality</code><code class="p">,</code>
+    <code class="n">num_samples</code><code class="o">=</code><code class="mi">100</code><code class="p">,</code>
+    <code class="n">scheduler</code><code class="o">=</code><code class="n">ASHAScheduler</code><code class="p">(</code><code class="n">metric</code><code class="o">=</code><code class="s2">"mean_accuracy"</code><code class="p">,</code> <code class="n">mode</code><code class="o">=</code><code class="s2">"max"</code><code class="p">),</code>
+    <code class="n">config</code><code class="o">=</code><code class="n">search_space</code>
+<code class="p">)</code></pre></div>
+
+<p>After loading the dataset, the code defines a search space—​a space for possible hyperparameters—​and invokes tuning by using the <code>tune.run</code> method. The parameters here are as follows:</p>
+<dl>
+<dt>Callable</dt>
+<dd>
+<p>Defines a training function (<code>train_winequality</code>, in our case).</p>
+</dd>
+<dt><code>num_samples</code></dt>
+<dd>
+<p>Indicates the maximum number of runs for Tune.</p>
+</dd>
+<dt><code>scheduler</code></dt>
+<dd>
+<p>Here we use <a href="https://oreil.ly/frU6p">ASHA</a>, a scalable algorithm for <a href="https://oreil.ly/ASVYC">principled early stopping</a>. To make the optimization process more efficient, the ASHA scheduler terminates trials that are less promising and allocates more time and resources to more promising trials.</p>
+</dd>
+<dt><code>config</code></dt>
+<dd>
+<p>Contains the search space for the algorithm.</p>
+</dd>
+</dl>
+
+<p>Running the preceding code produces the result shown in <a data-type="xref" href="#tune_result">Example 10-16</a>.</p>
+<div data-type="example" id="tune_result">
+<h5><span class="label">Example 10-16. </span>Tuning the model result</h5>
+
+<pre data-type="programlisting">+-------------------------------+------------+-----------------+------------- ...
+
+| Trial name | status | loc | lr | momentum | acc | iter | total time (s) |
+
+|-------------------------------+------------+-----------------+------------- ...
+
+| ...00000 | TERMINATED | ... | 2.84411e-07 | 0.170684 | 0.513258 | 50 | 4.6005 |
+
+| ...00001 | TERMINATED | ... | 4.39914e-10 | 0.562412 | 0.530303 | 1 | 0.0829589 |
+
+| ...00002 | TERMINATED | ... | 5.72621e-06 | 0.734167 | 0.587121 | 16 | 1.2244 |
+
+| ...00003 | TERMINATED | ... | 0.104523 | 0.316632 | 0.729167 | 50 | 3.83347 |
+
+……………………………..
+
+| ...00037 | TERMINATED | ... | 5.87006e-09 | 0.566372 | 0.625 | 4 | 2.41358 |
+
+|| ...00043 | TERMINATED | ... | 0.000225694 | 0.567915 | 0.50947 | 1 | 0.130516 |
+
+| ...00044 | TERMINATED | ... | 2.01545e-07 | 0.525888 | 0.405303 | 1 | 0.208055 |
+
+| ...00045 | TERMINATED | ... | 1.84873e-07 | 0.150054 | 0.583333 | 4 | 2.47224 |
+
+| ...00046 | TERMINATED | ... | 0.136969 | 0.567186 | 0.742424 | 50 | 4.52821 |
+
+| ...00047 | TERMINATED | ... | 1.29718e-07 | 0.659875 | 0.443182 | 1 | 0.0634422 |
+
+| ...00048 | TERMINATED | ... | 0.00295002 | 0.349696 | 0.564394 | 1 | 0.107348 |
+
+| ...00049 | TERMINATED | ... | 0.363802 | 0.290659 | 0.725379 | 4 | 0.227807 |
+
++-------------------------------+------------+-----------------+------------- ...</pre></div>
+
+<p>As you can see, although we have defined 50 iterations for the model search, using ASHA significantly improves performance because it uses significantly fewer runs on average (in this example, more than 50% used only <a data-primary="ML (machine learning)" data-secondary="hyperparameter tuning" data-startref="ml-hyper" data-type="indexterm" id="idm45354762224544"/><a data-primary="machine learning (ML)" data-secondary="hyperparameter tuning" data-startref="machine-hyper" data-type="indexterm" id="idm45354762223456"/><a data-primary="hyperparameter tuning" data-startref="hyper-tune" data-type="indexterm" id="idm45354762222368"/><a data-primary="Ray Tune" data-startref="ray-tune" data-type="indexterm" id="idm45354762221520"/><a data-primary="Tune" data-startref="tune" data-type="indexterm" id="idm45354762220672"/>one iteration).</p>
+</div></section>
+
+
+
+
+
+
+<section data-pdf-bookmark="Conclusion" data-type="sect1"><div class="sect1" id="idm45354762919120">
+<h1>Conclusion</h1>
+
+<p>In this chapter, you learned how Ray constructs are leveraged for scaling execution of the different ML libraries (scikit-learn, XGBoost, LightGBM, and Lightning) using the full capabilities of multimachine Ray clusters.</p>
+
+<p>We showed you simple examples of porting your existing ML code to Ray, as well as some of the internals of how Ray extends ML libraries to scale. We also showed simple examples of using Ray-specific implementations of RL and hyperparameter tuning.</p>
+
+<p>We hope that looking at these relatively simple examples will give you a better idea of how to best use Ray in your day-to-day implementations.</p>
+</div></section>
+<div data-type="footnotes"><p data-type="footnote" id="idm45354765564752"><sup><a href="ch10.html#idm45354765564752-marker">1</a></sup> In this example, we are using <code>GridSearchCV</code>, which implements an exhaustive search. Although this works for this simple example, scikit-learn currently provides a new library, <a href="https://oreil.ly/p5p8d">Tune-sklearn</a>, that provides more powerful <a href="https://oreil.ly/aQoEw">tune algorithms</a> providing a significant tuning speedup. This said, the same Joblib backend works <a data-primary="Joblib" data-type="indexterm" id="joblib"/>for these algorithms the same way.</p><p data-type="footnote" id="idm45354764269024"><sup><a href="ch10.html#idm45354764269024-marker">2</a></sup> In our testing, for XGBoost execution time was 0.15 versus 14.4 seconds, and for LightGBM it was 0.24 versus 12.4 seconds.</p><p data-type="footnote" id="idm45354762991600"><sup><a href="ch10.html#idm45354762991600-marker">3</a></sup> Here we use an existing <a href="https://oreil.ly/BSXIK">OpenAI Gym environment</a>, so we can just use its name.</p></div></div></section></body></html>
