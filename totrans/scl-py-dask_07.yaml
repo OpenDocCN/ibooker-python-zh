@@ -1,7 +1,9 @@
 - en: Chapter 7\. Adding Changeable/Mutable State with Dask Actors
+  id: totrans-0
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 第 7 章。使用 Dask Actors 添加可变状态
 - en: Dask is focused on scaling analytic use cases, but you can use it to scale many
     other types of problems. So far, most of the tools you have used in Dask are functional.
     Functional programming means that previous calls do not impact future calls. Stateless
@@ -10,23 +12,34 @@
     an example of state common in data science. One of the most common ways of handling
     state in a distributed system is with the actor model. This chapter will introduce
     both the general actor model and Dask’s specific implementation.
+  id: totrans-1
   prefs: []
   type: TYPE_NORMAL
+  zh: Dask 主要专注于扩展分析用例，但您也可以将其用于扩展许多其他类型的问题。到目前为止，在 Dask 中使用的大多数工具都是函数式的。函数式编程意味着先前的调用不会影响未来的调用。在像
+    Dask 这样的分布式系统中，无状态函数是常见的，因为它们可以在失败时安全地多次重新执行。在训练过程中更新模型的权重是数据科学中常见的状态示例。在分布式系统中处理状态的最常见方法之一是使用演员模型。本章将介绍通用的演员模型及其在
+    Dask 中的具体实现。
 - en: Dask futures offer a non-mutable distributed state, where values are stored
     on the workers. However, this doesn’t work well for situations in which you want
     to update the state, like changing a bank account balance (an alternative solution
     is illustrated in [Example 7-1](#making_bank_acct_actor_ch07_1686239522527)),
     or updating machine learning model weights during training.
+  id: totrans-2
   prefs: []
   type: TYPE_NORMAL
+  zh: Dask futures 提供了一个非可变的分布式状态，其中的值存储在工作节点上。然而，对于想要更新状态的情况（比如更改银行账户余额，一个替代方案在 [示例
+    7-1](#making_bank_acct_actor_ch07_1686239522527) 中有所说明），这种方法并不适用，或者在训练过程中更新机器学习模型权重。
 - en: Tip
+  id: totrans-3
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 提示
 - en: Dask actors have a number of limitations, and we believe that in many cases
     the right answer is to keep mutable state *outside* of Dask (like in a database).
+  id: totrans-4
   prefs: []
   type: TYPE_NORMAL
+  zh: Dask 演员有许多限制，我们认为在许多情况下正确的答案是将可变状态保持在 Dask *之外*（比如在数据库中）。
 - en: Of course, you don’t have to use distributed mutable state. In some cases, you
     may choose to not use distributed state and instead put it all in your main program.
     This can quickly lead to bottlenecks on the node responsible for your main program.
@@ -34,39 +47,58 @@
     which has its own trade-offs. While this chapter focuses on how to use the actor
     model, we conclude with when not to use Dask actors and alternatives for handling
     state, which is of equal importance.
+  id: totrans-5
   prefs: []
   type: TYPE_NORMAL
+  zh: 当然，您不必使用分布式可变状态。在某些情况下，您可能选择不使用分布式状态，而是将其全部放入主程序中。这可能会迅速导致负责主程序的节点成为瓶颈。其他选择包括将状态存储在
+    Dask 之外，比如数据库，这有其自身的权衡。虽然本章重点介绍如何使用演员模型，但我们最后会讨论何时不使用 Dask 演员以及处理状态的替代方法，这同样重要。
 - en: Tip
+  id: totrans-6
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 提示
 - en: Dask also has distributed mutable objects, covered in [“Distributed Data Structures
     for Scheduling”](ch06.xhtml#dds_scheduling).
+  id: totrans-7
   prefs: []
   type: TYPE_NORMAL
+  zh: Dask 还有分布式可变对象，详见 [“用于调度的分布式数据结构”](ch06.xhtml#dds_scheduling)。
 - en: What Is the Actor Model?
+  id: totrans-8
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 什么是演员模型？
 - en: 'In the actor model, actors do the following:'
+  id: totrans-9
   prefs: []
   type: TYPE_NORMAL
+  zh: 在演员模型中，演员们会做以下事情：
 - en: Store data
+  id: totrans-10
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 存储数据
 - en: Receive and respond to messages, including from other actors and external
+  id: totrans-11
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 接收并响应消息，包括来自其他参与者和外部
 - en: Pass messages
+  id: totrans-12
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 传递消息
 - en: Create new actors
+  id: totrans-13
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 创建新的演员
 - en: The actor model is a technique of dealing with state in parallel and distributed
     systems that avoid locks. While proper locking ensures that only one piece of
     code modifies a given value, it can be very expensive and difficult to get right.
@@ -76,54 +108,78 @@
     The actor model was introduced in 1973 and has since been implemented in most
     programming languages,^([2](ch07.xhtml#id696)) with some popular modern implementations
     including Akka in Scala and the .NET languages.
+  id: totrans-14
   prefs: []
   type: TYPE_NORMAL
+  zh: 演员模型是处理并行和分布式系统中状态的一种技术，避免了锁定。虽然适当的锁定可以确保只有一个代码片段修改给定值，但这可能非常昂贵且难以正确实现。锁定的常见问题称为死锁，这是资源按错误顺序获取/释放，导致程序可能永远阻塞。在分布式系统中，锁定的缓慢和困难只会增加。^([1](ch07.xhtml#id695))
+    演员模型于 1973 年引入，此后已在大多数编程语言中实现。^([2](ch07.xhtml#id696)) 一些流行的现代实现包括 Scala 中的 Akka
+    和 .NET 语言中的实现。
 - en: It can be helpful to think of each actor as a person holding a note about their
     state, and that person is the only one allowed to read or update the note. Whenever
     another part of the code wants to access or modify the state, it must ask the
     actor to do this.
+  id: totrans-15
   prefs: []
   type: TYPE_NORMAL
+  zh: 每个 actor 可以被看作是一个持有其状态注释的人，而且只允许该人读取或更新注释。当代码的另一部分想要访问或修改状态时，必须要求 actor 这样做。
 - en: Conceptually, this is very similar to classes in object-oriented programming.
     However, unlike with generic classes, actors process one request at a time to
     ensure an actor’s state consistency. To improve the throughput, people often create
     a pool of actors (assuming they can shard or replicate the actor’s state). We’ll
     cover an example in the next section.
+  id: totrans-16
   prefs: []
   type: TYPE_NORMAL
+  zh: 从概念上讲，这与面向对象编程中的类非常相似。然而，与通用类不同的是，actors 一次只处理一个请求，以确保 actor 的状态一致性。为了提高吞吐量，人们通常会创建一个
+    actor 池（假设可以对 actor 的状态进行分片或复制）。我们将在下一节中介绍一个示例。
 - en: 'The actor model is a good fit for many distributed systems scenarios. Here
     are some typical use cases in which the actor model can be advantageous:'
+  id: totrans-17
   prefs: []
   type: TYPE_NORMAL
+  zh: Actor 模型非常适合许多分布式系统场景。以下是一些典型的使用案例，其中 actor 模型可能具有优势：
 - en: You need to deal with a large distributed state that is hard to synchronize
     between invocations (e.g., ML model weights, counters, etc.).
+  id: totrans-18
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 您需要处理一个大型分布式状态，在调用之间很难同步（例如，ML 模型权重，计数器等）。
 - en: You want to work with single-threaded objects that do not require significant
     interaction from external components. This is especially useful for legacy code
     that is not fully understood.^([3](ch07.xhtml#id697))
+  id: totrans-19
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 您希望使用不需要来自外部组件显著交互的单线程对象。这对于不完全理解的遗留代码尤其有用。^([3](ch07.xhtml#id697))
 - en: Now that you have an understanding of the actor model in general, it’s time
     for you to learn about how Dask implements it, and about its trade-offs.
+  id: totrans-20
   prefs: []
   type: TYPE_NORMAL
+  zh: 现在您对 actor 模型有了一般的了解，是时候学习 Dask 如何实现它以及其中的权衡了。
 - en: Dask Actors
+  id: totrans-21
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: Dask Actors
 - en: Dask actors are one implementation of actors, and some of the properties differ
     between Dask and other systems. Unlike the rest of Dask, Dask actors are not resilient
     to failures. If the node, or process, running the actor fails, the data inside
     the actor is lost and Dask is not able to recover from it.
+  id: totrans-22
   prefs: []
   type: TYPE_NORMAL
+  zh: Dask actors 是 actors 的一种实现方式，其属性与 Dask 和其他系统之间有所不同。与 Dask 的其余部分不同，Dask actors
+    不具有容错能力。如果运行 actor 的节点或进程失败，则 actor 内部的数据将丢失，Dask 无法恢复。
 - en: Your First Actor (It’s a Bank Account)
+  id: totrans-23
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 您的第一个 actor（这是一个银行账户）
 - en: Creating an actor in Dask is relatively simple. To start with, you make a normal
     Python class with functions that you will call. These functions are responsible
     for receiving and responding to messages in the actor model. Once you have your
@@ -131,189 +187,285 @@
     you back a future representing a reference to the actor. When you get the `result`
     of this future, Dask creates and returns to you a proxy object, which passes any
     function calls as messages to the actor.
+  id: totrans-24
   prefs: []
   type: TYPE_NORMAL
+  zh: 在 Dask 中创建一个 actor 相对简单。首先，您创建一个普通的 Python 类，其中包含您将调用的函数。这些函数负责在 actor 模型中接收和响应消息。一旦您有了类，您将其
+    `submit` 给 Dask，同时带有标志 `actor=True`，Dask 将返回一个表示 actor 引用的 future。当您获取此 future
+    的 `result` 时，Dask 创建并返回给您一个代理对象，该对象将任何函数调用作为消息传递给 actor。
 - en: Note
+  id: totrans-25
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 注意
 - en: Note this is effectively an object-oriented bank account implementation, except
     we don’t have any locks since we only ever have a single thread changing the values.
+  id: totrans-26
   prefs: []
   type: TYPE_NORMAL
+  zh: 请注意，这实际上是一个面向对象的银行账户实现，但我们没有任何锁，因为我们只有一个单线程改变值。
 - en: Let’s take a look at how you can implement a common example actor for a bank
     account. In [Example 7-1](#making_bank_acct_actor_ch07_1686239522527), we define
     three methods—`balance`, `deposit`, and `withdrawal`—that can be used to interact
     with the actor. Once the actor is defined, we ask Dask to schedule the actor so
     that we can call it.
+  id: totrans-27
   prefs: []
   type: TYPE_NORMAL
+  zh: 让我们看看如何为银行账户实现一个常见的 actor。在 [Example 7-1](#making_bank_acct_actor_ch07_1686239522527)
+    中，我们定义了三个方法——`balance`、`deposit` 和 `withdrawal`——用于与 actor 交互。一旦定义了 actor，我们请求
+    Dask 调度该 actor，以便我们可以调用它。
 - en: Example 7-1\. Making a bank account actor
+  id: totrans-28
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 7-1\. 制作一个银行账户 actor
 - en: '[PRE0]'
+  id: totrans-29
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE0]'
 - en: When you call methods on the resulting proxy object (see [Example 7-2](#using_bank_acct_actor_ch07_1686239559633)),
     Dask dispatches a remote procedure call and returns a special ActorFuture immediately.
     This allows you to use actors in a non-blocking fashion. Unlike the generic `@dask.delayed`
     calls, these are all routed to the same process, namely the one where Dask has
     scheduled the actor.
+  id: totrans-30
   prefs: []
   type: TYPE_NORMAL
+  zh: 当您在生成的代理对象上调用方法时（参见[示例 7-2](#using_bank_acct_actor_ch07_1686239559633)），Dask
+    将调度远程过程调用并立即返回一个特殊的ActorFuture。这使您可以以非阻塞方式使用actors。与通用的`@dask.delayed`调用不同，这些调用都被路由到同一个进程，即
+    Dask 安排actor的进程。
 - en: Example 7-2\. Using the bank account actor
+  id: totrans-31
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 7-2\. 使用银行账户actor
 - en: '[PRE1]'
+  id: totrans-32
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE1]'
 - en: The ActorFuture *is not serializable*, so if you need to transfer the result
     of calling an actor, you need to block and get its value, as shown in [Example 7-3](#actorfutures_not_serializable_ch07_1686239609453).
+  id: totrans-33
   prefs: []
   type: TYPE_NORMAL
+  zh: ActorFuture **不可序列化**，因此如果需要传输调用actor的结果，需要阻塞并获取其值，如[示例 7-3](#actorfutures_not_serializable_ch07_1686239609453)所示。
 - en: Example 7-3\. ActorFutures are not serializable
+  id: totrans-34
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 7-3\. ActorFutures 不可序列化
 - en: '[PRE2]'
+  id: totrans-35
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE2]'
 - en: While having one actor per bank account does a good job of avoiding bottlenecks,
     since each bank account likely won’t have too many transactions queued, it is
     slightly inefficient, as there is a non-zero actor overhead. One solution is to
     extend our bank account actor to support multiple accounts by using a key and
     hashmap, but if all accounts are inside one actor, this can lead to scaling problems.
+  id: totrans-36
   prefs: []
   type: TYPE_NORMAL
+  zh: 每个银行账户一个actor可以很好地避免瓶颈，因为每个银行账户可能不会有太多排队的交易，但这样做稍微低效，因为存在非零的actor开销。一个解决方案是通过使用键和哈希映射来扩展我们的银行账户actor，以支持多个账户，但如果所有账户都在一个actor内部，这可能会导致扩展问题。
 - en: Scaling Dask Actors
+  id: totrans-37
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 缩放 Dask Actors
 - en: The actor model described earlier in this chapter typically assumes that actors
     are lightweight, meaning they contain a single piece of state, and do not require
     scal⁠ing/​parallelization. In Dask and similar systems (including Akka), actors
     are often used for coarser-grained implementations and can require scaling.^([4](ch07.xhtml#id706))
+  id: totrans-38
   prefs: []
   type: TYPE_NORMAL
+  zh: 本章早期描述的actor模型通常假定actors是轻量级的，即它们包含单个状态片段，并且不需要扩展/并行化。在 Dask 和类似系统（包括 Akka）中，actors通常用于更粗粒度的实现，并且可能需要扩展。^([4](ch07.xhtml#id706))
 - en: As with `dask.delayed`, you can scale actors horizontally (across pro⁠cesses/​machines)
     by creating multiple actors or vertically (with more resources). Scaling actors
     horizontally is not as simple as just adding more machines or workers, since Dask
     cannot break up a single actor across multiple processes.
+  id: totrans-39
   prefs: []
   type: TYPE_NORMAL
+  zh: 与`dask.delayed`类似，您可以通过创建多个actor水平（跨进程/机器）或垂直（使用更多资源）来扩展actors。然而，横向扩展actors并不像只需增加更多机器或工作器那样简单，因为
+    Dask 无法将单个actor分割为多个进程。
 - en: When scaling actors horizontally, it is up to you to break up the state in such
     a way that you can have multiple actors handling it. One technique is to use *actor
     pools* (see [Figure 7-1](#figure0701_ch07_1686049800930)). These pools can have
     a static mapping of, say, user → actor, or, in the situation in which the actors
     share a database, round-robin or other non-deterministic balancing can be used.
+  id: totrans-40
   prefs: []
   type: TYPE_NORMAL
+  zh: 在横向扩展actors时，您需要以一种可以使多个actors处理其状态的方式来分割状态。一种技术是使用*actor池*（见[图 7-1](#figure0701_ch07_1686049800930)）。这些池可以具有静态映射，例如用户→actor，或者在actors共享数据库的情况下，可以使用轮询或其他非确定性的负载均衡。
 - en: '![spwd 0701](Images/spwd_0701.png)'
+  id: totrans-41
   prefs: []
   type: TYPE_IMG
+  zh: '![spwd 0701](Images/spwd_0701.png)'
 - en: Figure 7-1\. Scaled actor model using consistent hashing
+  id: totrans-42
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 图 7-1\. 使用一致性哈希的扩展actor模型
 - en: We extend the bank account example to a “bank” where an actor may be responsible
     for multiple accounts (but not for all of the accounts in the bank). We can then
     use an actor pool with hashing to route the requests to the correct “branch” or
     actor, as shown in [Example 7-4](#sketchy_bank_ex).
+  id: totrans-43
   prefs: []
   type: TYPE_NORMAL
+  zh: 我们将银行账户示例扩展到一个“银行”，其中一个actor可能负责多个账户（但不是银行中所有账户）。然后，我们可以使用带哈希的actor池将请求路由到正确的“分支”或actor，如[示例 7-4](#sketchy_bank_ex)所示。
 - en: Example 7-4\. Hashing actor pool example for a bank
+  id: totrans-44
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 7-4\. 用于银行的哈希actor池示例扩展
 - en: '[PRE3]'
+  id: totrans-45
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE3]'
 - en: Limitations
+  id: totrans-46
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 限制
 - en: As previously mentioned, Dask actors are not resilient to machine or process
     failure. This is a design decision in Dask and is not true for all actor systems.
     Many, but not all, actor systems offer different options for the persistence and
     recovery of actors during failure. For example, Ray has the concept of recoverable
     actors (managed automatically inside of workflows or manually).
+  id: totrans-47
   prefs: []
   type: TYPE_NORMAL
+  zh: 如前所述，Dask actors 在机器或进程失败时不具备韧性。这是 Dask 的设计决策，并非所有 actor 系统都是如此。许多 actor 系统提供了不同的选项，用于在失败时持久化和恢复
+    actors。例如，Ray 具有可恢复 actors 的概念（在工作流内部自动管理或手动管理）。
 - en: Warning
+  id: totrans-48
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 警告
 - en: Calls to `dask.delayed` functions may be retried on failure, and if they call
     functions on actors, those function calls will then be duplicated. If you cannot
     have a function replayed, then you need to ensure it is called only from inside
     other actors.
+  id: totrans-49
   prefs: []
   type: TYPE_NORMAL
+  zh: 对 `dask.delayed` 函数的调用在失败时可以重试，如果它们调用 actors 上的函数，则这些函数调用将被复制。如果不能重新执行函数，则需要确保仅从其他
+    actors 内部调用它。
 - en: Dask’s actor model is less full-featured than Ray’s actor model, much as Ray’s
     DataFrame is less full-featured than Dask’s. You may wish to consider running
     Dask on Ray to get the best of both worlds. While Holden is biased, she suggests
     you check out her book *Scaling Python with Ray* if you are interested in Ray.
+  id: totrans-50
   prefs: []
   type: TYPE_NORMAL
+  zh: Dask 的 actor 模型不如 Ray 的 actor 模型功能完善，就像 Ray 的 DataFrame 不如 Dask 的一样。您可能希望考虑在
+    Ray 上运行 Dask，以获得两者的最佳结合。虽然 Holden 有所偏见，但她建议您如果对 Ray 感兴趣，可以查看她的书 *Scaling Python
+    with Ray*。
 - en: When to Use Dask Actors
+  id: totrans-51
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 何时使用 Dask Actors
 - en: A common problem in the industry is not realizing when our cool new tool is
     not the right tool for the job. As the saying goes, “When you have a hammer, the
     whole world looks like a nail.” *You likely do not need actors and should stick
     with tasks if you are not mutating state.* It is important for you to remember
     that there are other options for handling state, as shown in [Table 7-1](#table_ch07_1687457980057).
+  id: totrans-52
   prefs: []
   type: TYPE_NORMAL
+  zh: 行业中的一个常见问题是没有意识到我们很酷的新工具并不一定适合当前的工作。正如俗话说，“拿着锤子，眼前的都是钉子。” *如果你不需要改变状态，应该坚持使用任务而不是
+    actors。* 请记住，处理状态还有其他选择，如在 [Table 7-1](#table_ch07_1687457980057) 中所示。
 - en: Table 7-1\. Comparison of techniques for managing mutable state
+  id: totrans-53
   prefs: []
   type: TYPE_NORMAL
+  zh: Table 7-1\. 可变状态管理技术比较
 - en: '|  | Local state (e.g., driver) | Dask actors | External distributed state
     (e.g., ZooKeeper, Ray, or AKKA) |'
+  id: totrans-54
   prefs: []
   type: TYPE_TB
+  zh: '|  | 本地状态（例如驱动程序） | Dask actors | 外部分布式状态（例如 ZooKeeper、Ray 或 AKKA） |'
 - en: '| --- | --- | --- | --- |'
+  id: totrans-55
   prefs: []
   type: TYPE_TB
+  zh: '| --- | --- | --- | --- |'
 - en: '| **Scalability** | No, all state must fit on a single machine. | State within
     each actor must fit on a machine, but actors are spread out. | Yes^([a](ch07.xhtml#id711))
     |'
+  id: totrans-56
   prefs: []
   type: TYPE_TB
+  zh: '| **可扩展性** | 否，所有状态必须适合单台机器。 | 每个 actor 内的状态必须适合一台机器，但 actors 是分布的。 | 是^([a](ch07.xhtml#id711))
+    |'
 - en: '| **Resilience** | Medium, but no increase in resilience cost (e.g., loss of
     driver is already catastrophic) | No, loss of any worker with an actor becomes
     catastrophic. | Yes, loss of entire cluster can be recovered from. |'
+  id: totrans-57
   prefs: []
   type: TYPE_TB
+  zh: '| **韧性** | 中等，但没有增加韧性成本（例如，驱动程序的丢失已经是灾难性的）。 | 不，任何 worker 的丢失对 actor 都是灾难性的。
+    | 是，整个集群的丢失可以恢复。 |'
 - en: '| **Performance overhead** | RPC to driver | Same as `dask.delayed` | RPC to
     external system + external systems overhead |'
+  id: totrans-58
   prefs: []
   type: TYPE_TB
+  zh: '| **性能开销** | RPC 到驱动程序 | 与 `dask.delayed` 相同 | RPC 到外部系统 + 外部系统开销 |'
 - en: '| **Code complexity** | Low | Medium | High (new library to learn and integrate),
     extra logic for avoiding duplicate execution |'
+  id: totrans-59
   prefs: []
   type: TYPE_TB
+  zh: '| **代码复杂性** | 低 | 中等 | 高（需要学习和集成的新库），避免重复执行的额外逻辑 |'
 - en: '| **Deployment complexity** | Low | Low | High (new system to maintain) |'
+  id: totrans-60
   prefs: []
   type: TYPE_TB
+  zh: '| **部署复杂性** | 低 | 低 | 高（需要维护的新系统） |'
 - en: '| ^([a](ch07.xhtml#id711-marker)) Ray actors still require that the state within
     an actor must fit on a single machine. Ray has additional tools to shard or create
     pools of actors. |'
+  id: totrans-61
   prefs: []
   type: TYPE_TB
+  zh: '| ^([a](ch07.xhtml#id711-marker)) Ray actors 仍然要求 actor 内的状态必须适合单台机器。Ray 还有其他工具用于分片或创建
+    actors 池。 |'
 - en: As with most things in life, picking the right technique is a compromise specific
     to the problem you are trying to solve. We believe that one of the two local (e.g.,
     driver) states, or the use of Ray actors in conjunction with Dask for its analytical
     powers, can handle most cases in which you need mutable state.
+  id: totrans-62
   prefs: []
   type: TYPE_NORMAL
+  zh: 和生活中的大多数事物一样，选择正确的技术是一种特定问题的妥协。我们认为，在处理需要可变状态的大多数情况下，其中一种本地（例如，驱动程序）状态，或者结合
+    Dask 的 Ray actors 以利用其分析能力，都是可以应对的。
 - en: Conclusion
+  id: totrans-63
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 结论
 - en: In this chapter you have learned the basics of how the actor model works as
     well as how Dask implements it. You’ve also learned some alternatives for dealing
     with state in a distributed system, and how to choose between them. Dask actors
@@ -321,24 +473,39 @@
     as delayed functions. The failure of a worker containing an actor cannot be recovered
     from. Many other actor systems offer some ability to recover from failures, and
     if you find yourself depending heavily on actors, you may wish to explore alternatives.
+  id: totrans-64
   prefs: []
   type: TYPE_NORMAL
+  zh: 本章中，你已经了解了 actor 模型的基本工作原理以及 Dask 的实现方式。你还学习了一些处理分布式系统中状态的替代方案，并学会了如何在它们之间进行选择。Dask
+    的 actor 是 Dask 的一个相对较新的部分，并且其容错性质与延迟函数不同。一个包含 actor 的 worker 的失败是无法恢复的。许多其他 actor
+    系统提供了一些从失败中恢复的能力，如果你发现自己严重依赖于 actors，你可能希望探索其他选择。
 - en: ^([1](ch07.xhtml#id695-marker)) See the [ZooKeeper documentation](https://oreil.ly/btzJK)
     for an understanding of ZooKeeper’s distributed performance.
+  id: totrans-65
   prefs: []
   type: TYPE_NORMAL
+  zh: ^([1](ch07.xhtml#id695-marker)) 参阅 [ZooKeeper 文档](https://oreil.ly/btzJK) 了解
+    ZooKeeper 的分布式性能。
 - en: '^([2](ch07.xhtml#id696-marker)) The actor model was extended in 1985 for concurrent
     computation; see [“Actors: A Model of Concurrent Computation in Distributed Systems”](https://oreil.ly/uPCfx)
     by Gul Abdulnabi Agha.'
+  id: totrans-66
   prefs: []
   type: TYPE_NORMAL
+  zh: '^([2](ch07.xhtml#id696-marker)) Actor 模型于 1985 年被扩展用于并发计算；参见 Gul Abdulnabi
+    Agha 的 [“Actors: A Model of Concurrent Computation in Distributed Systems”](https://oreil.ly/uPCfx)。'
 - en: ^([3](ch07.xhtml#id697-marker)) Think COBOL, where the author left and the documentation
     was lost, but when you tried to turn it off accounting came running, literally.
+  id: totrans-67
   prefs: []
   type: TYPE_NORMAL
+  zh: ^([3](ch07.xhtml#id697-marker)) 想象一下 COBOL，作者离开后文档丢失，但当你试图关闭它时，会有会计人员跑来，真的。
 - en: ^([4](ch07.xhtml#id706-marker)) A *coarse-grained* actor is one that may contain
     multiple pieces of state; a *fine-grained* actor is one where each piece of state
     would be represented as a separate actor. This is similar to the concept of [coarse-grained
     locking](https://oreil.ly/7RMkS).
+  id: totrans-68
   prefs: []
   type: TYPE_NORMAL
+  zh: ^([4](ch07.xhtml#id706-marker)) *粗粒度*的 actor 可能包含多个状态片段；*细粒度*的 actor 每个状态片段都表示为一个单独的
+    actor。这类似于 [粗粒度锁](https://oreil.ly/7RMkS) 的概念。

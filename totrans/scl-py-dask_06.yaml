@@ -3,32 +3,38 @@
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 第6章。高级任务调度：Futures 和 Friends
 - en: 'Dask’s computational flow follows these four main logical steps, which can
     happen concurrently and recursively for each task:'
   id: totrans-1
   prefs: []
   type: TYPE_NORMAL
+  zh: Dask 的计算流程遵循这四个主要逻辑步骤，每个任务可以并发和递归地进行：
 - en: Collect and read the input data.
   id: totrans-2
   prefs:
   - PREF_OL
   type: TYPE_NORMAL
+  zh: 收集并读取输入数据。
 - en: Define and build the compute graph representing the set of computations that
     needs to be performed on the data.
   id: totrans-3
   prefs:
   - PREF_OL
   type: TYPE_NORMAL
+  zh: 定义并构建表示需要对数据执行的计算集的计算图。
 - en: Run the computation (this happens when you run `.compute()`).
   id: totrans-4
   prefs:
   - PREF_OL
   type: TYPE_NORMAL
+  zh: 运行计算（这在运行`.compute()`时发生）。
 - en: Pass the result as data to the next step.
   id: totrans-5
   prefs:
   - PREF_OL
   type: TYPE_NORMAL
+  zh: 将结果作为数据传递给下一步。
 - en: Now we introduce more ways to control this flow with futures. So far, you have
     mostly seen lazy operations in Dask, where Dask doesn’t do the work until something
     forces the computation. This pattern has a number of benefits, including allowing
@@ -43,11 +49,15 @@
   id: totrans-6
   prefs: []
   type: TYPE_NORMAL
+  zh: 现在我们介绍更多使用 futures 控制这一流程的方法。到目前为止，您大部分时间在 Dask 中看到的是惰性操作，Dask 不会做任何工作，直到有事情强制执行计算。这种模式有许多好处，包括允许
+    Dask 的优化器在合适时合并步骤。然而，并非所有任务都适合惰性评估。一个常见的不适合惰性评估的模式是“fire-and-forget”，我们为其副作用而调用函数^([1](ch06.xhtml#id660))并且需要关注输出。尝试使用惰性评估（例如`dask.delayed`）来表达这一点会导致不必要的阻塞以强制执行计算。当惰性评估不是您需要的时候，您可以探索
+    Dask 的 futures。 Futures 可以用于远比 fire-and-forget 更多的用例。本章将探讨 futures 的许多常见用例。
 - en: Note
   id: totrans-7
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 注意
 - en: You may already be familiar with futures from Python. Dask’s futures are an
     extension of Python’s concurrent.futures library, allowing you to use them in
     its place. Similar to using Dask DataFrames in place of pandas DataFrames, the
@@ -55,27 +65,33 @@
   id: totrans-8
   prefs: []
   type: TYPE_NORMAL
+  zh: 您可能已经熟悉 Python 中的 futures。Dask 的 futures 是 Python concurrent.futures 库的扩展，允许您在其位置使用它们。类似于使用
+    Dask DataFrames 替代 pandas DataFrames，行为可能略有不同（尽管这里的差异较小）。
 - en: Dask futures are a part of Dask’s distributed client library, so you will get
     started by importing it with `from dask.distributed import Client`.
   id: totrans-9
   prefs: []
   type: TYPE_NORMAL
+  zh: Dask futures 是 Dask 的分布式客户端库的一部分，因此您将通过`from dask.distributed import Client`导入它来开始。
 - en: Tip
   id: totrans-10
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 提示
 - en: Despite the name, you can use Dask’s distributed client locally. Refer to [“Distributed
     (Dask Client and Scheduler)”](ch03.xhtml#distributed_ch03_1687438078727) for different
     local deployment types.
   id: totrans-11
   prefs: []
   type: TYPE_NORMAL
+  zh: 尽管名称如此，您可以在本地使用 Dask 的分布式客户端。有关不同的本地部署类型，请参阅[“分布式（Dask 客户端和调度器）”](ch03.xhtml#distributed_ch03_1687438078727)。
 - en: Lazy and Eager Evaluation Revisited
   id: totrans-12
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 懒惰和热切评估再访
 - en: Eager evaluation is the most common form of evaluation in programming, including
     in Python. While most eager evaluation is blocking—that is, the program will not
     move to the next statement until the result is completed—you can still have asynchronous/non-blocking
@@ -83,90 +99,109 @@
   id: totrans-13
   prefs: []
   type: TYPE_NORMAL
+  zh: 热切评估是编程中最常见的评估形式，包括 Python。虽然大多数热切评估是阻塞的——也就是说，程序在结果完成之前不会移到下一个语句——但您仍然可以进行异步/非阻塞的热切评估。
+    Futures 是表示非阻塞热切计算的一种方式。
 - en: 'Non-blocking eager evaluation still has some potential downsides compared to
     lazy evaluation. Some of these challenges include:'
   id: totrans-14
   prefs: []
   type: TYPE_NORMAL
+  zh: 非阻塞热切评估与懒惰评估相比仍然存在一些潜在缺点。其中一些挑战包括：
 - en: The inability to combine adjacent stages (sometimes known as pipelining)
   id: totrans-15
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 无法合并相邻阶段（有时被称为流水线）
 - en: 'Unnecessary computation:'
   id: totrans-16
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 不必要的计算：
 - en: Repeated subgraphs cannot be detected by Dask’s optimizer.
   id: totrans-17
   prefs:
   - PREF_IND
   - PREF_UL
   type: TYPE_NORMAL
+  zh: Dask 的优化器无法检测重复的子图。
 - en: Even if nothing depends on the result of the future, it may be computed.^([2](ch06.xhtml#id666))
   id: totrans-18
   prefs:
   - PREF_IND
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 即使未依赖于未来结果的任何内容，它也可以计算。^([2](ch06.xhtml#id666))
 - en: Potential excessive blocking when futures launch and block on other futures
   id: totrans-19
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 当未来启动并在其他未来上阻塞时，可能会出现过多的阻塞
 - en: A need for more careful memory management
   id: totrans-20
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 需要更谨慎的内存管理
 - en: Not all Python code is eagerly evaluated. In Python 3 some built-in functions
     use lazy evaluation, with operators like `map` returning iterators and evaluating
     elements only on request.
   id: totrans-21
   prefs: []
   type: TYPE_NORMAL
+  zh: 并非所有 Python 代码都会立即评估。在 Python 3 中，一些内置函数使用惰性评估，像 `map` 返回迭代器并且仅在请求时评估元素。
 - en: Use Cases for Futures
   id: totrans-22
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: Futures 的用例
 - en: 'Many common use cases can be made faster with careful application of futures:'
   id: totrans-23
   prefs: []
   type: TYPE_NORMAL
+  zh: 许多常见用例可以通过仔细应用 futures 加速：
 - en: Integrating with other async servers (like Tornado)
   id: totrans-24
   prefs: []
   type: TYPE_NORMAL
+  zh: 与其他异步服务器（如 Tornado）集成
 - en: Although we generally believe that most of the time Dask is not the right solution
     for the “hot path,” there are exceptions, such as dynamically computed analytic
     dashboards.
   id: totrans-25
   prefs: []
   type: TYPE_NORMAL
+  zh: 尽管我们通常认为 Dask 大多数情况下不是“热路径”的正确解决方案，但也有例外情况，如动态计算的分析仪表板。
 - en: Request/response pattern
   id: totrans-26
   prefs: []
   type: TYPE_NORMAL
+  zh: 请求/响应模式
 - en: Make a call to a remote service and (later) block on its result. This can include
     querying services like databases, remote procedure calls, or even websites.
   id: totrans-27
   prefs: []
   type: TYPE_NORMAL
+  zh: 调用远程服务并（稍后）阻塞其结果。这可能包括查询诸如数据库、远程过程调用甚至网站等服务。
 - en: IO
   id: totrans-28
   prefs: []
   type: TYPE_NORMAL
+  zh: IO
 - en: Input/output can often be slow, but you know you want them to start happening
     as soon as possible.
   id: totrans-29
   prefs: []
   type: TYPE_NORMAL
+  zh: 输入/输出通常很慢，但你确实希望它们尽快开始。
 - en: Timeouts
   id: totrans-30
   prefs: []
   type: TYPE_NORMAL
+  zh: 超时
 - en: Sometimes you care about a result only if you can get it within a certain period
     of time. For example, think of a boosted ML model where you need to make a decision
     within a certain time frame, collecting all scores from available models quickly
@@ -174,46 +209,57 @@
   id: totrans-31
   prefs: []
   type: TYPE_NORMAL
+  zh: 有时候你只在特定时间内获取结果感兴趣。例如，考虑一个增强的 ML 模型，你需要在一定时间内做出决策，迅速收集所有可用模型的分数，然后跳过超时的模型。
 - en: Fire-and-forget
   id: totrans-32
   prefs: []
   type: TYPE_NORMAL
+  zh: 点火并忘记
 - en: Sometimes you might not care about the result of a function call, but you do
     want to ensure it is called. Futures allow you to ensure a computation occurs
     without having to block on the result.
   id: totrans-33
   prefs: []
   type: TYPE_NORMAL
+  zh: 有时候你可能不关心函数调用的结果，但你确实希望它被调用。Futures 允许你确保计算发生，而无需阻塞等待结果。
 - en: Actors
   id: totrans-34
   prefs: []
   type: TYPE_NORMAL
+  zh: Actors
 - en: The results from calling actors are futures. We cover actors in the next chapter.
   id: totrans-35
   prefs: []
   type: TYPE_NORMAL
+  zh: 调用 actors 的结果是 futures。我们将在下一章介绍 actors。
 - en: Launching futures in Dask is non-blocking, whereas computing tasks in Dask is
     blocking. This means that when you submit a future to Dask, while it begins work
     right away, it does not stop (or block) your program from continuing.
   id: totrans-36
   prefs: []
   type: TYPE_NORMAL
+  zh: 在 Dask 中启动 futures 是非阻塞的，而在 Dask 中计算任务是阻塞的。这意味着当你向 Dask 提交一个 future 时，它会立即开始工作，但不会阻止（或阻塞）程序继续运行。
 - en: Launching Futures
   id: totrans-37
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 启动 Futures
 - en: The syntax for launching Dask futures is a little different than that for `dask.delayed`.
     Dask futures are launched from the Dask distributed client with either `submit`
     for single futures or `map` for multiple futures, as shown in [Example 6-1](#launching_futures_ch06_1686239180753).
   id: totrans-38
   prefs: []
   type: TYPE_NORMAL
+  zh: 启动 Dask futures 的语法与 `dask.delayed` 稍有不同。Dask futures 是通过 Dask 分布式客户端使用 `submit`
+    单个 future 或 `map` 多个 futures 启动，如 [Example 6-1](#launching_futures_ch06_1686239180753)
+    所示。
 - en: Example 6-1\. Launching futures
   id: totrans-39
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: Example 6-1. 启动 futures
 - en: '[PRE0]'
   id: totrans-40
   prefs: []
@@ -224,28 +270,34 @@
   id: totrans-41
   prefs: []
   type: TYPE_NORMAL
+  zh: 与 `dask.delayed` 不同的是，一旦启动了 future，Dask 就开始计算其值。
 - en: Note
   id: totrans-42
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 注意
 - en: While this `map` is somewhat similar to the `map` on Dask bags, each item results
     in a separate task, whereas bags are able to group together tasks into partitions
     to reduce the overhead (although they are lazily evaluated).
   id: totrans-43
   prefs: []
   type: TYPE_NORMAL
+  zh: 虽然这里的 `map` 与 Dask bags 上的 `map` 有些相似，但每个项都会生成一个单独的任务，而 bags 能够将任务分组到分区以减少开销（尽管它们是延迟评估的）。
 - en: Some actions in Dask, like `persist()` on Dask collections, use futures under
     the hood. You can get the futures of the persisted collection by calling `futures_of`.
     These futures follow the same life cycle as the futures that you launch yourself.
   id: totrans-44
   prefs: []
   type: TYPE_NORMAL
+  zh: 在 Dask 中，像 `persist()` 在 Dask 集合上一样，使用 futures 在内部。通过调用 `futures_of` 可以获取已持久化集合的
+    futures。这些 futures 的生命周期与您自己启动的 futures 相同。
 - en: Future Life Cycle
   id: totrans-45
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: Future 生命周期
 - en: Futures have a different life cycle from `dask.delayed` beyond eager computation.
     With `dask.delayed`, intermediate computations are automatically cleaned up; however,
     Dask futures results are stored until either the future is explicitly canceled
