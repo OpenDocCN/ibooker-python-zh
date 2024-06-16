@@ -1,7 +1,9 @@
 - en: Chapter 5\. Hyperparameter Optimization with Ray Tune
+  id: totrans-0
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 第五章：使用 Ray Tune 进行超参数优化
 - en: In the last chapter we’ve seen how to build and run various reinforcement learning
     experiments. Running such experiments can be expensive, both in terms of compute
     resources and the time it takes to run them. This only gets amplified as you move
@@ -10,8 +12,11 @@
     need to tune the hyperparameters of your algorithms to get the best results. As
     we’ll see in this chapter, tuning machine learning models is hard, but Ray Tune
     is an excellent choice to help you tackle this task.
+  id: totrans-1
   prefs: []
   type: TYPE_NORMAL
+  zh: 在上一章中，我们看到了如何构建和运行各种强化学习实验。运行这些实验可能会很昂贵，无论是在计算资源方面还是运行时间方面。当您转向更具挑战性的任务时，这种情况只会加剧，因为不太可能仅仅从头开始选择一个算法并运行它以获得良好的结果。换句话说，某个时候，您需要调整算法的超参数以获得最佳结果。正如我们将在本章中看到的那样，调整机器学习模型是困难的，但
+    Ray Tune 是帮助您解决这一任务的绝佳选择。
 - en: Ray Tune is an incredibly powerful tool for hyperparameter optimization. Not
     only does it work in a distributed manner by default, such as any other library
     built on top of Ray, it’s also one of the most feature-rich hyperparameter optimization
@@ -20,8 +25,11 @@
     is remarkable, since it makes Tune an ideal candidate for distributed HPO experiments,
     practically no matter what other libraries you’re coming from or if you start
     from scratch.
+  id: totrans-2
   prefs: []
   type: TYPE_NORMAL
+  zh: Ray Tune 是一款非常强大的超参数优化工具。它不仅默认以分布式方式工作，就像 Ray 构建的任何其他库一样，而且它还是当前功能最丰富的超参数优化（HPO）库之一。更为重要的是，Tune
+    还与一些最杰出的 HPO 库集成，如 HyperOpt、Optuna 等等。这是非常了不起的，因为它使 Tune 成为分布式 HPO 实验的理想选择，几乎无论您来自哪个其他库，或者您是从头开始。
 - en: In this chapter we’ll first revisit in a bit more depth why HPO is hard to do,
     and how you could naively implement it yourself with Ray. We then teach you the
     core concepts of Ray Tune and how you can use it to tune the RLlib models we’ve
@@ -29,19 +37,28 @@
     to use Tune for supervised learning tasks, using frameworks like PyTorch and TensorFlow.
     Along the way, we demonstrate how Tune integrates with other HPO libraries and
     introduce you to some of its more advanced features.
+  id: totrans-3
   prefs: []
   type: TYPE_NORMAL
+  zh: 在本章中，我们将首先深入探讨为什么 HPO 很难做到以及如何使用 Ray 自己去简单地实现它。然后我们会教给您 Ray Tune 的核心概念以及如何使用它来调整我们在前一章中构建的
+    RLlib 模型。最后，我们还将研究如何使用 Tune 来进行监督学习任务，使用像 PyTorch 和 TensorFlow 这样的框架。在此过程中，我们将展示
+    Tune 如何与其他 HPO 库集成，并向您介绍其更多高级特性。
 - en: Tuning Hyperparameters
+  id: totrans-4
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 调整超参数
 - en: Let’s recap the basics of hyperparameter optimization briefly. If you’re familiar
     with this topic, you can skip this section, but since we’re also discussing aspects
     of distributed HPO, you might still benefit from following along. The [notebook
     for this chapter](https://github.com/maxpumperla/learning_ray/blob/main/notebooks/ch_05_tune.ipynb)
     can be found in the GitHub repository of this book.
+  id: totrans-5
   prefs: []
   type: TYPE_NORMAL
+  zh: 让我们简要回顾一下超参数优化的基础知识。如果您对这个主题很熟悉，可以跳过本节，但由于我们还讨论了分布式 HPO 的方面，您可能仍然会从中受益。这一章节的[笔记本](https://github.com/maxpumperla/learning_ray/blob/main/notebooks/ch_05_tune.ipynb)可以在本书的
+    GitHub 仓库中找到。
 - en: If you recall our first RL experiment introduced in [Chapter 3](ch03.xhtml#chapter_03),
     we defined a very basic Q-learning algorithm whose internal *state-action values*
     were updated according to an explicit update rule. After initialization, we never
@@ -55,20 +72,29 @@
     are called *hyperparameters*, and finding good choices for them can be crucial
     for successful experiments. The field of hyperparameter optimization entirely
     is devoted to efficiently finding such good choices.
+  id: totrans-6
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果您还记得我们在[第三章](ch03.xhtml#chapter_03)介绍的第一个强化学习实验，我们定义了一个非常基础的 Q 学习算法，其内部的*状态-动作值*根据明确的更新规则进行更新。初始化后，我们从未直接接触这些*模型参数*，它们是由算法学习的。相比之下，在设置算法时，我们明确选择了在训练之前的
+    `weight` 和 `discount_factor` 参数。我当时没有告诉您我们选择如何设置这些参数，我们只是接受它们足以解决手头问题的事实。同样，在[第四章](ch04.xhtml#chapter_04)中，我们通过设置
+    `num_workers=4` 来初始化一个使用四个 rollout worker 的 RLlib 算法的 `config`。这些参数称为*超参数*，找到它们的好选择对于成功的实验至关重要。超参数优化领域致力于高效地找到这样的良好选择。
 - en: Building a random search example with Ray
+  id: totrans-7
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 使用 Ray 构建一个随机搜索示例
 - en: Hyperparameters like the `weight` or the `discount_factor` of our Q-learning
     algorithm are *continuous* parameters, so we can’t possibly test all combinations
     of them. What’s more, these parameter choices may not be independent of each other.
     If we want them to be selected for us, we also need to specify a *value range*
     for each of them (both hyperparameters need to be chosen between 0 and 1 in this
     case). So, how do we determine good or even optimal hyperparameters?
+  id: totrans-8
   prefs: []
   type: TYPE_NORMAL
+  zh: 超参数如我们的 Q 学习算法中的 `weight` 或 `discount_factor` 是*连续*参数，因此我们不可能测试它们的所有组合。更重要的是，这些参数选择可能彼此不独立。如果我们希望它们被选中，我们还需要为每个参数指定一个*值范围*（在这种情况下，两个超参数都需要在
+    0 到 1 之间选择）。那么，我们如何确定好甚至是最优的超参数呢？
 - en: Let’s take a look at a quick example that implements a naive, yet effective
     approach to tuning hyperparameters. This example will also allow us to introduce
     some terminology that we’ll use later on. The core idea is that we can attempt
@@ -76,8 +102,11 @@
     select the best run based on the results we got. But to do the theme of this book
     justice, we don’t just want to run this in a sequential loop, we want to compute
     our runs in parallel using Ray.
+  id: totrans-9
   prefs: []
   type: TYPE_NORMAL
+  zh: 让我们看一个快速示例，实现了一个天真但有效的超参数调整方法。这个示例还将允许我们介绍稍后将使用的一些术语。核心思想是我们可以尝试*随机抽样*超参数，为每个样本运行算法，然后根据我们得到的结果选择最佳运行。但为了体现本书的主题，我们不仅想在顺序循环中运行它，我们希望使用
+    Ray 并行计算我们的运行。
 - en: 'To keep things simple we’ll revisit our simple Q-learning algorithm from [Chapter 3](ch03.xhtml#chapter_03)
     again. If you don’t recall the signature of the main training function, we defined
     it as `train_policy(env, num_episodes=10000, weight=0.1, discount_factor=0.9)`.
@@ -86,15 +115,24 @@
     algorithm performs. To do that, let’s define a so-called *search space* for our
     hyperparameters. For both parameters in question we simply uniformly sample values
     between 0 and 1, for a total of 10 choices. Here’s what that looks like:'
+  id: totrans-10
   prefs: []
   type: TYPE_NORMAL
+  zh: 为了保持简单，我们将再次回顾我们在[第三章](ch03.xhtml#chapter_03)中介绍的简单 Q 学习算法。如果您不记得主训练函数的签名，我们将其定义为
+    `train_policy(env, num_episodes=10000, weight=0.1, discount_factor=0.9)`。这意味着我们可以通过向
+    `train_policy` 函数传入不同的值来调整算法的 `weight` 和 `discount_factor` 参数，并查看算法的性能。为此，让我们为我们的超参数定义一个所谓的*搜索空间*。对于所讨论的两个参数，我们只需在
+    0 到 1 之间均匀采样值，共 10 个选择。以下是其样子：
 - en: Example 5-1\.
+  id: totrans-11
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 5-1\.
 - en: '[PRE0]'
+  id: totrans-12
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE0]'
 - en: Next, we define an *objective function*, or simply *objective*. The role of
     an objective function is to evaluate the performance of a given set of hyperparameters
     for the task we’re interested in. In our case, we want to train our RL algorithm
@@ -105,50 +143,79 @@
     words, we want to find a set of hyperparameters that minimizes the result of our
     objective function. To parallelize the objective function, we’ll use the `ray.remote`
     decorator to make our `objective` a Ray task.
+  id: totrans-13
   prefs: []
   type: TYPE_NORMAL
+  zh: 接下来，我们定义一个*目标函数*，或者简称*目标*。目标函数的作用是评估给定超参数集在我们感兴趣的任务中的性能。在我们的情况下，我们想要训练我们的强化学习算法并评估训练好的策略。回想一下，在[第3章](ch03.xhtml#chapter_03)中，我们还定义了一个`evaluate_policy`函数，目的正是如此。`evaluate_policy`函数被定义为返回代理在底层迷宫环境中达到目标所需的平均步数。换句话说，我们想要找到一组能够最小化我们目标函数结果的超参数集。为了并行化目标函数，我们将使用`ray.remote`装饰器来将我们的`objective`变成一个
+    Ray 任务。
 - en: Example 5-2\.
+  id: totrans-14
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 5-2\.
 - en: '[PRE1]'
+  id: totrans-15
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE1]'
 - en: '[![1](assets/1.png)](#co_hyperparameter_optimization_with_ray_tune_CO1-1)'
+  id: totrans-16
   prefs: []
   type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_hyperparameter_optimization_with_ray_tune_CO1-1)'
 - en: We pass in a dictionary with a hyperparameter sample into our objective.
+  id: totrans-17
   prefs: []
   type: TYPE_NORMAL
+  zh: 我们将一个超参数样本字典传递给我们的目标函数。
 - en: '[![2](assets/2.png)](#co_hyperparameter_optimization_with_ray_tune_CO1-2)'
+  id: totrans-18
   prefs: []
   type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_hyperparameter_optimization_with_ray_tune_CO1-2)'
 - en: Then we train our RL policy using the chosen hyperparameters.
+  id: totrans-19
   prefs: []
   type: TYPE_NORMAL
+  zh: 然后我们使用选定的超参数训练我们的 RL 策略。
 - en: '[![3](assets/3.png)](#co_hyperparameter_optimization_with_ray_tune_CO1-3)'
+  id: totrans-20
   prefs: []
   type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_hyperparameter_optimization_with_ray_tune_CO1-3)'
 - en: Afterwards we can evaluate the policy to retrieve the score we want to minimize.
+  id: totrans-21
   prefs: []
   type: TYPE_NORMAL
+  zh: 之后，我们可以评估策略，以获取我们希望最小化的分数。
 - en: '[![4](assets/4.png)](#co_hyperparameter_optimization_with_ray_tune_CO1-4)'
+  id: totrans-22
   prefs: []
   type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_hyperparameter_optimization_with_ray_tune_CO1-4)'
 - en: We return both score and hyperparameter choice together for later analysis.
+  id: totrans-23
   prefs: []
   type: TYPE_NORMAL
+  zh: 我们返回得分和一起选择的超参数以便后续分析。
 - en: 'Finally, we can run the objective function in parallel using Ray, by iterating
     over the search space and collecting the results:'
+  id: totrans-24
   prefs: []
   type: TYPE_NORMAL
+  zh: 最后，我们可以使用 Ray 并行运行目标函数，通过迭代搜索空间并收集结果：
 - en: Example 5-3\.
+  id: totrans-25
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 5-3\.
 - en: '[PRE2]'
+  id: totrans-26
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE2]'
 - en: The actual results of this hyperparameter run are not very interesting, as the
     problem is so easy to solve (most runs will return the optimum of 8 steps, regardless
     of the hyperparameters chosen). But in case I haven’t sold you on Ray’s capabilities
@@ -156,8 +223,11 @@
     function with Ray. In fact, I’d like to encourage you to rewrite the above example
     to simply loop through the search space and call the objective function for each
     sample, just to confirm how painfully slow such a serial loop can be.
+  id: totrans-27
   prefs: []
   type: TYPE_NORMAL
+  zh: 此超参数运行的实际结果并不是非常有趣，因为问题很容易解决（大多数运行将返回8步的最优解，无论选择哪些超参数）。但是，如果我还没有向您展示 Ray 的能力，更有趣的是使用
+    Ray 并行化目标函数有多么容易。事实上，我想鼓励您重新编写上述示例，只需循环遍历搜索空间并为每个样本调用目标函数，以确认这样的串行循环有多么缓慢。
 - en: Conceptually, the three steps we took to run the above example are representative
     of how hyperparameter tuning works in general. First, you define a search space,
     then you define an objective function, and finally you run an analysis to find
@@ -167,87 +237,119 @@
     space (in our case, randomly) is up to a *search algorithm* to decide. In practice,
     finding good hyperparameters is easier said than done, so let’s have a closer
     look at why this problem is so hard.
+  id: totrans-28
   prefs: []
   type: TYPE_NORMAL
+  zh: 从概念上讲，我们运行上述示例的三个步骤代表了超参数调整工作的一般过程。首先，您定义一个搜索空间，然后定义一个目标函数，最后运行分析以找到最佳超参数。在HPO中，通常将每个超参数样本对目标函数的评估称为*试验*，所有试验形成您分析的基础。关于如何从搜索空间中抽样参数（在我们的案例中是随机抽样），这完全取决于*搜索算法*的决定。实际上，找到好的超参数说起来容易做起来难，因此让我们更仔细地看看为什么这个问题如此棘手。
 - en: Why is HPO hard?
+  id: totrans-29
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 为什么 HPO 难？
 - en: 'If you zoom out from the above example just enough, you can see that there
     are several intricacies in making the process of hyperparameter tuning work well.
     Here’s a quick overview of the most important ones:'
+  id: totrans-30
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果您从上述示例中稍微放大视角，就会发现在使超参数调整过程顺利运行中有许多复杂因素。以下是最重要的几个要点的快速概述：
 - en: Your search space can be composed of a large number of hyperparameters. These
     parameters might have different data types and ranges. Some parameters might be
     correlated, or even depend on others. Sampling good candidates from complex, high-dimensional
     spaces is a difficult task.
+  id: totrans-31
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 您的搜索空间可以由大量超参数组成。这些参数可能具有不同的数据类型和范围。一些参数可能是相关的，甚至依赖于其他参数。从复杂的、高维空间中抽样良好的候选者是一项困难的任务。
 - en: Picking parameters at random can work surprisingly well, but it’s not always
     the best option. In general, you need to test more complex search algorithms to
     find the best parameters.
+  id: totrans-32
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 随机选择参数可能效果出乎意料地好，但并不总是最佳选择。一般来说，您需要测试更复杂的搜索算法来找到最佳参数。
 - en: In particular, even if you parallelize your hyperparameter search like we just
     did, a single run of your objective function can take a long time to complete.
     That means you can’t afford to run too many searches overall. For instance, training
     neural networks can take hours to complete, so your hyperparameter search better
     be efficient.
+  id: totrans-33
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 特别是，即使像我们刚刚所做的那样并行化您的超参数搜索，单次运行目标函数可能需要很长时间才能完成。这意味着您不能负担得起总共运行太多次搜索。例如，训练神经网络可能需要几个小时才能完成，因此您的超参数搜索最好要有效。
 - en: When distributing search, you need to make sure to have enough compute resources
     available to run searches over the objective function effectively. For instance,
     you might need a GPU to compute your objective function fast enough, so all your
     search runs need to have access to a GPU. Allocating the necessary resources for
     each trial is critical to speeding up your search.
+  id: totrans-34
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 在分发搜索时，您需要确保有足够的计算资源可用于有效地运行对目标函数的搜索。例如，您可能需要一个GPU来快速计算您的目标函数，因此您所有的搜索运行都需要访问一个GPU。为每个试验分配必要的资源对加速搜索至关重要。
 - en: You want to have convenient tooling for your HPO experiments, like stopping
     bad runs early, saving intermediate results, restarting from previous trials,
     or pausing and resuming runs, etc.
+  id: totrans-35
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 您希望拥有便捷的工具来进行您的HPO实验，如提前停止糟糕的运行，保存中间结果，从先前的试验重新启动，或暂停和恢复运行等。
 - en: As a mature, distributed HPO framework, Ray Tune takes addresses all these topics
     and provides you with a simple interface for running hyperparameter tuning experiments.
     Before we look into how Tune works, let’s rewrite our above example to use Tune.
+  id: totrans-36
   prefs: []
   type: TYPE_NORMAL
+  zh: 作为一种成熟的、分布式的HPO框架，Ray Tune处理所有这些话题，并为您提供一个简单的界面来运行超参数调整实验。在我们研究Tune如何工作之前，让我们重写上面的例子以使用Tune。
 - en: An introduction to Tune
+  id: totrans-37
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 对Tune的介绍
 - en: 'To get your first taste of Tune, porting over our naive Ray Core implementation
     of random search to Tune is straightforward and follows the same three steps as
     before. First, we define a search space, but this time using `tune.uniform`, instead
     of the `random` library:'
+  id: totrans-38
   prefs: []
   type: TYPE_NORMAL
+  zh: 要初尝Tune的滋味，将我们对随机搜索的天真Ray Core实现移植到Tune是直截了当的，并且遵循与之前相同的三个步骤。首先，我们定义一个搜索空间，但这次使用`tune.uniform`，而不是`random`库：
 - en: Example 5-4\.
+  id: totrans-39
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 5-4。
 - en: '[PRE3]'
+  id: totrans-40
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE3]'
 - en: Next, we can define an objective function that almost looks the same as before.
     We designed it like that. The only differences are that this time we return the
     score as a dictionary, and that we don’t need a `ray.remote` decorator, as Tune
     will take care of distributing this objective function for us internally.
+  id: totrans-41
   prefs: []
   type: TYPE_NORMAL
+  zh: 接下来，我们可以定义一个目标函数，几乎与以前的相同。我们设计得就是这样。唯一的区别是，这次我们将分数返回为一个字典，并且我们不需要一个`ray.remote`装饰器，因为Tune会在内部为我们分配此目标函数。
 - en: Example 5-5\.
+  id: totrans-42
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 5-5。
 - en: '[PRE4]'
+  id: totrans-43
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE4]'
 - en: 'With this `tune_objective` function defined, we can pass is into a `tune.run`
     call, together with the search space we defined. By default, Tune will run random
     search for you, but you can also specify other search algorithms, as you will
@@ -255,101 +357,137 @@
     and returns an `analysis` object that contains information about the hyperparameter
     search. We can get the best hyperparameters found by calling `get_best_config`
     and specifying the `metric` and `mode` arguments (we want to minimize our score):'
+  id: totrans-44
   prefs: []
   type: TYPE_NORMAL
+  zh: 有了这个`tune_objective`函数的定义，我们可以将其传递到`tune.run`调用中，以及我们定义的搜索空间。默认情况下，Tune将为您运行随机搜索，但您也可以指定其他搜索算法，很快您将看到。调用`tune.run`为您的目标生成随机搜索试验，并返回包含有关超参数搜索信息的`analysis`对象。我们可以通过调用`get_best_config`并指定`metric`和`mode`参数（我们希望最小化我们的分数）来获得找到的最佳超参数：
 - en: Example 5-6\.
+  id: totrans-45
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 5-6。
 - en: '[PRE5]'
+  id: totrans-46
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE5]'
 - en: This quick example covers the very basics of Tune, but there’s a lot more to
     unpack. The `tune.run` function is quite powerful and takes a lot of arguments
     for you to configure your runs. To understand these different configuration options,
     we first need to introduce you to the key concepts of Tune.
+  id: totrans-47
   prefs: []
   type: TYPE_NORMAL
+  zh: 这个快速示例涵盖了Tune的基础知识，但还有很多要解开的。`tune.run`函数非常强大，有许多参数供您配置运行。为了理解这些不同的配置选项，我们首先需要向您介绍Tune的关键概念。
 - en: How does Tune work?
+  id: totrans-48
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: Tune是如何工作的？
 - en: 'To effectively work with Tune, you have to understand a total of six key concepts,
     four of which you have already used in the last example. Here’s an informal overview
     of Ray Tune’s components and how you should think about them:'
+  id: totrans-49
   prefs: []
   type: TYPE_NORMAL
+  zh: 要有效地使用Tune，您必须了解六个关键概念，其中四个在上一个示例中已经使用过。下面是Ray Tune组件的非正式概述及其思考方式：
 - en: '*Search spaces*: These spaces determine which parameters to select. Search
     spaces define the range of values for each parameter, and how they should be sampled.
     They are defined as dictionaries and use Tune’s sampling functions to specify
     valid hyperparameter values. You have already seen `tune.uniform`, but [there
     are many more options to choose from](https://docs.ray.io/en/latest/tune/api_docs/search_space.xhtml#tune-sample-docs).'
+  id: totrans-50
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '*搜索空间*: 这些空间确定要选择的参数。搜索空间定义了每个参数值的范围以及如何对其进行采样。它们定义为字典，并使用Tune的采样函数指定有效的超参数值。您已经看到了`tune.uniform`，但[还有很多其他选择可供选择](https://docs.ray.io/en/latest/tune/api_docs/search_space.xhtml#tune-sample-docs)。'
 - en: '*Trainables*: A `Trainable` is Tune’s formal representation of an objective
     you want to “tune”. Tune has class-based API as well, but we will only use the
     function-based API in this book. For us, a `Trainable` is a function with a single
     argument, a search space, which reports scores to Tune. The easiest way to do
     so is by returning a dictionary with the score you’re interested in.'
+  id: totrans-51
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '*可训练对象*: `Trainable`是Tune对您想要“调整”的目标的正式表示。Tune还有基于类的API，但在本书中我们只使用基于函数的API。对于我们来说，`Trainable`是一个带有单个参数（搜索空间）的函数，它向Tune报告得分。最简单的方法是通过返回包含您感兴趣得分的字典来实现。'
 - en: '*Trials*: By triggering `tune.run(...)`, Tune will make sure to set up trials
     and schedule them for execution on your cluster. A trial contains all necessary
     information about a single run of your objective, given a set of hyperparameters.'
+  id: totrans-52
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '*试验*: 通过触发`tune.run(...)`，Tune将确保设置试验并安排它们在集群上执行。每个试验包含关于目标单次运行的所有必要信息，给定一组超参数。'
 - en: '*Analyses*: Completing a `tune.run` call returns an `ExperimentAnalysis` object,
     with the results of all trials. You can use this object to drill down into the
     results of your trials.'
+  id: totrans-53
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '*分析*: 调用`run`方法完成后返回一个`ExperimentAnalysis`对象，其中包含所有试验的结果。您可以使用此对象深入了解试验结果。'
 - en: '*Search Algorithms*: Tune supports a large variety of search algorithms, which
     are at the core of how to tune your hyperparameters. So far you’ve only implicitly
     encountered Tune’s default search algorithm, which randomly selects hyperparameters
     from the search space.'
+  id: totrans-54
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '*搜索算法*: Tune支持多种搜索算法，它们是调整超参数的核心。到目前为止，您只隐式地遇到了Tune的默认搜索算法，它从搜索空间中随机选择超参数。'
 - en: '*Schedulers*: The last, crucial component of a Tune experiment is that of a
     *scheduler*. Schedulers plan and execute what the search algorithm selects. By
     default, Tune schedules trials selected by your search algorithm on a first-in-first-out
     (FIFO) basis. In practice, you can think of schedulers as a way to speed up your
     experiments, for instance by stopping unsuccessful trials early.'
+  id: totrans-55
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '*调度器*: Tune实验的最后一个关键组件是*调度器*。调度器计划并执行搜索算法选择的试验。默认情况下，Tune按先进先出（FIFO）的方式调度搜索算法选择的试验。实际上，您可以将调度器视为加快实验速度的一种方法，例如通过提前停止不成功的试验。'
 - en: 'Figure [Figure 5-1](#fig_tune) sums up these major components of Tune, and
     their relationship in one diagram:'
+  id: totrans-56
   prefs: []
   type: TYPE_NORMAL
+  zh: 图 [图 5-1](#fig_tune) 概述了Tune的主要组件及其在一个图表中的关系：
 - en: '![Tune](assets/tune_flow.png)'
+  id: totrans-57
   prefs: []
   type: TYPE_IMG
+  zh: '![Tune](assets/tune_flow.png)'
 - en: Figure 5-1\. The core components of Ray Tune.
+  id: totrans-58
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 图 5-1\. Ray Tune的核心组件。
 - en: Note that internally Tune runs are started on the driver process of your Ray
     cluster, which spawns several worker processes (using Ray actors) that execute
     individual trials of your HPO experiment. Your trainables, defined on the driver,
     have to be sent to the workers, and trial results need to be communicated to the
     driver running `tune.run(...)`.
+  id: totrans-59
   prefs: []
   type: TYPE_NORMAL
+  zh: 注意，Tune内部运行在Ray集群的驱动进程上，该进程会生成多个工作进程（使用Ray actors），这些进程执行您的HPO实验的各个单独试验。在驱动程序上定义的可训练对象必须发送到工作进程，并且需要将试验结果通知给运行`tune.run(...)`的驱动程序。
 - en: Search spaces, Trainables, trials, and analyses don’t need much additional explanation,
     and we’ll see more examples of each of those components in the rest of this chapter.
     But search algorithms, or simply *searchers* for short, and schedulers need a
     bit more elaboration.
+  id: totrans-60
   prefs: []
   type: TYPE_NORMAL
+  zh: 搜索空间、可训练模型、试验和分析不需要额外解释太多，我们将在本章的其余部分看到每个组件的更多示例。但是搜索算法，或简称为*搜索器*，以及调度器需要更详细的阐述。
 - en: Search Algorithms
+  id: totrans-61
   prefs:
   - PREF_H3
   type: TYPE_NORMAL
+  zh: 搜索算法
 - en: All advanced search algorithms provided by Tune, and the many third-party HPO
     libraries it integrates with, fall under the umbrella of *Bayesian Optimization*.
     Unfortunately, going into the details of specific Bayesian search algorithms is
@@ -358,8 +496,10 @@
     your previous trials. Techniques using this principle make more informed decisions
     and hence tend to be more efficient than independently sampling parameters (e.g.
     at random).
+  id: totrans-62
   prefs: []
   type: TYPE_NORMAL
+  zh: Tune提供的所有高级搜索算法以及其集成的许多第三方HPO库都属于*贝叶斯优化*的范畴。不幸的是，深入讨论特定贝叶斯搜索算法的细节远远超出了本书的范围。基本思想是，根据先前试验的结果更新您对值得探索的超参数范围的信念。使用这一原则的技术能够做出更为明智的决策，因此通常比独立随机抽样参数（例如随机抽样）更为高效。
 - en: Apart from the basic random search we’ve seen already, and *grid search*, which
     picks hyperparameters from a predefined “grid” of choices, Tune offers a wide
     range of Bayesian optimization searchers. For instance, Tune integrates with the
@@ -369,40 +509,58 @@
     Scikit-Optimize, BayesianOptimization, HpBandSter, Nevergrad, ZOOpt, SigOpt, and
     HEBO. If you need to run HPO experiments with any of these tools on a cluster,
     or want to easily switch between them, Tune is the way to go.
+  id: totrans-63
   prefs: []
   type: TYPE_NORMAL
+  zh: 除了我们已经看到的基本随机搜索以外，还有从预定义的选择“网格”中选择超参数的*网格搜索*，Tune还提供了各种贝叶斯优化搜索器。例如，Tune集成了流行的HyperOpt和Optuna库，您可以通过这两个库使用流行的TPE（树形结构Parzen估计器）搜索器与Tune一起使用。不仅如此，Tune还集成了Ax、BlendSearch、FLAML、Dragonfly、Scikit-Optimize、BayesianOptimization、HpBandSter、Nevergrad、ZOOpt、SigOpt和HEBO等工具。如果您需要在集群上使用这些工具运行HPO实验，或者想要轻松地在它们之间切换，Tune是您的首选。
 - en: To make things more concrete, let’s rewrite our basic random search Tune example
     from earlier to use the `bayesian-optimization` library. To do so, make sure you
     install this library in your Python environment first, e.g. with `pip install
     bayesian-optimization`.
+  id: totrans-64
   prefs: []
   type: TYPE_NORMAL
+  zh: 为了更具体地说明问题，让我们重新编写我们之前的基本随机搜索Tune示例，使用`bayesian-optimization`库。为此，请确保首先在您的Python环境中安装这个库，例如使用`pip
+    install bayesian-optimization`。
 - en: Example 5-7\.
+  id: totrans-65
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 5-7\.
 - en: '[PRE6]'
+  id: totrans-66
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE6]'
 - en: Note that we “warm start” our Bayesian optimization with four random steps at
     the beginning, and we explicitly `stop` the trial runs after 10 training iterations.
+  id: totrans-67
   prefs: []
   type: TYPE_NORMAL
+  zh: 请注意，我们在贝叶斯优化的开始时进行四个随机步骤来“热启动”，并且我们明确地`stop`在10次训练迭代后停止试验运行。
 - en: Note that since we’re not just randomly selecting parameters with `BayesOptSearch`,
     the `search_alg` we use in our Tune run needs to know which `metric` to optimize
     for and whether to minimize or optimize this metric. As we’ve argued before, we
     want to achieve a `"min"` `"score"`.
+  id: totrans-68
   prefs: []
   type: TYPE_NORMAL
+  zh: 请注意，由于我们不仅仅是随机选择参数来使用`BayesOptSearch`，我们在Tune运行中使用的`search_alg`需要知道要优化的`metric`以及是最小化还是优化这个指标。正如我们之前所讨论的，我们希望达到一个`"min"`
+    `"score"`。
 - en: Schedulers
+  id: totrans-69
   prefs:
   - PREF_H3
   type: TYPE_NORMAL
+  zh: 调度器
 - en: Let’s next discuss how to use *trial schedulers* in Tune to make your runs more
     efficient. We also use this section to introduce a slightly different way to report
     your metrics to Tune within an objective function.
+  id: totrans-70
   prefs: []
   type: TYPE_NORMAL
+  zh: 接下来让我们讨论如何在Tune中使用*试验调度器*来使您的运行更加高效。我们还将在这一节中介绍一种稍微不同的方法，用于在目标函数中向Tune报告您的指标。
 - en: So, let’s say that instead of computing a score straight-up, like we did in
     all examples in this chapter so far, we compute an *intermediate score* in a loop.
     This is a situation that often occurs in supervised machine learning scenarios,
@@ -412,32 +570,48 @@
     other words, if we don’t see enough incremental changes anymore, why not stop
     the trial early? This is exactly one of the cases Tune’s schedulers are built
     for.
+  id: totrans-71
   prefs: []
   type: TYPE_NORMAL
+  zh: 因此，假设我们不像本章中所有示例中那样直接计算分数，而是在循环中计算*中间分数*。这在监督式机器学习场景中经常发生，当为模型进行多次迭代训练时（我们将在本章后面看到具体应用）。通过选择良好的超参数，这个中间分数可能会在它计算的循环之前停滞。换句话说，如果我们不再看到足够的增量变化，为什么不早点停止试验呢？这正是Tune的调度程序构建的情况之一。
 - en: Here’s a quick example of such an objective function. This is a toy example,
     but it will help us reason about the optimal hyperparameters we want Tune to find
     much better than if we were discussing a black-box scenario.
+  id: totrans-72
   prefs: []
   type: TYPE_NORMAL
+  zh: 这里是这样一个目标函数的快速示例。这是一个玩具例子，但它将帮助我们更好地讨论我们希望Tune找到的最优超参数，远比我们讨论一个黑盒场景要好。
 - en: Example 5-8\.
+  id: totrans-73
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 5-8。
 - en: '[PRE7]'
+  id: totrans-74
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE7]'
 - en: '[![1](assets/1.png)](#co_hyperparameter_optimization_with_ray_tune_CO2-1)'
+  id: totrans-75
   prefs: []
   type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_hyperparameter_optimization_with_ray_tune_CO2-1)'
 - en: Often you may want to compute intermediate scores, e.g. in a “training loop”.
+  id: totrans-76
   prefs: []
   type: TYPE_NORMAL
+  zh: 通常情况下，您可能希望计算中间分数，例如在“训练循环”中。
 - en: '[![2](assets/2.png)](#co_hyperparameter_optimization_with_ray_tune_CO2-2)'
+  id: totrans-77
   prefs: []
   type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_hyperparameter_optimization_with_ray_tune_CO2-2)'
 - en: You can use `tune.report` to let Tune know about these intermediate scores.
+  id: totrans-78
   prefs: []
   type: TYPE_NORMAL
+  zh: 您可以使用`tune.report`来告诉Tune这些中间分数的情况。
 - en: The score we want to minimize here is the square root of a positive number times
     a `weight`, plus adding a `bias` term. It’s clear that both of these hyperparameters
     need to be as small as possible to minimize the `score` for any positive `x`.
@@ -445,21 +619,29 @@
     all `30` passes through the loop to find sufficiently good values for our two
     hyperparameters. If you imagine that each `score` computation took an hour, stopping
     early can be a huge boost to make your experiments run quicker.
+  id: totrans-79
   prefs: []
   type: TYPE_NORMAL
+  zh: 我们希望在这里最小化的分数是一个正数的平方根乘以一个`weight`，再加上一个`bias`项。显然，这两个超参数都需要尽可能小，以最小化任何正`x`的`score`。考虑到平方根函数的“平坦化”，我们可能不必计算所有`30`次循环通过以找到足够好的值来调整我们的两个超参数。如果你想象每个`score`计算花费一个小时，尽早停止可能会极大地提升您的实验运行速度。
 - en: 'Let’s illustrate this idea by using the popular Hyperband algorithm as our
     trial scheduler. This scheduler needs to be passed a metric and mode (again, we
     `min`-imize our `score`). We also make sure to run for 10 samples so as not to
     stop too prematurely:'
+  id: totrans-80
   prefs: []
   type: TYPE_NORMAL
+  zh: 让我们通过使用流行的Hyperband算法作为我们的试验调度程序来说明这个想法。该调度程序需要传递一个指标和模式（再次，我们要`min`-imize我们的`score`）。我们还确保运行10个样本，以避免过早停止：
 - en: Example 5-9\.
+  id: totrans-81
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 5-9。
 - en: '[PRE8]'
+  id: totrans-82
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE8]'
 - en: Note that in this case we did not specify a search algorithm, which means that
     Hyperband will run on parameters selected by random search. We could also have
     *combined* this scheduler with another search algorithm instead. This would have
@@ -467,43 +649,63 @@
     note that not every scheduler can be combined with search algorithms. You’re advised
     to check [Tune’s scheduler compatibility matrix](https://docs.ray.io/en/latest/tune/key-concepts.xhtml#schedulers)
     for more information.
+  id: totrans-83
   prefs: []
   type: TYPE_NORMAL
+  zh: 请注意，在这种情况下，我们没有指定搜索算法，这意味着 Hyperband 将在通过随机搜索选择的参数上运行。我们也可以*结合*这个调度程序与另一个搜索算法。这将使我们能够选择更好的试验超参数并及早停止不良试验。然而，请注意，并非每个调度程序都可以与搜索算法结合使用。建议您查看[Tune的调度程序兼容矩阵](https://docs.ray.io/en/latest/tune/key-concepts.xhtml#schedulers)获取更多信息。
 - en: To wrap this discussion up, apart from Hyperband Tune includes distributed implementations
     of early stopping algorithms such as the Median Stopping Rule, ASHA, Population
     Based Training (PBT) and Population Based Bandits (PB2).
+  id: totrans-84
   prefs: []
   type: TYPE_NORMAL
+  zh: 总结一下，除了 Hyperband 外，Tune 还包括分布式实现的早停算法，如中位数停止规则、ASHA、基于人口的训练（PBT）和基于人口的强盗（PB2）。
 - en: Configuring and running Tune
+  id: totrans-85
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 配置和运行 Tune
 - en: Before looking into more concrete machine learning examples using Ray Tune,
     let’s dive into some useful topics that help you get more out of your Tune experiments,
     such as properly utilizing resources, stopping and resuming trials, adding callbacks
     to your Tune runs, or defining custom and conditional search spaces.
+  id: totrans-86
   prefs: []
   type: TYPE_NORMAL
+  zh: 在探讨更具体的使用 Ray Tune 的机器学习示例之前，让我们深入研究一些有用的主题，这些主题将帮助您更好地利用您的 Tune 实验，例如正确利用资源、停止和恢复试验、向您的
+    Tune 运行添加回调，或定义自定义和条件搜索空间。
 - en: Specifying resources
+  id: totrans-87
   prefs:
   - PREF_H3
   type: TYPE_NORMAL
+  zh: 指定资源
 - en: By default, each Tune trial will run on one CPU and leverage as many CPUs as
     available for concurrent trials. For instance, if you run Tune on a laptop with
     8 CPUs, any of the experiments we computed so far in this chapter will spawn 8
     concurrent trials and allocate one CPU each for each trial. Changing this behaviour
     can be controlled using the `resources_per_trial` argument of a Tune run.
+  id: totrans-88
   prefs: []
   type: TYPE_NORMAL
+  zh: 默认情况下，每个 Tune 试验将在一个 CPU 上运行，并利用尽可能多的 CPU 用于并发试验。例如，如果您在具有 8 个 CPU 的笔记本电脑上运行
+    Tune，则本章中迄今计算的任何实验都将生成 8 个并发试验，并为每个试验分配一个 CPU。可以使用 Tune 运行的 `resources_per_trial`
+    参数来控制这种行为。
 - en: 'What’s interesting is that this does not stop with CPUs, you can also determine
     the number of GPUs used per trial. Plus, Tune allows you to use *fractional resources*,
     i.e., you can share resources between trials. So, let’s say that you have a machine
     with 12 CPUs and two GPUs and you request the following resources for your `objective`:'
+  id: totrans-89
   prefs: []
   type: TYPE_NORMAL
+  zh: 有趣的是，这不仅限于 CPU，您还可以确定每个试验使用的 GPU 数量。此外，Tune 还允许您使用 *分数资源*，即您可以在试验之间共享资源。所以，假设您的机器有
+    12 个 CPU 和两个 GPU，并且您请求您的 `objective` 使用以下资源：
 - en: '[PRE9]'
+  id: totrans-90
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE9]'
 - en: That means Tune can schedule and execute up to four concurrent trials on your
     machine, as this would max out GPU utilization on this machine (while you’d still
     have 4 idle CPUs for other tasks). If you want, you can also specify the amount
@@ -513,187 +715,279 @@
     to your `tune.run(...)`. In the above example, let’s say you want to always keep
     one GPU available for other tasks, you can limit the number of concurrent trials
     to two by setting `max_concurrent_trials = 2`.
+  id: totrans-91
   prefs: []
   type: TYPE_NORMAL
+  zh: 这意味着 Tune 可以在您的机器上调度和执行最多四个并发试验，因为这样可以最大化 GPU 的利用率（同时您仍然可以有 4 个空闲的 CPU 用于其他任务）。如果您愿意，还可以通过将字节的数量传递给
+    `resources_per_trial` 来指定试验使用的 `"memory"` 量。还请注意，如果您需要显式地 *限制* 并发试验的数量，可以通过将 `max_concurrent_trials`
+    参数传递给您的 `tune.run(...)` 来实现。在上述示例中，假设您希望始终保留一个 GPU 供其他任务使用，您可以通过设置 `max_concurrent_trials
+    = 2` 来限制并发试验的数量为两个。
 - en: Note that everything we just exemplified for resources on a single machine naturally
     extends to any Ray cluster and its available resources. In any case, Ray will
     always try to schedule the next trials, but will wait and ensure enough resources
     are available before executing them.
+  id: totrans-92
   prefs: []
   type: TYPE_NORMAL
+  zh: 请注意，我们刚刚为单台机器上的资源举例的所有内容，自然地扩展到任何 Ray 集群及其可用资源。在任何情况下，Ray 都会尝试安排下一个试验，但会等待并确保有足够的资源可用才执行它们。
 - en: Callbacks and Metrics
+  id: totrans-93
   prefs:
   - PREF_H3
   type: TYPE_NORMAL
+  zh: 回调和指标
 - en: If you’ve spent some time investigating the outputs of the Tune runs we’ve started
     in this chapter so far, you’ll have noticed that each trial comes equipped with
     a lot of information by default, such as the trial ID, its execution date, and
     much more. What’s interesting is that Tune not only allows you to customize the
     metrics you want to report, you can also hook into a `tune.run` by providing *callbacks*.
     Let’s compute a quick, representative example that does both.
+  id: totrans-94
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果你花了一些时间调查我们在本章中启动的 Tune 运行的输出，你会注意到每个试验默认都有很多信息，比如试验 ID、执行日期等等。有趣的是，Tune 不仅允许你自定义要报告的指标，还可以通过提供
+    *回调* 来钩入 `tune.run`。让我们计算一个快速而代表性的示例，同时做这两件事。
 - en: 'Slightly modifying a previous example, let’s say we want to log a specific
     message whenever a trial returns a result. To do so, all you need to do is implement
     the `on_trial_result` method on a `Callback` object from the `ray.tune` package.
     Here’s how that would look like for an objective function that reports a `score`:'
+  id: totrans-95
   prefs: []
   type: TYPE_NORMAL
+  zh: 稍微修改之前的示例，假设我们想在每次试验返回结果时记录特定消息。为此，您只需要在来自 `ray.tune` 包的 `Callback` 对象上实现 `on_trial_result`
+    方法。下面是一个报告 `score` 的目标函数的示例：
 - en: Example 5-10\.
+  id: totrans-96
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 5-10\.
 - en: '[PRE10]'
+  id: totrans-97
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE10]'
 - en: 'Note that, apart from the score, we also report `step` and `more_metrics` to
     Tune. In fact, you could expose any other metric you’d like to track there, and
     Tune would add it to its trial metrics. Here’s how you’d run a Tune experiment
     with our custom callback, and print the custom metrics we just defined:'
+  id: totrans-98
   prefs: []
   type: TYPE_NORMAL
+  zh: 请注意，除了分数之外，我们还向 Tune 报告 `step` 和 `more_metrics`。实际上，您可以在此处公开任何其他想要跟踪的指标，Tune
+    将其添加到其试验指标中。以下是如何使用我们的自定义回调运行 Tune 实验，并打印刚刚定义的自定义指标：
 - en: Example 5-11\.
+  id: totrans-99
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 5-11\.
 - en: '[PRE11]'
+  id: totrans-100
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE11]'
 - en: 'Running this code will result in the following outputs (additional to what
     you’ll see in any other Tune run). Note that we need to specify `mode` and `metric`
     explicitly here, so that Tune knows what we mean by `best_result`. First, you
     should see the output of our callback, while the trials are running:'
+  id: totrans-101
   prefs: []
   type: TYPE_NORMAL
+  zh: 运行此代码将产生以下输出（除了您将在任何其他 Tune 运行中看到的输出之外）。请注意，我们需要在这里明确指定 `mode` 和 `metric`，以便
+    Tune 知道我们通过 `best_result` 意味着什么。首先，您应该看到我们回调函数的输出，同时试验正在运行：
 - en: '[PRE12]'
+  id: totrans-102
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE12]'
 - en: Then, at the very end of the program, we print the metrics of the best available
     trial, which includes the three custom metrics we defined. The following output
     omits some default metrics to make it more readable. We recommend that you run
     an example like this on your own, in particular to get used to reading the outputs
     of Tune trials (which can be a bit overwhelming due to their concurrent nature).
+  id: totrans-103
   prefs: []
   type: TYPE_NORMAL
+  zh: 然后，在程序的最后，我们打印最佳可用试验的指标，其中包括我们定义的三个自定义指标。以下输出省略了一些默认指标，以使其更易读。我们建议您自己运行这样的示例，特别是熟悉阅读
+    Tune 试验输出（由于其并发性质可能会有些压倒性）。
 - en: '[PRE13]'
+  id: totrans-104
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE13]'
 - en: Note that we used `on_trial_result` as an example of a method to implement a
     custom Tune `Callback`, but you have many other useful options that are all relatively
     self-explanatory. It’s not very helpful to list them all here, but some callback
     methods I find particularly useful are `on_trial_start`, `on_trial_error`, `on_experiment_end`
     and `on_checkpoint`. The latter hints at an important aspect of Tune runs that
     we’ll discuss next.
+  id: totrans-105
   prefs: []
   type: TYPE_NORMAL
+  zh: 请注意，我们使用 `on_trial_result` 作为实现自定义 Tune `Callback` 的方法示例，但您还有许多其他有用的选项，它们都相对容易理解。在此列出它们并不是很有帮助，但我发现一些回调方法特别有用，如
+    `on_trial_start`、`on_trial_error`、`on_experiment_end` 和 `on_checkpoint`。后者暗示了我们接下来将讨论的
+    Tune 运行的一个重要方面。
 - en: Checkpoints, Stopping, and Resuming
+  id: totrans-106
   prefs:
   - PREF_H3
   type: TYPE_NORMAL
+  zh: 检查点、停止和恢复
 - en: The more Tune trials you kick off and the longer they each run individually,
     especially in a distributed setting, the more you need a mechanism to protect
     you against failures, to stop a run, or pick a run up again from previous results.
     Tune makes this possible by periodically creating *checkpoints* for you. The checkpoint
     cadence is dynamically adjusted by Tune to ensure at least 95% of the time is
     spent on running trials, and not too many resources are devoted to storing checkpoints.
+  id: totrans-107
   prefs: []
   type: TYPE_NORMAL
+  zh: 您启动的 Tune 试验越多，它们在单独运行时的时间越长，特别是在分布式设置中，越需要一种机制来保护您免受故障的影响，停止运行或从以前的结果中恢复。Tune
+    通过定期为您创建 *checkpoints* 来实现这一点。Tune 动态调整检查点的频率，以确保至少有 95% 的时间用于运行试验，并且不会将过多资源用于存储检查点。
 - en: 'In the example we just computed, the checkpoint directory, or `logdir`, used
     was `/Users/maxpumperla/ray_results/objective_2022-05-23_15-52-01`. If you ran
     this example on your machine, by default its structure would be `~/ray_results/<your-objective>_<date>_<time>`.
     If you know this `name` of your experiment, you can easily `resume` it like so:'
+  id: totrans-108
   prefs: []
   type: TYPE_NORMAL
+  zh: 在我们刚刚计算的示例中，使用的检查点目录或 `logdir` 是 `/Users/maxpumperla/ray_results/objective_2022-05-23_15-52-01`。如果您在您的机器上运行此示例，默认情况下其结构将是
+    `~/ray_results/<your-objective>_<date>_<time>`。如果您知道您的实验的 `name`，您可以像这样轻松 `resume`
+    它：
 - en: Example 5-12\.
+  id: totrans-109
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 5-12\.
 - en: '[PRE14]'
+  id: totrans-110
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE14]'
 - en: 'Similarly, you can *stop* your trials by defining stopping conditions and explicitly
     passing them to your `tune.run`. The easiest option to do that, and we’ve already
     seen this option before, is by providing a dictionary with a stopping condition.
     Here’s how you stop running our `objective` analysis after reaching a `training_iteration`
     count of 10, a built-in metric of all Tune runs:'
+  id: totrans-111
   prefs: []
   type: TYPE_NORMAL
+  zh: 同样地，您可以通过定义停止条件并将其明确传递给 `tune.run` 来 *stop* 您的试验。最简单的选项是通过提供带有停止条件的字典来实现，我们之前已经看到了这个选项。以下是如何在达到
+    `training_iteration` 计数为 10 时停止运行我们的 `objective` 分析，这是所有 Tune 运行的内置指标之一：
 - en: Example 5-13\.
+  id: totrans-112
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 5-13\.
 - en: '[PRE15]'
+  id: totrans-113
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE15]'
 - en: One of the drawbacks of this way of specifying a stopping condition is that
     it assumes the metric in question is *increasing*. For instance, the `score` we
     compute starts high and is something we want to minimize. To formulate a flexible
     stopping condition for our `score`, the best way is to provide a stopping function
     as follows.
+  id: totrans-114
   prefs: []
   type: TYPE_NORMAL
+  zh: 这种指定停止条件的方式之一的缺点是，它假定所涉及的度量是*增加*的。例如，我们计算的 `score` 起始较高，这是我们希望最小化的。为了为我们的 `score`
+    制定一个灵活的停止条件，最好的方法是提供一个如下的停止函数。
 - en: Example 5-14\.
+  id: totrans-115
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 5-14。
 - en: '[PRE16]'
+  id: totrans-116
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE16]'
 - en: In situations that require a stopping condition with more context or explicit
     state, you can also define a custom `Stopper` class to pass into the `stop` argument
     of your Tune run, but we won’t cover this case here.
+  id: totrans-117
   prefs: []
   type: TYPE_NORMAL
+  zh: 在需要更多上下文或显式状态的停止条件的情况下，您还可以定义一个自定义的 `Stopper` 类，将其传递给 Tune 运行的 `stop` 参数，但我们不会在这里涵盖这种情况。
 - en: Custom and conditional search spaces
+  id: totrans-118
   prefs:
   - PREF_H3
   type: TYPE_NORMAL
+  zh: 自定义和条件搜索空间
 - en: The last more advanced topic we’re going to cover here is that of complex search
     spaces. So far, we’ve only looked at hyperparameters that were independent of
     each other, but in practice it happens quite often that some depend on others.
     Also, while Tune’s built-in search spaces have quite a lot to offer, sometimes
     you might want to sample parameters from a more exotic distribution or your own
     modules.
+  id: totrans-119
   prefs: []
   type: TYPE_NORMAL
+  zh: 我们在这里要涵盖的最后一个更高级的主题是复杂的搜索空间。到目前为止，我们只看到彼此独立的超参数，但实际上，有时某些超参数是相互依赖的。此外，虽然 Tune
+    的内置搜索空间提供了很多选择，但有时您可能希望从更奇特的分布或您自己的模块中对参数进行抽样。
 - en: 'Here’s how you can handle both situations in Tune. Continuing with our simple
     `objective` example, let’s say that instead of Tune’s `tune.uniform` you want
     to use the `random.uniform` sampler from the `numpy` package for your `weight`
     parameter. And then your `bias` parameter should be `weight` times a standard
     normal variable. Using `tune.sample_from` you can tackle this situation (or more
     complex and nested ones) as follows:'
+  id: totrans-120
   prefs: []
   type: TYPE_NORMAL
+  zh: 这里是您可以在 Tune 中处理这两种情况的方法。继续使用我们简单的 `objective` 示例，假设您不想使用 Tune 的 `tune.uniform`，而想要使用
+    `numpy` 包中的 `random.uniform` 采样器来为您的 `weight` 参数。然后，您的 `bias` 参数应该是 `weight` 乘以一个标准正态变量。使用
+    `tune.sample_from`，您可以处理这种情况（或更复杂和嵌套的情况），如下所示：
 - en: Example 5-15\.
+  id: totrans-121
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 5-15。
 - en: '[PRE17]'
+  id: totrans-122
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE17]'
 - en: There are many more interesting features to explore in Ray Tune, but let’s switch
     gears here and look into some machine learning applications using Tune.
+  id: totrans-123
   prefs: []
   type: TYPE_NORMAL
+  zh: 在 Ray Tune 中有许多有趣的功能可以探索，但是让我们在这里转换一下视角，看看如何使用 Tune 进行一些机器学习应用。
 - en: Machine Learning with Tune
+  id: totrans-124
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 使用 Tune 进行机器学习
 - en: As we’ve seen, Tune is versatile and allows you to tune hyperparameters for
     any objective you give it. In particular, you can use it with any machine learning
     framework you’re interested in. In this section we’re going to give you two examples
     to illustrate this.
+  id: totrans-125
   prefs: []
   type: TYPE_NORMAL
+  zh: 正如我们所看到的，Tune 是多才多艺的，允许您为任何您给定的目标调整超参数。特别是，您可以将其与您感兴趣的任何机器学习框架一起使用。在本节中，我们将给出两个示例来说明这一点。
 - en: First, we’re going to use Tune to optimize parameters of an RLlib reinforcement
     learning experiment, and then we’re tuning a Keras model using Optuna through
     Tune.
+  id: totrans-126
   prefs: []
   type: TYPE_NORMAL
+  zh: 首先，我们将使用 Tune 来优化 RLlib 强化学习实验的参数，然后我们将通过 Tune 使用 Optuna 来调整 Keras 模型。
 - en: Using RLlib with Tune
+  id: totrans-127
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 使用 RLlib 和 Tune
 - en: 'RLlib and Tune have been designed to work together, so you can quite easily
     set up an HPO experiment for your existing RLlib code. In fact, RLlib Trainers
     can be passed into the first argument of `tune.run`, as `Trainable`. You can choose
@@ -704,19 +998,31 @@
     search space API to sample hyperparameters like the learning rate or training
     batch size^([1](ch05.xhtml#idm44990024561792)). Here’s a full example of what
     we just described, running a tuned RLlib experiment on the `CartPole-v0` gym environment:'
+  id: totrans-128
   prefs: []
   type: TYPE_NORMAL
+  zh: RLlib 和 Tune 已经设计成可以很好地配合使用，因此您可以轻松地为现有的 RLlib 代码设置一个 HPO 实验。事实上，RLlib 的 Trainers
+    可以作为 `tune.run` 的第一个参数传入，作为 `Trainable`。您可以选择实际的 Trainer 类，如 `DQNTrainer`，或其字符串表示形式，如
+    `"DQN"`。作为 Tune `metric`，您可以传递由您的 RLlib 实验跟踪的任何指标，例如 `"episode_reward_mean"`。而
+    `tune.run` 的 `config` 参数就是您的 RLlib Trainer 配置，但您可以利用 Tune 的搜索空间 API 的全部功能来对超参数进行抽样，例如学习率或训练批次大小^([1](ch05.xhtml#idm44990024561792))。这里是我们刚刚描述的完整示例，运行一个在
+    `CartPole-v0` gym 环境上进行调优的 RLlib 实验：
 - en: Example 5-16\.
+  id: totrans-129
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 5-16。
 - en: '[PRE18]'
+  id: totrans-130
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE18]'
 - en: Tuning Keras Models
+  id: totrans-131
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 调整 Keras 模型
 - en: To wrap up this chapter, let’s look at a slightly more involved example. As
     we mentioned before, this is not primarily a machine learning book, but rather
     an introduction to Ray and its libraries. That means that we can neither introduce
@@ -726,31 +1032,43 @@
     you should still be able to follow along and focus on the Ray Tune specific parts.
     You can view the following example as a more realistic scenario of applying Tune
     to machine learning workloads.
+  id: totrans-132
   prefs: []
   type: TYPE_NORMAL
+  zh: 结束本章时，让我们看一个稍微更复杂的示例。正如我们之前提到的，这本书不是主要介绍机器学习，而是介绍Ray及其库的入门。这意味着我们既不能向您介绍ML的基础知识，也不能花太多时间详细介绍ML框架。因此，在本节中，我们假设您熟悉Keras及其API，并对监督学习有一些基本了解。如果您没有这些先决条件，您仍然应该能够跟上，并专注于Ray
+    Tune特定部分。您可以将以下示例视为将Tune应用于机器学习工作负载的更现实的场景。
 - en: From a bird’s eye view, we’re going to load a common data set, prepare it for
     an ML task, define a Tune objective by creating a deep learning model with Keras
     that reports an accuracy metric to Tune, and use Tune’s HyperOpt integration to
     define a search algorithm that tunes a set of hyperparameters of our Keras model.
     The workflow remains the same - we define an objective, a search space, and then
     use `tune.run` with the configuration we want.
+  id: totrans-133
   prefs: []
   type: TYPE_NORMAL
+  zh: 从鸟瞰角度来看，我们将加载一个常见的数据集，为ML任务准备它，通过创建一个深度学习模型定义一个Tune目标，该模型使用Keras报告精度指标，并使用Tune的HyperOpt集成来定义调优我们Keras模型的一组超参数的搜索算法。工作流程保持不变-我们定义一个目标，一个搜索空间，然后使用`tune.run`与我们想要的配置。
 - en: 'To define a data set to train on, let’s write a simple `load_data` utility
     function that loads the famous MNIST data that ships with Keras. MNIST consists
     of 28 times 28 pixel images of handwritten digits. We normalize the pixel values
     to be between 0 and 1, and make the labels for those ten digits *categorical variables*.
     Here’s how you can do this purely with Keras’ built-in functionality (make sure
     to `pip install tensorflow` before running this):'
+  id: totrans-134
   prefs: []
   type: TYPE_NORMAL
+  zh: 要定义一个用于训练的数据集，让我们编写一个简单的`load_data`实用函数，加载Keras附带的著名MNIST数据。MNIST由28乘以28像素的手写数字图像组成。我们将像素值归一化为0到1之间，并将这十个数字的标签作为*categorical
+    variables*。这里是如何只使用Keras内置功能来做到这一点（在运行之前确保`pip install tensorflow`）：
 - en: Example 5-17\.
+  id: totrans-135
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例5-17。
 - en: '[PRE19]'
+  id: totrans-136
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE19]'
 - en: Next, we define a Tune `objective` function, or Trainable, by loading the data
     we just defined, setting up a sequential Keras model with hyperparameters selected
     from the `config` we pass into our `objective`, and then compile and fit the model.
@@ -760,23 +1078,32 @@
     function of the first `Dense` layer, the `Dropout` rate, and the number of “hidden”
     output units of the first layer. We could tune any other hyperparameter of this
     model the same way, this selection is just an example.
+  id: totrans-137
   prefs: []
   type: TYPE_NORMAL
+  zh: 接下来，我们定义一个调谐`目标`函数或可训练函数，通过加载我们刚刚定义的数据，设置一个顺序的Keras模型，其中的超参数来自我们传入`config`中的选择，然后编译和拟合模型。为了定义我们的深度学习模型，我们首先将MNIST输入图像展平为向量，然后添加两个全连接层（在Keras中称为`Dense`），并在其中添加一个`Dropout`层。我们要调节的超参数包括第一个`Dense`层的激活函数、`Dropout`率以及第一层的“隐藏”输出单元数。我们可以以同样的方式调节这个模型的任何其他超参数，这个选择只是一个例子。
 - en: 'We could manually report a metric of interest in the same way we did in other
     examples in this chapter (e.g. by returning a dictionary in our `objective` or
     using `tune.report(...)`). But since Tune comes with a proper Keras integration,
     we can use the so-called `TuneReportCallback` as a custom Keras callback that
     we pass into our model’s `fit` method. This is what our Keras `objective` function
     looks like:'
+  id: totrans-138
   prefs: []
   type: TYPE_NORMAL
+  zh: 我们可以像在本章的其他示例中手动报告感兴趣的度量方式一样（例如通过在我们的`objective`中返回字典或使用`tune.report(...)`）。但由于Tune配备了合适的Keras集成，我们可以使用所谓的`TuneReportCallback`作为自定义Keras回调，将其传递到我们模型的`fit`方法中。这是我们的Keras
+    `objective`函数的样子：
 - en: Example 5-18\.
+  id: totrans-139
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例5-18。
 - en: '[PRE20]'
+  id: totrans-140
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE20]'
 - en: Next, let’s use a custom search algorithm to tune this objective. Specifically,
     we’re using the `HyperOptSearch` algorithm, which gives us access to HyperOpt’s
     TPE algorithm through Tune. To use this integration, make sure to install HyperOpt
@@ -788,32 +1115,46 @@
     that, we can define a search space with `tune` utility just as we did before.
     Finally, we can get an `analysis` object to determine the best hyperparameters
     found by passing everything into a `tune.run` call.
+  id: totrans-141
   prefs: []
   type: TYPE_NORMAL
+  zh: 接下来，让我们使用自定义搜索算法来调整这个目标。具体来说，我们使用`HyperOptSearch`算法，通过Tune可以访问HyperOpt的TPE算法。要使用这种集成，请确保在您的机器上安装HyperOpt（例如使用`pip
+    install hyperopt==0.2.5`）。`HyperOptSearch`允许我们定义一组有前途的初始超参数选择进行研究。这是完全可选的，但有时您可能有良好的猜测作为起点。在我们的案例中，我们选择了一个`"rate"`为0.2的dropout，128个`"hidden"`单元，并且最初使用了整流线性单元（ReLU）的`"activation"`函数。除此之外，我们可以像之前使用`tune`实用工具一样定义一个搜索空间。最后，通过将所有内容传递到`tune.run`调用中，我们可以得到一个`analysis`对象来确定找到的最佳超参数。
 - en: Example 5-19\.
+  id: totrans-142
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 5-19。
 - en: '[PRE21]'
+  id: totrans-143
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE21]'
 - en: Note that we’re leveraging the full power of HyperOpt here, without having to
     learn any specifics of it. We use Tune as a distributed front-end to another HPO
     tool, plus leveraging its native integration with Keras.
+  id: totrans-144
   prefs: []
   type: TYPE_NORMAL
+  zh: 注意，我们在这里充分利用了HyperOpt的全部功能，而无需学习其任何具体内容。我们使用Tune作为另一个HPO工具的分布式前端，同时利用其与Keras的原生集成。
 - en: While we chose a combination of Keras and HyperOpt as example of using Tune
     with an advanced ML framework and a third-party HPO library, as indicated earlier
     we could have chosen literally any other machine learning library and practically
     any other HPO library in popular use today. If you’re interested in diving deeper
     into any of the many other integrations Tune has to offer, check out the [Ray
     Tune documentation examples](https://docs.ray.io/en/latest/tune/examples/index.xhtml).
+  id: totrans-145
   prefs: []
   type: TYPE_NORMAL
+  zh: 虽然我们选择了Keras和HyperOpt的组合作为使用Tune与先进ML框架和第三方HPO库的示例，但正如前文所述，今天的流行使用中我们几乎可以选择任何其他机器学习库和HPO库。如果你对深入了解Tune提供的众多其他集成感兴趣，请查看[Ray
+    Tune文档示例](https://docs.ray.io/en/latest/tune/examples/index.xhtml)。
 - en: Summary
+  id: totrans-146
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 摘要
 - en: Tune is arguably one of the most versatile HPO tools you can choose today. It’s
     very feature-rich, offering many search algorithms, advanced schedulers, complex
     search spaces, custom stoppers and many other features that we couldn’t cover
@@ -825,10 +1166,16 @@
     might only work on single machines. Seen that way, and given that you have a need
     to scale out your HPO experiments, there’s very little speaking against adopting
     Tune.
+  id: totrans-147
   prefs: []
   type: TYPE_NORMAL
+  zh: Tune可以说是你今天可以选择的最多才多艺的HPO工具之一。它功能非常丰富，提供许多搜索算法、高级调度器、复杂的搜索空间、自定义停止器等许多其他功能，在本章中我们无法全部覆盖。此外，它与大多数知名HPO工具（如Optuna或HyperOpt）无缝集成，这使得无论是从这些工具迁移，还是通过Tune简单利用它们的功能，都变得非常容易。由于Tune作为Ray生态系统的一部分默认是分布式的，它比许多竞争对手更具优势。您可以将Ray
+    Tune视为一个灵活的、分布式的HPO框架，*扩展*了可能只能在单台机器上运行的其他框架。从这个角度来看，如果您需要扩展您的HPO实验，那么采用Tune几乎没有任何不合适的理由。
 - en: ^([1](ch05.xhtml#idm44990024561792-marker)) In case you were wondering why the
     “config” argument in `tune.run` was not called `search_space`, the historical
     reason lies in this interoperability with RLlib `config` objects.
+  id: totrans-148
   prefs: []
   type: TYPE_NORMAL
+  zh: ^([1](ch05.xhtml#idm44990024561792-marker)) 如果你想知道为什么`tune.run`中的“config”参数没有称为`search_space`，历史原因在于与RLlib
+    `config`对象的互操作性。

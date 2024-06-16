@@ -1115,11 +1115,14 @@
   id: totrans-131
   prefs: []
   type: TYPE_NORMAL
+  zh: 一个解决这些问题的简单方法是[NSQ](https://github.com/nsqio/nsq)，一个高性能的分布式消息平台。尽管它是用GO语言编写的，但完全是数据格式和语言无关的。因此，有许多语言的库，并且进入NSQ的基本接口是一个只需能够进行HTTP调用的REST
+    API。此外，我们可以以任何格式发送消息：JSON，Pickle，`msgpack`等等。然而最重要的是，它提供了关于消息传递的基本保证，并且所有这些都是使用两种简单的设计模式完成的：队列和发布/订阅。
 - en: Note
   id: totrans-132
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 注意
 - en: We picked NSQ to discuss because it is simple to use and generally performant.
     Most importantly for our purposes, it clearly highlights the considerations you
     must make when thinking about queuing and message passing in a cluster. However,
@@ -1128,11 +1131,13 @@
   id: totrans-133
   prefs: []
   type: TYPE_NORMAL
+  zh: 我们选择NSQ来讨论，因为它易于使用并且通常表现良好。对于我们的目的而言，最重要的是，它清楚地突显了在考虑在集群中排队和传递消息时必须考虑的因素。然而，其他解决方案如ZeroMQ，Amazon的SQS，Celery，甚至Redis可能更适合您的应用程序。
 - en: Queues
   id: totrans-134
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 队列
 - en: A *queue* is a type of buffer for messages. Whenever you want to send a message
     to another part of your processing pipeline, you send it to the queue, and it’ll
     wait there until a worker is available. A queue is most useful in distributed
@@ -1145,6 +1150,7 @@
   id: totrans-135
   prefs: []
   type: TYPE_NORMAL
+  zh: '*队列* 是一种消息的缓冲区。每当您想将消息发送到处理管道的另一部分时，您将其发送到队列中，并且它将在那里等待，直到有可用的工作进程。当生产和消费之间存在不平衡时，队列在分布式处理中最为有用。当出现这种不平衡时，我们可以简单地通过增加更多的数据消费者来进行水平扩展，直到消息的生产速率和消费速率相等。此外，如果负责消费消息的计算机出现故障，则消息不会丢失，而是简单地排队，直到有消费者可用，从而为我们提供消息传递的保证。'
 - en: For example, let’s say we would like to process new recommendations for a user
     every time that user rates a new item on our site. If we didn’t have a queue,
     the “rate” action would directly call the “recalculate-recommendations” action,
@@ -1155,6 +1161,7 @@
   id: totrans-136
   prefs: []
   type: TYPE_NORMAL
+  zh: 例如，假设我们希望每当用户在我们的网站上对新项目进行评分时处理新的推荐。如果没有队列，"rate"操作将直接调用"recalculate-recommendations"操作，而不管处理推荐的服务器有多忙。如果突然间有成千上万的用户决定对某物品进行评分，我们的推荐服务器可能会被请求淹没，它们可能会开始超时，丢失消息，并且通常变得无响应！
 - en: On the other hand, with a queue, the recommendation servers ask for more tasks
     when they are ready. A new “rate” action would put a new task on the queue, and
     when a recommendation server becomes ready to do more work, it would grab the
@@ -1165,6 +1172,7 @@
   id: totrans-137
   prefs: []
   type: TYPE_NORMAL
+  zh: 另一方面，有了队列，推荐服务器在准备好时会请求更多的任务。新的"rate"操作会将新任务放入队列中，当推荐服务器准备好执行更多工作时，它将从队列中获取任务并处理它。在这种设置中，如果比正常情况下更多的用户开始对项目进行评分，我们的队列会填满并充当推荐服务器的缓冲区——它们的工作负载不会受影响，它们仍然可以处理消息，直到队列为空。
 - en: One potential problem with this is that if a queue becomes completely overwhelmed
     with work, it will be storing quite a lot of messages. NSQ solves this by having
     multiple storage backends—when there aren’t many messages, they are stored in
@@ -1322,17 +1330,23 @@
   id: totrans-153
   prefs: []
   type: TYPE_NORMAL
+  zh: 使用 NSQ 的代码通常是异步的（详见 [Chapter 8](ch08.xhtml#chapter-concurrency) 进行完整的解释），尽管并不一定必须是。^([2](ch10.xhtml#idm46122403960472))
+    在下面的例子中，我们将创建一个工作池，从一个名为 *numbers* 的主题中读取消息，这些消息只是简单的包含数字的 JSON。消费者将读取此主题，查找这些数字是否为质数，然后根据数字是否为质数将其写入另一个主题。这将给我们带来两个新主题，*prime*
+    和 *non_prime*，其他消费者可以连接到这些主题以进行更多计算。^([3](ch10.xhtml#idm46122403957848))
 - en: Note
   id: totrans-154
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 注意
 - en: '`pynsq` (last release Nov 11, 2018) depends on a very outdated release of `tornado`
     (4.5.3, from Jan 6, 2018). This is a good example use case for Docker (discussed
     in [“Docker”](#docker)).'
   id: totrans-155
   prefs: []
   type: TYPE_NORMAL
+  zh: '`pynsq`（最后发布于 2018 年 11 月 11 日）依赖于一个非常过时的 `tornado` 版本（4.5.3，于 2018 年 1 月 6
+    日发布）。这是 Docker 的一个很好的使用案例（在 [“Docker”](#docker) 中讨论）。'
 - en: As we’ve said before, there are many benefits to doing CPU-bound work like this.
     First, we have all the guarantees of robustness, which may or may not be useful
     for this project. More importantly, however, we get automatic load balancing.
@@ -1341,6 +1355,7 @@
   id: totrans-156
   prefs: []
   type: TYPE_NORMAL
+  zh: 如前所述，像这样进行 CPU 绑定工作有很多好处。首先，我们拥有所有健壮性的保证，这对这个项目可能有用，也可能没用。然而更重要的是，我们获得了自动负载平衡。这意味着，如果一个消费者得到一个需要很长时间来处理的数字，其他消费者会填补空缺。
 - en: We create a consumer by creating an `nsq.Reader` object with the topic and subscription
     group specified (as can be seen at the end of [Example 10-9](#clustering_nsq_example)).
     We also must specify the location of the running `nsqd` instance (or the `nsqlookupd`
@@ -1352,11 +1367,16 @@
   id: totrans-157
   prefs: []
   type: TYPE_NORMAL
+  zh: 我们创建一个消费者，通过指定主题和订阅组来创建一个 `nsq.Reader` 对象（如在 [Example 10-9](#clustering_nsq_example)
+    的最后部分可以看到）。我们还必须指定运行中的 `nsqd` 实例的位置（或者 `nsqlookupd` 实例，在本节中我们不会深入讨论）。此外，我们还必须指定一个
+    *handler*，这只是一个用于处理从主题接收到的每条消息的函数。为了创建一个生产者，我们创建一个 `nsq.Writer` 对象，并指定一个或多个要写入的
+    `nsqd` 实例的位置。这使我们能够通过指定主题名称和消息来写入到 `nsq`。
 - en: Example 10-9\. Distributed prime calculation with NSQ
   id: totrans-158
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 10-9\. 使用 NSQ 进行分布式质数计算
 - en: '[PRE8]'
   id: totrans-159
   prefs: []
@@ -1366,26 +1386,32 @@
   id: totrans-160
   prefs: []
   type: TYPE_NORMAL
+  zh: '[![1](Images/1.png)](#co_clusters_and_job_queues_CO1-1)'
 - en: We must signal to NSQ when we are done with a message. This will make sure the
     message is not redelivered to another reader in case of failure.
   id: totrans-161
   prefs: []
   type: TYPE_NORMAL
+  zh: 当我们处理完一条消息时，我们必须通知 NSQ。这将确保在失败时消息不会重新传递给另一个读者。
 - en: Note
   id: totrans-162
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 注意
 - en: We can handle messages asynchronously by enabling `message.enable_async()` in
     the message handler after the message is received. However, note that NSQ uses
     the older callback mechanisms with `tornado`’s IOLoop (discussed in [“tornado”](ch08.xhtml#tornado)).
   id: totrans-163
   prefs: []
   type: TYPE_NORMAL
+  zh: 我们可以通过在消息接收后在消息处理程序中启用 `message.enable_async()` 来异步处理消息。但是请注意，NSQ 使用较旧的回调机制与
+    `tornado` 的 IOLoop（在 [“tornado”](ch08.xhtml#tornado) 中讨论）。
 - en: To set up the NSQ ecosystem, start an instance of `nsqd` on our local machine:^([5](ch10.xhtml#idm46122402448536))
   id: totrans-164
   prefs: []
   type: TYPE_NORMAL
+  zh: 要设置 NSQ 生态系统，在我们的本地机器上启动一个 `nsqd` 实例：^([5](ch10.xhtml#idm46122402448536))
 - en: '[PRE9]'
   id: totrans-165
   prefs: []
@@ -1399,6 +1425,9 @@
   id: totrans-166
   prefs: []
   type: TYPE_NORMAL
+  zh: 现在我们可以启动尽可能多的 Python 代码实例（[Example 10-9](#clustering_nsq_example)）。事实上，我们可以让这些实例在其他计算机上运行，只要
+    `nsqd_tcp_address` 在 `nsq.Reader` 实例化中的引用仍然有效。这些消费者将连接到 `nsqd` 并等待在 *numbers*
+    主题上发布的消息。
 - en: 'Data can be published to the *numbers* topic in many ways. We will use command-line
     tools to do this, since knowing how to poke and prod a system goes a long way
     in understanding how to properly deal with it. We can simply use the HTTP interface
@@ -1406,6 +1435,7 @@
   id: totrans-167
   prefs: []
   type: TYPE_NORMAL
+  zh: 数据可以通过多种方式发布到*numbers*主题。我们将使用命令行工具来完成这个任务，因为了解如何操作系统对于正确处理它至关重要。我们可以简单地使用HTTP接口将消息发布到主题：
 - en: '[PRE10]'
   id: totrans-168
   prefs: []
@@ -1423,6 +1453,7 @@
   id: totrans-169
   prefs: []
   type: TYPE_NORMAL
+  zh: 当此命令开始运行时，我们正在向*numbers*主题中发布包含不同数字的消息。与此同时，我们所有的生产者将开始输出状态消息，指示它们已经看到并处理了消息。此外，这些数字正在发布到*prime*或*non_prime*主题中的一个。这使我们能够有其他数据消费者连接到这些主题中的任何一个来获取原始数据的过滤子集。例如，只需要质数的应用程序可以简单地连接到*prime*主题，并不断地获得其计算所需的新质数。我们可以使用`nsqd`的`stats`HTTP端点来查看我们的计算状态：
 - en: '[PRE11]'
   id: totrans-170
   prefs: []
@@ -1441,11 +1472,13 @@
   id: totrans-171
   prefs: []
   type: TYPE_NORMAL
+  zh: 我们可以看到*numbers*主题有一个订阅组，*worker_group_a*，有一个消费者。此外，订阅组有一个很大的深度，有1,926条消息，这意味着我们正在将消息放入NSQ的速度比我们处理它们的速度快。这将提示我们增加更多的消费者，以便我们有更多的处理能力来处理更多的消息。此外，我们可以看到此特定消费者已连接了15秒，已处理了1,083条消息，并且当前有1条消息正在传输中。此状态端点为调试您的NSQ设置提供了相当多的信息！最后，我们看到*prime*和*non_prime*主题，它们没有订阅者或消费者。这意味着消息将被存储，直到有订阅者请求数据为止。
 - en: Note
   id: totrans-172
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 注意
 - en: In production systems, you can use the even more powerful tool `nsqadmin`, which
     provides a web interface with very detailed overviews of all topics/subscribers
     and consumers. In addition, it allows you to easily pause and delete subscribers
@@ -1453,6 +1486,7 @@
   id: totrans-173
   prefs: []
   type: TYPE_NORMAL
+  zh: 在生产系统中，您可以使用更强大的工具`nsqadmin`，它提供了一个具有非常详细的所有主题/订阅者和消费者概览的Web界面。此外，它允许您轻松地暂停和删除订阅者和主题。
 - en: 'To actually see the messages, we would create a new consumer for the *prime*
     (or *non_prime*) topic that simply archives the results to a file or database.
     Alternatively, we can use the `nsq_tail` tool to take a peek at the data and see
@@ -1460,6 +1494,7 @@
   id: totrans-174
   prefs: []
   type: TYPE_NORMAL
+  zh: 要实际看到消息，我们将为*prime*（或*non_prime*）主题创建一个新的消费者，简单地将结果存档到文件或数据库中。或者，我们可以使用`nsq_tail`工具来窥探数据并查看其内容：
 - en: '[PRE12]'
   id: totrans-175
   prefs: []
@@ -1470,6 +1505,7 @@
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 其他要注意的集群工具
 - en: Job processing systems using queues have existed since the start of the computer
     science industry, back when computers were very slow and lots of jobs needed to
     be processed. As a result, there are *many* libraries for queues, and many of
@@ -1479,6 +1515,7 @@
   id: totrans-177
   prefs: []
   type: TYPE_NORMAL
+  zh: 使用队列的作业处理系统自计算机科学行业开始就存在，当时计算机速度非常慢，需要处理大量作业。因此，有许多队列库，其中许多可以在集群配置中使用。我们强烈建议您选择一个成熟的库，并有一个活跃的社区支持它，并支持您需要的相同功能集而不包含太多其他功能。
 - en: 'The more features a library has, the more ways you’ll find to misconfigure
     it and waste time on debugging. Simplicity is *generally* the right aim when dealing
     with clustered solutions. Here are a few of the more commonly used clustering
@@ -1486,6 +1523,7 @@
   id: totrans-178
   prefs: []
   type: TYPE_NORMAL
+  zh: 库拥有的功能越多，你就会发现越多的方法来误配置它，并浪费时间进行调试。在处理集群解决方案时，简单性 *通常* 是正确的目标。以下是一些常用的集群解决方案：
 - en: '[ZeroMQ](https://zeromq.org) is a low-level and performant messaging library
     that enables you to send messages between nodes. It natively supports pub/sub
     paradigms and can also communicate over multiple types of transports (TCP, UDP,
@@ -1496,6 +1534,8 @@
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '[ZeroMQ](https://zeromq.org) 是一个低级别且高效的消息传递库，可以在节点之间发送消息。它原生支持发布/订阅范式，并且可以通过多种传输方式进行通信（TCP、UDP、WebSocket
+    等）。它相当底层，不提供太多有用的抽象，这可能会使其使用有些困难。尽管如此，它在 Jupyter、Auth0、Spotify 等许多地方都有使用！'
 - en: '[Celery](http://www.celeryproject.org) (BSD license) is a widely used asynchronous
     task queue using a distributed messaging architecture, written in Python. It supports
     Python, PyPy, and Jython. It typically it uses RabbitMQ as the message broker,
@@ -1506,6 +1546,10 @@
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '[Celery](http://www.celeryproject.org)（BSD 许可证）是一个广泛使用的异步任务队列，采用分布式消息架构，用 Python
+    编写。它支持 Python、PyPy 和 Jython。通常情况下，它使用 RabbitMQ 作为消息代理，但也支持 Redis、MongoDB 和其他存储系统。它经常用于
+    Web 开发项目中。Andrew Godwin 在 [“Lanyrd.com 上的任务队列 (2014)”](ch12.xhtml#lessons-from-field-andrew)
+    中讨论了 Celery。'
 - en: '[Airflow](https://airflow.apache.org) and [Luigi](https://github.com/spotify/luigi)
     use directed acyclic graphs to chain dependent jobs into sequences that run reliably,
     with monitoring and reporting services. They’re widely used in industry for data
@@ -1515,6 +1559,8 @@
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '[Airflow](https://airflow.apache.org) 和 [Luigi](https://github.com/spotify/luigi)
+    使用有向无环图将依赖任务链接成可靠运行的序列，配备监控和报告服务。它们在数据科学任务中被广泛应用于工业界，我们建议在自定义解决方案之前先进行审查。'
 - en: '[Amazon’s Simple Queue Service (SQS)](http://aws.amazon.com/sqs) is a job processing
     system integrated into AWS. Job consumers and producers can live inside AWS or
     can be external, so SQS is easy to start with and supports easy migration into
@@ -1523,11 +1569,14 @@
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '[   [亚马逊简单队列服务 (SQS)](http://aws.amazon.com/sqs) 是集成到 AWS 中的作业处理系统。作业消费者和生产者可以位于
+    AWS 内部，也可以是外部的，因此 SQS 容易上手，并支持轻松迁移到云端。许多语言都有对应的库支持。'
 - en: Docker
   id: totrans-183
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: Docker
 - en: '[Docker](https://docker.com) is a tool of general importance in the Python
     ecosystem. However, the problems it solves are particularly important when dealing
     with a large team or a cluster. In particular, Docker helps to create reproducible
@@ -1537,11 +1586,14 @@
   id: totrans-184
   prefs: []
   type: TYPE_NORMAL
+  zh: '[Docker](https://docker.com) 是 Python 生态系统中的一个重要工具。然而，它解决的问题在处理大型团队或集群时尤为重要。特别是
+    Docker 有助于创建可复制的环境来运行代码，在其中共享/控制运行时环境，轻松地在团队成员之间共享可运行代码，并根据资源需求将代码部署到节点集群中。'
 - en: Docker’s Performance
   id: totrans-185
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: Docker 的性能
 - en: One common misconception about Docker is that it substantially slows down the
     runtime performance of the applications it is running. While this can be true
     in some cases, it generally is not. Furthermore, most of the performance degradations
@@ -1549,6 +1601,7 @@
   id: totrans-186
   prefs: []
   type: TYPE_NORMAL
+  zh: 有一个关于 Docker 的常见误解，即它会大幅降低其运行应用程序的性能。虽然在某些情况下这可能是正确的，但通常并非如此。此外，大多数性能降低几乎总是可以通过一些简单的配置更改来消除。
 - en: In terms of CPU and memory access, Docker (and all other container-based solutions)
     will *not* lead to any performance degradations. This is because Docker simply
     creates a special namespace within the host operating system where the code can
@@ -1559,6 +1612,8 @@
   id: totrans-187
   prefs: []
   type: TYPE_NORMAL
+  zh: 就 CPU 和内存访问而言，Docker（以及所有其他基于容器的解决方案）*不会*导致任何性能降级。这是因为 Docker 简单地在主机操作系统中创建一个特殊的命名空间，代码可以在其中正常运行，尽管受到与其他运行程序不同的约束。基本上，Docker
+    代码以与计算机上的每个其他程序相同的方式访问 CPU 和内存；然而，它可以有一组单独的配置值来微调资源限制。^([6](ch10.xhtml#idm46122402901784))
 - en: This is because Docker is an instance of OS-level virtualization, as opposed
     to hardware virtualization such as VMware or VirtualBox. With hardware virtualization,
     software runs on “fake” hardware that introduces overhead accessing all resources.
@@ -1569,11 +1624,14 @@
   id: totrans-188
   prefs: []
   type: TYPE_NORMAL
+  zh: 这是因为 Docker 是操作系统级虚拟化的一个实例，而不是像 VMware 或 VirtualBox 这样的硬件虚拟化。在硬件虚拟化中，软件运行在“虚拟”硬件上，访问所有资源都会引入开销。另一方面，操作系统虚拟化使用本地硬件，但在“虚拟”操作系统上运行。由于
+    `cgroups` Linux 功能，这种“虚拟”操作系统可以紧密耦合到正在运行的操作系统中，这使得几乎没有开销地运行成为可能。
 - en: Warning
   id: totrans-189
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 警告
 - en: '`cgroups` is specifically a feature in the Linux kernel. As a result, performance
     implications discussed here are restricted to Linux systems. In fact, to run Docker
     on macOS or Windows, we first must run the Linux kernel in a hardware-virtualized
@@ -1584,12 +1642,17 @@
   id: totrans-190
   prefs: []
   type: TYPE_NORMAL
+  zh: '`cgroups` 是 Linux 内核中的一个特定功能。因此，这里讨论的性能影响仅限于 Linux 系统。事实上，要在 macOS 或 Windows
+    上运行 Docker，我们首先必须在硬件虚拟化环境中运行 Linux 内核。Docker Machine 是一个帮助简化此过程的应用程序，它使用 VirtualBox
+    来完成这一过程。因此，在 Linux 系统上运行时，由硬件虚拟化部分引起的性能开销将大大减少。'
 - en: 'As an example, let’s create a simple Docker container to run the 2D diffusion
     code from [Example 6-17](ch06_split_001.xhtml#matrix_numpy_memory2). As a baseline,
     we can run the code on the host system’s Python to get a benchmark:'
   id: totrans-191
   prefs: []
   type: TYPE_NORMAL
+  zh: 例如，我们可以创建一个简单的 Docker 容器来运行来自[示例 6-17](ch06_split_001.xhtml#matrix_numpy_memory2)的二维扩散代码。作为基准，我们可以在主机系统的
+    Python 上运行代码以获取基准：
 - en: '[PRE13]'
   id: totrans-192
   prefs: []
@@ -1601,11 +1664,14 @@
   id: totrans-193
   prefs: []
   type: TYPE_NORMAL
+  zh: 要创建我们的 Docker 容器，我们必须创建一个包含 Python 文件 *diffusion_numpy_memory2.py*、一个用于依赖关系的
+    `pip` 要求文件和一个 *Dockerfile* 的目录，如[示例 10-10](#simple-docker)所示。
 - en: Example 10-10\. Simple Docker container
   id: totrans-194
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 10-10\. 简单的 Docker 容器
 - en: '[PRE14]'
   id: totrans-195
   prefs: []
@@ -1622,6 +1688,9 @@
   id: totrans-196
   prefs: []
   type: TYPE_NORMAL
+  zh: '*Dockerfile* 从指定我们希望用作基础的容器开始。这些基础容器可以是各种基于 Linux 的操作系统或更高级别的服务。Python 基金会为所有主要
+    Python 版本提供[官方容器](https://hub.docker.com/_/python)，这使得选择要使用的 Python 版本非常简单。接下来，我们定义我们的工作目录的位置（选择
+    `/usr/src/app` 是任意的），将我们的要求文件复制到其中，并开始设置我们的环境，就像我们在本地机器上使用 `RUN` 命令一样。'
 - en: One major difference between setting up your development environment normally
     and on Docker are the `COPY` commands. They copy files from the local directory
     into the container. For example, the *requirements.txt* file is copied into the
@@ -1632,11 +1701,15 @@
   id: totrans-197
   prefs: []
   type: TYPE_NORMAL
+  zh: 在正常设置开发环境和在 Docker 上设置环境之间的一个主要区别是`COPY`命令。它们将文件从本地目录复制到容器中。例如，*requirements.txt*
+    文件被复制到容器中，以便在`pip install`命令时使用。最后，在*Dockerfile*的末尾，我们将当前目录中的所有文件复制到容器中，并告诉 Docker
+    在容器启动时运行`python ./diffusion_numpy_memory2.py`。
 - en: Caution
   id: totrans-198
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 注意
 - en: In the *Dockerfile* in [Example 10-10](#simple-docker), beginners often wonder
     why we first copy only the requirements file and then later copy the entire directory
     into the container. When building a container, Docker tries hard to cache each
@@ -1649,6 +1722,9 @@
   id: totrans-199
   prefs: []
   type: TYPE_NORMAL
+  zh: 在 [示例 10-10](#simple-docker) 的*Dockerfile*中，初学者经常会想知道为什么我们首先只复制需求文件，然后再将整个目录复制到容器中。在构建容器时，Docker
+    会尝试缓存构建过程的每一步。为了确定缓存是否仍然有效，检查复制来回的文件的内容。通过首先只复制需求文件，然后再移动其余目录，如果需求文件未发生变化，则只需运行一次`pip
+    install`。如果仅 Python 源代码发生了更改，新构建将使用缓存的构建步骤，并直接跳过第二个`COPY`命令。
 - en: 'Now we are ready to build and run the container, which can be named and tagged.
     Container names generally take the format `*<username>*/*<project-name>*`,^([7](ch10.xhtml#idm46122403724904))
     while the optional tag generally is either descriptive of the current version
@@ -1660,6 +1736,7 @@
   id: totrans-200
   prefs: []
   type: TYPE_NORMAL
+  zh: 现在我们已经准备好构建和运行容器了，可以为其命名和打标签。容器名称通常采用`*<username>*/*<project-name>*`的格式，^([7](ch10.xhtml#idm46122403724904))而可选的标签通常是描述当前代码版本的描述性标签，或者简单地是标签`latest`（这是默认的，如果未指定标签将自动应用）。为了帮助版本管理，通常的约定是始终将最新构建标记为`latest`（当进行新构建时将被覆盖），以及一个描述性标签，以便将来可以轻松找到这个版本：
 - en: '[PRE15]'
   id: totrans-201
   prefs: []
@@ -1674,6 +1751,8 @@
   id: totrans-202
   prefs: []
   type: TYPE_NORMAL
+  zh: 我们可以看到，在任务主要依赖于 CPU/内存时，Docker 的核心并不比在主机上运行慢。然而，与任何事物一样，没有免费的午餐，有时 Docker 的性能会受到影响。尽管优化
+    Docker 容器的全面讨论超出了本书的范围，但在为高性能代码创建 Docker 容器时，我们提供以下考虑事项清单：
 - en: Be wary of copying too much data into a Docker container or even having too
     much data in the same directory as a Docker build. If the `build context`, as
     advertised by the first line of the `docker build` command, is too large, performance
@@ -1682,6 +1761,8 @@
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 当你将过多数据复制到 Docker 容器中，甚至是在 Docker 构建过程中同一个目录下的数据过多时，都要小心。如果`docker build`命令的第一行所标识的`build
+    context`过大，性能可能会受到影响（通过 *.dockerignore* 文件可以解决这个问题）。
 - en: Docker uses various filesystem tricks to layer filesystems on top of each other.
     This helps the caching of builds but can be slower than dealing with the host
     filesystem. Use host-level mounts when you need to access data quickly, and consider
@@ -1691,6 +1772,7 @@
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: Docker 使用各种文件系统技巧在彼此之上层叠文件系统。这有助于构建缓存，但与主机文件系统交互可能会比较慢。当需要快速访问数据时，请使用主机级挂载，并考虑使用设置为只读的`volumes`，选择适合你基础设施的卷驱动程序。
 - en: Docker creates a virtual network for all your containers to live behind. This
     can be great for keeping most of your services hidden behind a gateway, but it
     also adds slight network overhead. For most use cases, this overhead is negligible,
@@ -1699,6 +1781,7 @@
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: Docker 为所有容器创建了一个虚拟网络，使大多数服务保持在网关后面，这对于隐匿大部分服务非常有用，但也增加了轻微的网络开销。对于大多数用例，这种开销可以忽略不计，但可以通过更改网络驱动程序来减轻。
 - en: GPUs and other host-level devices can be accessed using special runtime drivers
     for Docker. For example, `nvidia-docker` allows Docker environments to easily
     use connected NVIDIA GPUs. In general, devices can be made available with the
@@ -1707,6 +1790,8 @@
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 使用特殊的 Docker 运行时驱动程序可以访问 GPU 和其他主机级设备。例如，`nvidia-docker` 允许 Docker 环境轻松使用连接的
+    NVIDIA GPU。通常，设备可以通过 `--device` 运行时标志提供。
 - en: As always, it is important to profile your Docker containers to know what the
     issues are and whether there are some easy wins in terms of efficiency. The `docker
     stats` command provides a good high-level view to help understand the current
@@ -1714,17 +1799,20 @@
   id: totrans-207
   prefs: []
   type: TYPE_NORMAL
+  zh: 像往常一样，重要的是对你的 Docker 容器进行性能分析，以了解存在的问题及其在效率方面的简单解决方案。`docker stats` 命令提供了一个良好的高层视图，帮助理解容器当前的运行时性能。
 - en: Advantages of Docker
   id: totrans-208
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: Docker 的优势
 - en: So far it has seemed that Docker is simply adding a whole new host of issues
     to contend with in terms of performance. However, the gains to reproducibility
     and reliability of runtime environments far surpass any extra complexity.
   id: totrans-209
   prefs: []
   type: TYPE_NORMAL
+  zh: 到目前为止，似乎 Docker 只是在性能方面增加了一系列新的问题。然而，运行时环境的可重现性和可靠性远远超过了任何额外复杂性。
 - en: Locally, having access to all our previously run Docker containers allows us
     to quickly rerun and retest previous versions of our code without having to worry
     about changes to the runtime environment, such as dependencies and system packages
@@ -1734,11 +1822,14 @@
   id: totrans-210
   prefs: []
   type: TYPE_NORMAL
+  zh: 在本地，可以访问我们之前运行的所有 Docker 容器，这使我们可以快速重新运行和重新测试我们代码的先前版本，而不必担心运行时环境的更改，比如依赖项和系统包（[示例 10-11](#docker_tags_runtime_env)
+    显示了我们可以使用简单的 `docker_run` 命令运行的容器列表）。这使得持续测试性能回归变得非常容易，否则这将是难以复现的。
 - en: Example 10-11\. Docker tags to keep track of previous runtime environments
   id: totrans-211
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 10-11\. Docker 标签以跟踪先前的运行时环境
 - en: '[PRE16]'
   id: totrans-212
   prefs: []
@@ -1752,11 +1843,14 @@
   id: totrans-213
   prefs: []
   type: TYPE_NORMAL
+  zh: 使用[容器注册表](https://oreil.ly/BaJhI)带来了许多额外好处，它允许使用简单的 `docker` `pull` 和 `docker`
+    `push` 命令存储和共享 Docker 镜像，类似于 `git` 的方式。这使我们可以将所有容器放在公共可用的位置，允许团队成员拉取变更或新版本，并立即运行代码。
 - en: Note
   id: totrans-214
   prefs:
   - PREF_H6
   type: TYPE_NORMAL
+  zh: 注
 - en: This book is a great example of the benefits of sharing a Docker container for
     standardizing a runtime environment. To convert this book from `asciidoc`, the
     markup language it was written in, into PDF, a Docker container was shared between
@@ -1766,6 +1860,8 @@
   id: totrans-215
   prefs: []
   type: TYPE_NORMAL
+  zh: 这本书是使用 Docker 容器共享的一个很好的例子，用于标准化运行时环境。为了将这本书从其编写的标记语言 `asciidoc` 转换为 PDF，我们之间共享了一个
+    Docker 容器，这样我们可以可靠且可重复地构建书籍工件。这种标准化节省了我们无数小时，在第一版中我们会遇到一个构建问题，而另一个人却无法复制或帮助调试。
 - en: Running `docker pull highperformance/diffusion2d:latest` is much easier than
     having to clone a repository and doing all the associated setup that may be necessary
     to run a project. This is particularly true for research code, which may have
@@ -1776,6 +1872,8 @@
   id: totrans-216
   prefs: []
   type: TYPE_NORMAL
+  zh: 运行 `docker pull highperformance/diffusion2d:latest` 要比克隆存储库并执行可能必需的所有相关设置容易得多。对于研究代码来说，这一点尤为真实，因为可能存在一些非常脆弱的系统依赖性。将所有内容放入一个可以轻松拉取的
+    Docker 容器中意味着可以跳过所有这些设置步骤，并且可以轻松运行代码。因此，代码可以更轻松地共享，编码团队可以更有效地协同工作。
 - en: Finally, in conjunction with [`kubernetes`](https://kubernetes.io) and other
     similar technologies, Dockerizing your code helps with actually running it with
     the resources it needs. Kubernetes allows you to create a cluster of nodes, each
@@ -1788,11 +1886,15 @@
   id: totrans-217
   prefs: []
   type: TYPE_NORMAL
+  zh: 最后，结合 [`kubernetes`](https://kubernetes.io) 和其他类似的技术，将您的代码 Docker 化有助于确保其能够使用所需的资源进行运行。Kubernetes
+    允许您创建一个节点集群，每个节点都标记有其可能具备的资源，并在节点上协调运行容器。它会确保正确数量的实例在运行，而由于 Docker 虚拟化的作用，代码将在您保存它时相同的环境中运行。在使用集群时，最大的问题之一是确保集群节点具有与您工作站相同的运行环境，使用
+    Docker 虚拟化完全解决了这个问题。^([8](ch10.xhtml#idm46122403689192))
 - en: Wrap-Up
   id: totrans-218
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 总结
 - en: So far in the book, we’ve looked at profiling to understand slow parts of your
     code, compiling and using `numpy` to make your code run faster, and various approaches
     to multiple processes and computers. In addition, we surveyed container virtualization
@@ -1803,12 +1905,14 @@
   id: totrans-219
   prefs: []
   type: TYPE_NORMAL
+  zh: 在本书中，我们已经了解了性能分析来理解代码中的缓慢部分，使用 `numpy` 进行编译并加快代码运行速度，以及多进程和多计算机的各种方法。此外，我们还调查了容器虚拟化来管理代码环境并帮助集群部署。在倒数第二章中，我们将探讨通过不同的数据结构和概率方法减少内存使用的方法。这些课程可以帮助您将所有数据保存在一台计算机上，避免运行集群的需要。
 - en: ^([1](ch10.xhtml#idm46122403968536-marker)) This can be quite advantageous when
     we’re working in AWS, where we can have our `nsqd` processes running on a reserved
     instance and our consumers working on a cluster of spot instances.
   id: totrans-220
   prefs: []
   type: TYPE_NORMAL
+  zh: ^([1](ch10.xhtml#idm46122403968536-marker)) 在 AWS 工作时，我们可以将我们的 `nsqd` 进程运行在预留实例上，而我们的消费者则在一组竞价实例上运行，这样做有很大的优势。
 - en: ^([2](ch10.xhtml#idm46122403960472-marker)) This asynchronicity comes from NSQ’s
     protocol for sending messages to consumers being push-based. This makes it so
     our code can have an asynchronous read from our connection to NSQ happen in the
@@ -1816,18 +1920,23 @@
   id: totrans-221
   prefs: []
   type: TYPE_NORMAL
+  zh: ^([2](ch10.xhtml#idm46122403960472-marker)) 这种异步性来自于 NSQ 的发送消息给消费者的推送式协议。这使得我们的代码可以在后台进行异步读取
+    NSQ 连接，并在发现消息时唤醒。
 - en: ^([3](ch10.xhtml#idm46122403957848-marker)) This sort of chaining of data analysis
     is called *pipelining* and can be an effective way to perform multiple types of
     analysis on the same data efficiently.
   id: totrans-222
   prefs: []
   type: TYPE_NORMAL
+  zh: ^([3](ch10.xhtml#idm46122403957848-marker)) 这种数据分析的链接被称为*流水线处理*，可以有效地对同一组数据执行多种类型的分析。
 - en: ^([4](ch10.xhtml#idm46122403943144-marker)) You can also easily publish a message
     manually with an HTTP call; however, this `nsq.Writer` object simplifies much
     of the error handling.
   id: totrans-223
   prefs: []
   type: TYPE_NORMAL
+  zh: ^([4](ch10.xhtml#idm46122403943144-marker)) 您还可以通过 HTTP 调用手动发布消息；但是，这个 `nsq.Writer`
+    对象简化了大部分的错误处理。
 - en: ^([5](ch10.xhtml#idm46122402448536-marker)) For this example, we installed NSQ
     straight onto our system by unpacking the provided binaries into our `PATH` environment
     variable. Alternatively, you can use Docker, discussed in [“Docker”](#docker),
@@ -1835,19 +1944,25 @@
   id: totrans-224
   prefs: []
   type: TYPE_NORMAL
+  zh: ^([5](ch10.xhtml#idm46122402448536-marker)) 例如，我们可以将 NSQ 直接安装到系统上，通过将提供的二进制文件解压缩到我们的
+    `PATH` 环境变量中。或者，您可以使用 Docker，在[“Docker”](#docker)中讨论的方式来轻松运行最新版本。
 - en: ^([6](ch10.xhtml#idm46122402901784-marker)) This fine-tuning can, for example,
     be used to adjust the amount of memory a process has access to, or which CPUs
     or even how much of the CPU it can use.
   id: totrans-225
   prefs: []
   type: TYPE_NORMAL
+  zh: ^([6](ch10.xhtml#idm46122402901784-marker)) 这种微调可以用来调整进程可以访问的内存量，或者可以使用的 CPU
+    核心数量，甚至可以控制 CPU 使用量的大小。
 - en: ^([7](ch10.xhtml#idm46122403724904-marker)) The `*username*` portion of the
     container name is useful when also pushing built containers to a repository.
   id: totrans-226
   prefs: []
   type: TYPE_NORMAL
+  zh: ^([7](ch10.xhtml#idm46122403724904-marker)) 当将构建的容器推送到存储库时，容器名称中的`*username*`部分非常有用。
 - en: ^([8](ch10.xhtml#idm46122403689192-marker)) A great tutorial to get started
     with Docker and Kubernetes can be found at [*https://oreil.ly/l9jXD*](https://oreil.ly/l9jXD).
   id: totrans-227
   prefs: []
   type: TYPE_NORMAL
+  zh: ^([8](ch10.xhtml#idm46122403689192-marker)) 一个很棒的入门教程，可以在[*https://oreil.ly/l9jXD*](https://oreil.ly/l9jXD)找到。

@@ -1,53 +1,76 @@
 - en: Chapter 6\. Distributed Training with Ray Train
+  id: totrans-0
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 第6章 分布式训练与Ray Train
 - en: Richard Liaw
+  id: totrans-1
   prefs: []
   type: TYPE_NORMAL
+  zh: 理查德·利奥
 - en: In previous chapters, you’ve learned how to build and scale reinforcement learning
     applications with Ray, and how to optimize hyperparameters for such applications.
     As we indicated in [Chapter 1](ch01.xhtml#chapter_01), Ray also comes with the
     Ray Train library, which provides an extensive suite of machine learning training
     integrations and allows them to scale seamlessly.
+  id: totrans-2
   prefs: []
   type: TYPE_NORMAL
+  zh: 在之前的章节中，您已经学习了如何使用Ray构建和扩展强化学习应用程序，以及如何为这些应用程序优化超参数。正如我们在[第1章](ch01.xhtml#chapter_01)中所指出的，Ray还配备了Ray
+    Train库，提供了广泛的机器学习训练集成，并允许它们无缝扩展。
 - en: We will start this chapter by providing context about why you might need to
     scale out your machine learning training. Then we’ll cover some key concepts you
     need to know in order to use Ray Train. Finally, we’ll cover some of the more
     advanced functionality that Ray Train provides.
+  id: totrans-3
   prefs: []
   type: TYPE_NORMAL
+  zh: 我们将从提供关于为什么可能需要扩展机器学习训练的背景开始。然后我们将介绍您使用Ray Train所需了解的一些关键概念。最后，我们将介绍Ray Train提供的一些更高级的功能。
 - en: As always, you can follow along using the [notebook for this chapter](https://github.com/maxpumperla/learning_ray/blob/main/notebooks/ch_06_train.ipynb).
+  id: totrans-4
   prefs: []
   type: TYPE_NORMAL
+  zh: 一如既往，你可以使用[本章的笔记本](https://github.com/maxpumperla/learning_ray/blob/main/notebooks/ch_06_train.ipynb)进行跟随。
 - en: The Basics of Distributed Model Training
+  id: totrans-5
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 分布式模型训练的基础
 - en: 'Machine learning often requires a lot of heavy computation. Depending on the
     type of model that you’re training, whether it be a gradient boosted tree or a
     neural network, you may face a couple common problems with training machine learning
     models causing you to investigate distributed training solutions:'
+  id: totrans-6
   prefs: []
   type: TYPE_NORMAL
+  zh: 机器学习通常需要大量的重型计算。根据你正在训练的模型类型，无论是梯度提升树还是神经网络，你可能会面临几个训练机器学习模型的常见问题，这促使你调查分布式训练解决方案：
 - en: The time it takes to finish training is too long.
+  id: totrans-7
   prefs:
   - PREF_OL
   type: TYPE_NORMAL
+  zh: 完成训练所需的时间太长。
 - en: The size of data is too large to fit into one machine.
+  id: totrans-8
   prefs:
   - PREF_OL
   type: TYPE_NORMAL
+  zh: 数据的大小太大，无法放入一台机器中。
 - en: The model itself is too large to fit into a single machine.
+  id: totrans-9
   prefs:
   - PREF_OL
   type: TYPE_NORMAL
+  zh: 模型本身太大，无法适应单台机器。
 - en: For the first case, training can be accelerated by processing data with increased
     throughput. Some machine learning algorithms, such as neural networks, can parallelize
     parts of the computation to speed up training^([1](ch06.xhtml#idm44990023972608)).
+  id: totrans-10
   prefs: []
   type: TYPE_NORMAL
+  zh: 对于第一种情况，通过提高数据处理的吞吐量可以加速训练。一些机器学习算法，比如神经网络，可以并行计算部分内容以加快训练^([1](ch06.xhtml#idm44990023972608))。
 - en: In the second case, your choice of algorithm may require you to fit all the
     available data from a dataset into memory, but the given single node memory may
     not be sufficient. In this case, you will need to split the data across multiple
@@ -55,8 +78,10 @@
     may not require data to be distributed, but if you’re using a distributed database
     system to begin with, you still want a training framework that can leverage your
     distributed data.
+  id: totrans-11
   prefs: []
   type: TYPE_NORMAL
+  zh: 在第二种情况下，你选择的算法可能要求将数据集中的所有可用数据放入内存，但给定的单节点内存可能不足。在这种情况下，你需要将数据分布到多个节点上，并以分布式的方式进行训练。另一方面，有时你的算法可能不需要数据分布，但如果你一开始就使用分布式数据库系统，你仍然希望使用能够利用分布式数据的训练框架。
 - en: In the third case, when your model doesn’t fit into a single machine, you may
     need to split up the model into multiple parts, spread across multiple machines.
     The approach of splitting models across multiple machines is called model parallelism.
@@ -64,660 +89,1012 @@
     into a single machine anymore. Usually, large companies like Google or Facebook
     tend to have the need for model-parallelism, and also rely on in-house solutions
     to handle the distributed training.
+  id: totrans-12
   prefs: []
   type: TYPE_NORMAL
+  zh: 在第三种情况下，当您的模型无法适应单个机器时，您可能需要将模型分割为多个部分，分布在多台机器上。将模型分割到多台机器上的方法称为模型并行。要遇到这个问题，你首先需要一个足够大以至于无法放入单个机器的模型。通常情况下，像Google或Facebook这样的大公司倾向于需要模型并行，并依赖内部解决方案来处理分布式训练。
 - en: In contrast, the first two problems often arise much earlier in the journey
     to machine learning practitioners. The solutions we just sketched for these problems
     fall under the umbrella of data-parallel training. Instead of splitting up the
     model across multiple machines, you instead rely on distributed data to speed
     up training.
+  id: totrans-13
   prefs: []
   type: TYPE_NORMAL
+  zh: 相比之下，前两个问题通常在机器学习从业者旅程的早期阶段就会出现。我们刚刚概述的这些问题的解决方案属于数据并行训练的范畴。你不是将模型分割到多台机器上，而是依赖分布式数据来加速训练。
 - en: Specifically for the first problem, if you can speed up your training process,
     hopefully with minimal or no loss in accuracy, and you can do so cost-efficiently,
     why not go for it? And if you have distributed data, whether by necessity of your
     algorithm or the way you store your data, you need a training solution to deal
     with it. As you will see, Ray Train is built for efficient, data-parallel training.
+  id: totrans-14
   prefs: []
   type: TYPE_NORMAL
+  zh: 特别是对于第一个问题，如果您能加速训练过程，希望能够在准确性减少或没有减少的情况下尽可能做到成本效益，为什么不去做呢？如果您有分布式数据，无论是由于算法的必要性还是数据存储方式的原因，您都需要一个训练解决方案来处理它。正如您将看到的，Ray
+    Train 是专为高效的数据并行训练而构建的。
 - en: Introduction to Ray Train
+  id: totrans-15
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: Ray Train 简介
 - en: Ray Train is a library for distributed training on Ray. It offers key tools
     for different parts of the training workflow, from feature processing, to scalable
     training, to integrations with ML tracking tools, to export mechanisms for models.
+  id: totrans-16
   prefs: []
   type: TYPE_NORMAL
+  zh: Ray Train 是一个用于 Ray 上的分布式训练库。它提供了关键工具，用于训练工作流的不同部分，从特征处理到可伸缩训练，再到与 ML 跟踪工具的集成和模型的导出机制。
 - en: 'In a typical ML training pipeline you will use the following key components
     of Ray Train:'
+  id: totrans-17
   prefs: []
   type: TYPE_NORMAL
+  zh: 在典型的 ML 训练流水线中，您将使用 Ray Train 的以下关键组件：
 - en: Preprocessors
+  id: totrans-18
   prefs: []
   type: TYPE_NORMAL
+  zh: 预处理器
 - en: Ray Train provides several common preprocessor objects and utilities to process
     dataset objects into consumable features for Trainers.
+  id: totrans-19
   prefs: []
   type: TYPE_NORMAL
+  zh: Ray Train 提供了几个常见的预处理对象和工具，以将数据集对象处理成可消耗的特征供训练器使用。
 - en: Trainers
+  id: totrans-20
   prefs: []
   type: TYPE_NORMAL
+  zh: 训练器
 - en: Ray Train has several Trainer classes that make it possible to do distributed
     training. Trainers are wrapper classes around third-party training frameworks
     like XGBoost, providing integration with core Ray actors (for distribution), Tune,
     and Datasets.
+  id: totrans-21
   prefs: []
   type: TYPE_NORMAL
+  zh: Ray Train 拥有几个训练器类，使得分布式训练成为可能。训练器是围绕第三方训练框架（如 XGBoost）提供的包装类，与核心 Ray actors（用于分布）集成，还有
+    Tune 和数据集的整合。
 - en: Models
+  id: totrans-22
   prefs: []
   type: TYPE_NORMAL
+  zh: 模型
 - en: Each trainer can produce a model. The model can be used in serving.
+  id: totrans-23
   prefs: []
   type: TYPE_NORMAL
+  zh: 每个训练器可以生成一个模型。该模型可以用于服务。
 - en: Let’s see how to put these concepts in practice by computing a first example
     with Ray Train.
+  id: totrans-24
   prefs: []
   type: TYPE_NORMAL
+  zh: 让我们看看如何通过计算第一个 Ray Train 示例来将这些概念付诸实践。
 - en: Creating an End-To-End Example for Ray Train
+  id: totrans-25
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 创建一个端到端的 Ray Train 示例
 - en: In the below example, we demonstrate the ability to load, process, and train
     a machine learning model using Ray Train.
+  id: totrans-26
   prefs: []
   type: TYPE_NORMAL
+  zh: 在下面的示例中，我们演示了如何使用 Ray Train 加载、处理和训练机器学习模型的能力。
 - en: We’ll be using a simple dataset for this example, using the `load_breast_cancer`
     function from the scikit-learn `datasets` package^([2](ch06.xhtml#idm44990023959856)).
     We load the data into a Pandas DataFrame first and then convert it into a so-called
     Ray `Dataset`. [Chapter 7](ch07.xhtml#chapter_07) is entirely devoted to the Ray
     Data library, we just use it here to illustrate the Ray Train API.
+  id: totrans-27
   prefs: []
   type: TYPE_NORMAL
+  zh: 对于此示例，我们将使用 scikit-learn 的 `datasets` 包中的 `load_breast_cancer` 函数来使用一个简单的数据集^([2](ch06.xhtml#idm44990023959856))。我们首先将数据加载到
+    Pandas DataFrame 中，然后将其转换为所谓的 Ray `Dataset`。[第7章](ch07.xhtml#chapter_07)完全专注于
+    Ray Data 库，我们在此仅用它来说明 Ray Train 的 API。
 - en: Example 6-1\.
+  id: totrans-28
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 6-1。
 - en: '[PRE0]'
+  id: totrans-29
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE0]'
 - en: '[![1](assets/1.png)](#co_distributed_training_with_ray_train_CO1-1)'
+  id: totrans-30
   prefs: []
   type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_distributed_training_with_ray_train_CO1-1)'
 - en: Load breast cancer data into a Pandas DataFrame.
+  id: totrans-31
   prefs: []
   type: TYPE_NORMAL
+  zh: 将乳腺癌数据加载到 Pandas DataFrame 中。
 - en: '[![2](assets/2.png)](#co_distributed_training_with_ray_train_CO1-2)'
+  id: totrans-32
   prefs: []
   type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_distributed_training_with_ray_train_CO1-2)'
 - en: Create a Ray Dataset from the DataFrame.
+  id: totrans-33
   prefs: []
   type: TYPE_NORMAL
+  zh: 从 DataFrame 创建一个 Ray Dataset。
 - en: 'Next, let’s specify a preprocessing function. In this case, we’ll be using
     three key preprocessors: a `Scaler`, a `Repartitioner`, and a `Chain` object to
     chain the first two.'
+  id: totrans-34
   prefs: []
   type: TYPE_NORMAL
+  zh: 接下来，让我们指定一个预处理函数。在这种情况下，我们将使用三个关键的预处理器：`Scaler`、`Repartitioner` 和 `Chain` 对象，将前两者链在一起。
 - en: Example 6-2\.
+  id: totrans-35
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 6-2。
 - en: '[PRE1]'
+  id: totrans-36
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE1]'
 - en: '[![1](assets/1.png)](#co_distributed_training_with_ray_train_CO2-1)'
+  id: totrans-37
   prefs: []
   type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_distributed_training_with_ray_train_CO2-1)'
 - en: Create a pre-processing `Chain`.
+  id: totrans-38
   prefs: []
   type: TYPE_NORMAL
+  zh: 创建一个预处理的 `Chain`。
 - en: '[![2](assets/2.png)](#co_distributed_training_with_ray_train_CO2-2)'
+  id: totrans-39
   prefs: []
   type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_distributed_training_with_ray_train_CO2-2)'
 - en: Scale two specific data columns.
+  id: totrans-40
   prefs: []
   type: TYPE_NORMAL
+  zh: 缩放两个特定的数据列。
 - en: '[![3](assets/3.png)](#co_distributed_training_with_ray_train_CO2-3)'
+  id: totrans-41
   prefs: []
   type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_distributed_training_with_ray_train_CO2-3)'
 - en: Repartition the data into two partitions.
+  id: totrans-42
   prefs: []
   type: TYPE_NORMAL
+  zh: 将数据分区为两个分区。
 - en: Our entrypoint for doing distributed training is the Trainer object. There are
     specific Trainers for different frameworks, and each are configured with some
     framework-specific parameters.
+  id: totrans-43
   prefs: []
   type: TYPE_NORMAL
+  zh: 我们进行分布式训练的入口是训练器对象。针对不同的框架有特定的训练器，并且每个训练器都配置了一些特定于框架的参数。
 - en: To give you an example, let’s have a look at the `XGBoostTrainer` class, which
     implements distributed training for [XGBoost](https://xgboost.readthedocs.io/en/stable/).
+  id: totrans-44
   prefs: []
   type: TYPE_NORMAL
+  zh: 举个例子，让我们看看`XGBoostTrainer`类，它实现了[XGBoost](https://xgboost.readthedocs.io/en/stable/)的分布式训练。
 - en: Example 6-3\.
+  id: totrans-45
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 6-3。
 - en: '[PRE2]'
+  id: totrans-46
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE2]'
 - en: '[![1](assets/1.png)](#co_distributed_training_with_ray_train_CO3-1)'
+  id: totrans-47
   prefs: []
   type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_distributed_training_with_ray_train_CO3-1)'
 - en: Specify the scaling configuration.
+  id: totrans-48
   prefs: []
   type: TYPE_NORMAL
+  zh: 指定缩放配置。
 - en: '[![2](assets/2.png)](#co_distributed_training_with_ray_train_CO3-2)'
+  id: totrans-49
   prefs: []
   type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_distributed_training_with_ray_train_CO3-2)'
 - en: Set the label column.
+  id: totrans-50
   prefs: []
   type: TYPE_NORMAL
+  zh: 设置标签列。
 - en: '[![3](assets/3.png)](#co_distributed_training_with_ray_train_CO3-3)'
+  id: totrans-51
   prefs: []
   type: TYPE_NORMAL
+  zh: '[![3](assets/3.png)](#co_distributed_training_with_ray_train_CO3-3)'
 - en: Specify XGBoost-specific parameters.
+  id: totrans-52
   prefs: []
   type: TYPE_NORMAL
+  zh: 指定XGBoost特定参数。
 - en: '[![4](assets/4.png)](#co_distributed_training_with_ray_train_CO3-4)'
+  id: totrans-53
   prefs: []
   type: TYPE_NORMAL
+  zh: '[![4](assets/4.png)](#co_distributed_training_with_ray_train_CO3-4)'
 - en: Train the model by calling `fit`.
+  id: totrans-54
   prefs: []
   type: TYPE_NORMAL
+  zh: 通过调用`fit`来训练模型。
 - en: Preprocessors in Ray Train
+  id: totrans-55
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: Ray Train中的预处理器
 - en: 'The Preprocessor is the core class for handling data preprocessing. Each preprocessor
     has the following APIs:'
+  id: totrans-56
   prefs: []
   type: TYPE_NORMAL
+  zh: 预处理器是处理数据预处理的核心类。每个预处理器具有以下API：
 - en: '| transform | Used to process and apply a processing transformation to a Dataset.
     |'
+  id: totrans-57
   prefs: []
   type: TYPE_TB
+  zh: '| transform | 用于处理并应用数据集的处理转换。 |'
 - en: '| fit | Used to calculate and store aggregate state about the Dataset on Preprocessor.
     Returns self for chaining. |'
+  id: totrans-58
   prefs: []
   type: TYPE_TB
+  zh: '| fit | 用于计算和存储有关预处理器数据集的聚合状态。返回self以便进行链式调用。 |'
 - en: '| fit_transform | Syntactic sugar for performing transformations that require
     aggregate state. May be optimized at the implementation level for specific Preprocessors.
     |'
+  id: totrans-59
   prefs: []
   type: TYPE_TB
+  zh: '| fit_transform | 用于执行需要聚合状态的转换的语法糖。可能在特定预处理器的实现级别进行优化。 |'
 - en: '| transform_batch | Used to apply the same transformation on batches for prediction.
     |'
+  id: totrans-60
   prefs: []
   type: TYPE_TB
+  zh: '| transform_batch | 用于对批处理进行相同的预测转换。 |'
 - en: Currently, Ray Train offers the following encoders
+  id: totrans-61
   prefs: []
   type: TYPE_NORMAL
+  zh: 目前，Ray Train提供以下编码器
 - en: '| FunctionTransformer | Custom Transformers |'
+  id: totrans-62
   prefs: []
   type: TYPE_TB
+  zh: '| FunctionTransformer | 自定义转换器 |'
 - en: '| Pipeline | Sequential Preprocessing |'
+  id: totrans-63
   prefs: []
   type: TYPE_TB
+  zh: '| Pipeline | 顺序预处理 |'
 - en: '| StandardScaler | Standardization |'
+  id: totrans-64
   prefs: []
   type: TYPE_TB
+  zh: '| StandardScaler | 标准化 |'
 - en: '| MinMaxScaler | Standardization |'
+  id: totrans-65
   prefs: []
   type: TYPE_TB
+  zh: '| MinMaxScaler | 标准化 |'
 - en: '| OrdinalEncoder | Encoding Categorical Features |'
+  id: totrans-66
   prefs: []
   type: TYPE_TB
+  zh: '| OrdinalEncoder | 编码分类特征 |'
 - en: '| OneHotEncoder | Encoding Categorical Features |'
+  id: totrans-67
   prefs: []
   type: TYPE_TB
+  zh: '| OneHotEncoder | 编码分类特征 |'
 - en: '| SimpleImputer | Missing Value Imputation |'
+  id: totrans-68
   prefs: []
   type: TYPE_TB
+  zh: '| SimpleImputer | 缺失值填充 |'
 - en: '| LabelEncoder | Label Encoding |'
+  id: totrans-69
   prefs: []
   type: TYPE_TB
+  zh: '| LabelEncoder | 标签编码 |'
 - en: You will often want to make sure you can use the same data preprocessing operations
     at training time and at serving time.
+  id: totrans-70
   prefs: []
   type: TYPE_NORMAL
+  zh: 您经常希望确保在训练时间和服务时间可以使用相同的数据预处理操作。
 - en: Usage of Preprocessors
+  id: totrans-71
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 预处理器的使用
 - en: You can use these preprocessors by passing them to a trainer. Ray Train will
     take care of applying the preprocessor to the dataset in a distributed fashion.
+  id: totrans-72
   prefs: []
   type: TYPE_NORMAL
+  zh: 您可以通过将它们传递给训练器来使用这些预处理器。Ray Train将负责以分布式方式应用预处理器到数据集中。
 - en: Example 6-4\.
+  id: totrans-73
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 6-4。
 - en: '[PRE3]'
+  id: totrans-74
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE3]'
 - en: Serialization of Preprocessors
+  id: totrans-75
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 预处理器的序列化
 - en: Now, some preprocessing operators such as one-hot encoders are easy to run in
     training and transfer to serving. However, other operators such as those that
     do standardization are a bit trickier, since you don’t want to do large data crunching
     (to find the mean of a particular column) during serving time.
+  id: totrans-76
   prefs: []
   type: TYPE_NORMAL
+  zh: 现在，一些预处理操作符，如独热编码器，在训练时很容易运行并传递到服务。然而，像标准化这样的其他操作符有点棘手，因为您不希望在服务时间执行大数据处理（例如查找特定列的平均值）。
 - en: The nice thing about the Ray Train preprocessors is that they’re serializable.
     This makes it so that you can easily get consistency from training to serving
     just by serializing these operators.
+  id: totrans-77
   prefs: []
   type: TYPE_NORMAL
+  zh: Ray Train的一个很好的特点是它们是可序列化的。这使得您可以通过序列化这些运算符来轻松实现从训练到服务的一致性。
 - en: Example 6-5\.
+  id: totrans-78
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 6-5。
 - en: '[PRE4]'
+  id: totrans-79
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE4]'
 - en: '[![1](assets/1.png)](#co_distributed_training_with_ray_train_CO4-1)'
+  id: totrans-80
   prefs: []
   type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_distributed_training_with_ray_train_CO4-1)'
 - en: We can serialize and save preprocessors.
+  id: totrans-81
   prefs: []
   type: TYPE_NORMAL
+  zh: 我们可以序列化和保存预处理器。
 - en: Trainers in Ray Train
+  id: totrans-82
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: Ray Train中的训练器
 - en: 'Trainers are framework-specific classes that run model training in a distributed
     fashion. Trainers all share a common interface:'
+  id: totrans-83
   prefs: []
   type: TYPE_NORMAL
+  zh: 训练器是特定框架的类，以分布式方式运行模型训练。所有训练器共享一个公共接口：
 - en: '| fit(self) | Fit this trainer with the given dataset. |'
+  id: totrans-84
   prefs: []
   type: TYPE_TB
+  zh: '| fit(self) | 使用给定数据集来拟合这个训练器。 |'
 - en: '| get_checkpoints(self) | Return list of recent model checkpoints. |'
+  id: totrans-85
   prefs: []
   type: TYPE_TB
+  zh: '| get_checkpoints(self) | 返回最近模型检查点列表。 |'
 - en: '| as_trainable(self) | Get a wrapper of this as a Tune trainable class. |'
+  id: totrans-86
   prefs: []
   type: TYPE_TB
+  zh: '| as_trainable(self) | 获取此对象的Tune可训练类包装器。 |'
 - en: Ray Train supports a variety of different trainers on a variety of frameworks,
     namely XGBoost, LightGBM, Pytorch, HuggingFace, Tensorflow, Horovod, Scikit-learn,
     RLlib, and more.
+  id: totrans-87
   prefs: []
   type: TYPE_NORMAL
+  zh: Ray Train 支持各种不同的训练器，涵盖多种框架，包括 XGBoost、LightGBM、Pytorch、HuggingFace、Tensorflow、Horovod、Scikit-learn、RLlib
+    等。
 - en: 'Next, we’ll dive into two specific classes of Trainers: Gradient Boosted Tree
     Framework Trainers, and Deep Learning Framework Trainers.'
+  id: totrans-88
   prefs: []
   type: TYPE_NORMAL
+  zh: 接下来，我们将深入了解两类特定的训练器：梯度提升树框架训练器和深度学习框架训练器。
 - en: Distributed Training for Gradient Boosted Trees
+  id: totrans-89
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 梯度提升树的分布式训练
 - en: Ray Train offers Trainers for LightGBM and XGBoost.
+  id: totrans-90
   prefs: []
   type: TYPE_NORMAL
+  zh: Ray Train 提供了 LightGBM 和 XGBoost 的训练器。
 - en: XGBoost is an optimized distributed gradient boosting library designed to be
     highly efficient, flexible and portable. It implements machine learning algorithms
     under the Gradient Boosting framework. XGBoost provides a parallel tree boosting
     (also known as GBDT, GBM) that solve many data science problems in a fast and
     accurate way.
+  id: totrans-91
   prefs: []
   type: TYPE_NORMAL
+  zh: XGBoost 是一个经过优化的分布式梯度提升库，旨在高效、灵活和可移植。它在梯度提升框架下实现了机器学习算法。XGBoost 提供了一种并行树提升（也称为
+    GBDT、GBM），以快速和准确的方式解决许多数据科学问题。
 - en: LightGBM is a gradient boosting framework based on tree-based learning algorithms.
     Compared to XGBoost, it is a relatively new framework, but one that is quickly
     becoming popular in both academic and production use cases.
+  id: totrans-92
   prefs: []
   type: TYPE_NORMAL
+  zh: LightGBM 是基于树的学习算法的梯度提升框架。与 XGBoost 相比，它是一个相对较新的框架，但在学术界和生产环境中迅速流行起来。
 - en: By leveraging Ray Train’s XGBoost or LightGBM trainer, you can take a large
     dataset and train a XGBoost Booster across multiple machines.
+  id: totrans-93
   prefs: []
   type: TYPE_NORMAL
+  zh: 通过利用 Ray Train 的 XGBoost 或 LightGBM 训练器，您可以在多台机器上使用大型数据集训练 XGBoost Booster。
 - en: Distributed Training for Deep Learning
+  id: totrans-94
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 深度学习的分布式训练
 - en: Ray Train offers Deep Learning Trainers, for instance supporting frameworks
     such as Tensorflow, Horovod, and Pytorch.
+  id: totrans-95
   prefs: []
   type: TYPE_NORMAL
+  zh: Ray Train 提供了深度学习训练器，例如支持 Tensorflow、Horovod 和 Pytorch 等框架。
 - en: Unlike Gradient Boosted Trees Trainers, these Deep Learning frameworks often
     give more control to the user. For example, Pytorch provides a set of primitives
     that the user can use to construct their training loop.
+  id: totrans-96
   prefs: []
   type: TYPE_NORMAL
+  zh: 与梯度提升树训练器不同，这些深度学习框架通常会给用户更多控制权。例如，Pytorch 提供了一组原语，用户可以用来构建他们的训练循环。
 - en: As such, the Deep Learning Trainer API allows the user to pass in a training
     function and provides callback functions for the user to report metrics and checkpoint.
     Let’s take a look at an example Pytorch training script.
+  id: totrans-97
   prefs: []
   type: TYPE_NORMAL
+  zh: 因此，深度学习训练器 API 允许用户传入一个训练函数，并提供回调函数，用于报告指标和检查点。让我们看一个例子，Pytorch 训练脚本。
 - en: 'Below, we construct a standard training function:'
+  id: totrans-98
   prefs: []
   type: TYPE_NORMAL
+  zh: 下面，我们构建一个标准的训练函数：
 - en: Example 6-6\.
+  id: totrans-99
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 6-6。
 - en: '[PRE5]'
+  id: totrans-100
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE5]'
 - en: '[![1](assets/1.png)](#co_distributed_training_with_ray_train_CO5-1)'
+  id: totrans-101
   prefs: []
   type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_distributed_training_with_ray_train_CO5-1)'
 - en: In this example we use a randomly generated dataset.
+  id: totrans-102
   prefs: []
   type: TYPE_NORMAL
+  zh: 在此示例中，我们使用随机生成的数据集。
 - en: '[![2](assets/2.png)](#co_distributed_training_with_ray_train_CO5-2)'
+  id: totrans-103
   prefs: []
   type: TYPE_NORMAL
+  zh: '[![2](assets/2.png)](#co_distributed_training_with_ray_train_CO5-2)'
 - en: Define a training function.
+  id: totrans-104
   prefs: []
   type: TYPE_NORMAL
+  zh: 定义一个训练函数。
 - en: We construct a training script for Pytorch, where we create a small neural network
     and use a Mean Squared Error (`MSELoss`) objective to optimize the model. The
     input to the model here is random noise, but you can imagine that to be generated
     from a Torch Dataset.
+  id: totrans-105
   prefs: []
   type: TYPE_NORMAL
+  zh: 我们构建了一个 Pytorch 训练脚本，其中创建了一个小型神经网络，并使用均方误差（`MSELoss`）目标来优化模型。这里模型的输入是随机噪声，但您可以想象它是从一个
+    Torch 数据集中生成的。
 - en: Now, there are two key things that Ray Train will take care of for you.
+  id: totrans-106
   prefs: []
   type: TYPE_NORMAL
+  zh: 现在，Ray Train 将为您处理两个关键事项。
 - en: The establishment of a backend that coordinates interprocess communication.
+  id: totrans-107
   prefs:
   - PREF_OL
   type: TYPE_NORMAL
+  zh: 建立一个协调进程间通信的后端。
 - en: Instantiation of multiple parallel processes.
+  id: totrans-108
   prefs:
   - PREF_OL
   type: TYPE_NORMAL
+  zh: 多个并行进程的实例化。
 - en: 'So, in short, you just need to make a one-line change to your code:'
+  id: totrans-109
   prefs: []
   type: TYPE_NORMAL
+  zh: 所以，简而言之，您只需要对您的代码做一行更改：
 - en: Example 6-7\.
+  id: totrans-110
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 6-7。
 - en: '[PRE6]'
+  id: totrans-111
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE6]'
 - en: '[![1](assets/1.png)](#co_distributed_training_with_ray_train_CO6-1)'
+  id: totrans-112
   prefs: []
   type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_distributed_training_with_ray_train_CO6-1)'
 - en: Prepare the model for distributed training.
+  id: totrans-113
   prefs: []
   type: TYPE_NORMAL
+  zh: 为分布式训练准备模型。
 - en: 'Then, you can plug this into Ray Train:'
+  id: totrans-114
   prefs: []
   type: TYPE_NORMAL
+  zh: 然后，您可以将其接入 Ray Train：
 - en: Example 6-8\.
+  id: totrans-115
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 6-8。
 - en: '[PRE7]'
+  id: totrans-116
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE7]'
 - en: '[![1](assets/1.png)](#co_distributed_training_with_ray_train_CO7-1)'
+  id: totrans-117
   prefs: []
   type: TYPE_NORMAL
+  zh: '[![1](assets/1.png)](#co_distributed_training_with_ray_train_CO7-1)'
 - en: Create a trainer. For GPU Training, set `use_gpu` to True.
+  id: totrans-118
   prefs: []
   type: TYPE_NORMAL
+  zh: 创建一个训练器。对于 GPU 训练，将 `use_gpu` 设置为 True。
 - en: This code will work on both a single machine or a distributed cluster.
+  id: totrans-119
   prefs: []
   type: TYPE_NORMAL
+  zh: 这段代码可以在单台机器或分布式集群上运行。
 - en: Scaling Out Training with Ray Train Trainers
+  id: totrans-120
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 使用 Ray Train 训练器扩展训练规模
 - en: The general philosphy of Ray Train is that the user should not need to think
     about **how** to parallelize their code.
+  id: totrans-121
   prefs: []
   type: TYPE_NORMAL
+  zh: Ray Train的总体理念是，用户不需要考虑如何并行化他们的代码。
 - en: With Ray Train Trainers, you can specify a `scaling_config` which allows you
     to scale out your training without writing distributed logic. The `scaling_config`
     allows you to declaratively specify the *compute resources* used by a Trainer.
+  id: totrans-122
   prefs: []
   type: TYPE_NORMAL
+  zh: 使用Ray Train Trainers，您可以指定一个`scaling_config`，允许您扩展您的训练而无需编写分布式逻辑。`scaling_config`允许您声明性地指定Trainer使用的*计算资源*。
 - en: 'In particular, you can specify the amount of parallelism that the Trainer should
     use by providing the number of workers, along with the type of device that each
     worker should use:'
+  id: totrans-123
   prefs: []
   type: TYPE_NORMAL
+  zh: 特别是，您可以通过提供工作者数量和每个工作者应使用的设备类型来指定Trainer应该使用的并行度：
 - en: Example 6-9\.
+  id: totrans-124
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 6-9。
 - en: '[PRE8]'
+  id: totrans-125
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE8]'
 - en: Note that scaling configuration arguments depend on the Trainer type.
+  id: totrans-126
   prefs: []
   type: TYPE_NORMAL
+  zh: 注意，缩放配置参数取决于Trainer类型。
 - en: 'The nice thing about this specification is that you don’t need to think about
     the underlying hardware. In particular, you can specify to use hundreds of workers
     and Ray Train will automatically leverage all the nodes within your Ray cluster:'
+  id: totrans-127
   prefs: []
   type: TYPE_NORMAL
+  zh: 这种规范的好处在于，您不需要考虑底层硬件。特别是，您可以指定使用数百个工作者，Ray Train将自动利用Ray集群中的所有节点：
 - en: Example 6-10\.
+  id: totrans-128
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 6-10。
 - en: '[PRE9]'
+  id: totrans-129
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE9]'
 - en: Connecting Data to Distributed Training
+  id: totrans-130
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 将数据连接到分布式训练
 - en: Ray Train provides utilities to train on large datasets.
+  id: totrans-131
   prefs: []
   type: TYPE_NORMAL
+  zh: Ray Train提供了训练大数据集的实用工具。
 - en: Along the same philosophy that the user should not need to think about **how**
     to parallelize their code, you can simply “connect” your large dataset to Ray
     Train without thinking about how to ingest and feed your data into different parallel
     workers.
+  id: totrans-132
   prefs: []
   type: TYPE_NORMAL
+  zh: 与同样的理念相同，用户不需要考虑如何并行化他们的代码，您只需简单地将大数据集“连接”到Ray Train，而不必考虑如何摄入和将数据提供给不同的并行工作者。
 - en: Here, we create a dataset from random data. However, you can use other data
     APIs to read a large amount of data (with `read_parquet`, which reads data from
     the [Parquet format](https://parquet.apache.org/)).
+  id: totrans-133
   prefs: []
   type: TYPE_NORMAL
+  zh: 在这里，我们从随机数据创建了一个数据集。但是，您可以使用其他数据API来读取大量数据（使用`read_parquet`，从[Parquet格式](https://parquet.apache.org/)读取数据）。
 - en: Example 6-11\.
+  id: totrans-134
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 6-11。
 - en: '[PRE10]'
+  id: totrans-135
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE10]'
 - en: You can then specify a training function that accesses these datapoints. Note
     that we use a specific `get_dataset_shard` function here. Under the hood, Ray
     Train will automatically shard the provided dataset so that individual workers
     can train on a different subset of the data at once. This avoids training on duplicate
     data within the same epoch. The `get_dataset_shard` function passes a subset of
     the data from the data source to each individual parallel training worker.
+  id: totrans-136
   prefs: []
   type: TYPE_NORMAL
+  zh: 然后可以指定一个训练函数来访问这些数据点。注意，这里使用了特定的`get_dataset_shard`函数。在幕后，Ray Train会自动对提供的数据集进行分片，以便各个工作节点可以同时训练数据的不同子集。这样可以避免在同一个epoch内对重复数据进行训练。`get_dataset_shard`函数将从数据源传递数据的子集给每个单独的并行训练工作者。
 - en: Next, we make a `iter_epochs` and `to_torch` call on each shard. `iter_epochs`
     will produce an iterator. This iterator will produce Dataset objects that will
     possess 1 shard of the entire epoch (named `train_dataset_iterator` and `validation_dataset_iterator`).
+  id: totrans-137
   prefs: []
   type: TYPE_NORMAL
+  zh: 接下来，我们对每个shard调用`iter_epochs`和`to_torch`。`iter_epochs`将生成一个迭代器。此迭代器将生成Dataset对象，每个对象将拥有整个epoch的1个shard（命名为`train_dataset_iterator`和`validation_dataset_iterator`）。
 - en: '`to_torch` will convert the Dataset object into a Pytorch iterator. There is
     an equivalent `to_tf` function that converts it to a Tensorflow Data iterator.'
+  id: totrans-138
   prefs: []
   type: TYPE_NORMAL
+  zh: '`to_torch`将把Dataset对象转换为Pytorch迭代器。还有一个等价的`to_tf`函数，将其转换为Tensorflow Data迭代器。'
 - en: When the epoch is finished, the Pytorch iterator will raise a `StopIteration`,
     and the `train_dataset_iterator` will be queried again for a new shard on a new
     epoch.
+  id: totrans-139
   prefs: []
   type: TYPE_NORMAL
+  zh: 当epoch结束时，Pytorch迭代器会引发`StopIteration`，然后`train_dataset_iterator`将再次查询新的shard和新的epoch。
 - en: Example 6-12\.
+  id: totrans-140
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 6-12。
 - en: '[PRE11]'
+  id: totrans-141
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE11]'
 - en: 'You can put things together by using the Trainer in the following way:'
+  id: totrans-142
   prefs: []
   type: TYPE_NORMAL
+  zh: 您可以通过以下方式使用Trainer将所有内容整合起来：
 - en: Example 6-13\.
+  id: totrans-143
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 6-13。
 - en: '[PRE12]'
+  id: totrans-144
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE12]'
 - en: Ray Train Features
+  id: totrans-145
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: Ray Train特性
 - en: Checkpoints
+  id: totrans-146
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 检查点
 - en: Ray Train will generate **model checkpoints** to checkpoint intermediate state
     for training. These model checkpoints provide the trained model and fitted preprocessor
     for usage in downstream applications like serving and inference.
+  id: totrans-147
   prefs: []
   type: TYPE_NORMAL
+  zh: Ray Train将生成**模型检查点**以检查训练的中间状态。这些模型检查点提供了经过训练的模型和适配的预处理器，可用于下游应用，如服务和推断。
 - en: Example 6-14\.
+  id: totrans-148
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 6-14。
 - en: '[PRE13]'
+  id: totrans-149
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE13]'
 - en: The goal of the model checkpoints is to abstract away the actual physical representation
     of the model and preprocessor. As a result, you should be able to generate a checkpoint
     from a cloud storage location, and convert it into an in-memory representation
     or on-disk representation, and vice versa.
+  id: totrans-150
   prefs: []
   type: TYPE_NORMAL
+  zh: 模型检查点的目标是抽象出模型和预处理器的实际物理表示。因此，您应该能够从云存储位置生成检查点，并将其转换为内存表示或磁盘表示，反之亦然。
 - en: Example 6-15\.
+  id: totrans-151
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 6-15\.
 - en: '[PRE14]'
+  id: totrans-152
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE14]'
 - en: Callbacks
+  id: totrans-153
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 回调函数
 - en: You may want to plug in your training code with your favorite experiment management
     framework. Ray Train provides an interface to fetch intermediate results and callbacks
     to process, or log, your intermediate results (the values passed into `train.report(...)`).
+  id: totrans-154
   prefs: []
   type: TYPE_NORMAL
+  zh: 您可能希望将您的训练代码与您喜爱的实验管理框架插入。Ray Train 提供了一个接口来获取中间结果和回调函数来处理或记录您的中间结果（传递给 `train.report(...)`
+    的值）。
 - en: 'Ray Train contains built-in callbacks for popular tracking frameworks, or you
     can implement your own callback via the TrainingCallback interface. Available
     callbacks include:'
+  id: totrans-155
   prefs: []
   type: TYPE_NORMAL
+  zh: Ray Train 包含了流行跟踪框架的内置回调，或者您可以通过 TrainingCallback 接口实现自己的回调函数。可用的回调函数包括：
 - en: Json Logging
+  id: totrans-156
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: Json 日志记录
 - en: Tensorboard Logging
+  id: totrans-157
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: Tensorboard 日志记录
 - en: MLflow Logging
+  id: totrans-158
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: MLflow 日志记录
 - en: Torch Profiler
+  id: totrans-159
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: Torch Profiler
 - en: Example 6-16\.
+  id: totrans-160
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 6-16\.
 - en: '[PRE15]'
+  id: totrans-161
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE15]'
 - en: Integration with Ray Tune
+  id: totrans-162
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 与 Ray Tune 集成
 - en: Ray Train provides an integration with Ray Tune that allows you to perform hyperparameter
     optimization in just a few lines of code. Tune will create one Trial per hyperparameter
     configuration. In each Trial, a new Trainer will be initialized and run the training
     function with its generated configuration.
+  id: totrans-163
   prefs: []
   type: TYPE_NORMAL
+  zh: Ray Train 与 Ray Tune 集成，使您可以仅用几行代码进行超参数优化。Tune 将根据每个超参数配置创建一个试验。在每个试验中，将初始化一个新的
+    Trainer 并使用其生成的配置运行训练函数。
 - en: Example 6-17\.
+  id: totrans-164
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 6-17\.
 - en: '[PRE16]'
+  id: totrans-165
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE16]'
 - en: 'Compared to other distributed hyperparameter tuning solutions, Ray Tune and
     Ray Train has a couple unique features:'
+  id: totrans-166
   prefs: []
   type: TYPE_NORMAL
+  zh: 与其他分布式超参数调整解决方案相比，Ray Tune 和 Ray Train 具有一些独特的特性：
 - en: Ability to specify the dataset and preprocessor as a parameter
+  id: totrans-167
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 能够将数据集和预处理器指定为参数
 - en: Fault tolerance
+  id: totrans-168
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 容错性
 - en: Ability to adjust the number of workers during training time.
+  id: totrans-169
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 能够在训练时调整工作人数。
 - en: Exporting Models
+  id: totrans-170
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 导出模型
 - en: You may want to export the model trained to Ray Serve or a model registry after
     you’ve trained it with Ray Train.
+  id: totrans-171
   prefs: []
   type: TYPE_NORMAL
+  zh: 在使用 Ray Train 训练模型后，您可能希望将其导出到 Ray Serve 或模型注册表。
 - en: 'To do so, you can fetch the model using a load_model API:'
+  id: totrans-172
   prefs: []
   type: TYPE_NORMAL
+  zh: 为此，您可以使用 load_model API 获取模型：
 - en: Example 6-18\.
+  id: totrans-173
   prefs:
   - PREF_H5
   type: TYPE_NORMAL
+  zh: 示例 6-18\.
 - en: '[PRE17]'
+  id: totrans-174
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE17]'
 - en: Some Caveats
+  id: totrans-175
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 一些注意事项
 - en: In particular, recall that standard neural network training works by iterating
     through a dataset in separate batches of data (usually called minibatch gradient
     descent).
+  id: totrans-176
   prefs: []
   type: TYPE_NORMAL
+  zh: 特别是，请记住，标准神经网络训练通过在数据集的不同数据批次（通常称为小批量梯度下降）之间进行迭代。
 - en: To speed this up, you can parallelize the gradient computation of every minibatch
     update. This means that the batch should be split across multiple machines.
+  id: totrans-177
   prefs: []
   type: TYPE_NORMAL
+  zh: 为了加快速度，您可以并行计算每个小批量更新的梯度。这意味着批次应该在多台机器上分割。
 - en: One complication is that if you hold the size of the batch constant, the system
     utilization and efficiency reduces as you increase the number of workers.
+  id: totrans-178
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果保持批处理大小不变，则随着工作人数增加，系统利用率和效率会降低。
 - en: To compensate, practitioners typically increase the amount of data per batch.
+  id: totrans-179
   prefs: []
   type: TYPE_NORMAL
+  zh: 为了补偿，实践者通常增加每批数据的数量。
 - en: As a result, the time it takes to go through a single pass of the data (one
     epoch) should ideally reduce, since the number of total batches decreases.
+  id: totrans-180
   prefs: []
   type: TYPE_NORMAL
+  zh: 因此，通过数据的单次遍历时间（一个 epoch）应该理想地减少，因为总批次数量减少。
 - en: ^([1](ch06.xhtml#idm44990023972608-marker)) This applies specifically to the
     gradient computation in neural networks.
+  id: totrans-181
   prefs: []
   type: TYPE_NORMAL
+  zh: ^([1](ch06.xhtml#idm44990023972608-marker)) 这特别适用于神经网络中的梯度计算。
 - en: ^([2](ch06.xhtml#idm44990023959856-marker)) Ray can handle much larger datasets
     than that. In [Chapter 7](ch07.xhtml#chapter_07) we’ll take a closer look at the
     Ray Data library to see how to handle huge datasets.
+  id: totrans-182
   prefs: []
   type: TYPE_NORMAL
+  zh: ^([2](ch06.xhtml#idm44990023959856-marker)) Ray 能处理比那更大的数据集。在 [第7章](ch07.xhtml#chapter_07)
+    中，我们将更详细地看一下 Ray 数据库，了解如何处理大数据集。
