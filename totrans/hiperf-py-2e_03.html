@@ -1,0 +1,652 @@
+<html><head></head><body><div id="sbo-rt-content" class="calibre2"><section data-type="chapter" epub:type="chapter" data-pdf-bookmark="Chapter 3. Lists and Tuples" class="calibre3"><div class="preface" id="chapter-lists-tuples">
+<h1 class="calibre23"><span class="publishername">Chapter 3. </span>Lists and Tuples</h1>
+
+<aside data-type="sidebar" epub:type="sidebar" class="calibre40"><div class="sidebar" id="idm46122430279608">
+<h5 class="calibre41">Questions You’ll Be Able to Answer After This Chapter</h5>
+<ul class="printings">
+<li class="calibre21">
+<p class="calibre42">What are lists and tuples good for?</p>
+</li>
+<li class="calibre21">
+<p class="calibre42">What is the complexity of a lookup in a list/tuple?</p>
+</li>
+<li class="calibre21">
+<p class="calibre42">How is that complexity achieved?</p>
+</li>
+<li class="calibre21">
+<p class="calibre42">What are the differences between lists and tuples?</p>
+</li>
+<li class="calibre21">
+<p class="calibre42">How does appending to a list work?</p>
+</li>
+<li class="calibre21">
+<p class="calibre42">When should I use lists and tuples?</p>
+</li>
+</ul>
+</div></aside>
+
+<p class="author1">One of the most important things in writing efficient programs is understanding
+the guarantees of the data structures you use. In fact, a large part of
+performant programming is knowing what questions you are trying to ask of
+your data and picking a data structure that can answer these questions quickly.
+In this chapter we will talk about the kinds of questions that lists and tuples
+can answer quickly, and how they do it.</p>
+
+<p class="author1">Lists and tuples are a
+class of data structures called <a data-type="indexterm" data-primary="array (data structure)" data-secondary="about" data-seealso="lists, tuples and" id="idm46122430271112" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><em class="hyperlink">arrays</em>. An array is a flat list of data with
+some intrinsic ordering. Usually in these sorts of data structures, the relative
+ordering of the elements is as important as the elements themselves!  In
+addition, this <em class="hyperlink">a priori</em> knowledge of the ordering is incredibly valuable: by
+knowing that data in our array is at a specific position, we can retrieve it in
+<code class="calibre26">O(1)</code>!<sup class="calibre44"><a data-type="noteref" id="idm46122430197320-marker" href="ch03.xhtml#idm46122430197320" class="pcalibre2 pcalibre calibre45 pcalibre3 pcalibre1">1</a></sup>  There are
+also many ways to implement arrays, and each solution has its own
+useful features and guarantees. <a data-type="indexterm" data-primary="lists" data-secondary="differences between" id="idm46122430194008" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="lists" data-secondary="tuples and" id="idm46122430193096" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="tuples" data-seealso="lists" id="idm46122430192152" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>This is why in Python we have two
+types of arrays: lists and tuples. <em class="hyperlink">Lists</em> are dynamic arrays that let us modify
+and resize the data we are storing, while <em class="hyperlink">tuples</em> are static arrays whose contents
+are fixed and immutable.</p>
+
+<p class="author1">Let’s unpack these previous statements a bit. <a data-type="indexterm" data-primary="system memory" id="idm46122430189688" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>System memory on a computer can be
+thought of as a series of numbered <a data-type="indexterm" data-primary="buckets" id="idm46122430188888" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>buckets, each capable of holding a number.
+Python stores data in these buckets <em class="hyperlink">by reference</em>, which means the number itself
+simply points to, or refers to, the data we actually care about. As a result,
+these buckets can store any type of data we want<a data-type="indexterm" data-primary="numpy" data-secondary="arrays in" id="idm46122430187448" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/> (as opposed to <code class="calibre26">numpy</code> arrays,
+which have a static type and can store only that type of data).<sup class="calibre44"><a data-type="noteref" id="idm46122430185928-marker" href="ch03.xhtml#idm46122430185928" class="pcalibre2 pcalibre calibre45 pcalibre3 pcalibre1">2</a></sup></p>
+
+<p class="author1">When we want to create an array (and thus a list or tuple), we first have to
+allocate a block of system memory (where every section of this block will be
+used as an integer-sized pointer to actual data). This involves going to the system
+kernel and requesting the use of <code class="calibre26">N</code> <em class="hyperlink">consecutive</em> buckets.
+<a data-type="xref" href="#FIG-array-allocation" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Figure 3-1</a> shows an example of the system memory layout for an
+array (in this case, a list) of size 6.</p>
+<div data-type="note" epub:type="note" class="calibre35"><h6 class="calibre36">Note</h6>
+<p class="author1">In Python, lists also store how large they are, so of the six allocated blocks, only five are usable—the zeroth element is the length.</p>
+</div>
+
+<figure class="calibre46"><div id="FIG-array-allocation" class="figure">
+<img src="Images/hpp2_0301.png" alt="Array Allocation" class="calibre72"/>
+<h6 class="calibre47"><span class="publishername">Figure 3-1. </span>Example of system memory layout for an array of size 6</h6>
+</div></figure>
+
+<p class="author1">In order to look up any specific element in our
+list, we simply need to know which element we want and remember which bucket our
+data started in. Since all of the data will occupy the same amount of space
+(one “bucket,” or, more specifically, one integer-sized pointer to the actual
+data), we don’t need to know anything about the type of data that is being
+stored to do this calculation.</p>
+<div data-type="tip" class="calibre35"><h6 class="calibre36">Tip</h6>
+<p class="author1">If you knew where in memory your list of <code class="calibre26">N</code> elements started, how would you
+find an arbitrary element in the list?</p>
+</div>
+
+<p class="author1">If, for example, we needed to retrieve the zeroth element in our array, we would simply
+go to the first bucket in our sequence, <code class="calibre26">M</code>, and read out the value inside it.
+If, on the other hand, we needed the fifth element in our array, we would
+go to the bucket at position <code class="calibre26">M + 5</code> and read its content. In general, if we want to
+retrieve element <code class="calibre26">i</code> from our array, we go to bucket <code class="calibre26">M + i</code>. So, by having our
+data stored in consecutive buckets, and having knowledge of the ordering of our
+data, we can locate our data by knowing which bucket to look at in one step (or
+<code class="calibre26">O(1)</code>), regardless of how big our array is (<a data-type="xref" href="#list_lookup_timing" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Example 3-1</a>).</p>
+<div id="list_lookup_timing" data-type="example" class="calibre56">
+<h5 class="calibre58"><span class="publishername">Example 3-1. </span>Timings for lookups in lists of different sizes</h5>
+
+<pre data-type="programlisting" data-code-language="pycon" class="calibre59"><code class="gp">&gt;&gt;&gt; </code><code class="o">%%</code><code class="n">timeit</code> <code class="n">l</code> <code class="o">=</code> <code class="nb">list</code><code class="p">(</code><code class="nb">range</code><code class="p">(</code><code class="mi">10</code><code class="p">))</code>
+<code class="go">        ...: l[5]</code>
+<code class="go">        ...:</code>
+<code class="go">30.1 ns ± 0.996 ns per loop (mean ± std. dev. of 7 runs, 10000000 loops each)</code>
+
+<code class="gp">&gt;&gt;&gt; </code><code class="o">%%</code><code class="n">timeit</code> <code class="n">l</code> <code class="o">=</code> <code class="nb">list</code><code class="p">(</code><code class="nb">range</code><code class="p">(</code><code class="mi">10</code><code class="n">_000_000</code><code class="p">))</code>
+<code class="go">        ...: l[100_000]</code>
+<code class="go">        ...:</code>
+<code class="go">28.9 ns ± 0.894 ns per loop (mean ± std. dev. of 7 runs, 10000000 loops each)</code></pre></div>
+
+<p class="author1">What if we were given an array with an unknown order and wanted to retrieve a
+particular element?  If the ordering were known, we could simply look up that
+particular value. However, in this case, we must do a <code class="calibre26">search</code> operation. The
+most basic approach to this problem is called a <a data-type="indexterm" data-primary="linear search" id="idm46122432515848" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><em class="hyperlink">linear search</em>, where we iterate
+over every element in the array and check if it is the value we want, as seen in
+<a data-type="xref" href="#list_linear_search" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Example 3-2</a>.</p>
+<div id="list_linear_search" data-type="example" class="calibre56">
+<h5 class="calibre58"><span class="publishername">Example 3-2. </span>A linear search through a list</h5>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre59"><code class="kn">def</code> <code class="nf">linear_search</code><code class="p">(</code><code class="n">needle</code><code class="p">,</code> <code class="n">array</code><code class="p">):</code>
+    <code class="kn">for</code> <code class="n">i</code><code class="p">,</code> <code class="n">item</code> <code class="ow">in</code> <code class="nb">enumerate</code><code class="p">(</code><code class="n">array</code><code class="p">):</code>
+        <code class="kn">if</code> <code class="n">item</code> <code class="o">==</code> <code class="n">needle</code><code class="p">:</code>
+            <code class="kn">return</code> <code class="n">i</code>
+    <code class="kn">return</code> <code class="o">-</code><code class="mi">1</code></pre></div>
+
+<p class="author1">This <a data-type="indexterm" data-primary="algorithms" id="idm46122429999480" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>algorithm has a worst-case performance of <code class="calibre26">O(n)</code>. This case occurs when we
+search for something that isn’t in the array. In order to know that the element
+we are searching for isn’t in the array, we must first check it against every other
+element. Eventually, we will reach the final <code class="calibre26">return -1</code> statement. In fact, this
+algorithm is exactly the algorithm that <a data-type="indexterm" data-primary="list.index() function" id="idm46122430165400" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><code class="calibre26">list.index()</code> uses.</p>
+
+<p class="author1">The only way to increase the speed is by having some other
+understanding of how the data is placed in memory, or of the arrangement of the
+buckets of data we are holding. For example, <a data-type="indexterm" data-primary="dictionaries and sets" data-secondary="about" id="idm46122433206536" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="sets and dictionaries" data-secondary="about" id="idm46122433205560" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="dictionaries and sets" data-secondary="hash tables" id="idm46122433204616" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="sets and dictionaries" data-secondary="hash tables" id="idm46122430163176" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>hash tables
+(<a data-type="xref" href="ch04.xhtml#dict_set_how_work" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">“How Do Dictionaries and Sets Work?”</a>), which are a fundamental data structure
+powering <a data-type="xref" href="ch04.xhtml#section-dictionary-sets" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Chapter 4</a>, solve this problem
+in <code class="calibre26">O(1)</code> by adding extra overhead to insertions/retrievals and enforcing a
+strict and peculiar sorting of the item. Alternatively, if your data is sorted
+so that every item is larger (or smaller) than its neighbor to the left
+(or right), then <a data-type="indexterm" data-primary="lists" data-secondary="searching and sorting algorithms" id="idm46122430159864" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>specialized search algorithms can be used that can bring your
+lookup time down to <code class="calibre26">O(log n)</code>. This may seem like an impossible step to take
+from the constant-time lookups we saw before, but sometimes it is the best
+option (especially since search algorithms are more flexible and allow you to
+define searches in creative ways).</p>
+<aside data-type="sidebar" epub:type="sidebar" class="calibre40"><div class="sidebar" id="idm46122430158152">
+<h5 class="calibre41">Exercise</h5>
+<p class="calibre73">Given the following data, write an algorithm to find the index of the value
+<code class="calibre26">61</code>:</p>
+
+<pre data-type="programlisting" class="calibre50">[9, 18, 18, 19, 29, 42, 56, 61, 88, 95]</pre>
+
+<p class="calibre73">Since you know the data is ordered, how can you do this faster?</p>
+
+<p class="calibre73"><em class="hyperlink">Hint:</em> If you split the array in half, you know all the values on the left are
+smaller than the smallest element in the right set. You can use this!</p>
+</div></aside>
+
+
+
+
+
+
+<section data-type="sect1" data-pdf-bookmark="A More Efficient Search" class="calibre3"><div class="preface" id="idm46122433195208">
+<h1 class="calibre25">A More Efficient Search</h1>
+
+<p class="author1"><a data-type="indexterm" data-primary="lists" data-secondary="search complexity" id="li_sc" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>As alluded to previously, we can achieve better search performance if we first
+sort our data so that all elements to the left of a particular item are smaller (or larger) than that item. The comparison is done through the <a data-type="indexterm" data-primary="eq function" id="idm46122433192120" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="lt function" id="idm46122433187288" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><code class="calibre26">__eq__</code> and <code class="calibre26">__lt__</code>
+magic functions of the object and can be user-defined if using custom objects.</p>
+<div data-type="note" epub:type="note" class="calibre35"><h6 class="calibre36">Note</h6>
+<p class="author1">Without the <code class="calibre26">__eq__</code> and <code class="calibre26">__lt__</code> methods, a custom object will compare only to
+objects of the same type, and the comparison will be done using the instance’s
+placement in memory. With those two magic functions defined, you can use the
+<a data-type="indexterm" data-primary="functools.total_ordering decorator" id="idm46122433183656" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><code class="calibre26">functools.total_ordering</code> decorator from the standard library to automatically
+define all the other ordering functions, albeit at a small performance penalty.</p>
+</div>
+
+<p class="author1">The two ingredients necessary are the sorting algorithm and the searching
+algorithm. Python lists have a built-in sorting algorithm that uses <a data-type="indexterm" data-primary="Tim sort" id="idm46122433181784" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>Tim sort.
+Tim sort can sort through a list in <code class="calibre26">O(n)</code> in the best case (and in <code class="calibre26">O(n log n)</code> in
+the worst case). It achieves this performance by utilizing multiple types of
+sorting algorithms and using heuristics to guess which algorithm will perform the
+best, given the data (more specifically, it hybridizes insertion and merge sort
+algorithms).</p>
+
+<p class="author1">Once a list has been sorted, we can find our desired element using a<a data-type="indexterm" data-primary="lists" data-secondary="binary search" id="idm46122433179240" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="binary search" id="idm46122433178264" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/> binary search
+(<a data-type="xref" href="#list_binary_search" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Example 3-3</a>), which has an average case
+complexity of <code class="calibre26">O(log n)</code>. It achieves this by first looking at the middle of the
+list and comparing this value with the desired value. If this midpoint’s value
+is less than our desired value, we consider the right half of the list, and
+we continue halving the list like this until the value is found, or until the value is known not to occur in the sorted list. As a result, we
+do not need to read all values in the list, as was necessary for the<a data-type="indexterm" data-primary="linear search" id="idm46122433175800" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>
+<a href="#list_linear_search" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">linear search</a>; instead, we read only a small subset of
+them.</p>
+<div id="list_binary_search" data-type="example" class="calibre56">
+<h5 class="calibre58"><span class="publishername">Example 3-3. </span>Efficient searching through a sorted list—binary search</h5>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre59"><code class="kn">def</code> <code class="nf">binary_search</code><code class="p">(</code><code class="n">needle</code><code class="p">,</code> <code class="n">haystack</code><code class="p">):</code>
+    <code class="n">imin</code><code class="p">,</code> <code class="n">imax</code> <code class="o">=</code> <code class="mi">0</code><code class="p">,</code> <code class="nb">len</code><code class="p">(</code><code class="n">haystack</code><code class="p">)</code>
+    <code class="kn">while</code> <code class="nb">True</code><code class="p">:</code>
+        <code class="kn">if</code> <code class="n">imin</code> <code class="o">&gt;</code> <code class="n">imax</code><code class="p">:</code>
+            <code class="kn">return</code> <code class="o">-</code><code class="mi">1</code>
+        <code class="n">midpoint</code> <code class="o">=</code> <code class="p">(</code><code class="n">imin</code> <code class="o">+</code> <code class="n">imax</code><code class="p">)</code> <code class="o">//</code> <code class="mi">2</code>
+        <code class="kn">if</code> <code class="n">haystack</code><code class="p">[</code><code class="n">midpoint</code><code class="p">]</code> <code class="o">&gt;</code> <code class="n">needle</code><code class="p">:</code>
+            <code class="n">imax</code> <code class="o">=</code> <code class="n">midpoint</code>
+        <code class="kn">elif</code> <code class="n">haystack</code><code class="p">[</code><code class="n">midpoint</code><code class="p">]</code> <code class="o">&lt;</code> <code class="n">needle</code><code class="p">:</code>
+            <code class="n">imin</code> <code class="o">=</code> <code class="n">midpoint</code><code class="o">+</code><code class="mi">1</code>
+        <code class="kn">else</code><code class="p">:</code>
+            <code class="kn">return</code> <code class="n">midpoint</code></pre></div>
+
+<p class="author1"><a data-type="indexterm" data-primary="dictionaries and sets" data-secondary="about" id="idm46122433171064" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="sets and dictionaries" data-secondary="about" id="idm46122433170216" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>This method allows us to find elements in a list without resorting to the
+potentially heavyweight solution of a dictionary. This is especially true when
+the list of data that is being operated on is intrinsically sorted. It is more
+efficient to do a binary search on the list to find an object rather than
+converting your data to a dictionary and then doing a lookup on it. Although a
+dictionary lookup takes only <code class="calibre26">O(1)</code>, converting the data to a dictionary takes
+<code class="calibre26">O(n)</code> (and a dictionary’s restriction of no repeating keys may be undesirable).
+On the other hand, the binary search will take <code class="calibre26">O(log n)</code>.</p>
+
+<p class="author1">In addition, the<a data-type="indexterm" data-primary="bisect module" id="idm46122426962968" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="lists" data-secondary="bisect module" id="idm46122426962232" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>
+<code class="calibre26">bisect</code> module from Python’s standard library simplifies much of this process
+by giving easy methods to add elements into a list while maintaining its
+sorting, in addition to finding elements using a heavily optimized binary
+search. It does this by providing alternative functions that add the element
+into the correct <span class="publishername">sorted</span> placement. With the list always being sorted, we can
+easily find the elements we are looking for (examples of this can be found in
+the <a href="https://oreil.ly/5ZSb7" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">documentation for the
+<code class="calibre26">bisect</code> module</a>). In addition, we can use <code class="calibre26">bisect</code> to find the closest element
+to what we are looking for very quickly (<a data-type="xref" href="#list_bisect_example" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Example 3-4</a>). This can be
+extremely useful for comparing two datasets that are similar but not identical.</p>
+<div id="list_bisect_example" data-type="example" class="calibre56">
+<h5 class="calibre58"><span class="publishername">Example 3-4. </span>Finding close values in a list with the <code class="calibre26">bisect</code> module</h5>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre59"><code class="kn">import</code> <code class="nn">bisect</code>
+<code class="kn">import</code> <code class="nn">random</code>
+
+<code class="kn">def</code> <code class="nf">find_closest</code><code class="p">(</code><code class="n">haystack</code><code class="p">,</code> <code class="n">needle</code><code class="p">):</code>
+    <code class="c"># bisect.bisect_left will return the first value in the haystack</code>
+    <code class="c"># that is greater than the needle</code>
+    <code class="n">i</code> <code class="o">=</code> <code class="n">bisect</code><code class="o">.</code><code class="n">bisect_left</code><code class="p">(</code><code class="n">haystack</code><code class="p">,</code> <code class="n">needle</code><code class="p">)</code>
+    <code class="kn">if</code> <code class="n">i</code> <code class="o">==</code> <code class="nb">len</code><code class="p">(</code><code class="n">haystack</code><code class="p">):</code>
+        <code class="kn">return</code> <code class="n">i</code> <code class="o">-</code> <code class="mi">1</code>
+    <code class="kn">elif</code> <code class="n">haystack</code><code class="p">[</code><code class="n">i</code><code class="p">]</code> <code class="o">==</code> <code class="n">needle</code><code class="p">:</code>
+        <code class="kn">return</code> <code class="n">i</code>
+    <code class="kn">elif</code> <code class="n">i</code> <code class="o">&gt;</code> <code class="mi">0</code><code class="p">:</code>
+        <code class="n">j</code> <code class="o">=</code> <code class="n">i</code> <code class="o">-</code> <code class="mi">1</code>
+        <code class="c"># since we know the value is larger than needle (and vice versa for the</code>
+        <code class="c"># value at j), we don't need to use absolute values here</code>
+        <code class="kn">if</code> <code class="n">haystack</code><code class="p">[</code><code class="n">i</code><code class="p">]</code> <code class="o">-</code> <code class="n">needle</code> <code class="o">&gt;</code> <code class="n">needle</code> <code class="o">-</code> <code class="n">haystack</code><code class="p">[</code><code class="n">j</code><code class="p">]:</code>
+            <code class="kn">return</code> <code class="n">j</code>
+    <code class="kn">return</code> <code class="n">i</code>
+
+<code class="n">important_numbers</code> <code class="o">=</code> <code class="p">[]</code>
+<code class="kn">for</code> <code class="n">i</code> <code class="ow">in</code> <code class="nb">range</code><code class="p">(</code><code class="mi">10</code><code class="p">):</code>
+    <code class="n">new_number</code> <code class="o">=</code> <code class="n">random</code><code class="o">.</code><code class="n">randint</code><code class="p">(</code><code class="mi">0</code><code class="p">,</code> <code class="mi">1000</code><code class="p">)</code>
+    <code class="n">bisect</code><code class="o">.</code><code class="n">insort</code><code class="p">(</code><code class="n">important_numbers</code><code class="p">,</code> <code class="n">new_number</code><code class="p">)</code>
+
+<code class="c"># important_numbers will already be in order because we inserted new elements</code>
+<code class="c"># with bisect.insort</code>
+<code class="kn">print</code><code class="p">(</code><code class="n">important_numbers</code><code class="p">)</code>
+<code class="c"># &gt; [14, 265, 496, 661, 683, 734, 881, 892, 973, 992]</code>
+
+<code class="n">closest_index</code> <code class="o">=</code> <code class="n">find_closest</code><code class="p">(</code><code class="n">important_numbers</code><code class="p">,</code> <code class="o">-</code><code class="mi">250</code><code class="p">)</code>
+<code class="kn">print</code><code class="p">(</code><code class="n">f</code><code class="s">"Closest value to -250: {important_numbers[closest_index]}"</code><code class="p">)</code>
+<code class="c"># &gt; Closest value to -250: 14</code>
+
+<code class="n">closest_index</code> <code class="o">=</code> <code class="n">find_closest</code><code class="p">(</code><code class="n">important_numbers</code><code class="p">,</code> <code class="mi">500</code><code class="p">)</code>
+<code class="kn">print</code><code class="p">(</code><code class="n">f</code><code class="s">"Closest value to 500: {important_numbers[closest_index]}"</code><code class="p">)</code>
+<code class="c"># &gt; Closest value to 500: 496</code>
+
+<code class="n">closest_index</code> <code class="o">=</code> <code class="n">find_closest</code><code class="p">(</code><code class="n">important_numbers</code><code class="p">,</code> <code class="mi">1100</code><code class="p">)</code>
+<code class="kn">print</code><code class="p">(</code><code class="n">f</code><code class="s">"Closest value to 1100: {important_numbers[closest_index]}"</code><code class="p">)</code>
+<code class="c"># &gt; Closest value to 1100: 992</code></pre></div>
+
+<p class="author1">In general, this touches on a fundamental rule of writing efficient code: pick
+the right data structure and stick with it!  Although there may be more
+efficient data structures for particular operations, the cost of converting to those data structures may negate any efficiency boost.<a data-type="indexterm" data-primary="" data-startref="li_sc" id="idm46122426952152" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/></p>
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<section data-type="sect1" data-pdf-bookmark="Lists Versus Tuples" class="calibre3"><div class="preface" id="idm46122433194584">
+<h1 class="calibre25">Lists Versus Tuples</h1>
+
+<p class="author1">If lists and tuples both use the same underlying data structure, what are the
+differences between the two?  <a data-type="indexterm" data-primary="lists" data-secondary="differences between" id="idm46122426849080" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>Summarized, the main differences are as follows:</p>
+
+<ul class="printings">
+<li class="calibre21">
+<p class="calibre27">Lists are<a data-type="indexterm" data-primary="dynamic arrays" id="idm46122426846952" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="array (data structure)" data-secondary="dynamic" id="idm46122426846216" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/> <em class="hyperlink">dynamic</em> arrays; they are mutable
+and allow for resizing (changing the number of elements that are held).</p>
+</li>
+<li class="calibre21">
+<p class="calibre27">Tuples<a data-type="indexterm" data-primary="static arrays" id="idm46122426843752" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="array (data structure)" data-secondary="static" id="idm46122426843016" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="tuples" id="idm46122426842072" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/> are <em class="hyperlink">static</em> arrays; they are immutable,
+and the data within them cannot be changed after they have been
+created.</p>
+</li>
+<li class="calibre21">
+<p class="calibre27">Tuples are cached by the Python runtime, which means that we don’t need to talk to
+the kernel to reserve memory every time we want to use one.</p>
+</li>
+</ul>
+
+<p class="author1">These differences outline the philosophical difference between the two: tuples
+are for describing multiple properties of one unchanging thing, and lists can be
+used to store collections of data about completely disparate objects. For
+example, the parts of a <span class="publishername">telephone</span> number are perfect for a tuple: they won’t change, and
+if they do, they represent a new object or a different phone number. Similarly,
+the coefficients of a polynomial fit a tuple, since different coefficients
+represent a different polynomial. On the other hand, the names of the people
+currently reading this book are better suited for a list: the data is constantly
+changing both in content and in size but is still always representing the same
+idea.</p>
+
+<p class="author1">It is important to note that both lists and tuples can take mixed types. This
+can, as you will see, introduce quite a bit of overhead and reduce some potential
+optimizations. This overhead can be removed if we force all our data to be
+of the same type. In <a data-type="xref" href="ch06_split_000.xhtml#matrix_computation" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Chapter 6</a>, we will talk about reducing both the
+memory used and the computational overhead by using <code class="calibre26">numpy</code>.  In addition, tools
+like the standard library module <code class="calibre26">array</code> can reduce these overheads for
+other, nonnumerical situations. This alludes to a major point in <span class="publishername">performant</span> programming that we will touch on in
+later chapters: <a data-type="indexterm" data-primary="generic code" id="idm46122426834040" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>generic code will be much slower than code specifically designed
+to solve a particular problem.</p>
+
+<p class="author1">In addition, the immutability of a tuple as opposed to a list, which can be resized
+and changed, makes it a lightweight data structure. This means that there
+isn’t much overhead in memory when storing tuples, and operations with them are
+quite straightforward. With lists, as you will learn, their mutability comes at the price of extra memory needed to store them and extra computations needed when using them.</p>
+<aside data-type="sidebar" epub:type="sidebar" class="calibre40"><div class="sidebar" id="idm46122426832280">
+<h5 class="calibre41">Exercise</h5>
+<p class="calibre73">For the following example datasets, would you use a tuple or a list? Why?</p>
+<ol class="calibre4">
+<li class="calibre5">
+<p class="calibre42">First 20 prime numbers</p>
+</li>
+<li class="calibre5">
+<p class="calibre42">Names of programming languages</p>
+</li>
+<li class="calibre5">
+<p class="calibre42">A person’s age, weight, and height</p>
+</li>
+<li class="calibre5">
+<p class="calibre42">A person’s birthday and birthplace</p>
+</li>
+<li class="calibre5">
+<p class="calibre42">The result of a particular game of pool</p>
+</li>
+<li class="calibre5">
+<p class="calibre42">The results of a continuing series of pool games</p>
+</li>
+
+</ol>
+
+<p class="calibre73">Solution:</p>
+<ol class="calibre4">
+<li class="calibre5">
+<p class="calibre42">Tuple, since the data is static and will not change.</p>
+</li>
+<li class="calibre5">
+<p class="calibre42">List, since this dataset is constantly growing.</p>
+</li>
+<li class="calibre5">
+<p class="calibre42">List, since the values will need to be updated.</p>
+</li>
+<li class="calibre5">
+<p class="calibre42">Tuple, since that information is static and will not change.</p>
+</li>
+<li class="calibre5">
+<p class="calibre42">Tuple, since the data is static.</p>
+</li>
+<li class="calibre5">
+<p class="calibre42">List, since more games will be played. (In fact, we could use a list of tuples since each individual game’s results will not change, but we will need to add more results as more games are played.)</p>
+</li>
+
+</ol>
+</div></aside>
+
+
+
+
+
+
+
+
+<section data-type="sect2" data-pdf-bookmark="Lists as Dynamic Arrays" class="calibre3"><div class="preface" id="list_as_dynamic_arrays">
+<h2 class="calibre43">Lists as Dynamic Arrays</h2>
+
+<p class="author1"><a data-type="indexterm" data-primary="array (data structure)" data-secondary="dynamic" id="arr_dyn" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="dynamic arrays" id="dyn_ab" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="lists" data-secondary="as dynamic arrays" id="li_dyn" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>Once we create a list, we are free to change its contents as needed:</p>
+
+<pre data-type="programlisting" data-code-language="pycon" class="calibre50"><code class="gp">&gt;&gt;&gt; </code><code class="n">numbers</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="p">[</code><code class="mi">5</code><code class="p">,</code><code class="calibre26"> </code><code class="mi">8</code><code class="p">,</code><code class="calibre26"> </code><code class="mi">1</code><code class="p">,</code><code class="calibre26"> </code><code class="mi">3</code><code class="p">,</code><code class="calibre26"> </code><code class="mi">2</code><code class="p">,</code><code class="calibre26"> </code><code class="mi">6</code><code class="p">]</code><code class="calibre26">
+</code><code class="gp">&gt;&gt;&gt; </code><code class="n">numbers</code><code class="p">[</code><code class="mi">2</code><code class="p">]</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="mi">2</code><code class="calibre26"> </code><code class="o">*</code><code class="calibre26"> </code><code class="n">numbers</code><code class="p">[</code><code class="mi">0</code><code class="p">]</code><code class="calibre26">  </code><a class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6" id="co_lists_and_tuples_CO1-1" href="#callout_lists_and_tuples_CO1-1"><img src="Images/1.png" alt="1" class="calibre74"/></a><code class="calibre26">
+</code><code class="gp">&gt;&gt;&gt; </code><code class="n">numbers</code><code class="calibre26">
+</code><code class="go">[5, 8, 10, 3, 2, 6]</code></pre>
+<dl class="calibre28">
+<dt class="calibre29"><a class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6" id="callout_lists_and_tuples_CO1-1" href="#co_lists_and_tuples_CO1-1"><img src="Images/1.png" alt="1" class="calibre74"/></a></dt>
+<dd class="calibre75"><p class="calibre76">As described previously, this operation is <code class="calibre26">O(1)</code> because we can find the data
+stored within the zeroth and second elements immediately.</p></dd>
+</dl>
+
+<p class="author1">In addition, we can append new data to a list and grow its size:</p>
+
+<pre data-type="programlisting" data-code-language="pycon" class="calibre50"><code class="gp">&gt;&gt;&gt; </code><code class="nb">len</code><code class="p">(</code><code class="n">numbers</code><code class="p">)</code>
+<code class="go">6</code>
+<code class="gp">&gt;&gt;&gt; </code><code class="n">numbers</code><code class="o">.</code><code class="n">append</code><code class="p">(</code><code class="mi">42</code><code class="p">)</code>
+<code class="gp">&gt;&gt;&gt; </code><code class="n">numbers</code>
+<code class="go">[5, 8, 10, 3, 2, 6, 42]</code>
+<code class="gp">&gt;&gt;&gt; </code><code class="nb">len</code><code class="p">(</code><code class="n">numbers</code><code class="p">)</code>
+<code class="go">7</code></pre>
+
+<p class="author1">This is possible because dynamic arrays support a<a data-type="indexterm" data-primary="resize operation" id="idm46122426626232" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/> <code class="calibre26">resize</code> operation that
+increases the capacity of the array. When a list of size <code class="calibre26">N</code> is first
+appended to, Python must create a new list that is big enough to hold the
+original <code class="calibre26">N</code> items in addition to the extra one that is being appended.
+However, instead of allocating <code class="calibre26">N + 1</code> items, <code class="calibre26">M</code> items are actually allocated,
+where <code class="calibre26">M &gt; N</code>, in order to provide extra headroom for future appends. Then the
+data from the old list is copied to the new list, and the old list is destroyed.</p>
+
+<p class="author1">The philosophy is that one append is probably the beginning of many appends, and
+by requesting extra space, we can reduce the number of times this allocation must
+happen and thus the total number of memory copies that are necessary. This is
+important since memory copies can be quite expensive, especially when list sizes
+start growing. <a data-type="xref" href="#FIG-list-overallocation" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Figure 3-2</a> shows what this
+overallocation looks like in Python 3.7. The formula dictating this growth is
+given in <a data-type="xref" href="#eq_list_M" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Example 3-5</a>.<sup class="calibre44"><a data-type="noteref" id="idm46122426718264-marker" href="ch03.xhtml#idm46122426718264" class="pcalibre2 pcalibre calibre45 pcalibre3 pcalibre1">3</a></sup></p>
+
+<figure class="calibre46"><div id="FIG-list-overallocation" class="figure">
+<img src="Images/hpp2_0302.png" alt="hpp2 0302" class="calibre77"/>
+<h6 class="calibre47"><span class="publishername">Figure 3-2. </span>Graph showing how many extra elements are being allocated to a list of a particular size. For example, if you create a list with 8,000 elements using <code class="calibre26">append</code>s, Python will allocate space for about 8,600 elements, overallocating 600 elements!</h6>
+</div></figure>
+<div id="eq_list_M" data-type="example" class="calibre56">
+<h5 class="calibre58"><span class="publishername">Example 3-5. </span>List allocation equation in Python 3.7</h5>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre59"><code class="n">M</code> <code class="o">=</code> <code class="p">(</code><code class="n">N</code> <code class="o">&gt;&gt;</code> <code class="mi">3</code><code class="p">)</code> <code class="o">+</code> <code class="p">(</code><code class="mi">3</code> <code class="kn">if</code> <code class="n">N</code> <code class="o">&lt;</code> <code class="mi">9</code> <code class="kn">else</code> <code class="mi">6</code><code class="p">)</code></pre>
+<table class="stafflist_table">
+
+<tbody class="calibre14">
+<tr class="calibre15">
+<td class="calibre16"><p class="calibre17"><strong class="calibre32">N</strong></p></td>
+<td class="calibre16"><p class="calibre17">0</p></td>
+<td class="calibre16"><p class="calibre17">1-4</p></td>
+<td class="calibre16"><p class="calibre17">5-8</p></td>
+<td class="calibre16"><p class="calibre17">9-16</p></td>
+<td class="calibre16"><p class="calibre17">17-25</p></td>
+<td class="calibre16"><p class="calibre17">26-35</p></td>
+<td class="calibre16"><p class="calibre17">36-46</p></td>
+<td class="calibre16"><p class="calibre17">…</p></td>
+<td class="calibre16"><p class="calibre17">991-1120</p></td>
+</tr>
+<tr class="calibre78">
+<td class="calibre16"><p class="calibre17"><strong class="calibre32">M</strong></p></td>
+<td class="calibre16"><p class="calibre17">0</p></td>
+<td class="calibre16"><p class="calibre17">4</p></td>
+<td class="calibre16"><p class="calibre17">8</p></td>
+<td class="calibre16"><p class="calibre17">16</p></td>
+<td class="calibre16"><p class="calibre17">25</p></td>
+<td class="calibre16"><p class="calibre17">35</p></td>
+<td class="calibre16"><p class="calibre17">46</p></td>
+<td class="calibre16"><p class="calibre17">…</p></td>
+<td class="calibre16"><p class="calibre17">1120</p></td>
+</tr>
+</tbody>
+</table></div>
+
+<p class="author1"><a data-type="indexterm" data-primary="lists" data-secondary="appending data" id="li_app" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>As we append data, we utilize the extra space and increase the effective size of
+the list, <code class="calibre26">N</code>. As a result, <code class="calibre26">N</code> grows as we append new data, until <code class="calibre26">N == M</code>. At this
+point, there is no extra space to insert new data into, and we must create a
+<em class="hyperlink">new</em> list with more extra space. This new list has extra headroom as given by the equation in
+<a data-type="xref" href="#eq_list_M" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Example 3-5</a>, and we copy the old data into the new space.</p>
+
+<p class="author1">This sequence of events is shown visually in <a data-type="xref" href="#FIG-list-append" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Figure 3-3</a>. The figure follows the various operations being performed on list <code class="calibre26">l</code>
+in <a data-type="xref" href="#code_list_resize" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Example 3-6</a>.</p>
+
+<figure class="calibre46"><div id="FIG-list-append" class="figure">
+<img src="Images/hpp2_0303.png" alt="hpp2 0303" class="calibre79"/>
+<h6 class="calibre47"><span class="publishername">Figure 3-3. </span>Example of how a list is mutated on multiple appends</h6>
+</div></figure>
+<div id="code_list_resize" data-type="example" class="calibre56">
+<h5 class="calibre58"><span class="publishername">Example 3-6. </span>Resizing a list</h5>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre59"><code class="n">l</code> <code class="o">=</code> <code class="p">[</code><code class="mi">1</code><code class="p">,</code> <code class="mi">2</code><code class="p">]</code>
+<code class="kn">for</code> <code class="n">i</code> <code class="ow">in</code> <code class="nb">range</code><code class="p">(</code><code class="mi">3</code><code class="p">,</code> <code class="mi">7</code><code class="p">):</code>
+    <code class="n">l</code><code class="o">.</code><code class="n">append</code><code class="p">(</code><code class="n">i</code><code class="p">)</code></pre></div>
+<div data-type="note" epub:type="note" class="calibre35"><h6 class="calibre36">Note</h6>
+<p class="author1">This extra allocation happens on the first <code class="calibre26">append</code>. When a list is
+<span class="publishername">directly</span> created, as in the preceding example, only the number of elements needed
+is allocated.</p>
+</div>
+
+<p class="author1">While the amount of extra headroom allocated is generally quite small, it can
+add up. In <a data-type="xref" href="#memory_time_append_vs_comprehension" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Example 3-7</a>, we can see that even for
+100,000 elements, we use 2.7× the memory by building the list with appends versus
+a list comprehension:</p>
+<div id="memory_time_append_vs_comprehension" data-type="example" class="calibre56">
+<h5 class="calibre58"><span class="publishername">Example 3-7. </span>Memory and time consequences of appends versus list comprehensions</h5>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre59"><code class="o">&gt;&gt;&gt;</code> <code class="o">%</code><code class="n">memit</code> <code class="p">[</code><code class="n">i</code><code class="o">*</code><code class="n">i</code> <code class="kn">for</code> <code class="n">i</code> <code class="ow">in</code> <code class="nb">range</code><code class="p">(</code><code class="mi">100</code><code class="n">_000</code><code class="p">)]</code>
+<code class="n">peak</code> <code class="n">memory</code><code class="p">:</code> <code class="mi">70.50</code> <code class="n">MiB</code><code class="p">,</code> <code class="n">increment</code><code class="p">:</code> <code class="mi">3.02</code> <code class="n">MiB</code>
+
+<code class="o">&gt;&gt;&gt;</code> <code class="o">%%</code><code class="n">memit</code> <code class="n">l</code> <code class="o">=</code> <code class="p">[]</code>
+<code class="o">...</code> <code class="kn">for</code> <code class="n">i</code> <code class="ow">in</code> <code class="nb">range</code><code class="p">(</code><code class="mi">100</code><code class="n">_000</code><code class="p">):</code>
+<code class="o">...</code>     <code class="n">l</code><code class="o">.</code><code class="n">append</code><code class="p">(</code><code class="n">i</code> <code class="o">*</code> <code class="mi">2</code><code class="p">)</code>
+<code class="o">...</code>
+<code class="n">peak</code> <code class="n">memory</code><code class="p">:</code> <code class="mi">67.47</code> <code class="n">MiB</code><code class="p">,</code> <code class="n">increment</code><code class="p">:</code> <code class="mi">8.17</code> <code class="n">MiB</code>
+
+<code class="o">&gt;&gt;&gt;</code> <code class="o">%</code><code class="n">timeit</code> <code class="p">[</code><code class="n">i</code><code class="o">*</code><code class="n">i</code> <code class="kn">for</code> <code class="n">i</code> <code class="ow">in</code> <code class="nb">range</code><code class="p">(</code><code class="mi">100</code><code class="n">_000</code><code class="p">)]</code>
+<code class="mi">7.99</code> <code class="n">ms</code> <code class="err">±</code> <code class="mi">219</code> <code class="err">µ</code><code class="n">s</code> <code class="n">per</code> <code class="n">loop</code> <code class="p">(</code><code class="n">mean</code> <code class="err">±</code> <code class="n">std</code><code class="o">.</code> <code class="n">dev</code><code class="o">.</code> <code class="n">of</code> <code class="mi">7</code> <code class="n">runs</code><code class="p">,</code> <code class="mi">100</code> <code class="n">loops</code> <code class="n">each</code><code class="p">)</code>
+
+<code class="o">&gt;&gt;&gt;</code> <code class="o">%%</code><code class="n">timeit</code> <code class="n">l</code> <code class="o">=</code> <code class="p">[]</code>
+<code class="o">...</code> <code class="kn">for</code> <code class="n">i</code> <code class="ow">in</code> <code class="nb">range</code><code class="p">(</code><code class="mi">100</code><code class="n">_000</code><code class="p">):</code>
+<code class="o">...</code>     <code class="n">l</code><code class="o">.</code><code class="n">append</code><code class="p">(</code><code class="n">i</code> <code class="o">*</code> <code class="mi">2</code><code class="p">)</code>
+<code class="o">...</code>
+<code class="mi">12.2</code> <code class="n">ms</code> <code class="err">±</code> <code class="mi">184</code> <code class="err">µ</code><code class="n">s</code> <code class="n">per</code> <code class="n">loop</code> <code class="p">(</code><code class="n">mean</code> <code class="err">±</code> <code class="n">std</code><code class="o">.</code> <code class="n">dev</code><code class="o">.</code> <code class="n">of</code> <code class="mi">7</code> <code class="n">runs</code><code class="p">,</code> <code class="mi">100</code> <code class="n">loops</code> <code class="n">each</code><code class="p">)</code></pre></div>
+
+<p class="author1">The overall runtime is also slower, because of the
+extra Python statements that must be run as well as the cost of
+reallocating memory. This effect becomes especially pronounced when you are
+maintaining many small lists or when keeping a particularly large list. If we
+are storing 1,000,000 lists, each containing 10 elements, we would suppose that
+10,000,000 elements’ worth of memory is being used. In actuality, however, up to
+16,000,000 elements could have been allocated if the <code class="calibre26">append</code> operator was used
+to construct the list. Similarly, for a large list of 100,000,000 elements, we
+actually have 112,500,007 elements allocated!<a data-type="indexterm" data-primary="" data-startref="arr_dyn" id="idm46122426516696" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="" data-startref="dyn_ab" id="idm46122426515848" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="" data-startref="li_dyn" id="idm46122426347720" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="" data-startref="li_all" id="idm46122426346776" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="" data-startref="li_app" id="idm46122426345832" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-startref="ix_arraysdynamic" id="idm46122426344888" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-startref="ix_listsasdynamic" id="idm46122426344216" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-startref="ix_ltappend" id="idm46122426343544" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/></p>
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<section data-type="sect2" data-pdf-bookmark="Tuples as Static Arrays" class="calibre3"><div class="preface" id="tuples_as_static_arrays">
+<h2 class="calibre43">Tuples as Static Arrays</h2>
+
+<p class="author1"><a data-type="indexterm" data-primary="tuples" id="idm46122426341160" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="lists" data-secondary="tuple allocation" id="idm46122426340456" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="lists" data-secondary="tuples and" id="idm46122426339512" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="array (data structure)" data-secondary="static" id="idm46122426338568" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="static arrays" id="idm46122426337624" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>Tuples are fixed and immutable. This means that once a tuple is created, unlike
+a list, it cannot be modified or resized:</p>
+
+<pre data-type="programlisting" data-code-language="pycon" class="calibre50"><code class="gp">&gt;&gt;&gt; </code><code class="n">t</code> <code class="o">=</code> <code class="p">(</code><code class="mi">1</code><code class="p">,</code> <code class="mi">2</code><code class="p">,</code> <code class="mi">3</code><code class="p">,</code> <code class="mi">4</code><code class="p">)</code>
+<code class="gp">&gt;&gt;&gt; </code><code class="n">t</code><code class="p">[</code><code class="mi">0</code><code class="p">]</code> <code class="o">=</code> <code class="mi">5</code>
+<code class="gt">Traceback (most recent call last):</code>
+  File <code class="nb">"&lt;stdin&gt;"</code>, line <code class="mi">1</code>, in <code class="n">&lt;module&gt;</code>
+<code class="gr">TypeError</code>: <code class="n">'tuple' object does not support item assignment</code></pre>
+
+<p class="author1">However, although they don’t support resizing, we can concatenate two tuples
+together and form a new tuple. The operation is similar to the <code class="calibre26">resize</code> operation
+on lists, but we do not allocate any extra space for the resulting tuple:</p>
+
+<pre data-type="programlisting" data-code-language="pycon" class="calibre50"><code class="gp">&gt;&gt;&gt; </code><code class="n">t1</code> <code class="o">=</code> <code class="p">(</code><code class="mi">1</code><code class="p">,</code> <code class="mi">2</code><code class="p">,</code> <code class="mi">3</code><code class="p">,</code> <code class="mi">4</code><code class="p">)</code>
+<code class="gp">&gt;&gt;&gt; </code><code class="n">t2</code> <code class="o">=</code> <code class="p">(</code><code class="mi">5</code><code class="p">,</code> <code class="mi">6</code><code class="p">,</code> <code class="mi">7</code><code class="p">,</code> <code class="mi">8</code><code class="p">)</code>
+<code class="gp">&gt;&gt;&gt; </code><code class="n">t1</code> <code class="o">+</code> <code class="n">t2</code>
+<code class="go">(1, 2, 3, 4, 5, 6, 7, 8)</code></pre>
+
+<p class="author1">If we consider this to be comparable to the <code class="calibre26">append</code> operation on lists, we see
+that it performs in <code class="calibre26">O(n)</code> as opposed to the <code class="calibre26">O(1)</code> speed of lists. This is
+because we must allocate and copy the tuple every time something is added to it, as opposed to only when our extra headroom ran out for lists. As
+a result of this, there is no in-place <code class="calibre26">append</code>-like operation; adding two
+tuples always returns a new tuple that is in a new location in memory.</p>
+
+<p class="author1">Not storing the extra headroom for resizing has the advantage of using fewer
+resources. A list of size 100,000,000 created with any <code class="calibre26">append</code> operation
+actually uses 112,500,007 elements’ worth of memory, while a tuple holding the
+same data will only ever use exactly 100,000,000 elements’ worth of memory. This makes
+tuples lightweight and preferable when data becomes static.</p>
+
+<p class="author1">Furthermore, even if we create a list <em class="hyperlink">without</em> <code class="calibre26">append</code> (and thus we don’t have
+the extra headroom introduced by an <code class="calibre26">append</code> operation), it will <em class="hyperlink">still</em> be larger in
+memory than a tuple with the same data. This is because lists have to
+keep track of more information about their current state in order to efficiently
+resize. While this extra information is quite small (the equivalent of one
+extra element), it can add up if several million lists are in use.</p>
+
+<p class="author1">Another benefit of the static nature of tuples is something Python does in the
+<span class="publishername">background:</span> <a data-type="indexterm" data-primary="resource caching" id="idm46122426247416" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>resource caching. Python
+is garbage collected, which means that when a variable isn’t used anymore, Python
+frees the memory used by that variable, giving it back to the operating system
+for use in other applications (or for other variables). For tuples of sizes
+1–20, however, when they are no longer in use, the space isn’t immediately given
+back to the system: up to 20,000 of each size are saved for future use. This
+means that when a new tuple of that size is needed in the future, we don’t need
+to communicate with the operating system to find a region in memory to put the
+data into, since we have a reserve of free memory already. However, this also means
+that the Python process will have some extra memory overhead.</p>
+
+<p class="author1">While this may seem like a small benefit, it is one of the fantastic things
+about tuples: they can be created easily and quickly since they can avoid communications with
+the operating system, which can cost your program quite a bit of time.
+<a data-type="xref" href="#code_tuple_vs_list_init" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Example 3-8</a> shows that instantiating a list can be 5.1× slower
+than instantiating a tuple—which can add up quickly if this is done in a
+fast loop!</p>
+<div id="code_tuple_vs_list_init" data-type="example" class="calibre56">
+<h5 class="calibre58"><span class="publishername">Example 3-8. </span>Instantiation timings for lists versus tuples</h5>
+
+<pre data-type="programlisting" data-code-language="pycon" class="calibre59"><code class="gp">&gt;&gt;&gt; </code><code class="o">%</code><code class="n">timeit</code> <code class="n">l</code> <code class="o">=</code> <code class="p">[</code><code class="mi">0</code><code class="p">,</code> <code class="mi">1</code><code class="p">,</code> <code class="mi">2</code><code class="p">,</code> <code class="mi">3</code><code class="p">,</code> <code class="mi">4</code><code class="p">,</code> <code class="mi">5</code><code class="p">,</code> <code class="mi">6</code><code class="p">,</code> <code class="mi">7</code><code class="p">,</code> <code class="mi">8</code><code class="p">,</code> <code class="mi">9</code><code class="p">]</code>
+<code class="go">95 ns ± 1.87 ns per loop (mean ± std. dev. of 7 runs, 10000000 loops each)</code>
+
+<code class="gp">&gt;&gt;&gt; </code><code class="o">%</code><code class="n">timeit</code> <code class="n">t</code> <code class="o">=</code> <code class="p">(</code><code class="mi">0</code><code class="p">,</code> <code class="mi">1</code><code class="p">,</code> <code class="mi">2</code><code class="p">,</code> <code class="mi">3</code><code class="p">,</code> <code class="mi">4</code><code class="p">,</code> <code class="mi">5</code><code class="p">,</code> <code class="mi">6</code><code class="p">,</code> <code class="mi">7</code><code class="p">,</code> <code class="mi">8</code><code class="p">,</code> <code class="mi">9</code><code class="p">)</code>
+<code class="go">12.5 ns ± 0.199 ns per loop (mean ± std. dev. of 7 runs, 100000000 loops each)</code></pre></div>
+</div></section>
+
+
+
+
+
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<section data-type="sect1" data-pdf-bookmark="Wrap-Up" class="calibre3"><div class="preface" id="idm46122426342408">
+<h1 class="calibre25">Wrap-Up</h1>
+
+<p class="author1">Lists and tuples are fast and low-overhead objects to use when your data already
+has an intrinsic ordering to it. This intrinsic ordering allows you to sidestep
+the search problem in these structures: if the ordering is known beforehand, lookups are <code class="calibre26">O(1)</code>, avoiding an expensive <code class="calibre26">O(n)</code> linear search. While lists
+can be resized, you must take care to properly understand how much
+overallocation is happening to ensure that the dataset can still fit in memory.
+On the other hand, tuples can be created quickly and without the added overhead
+of lists, at the cost of not being modifiable. In
+<a data-type="xref" href="ch06_split_000.xhtml#arent_python_lists_good_enough" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">“Aren’t Python Lists Good Enough?”</a>, we discuss how to preallocate lists
+to alleviate some of the burden regarding frequent appends to Python lists, and we
+look at other optimizations that can help manage these problems.</p>
+
+<p class="author1">In the next chapter, we go over the computational properties of dictionaries,
+which solve the search/lookup problems with unordered data at the cost of
+overhead.</p>
+</div></section>
+
+
+
+
+
+
+
+<div data-type="footnotes" class="calibre52"><p data-type="footnote" id="idm46122430197320" class="calibre53"><sup class="calibre54"><a href="ch03.xhtml#idm46122430197320-marker" class="pcalibre2 pcalibre calibre45 pcalibre3 pcalibre1">1</a></sup> <code class="calibre26">O(1)</code> uses <em class="hyperlink">Big-Oh Notation</em> to denote how efficient an algorithm is. A good introduction to the topic can be found in <a href="https://oreil.ly/qKUwZ" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">this <em class="hyperlink">dev.to</em> post by Sarah Chima</a> or in the introductory chapters of <em class="hyperlink">Introduction to Algorithms</em> by Thomas H. Cormen et al. (MIT Press).</p><p data-type="footnote" id="idm46122430185928" class="calibre53"><sup class="calibre54"><a href="ch03.xhtml#idm46122430185928-marker" class="pcalibre2 pcalibre calibre45 pcalibre3 pcalibre1">2</a></sup> In 64-bit computers, having 12 KB of memory gives you 725 buckets, and having 52 GB of memory gives you 3,250,000,000 buckets!</p><p data-type="footnote" id="idm46122426718264" class="calibre53"><sup class="calibre54"><a href="ch03.xhtml#idm46122426718264-marker" class="pcalibre2 pcalibre calibre45 pcalibre3 pcalibre1">3</a></sup> The code responsible for this overallocation can be seen in the Python source code in<a data-type="indexterm" data-primary="lists" data-secondary="allocation and" id="li_all" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/> <a href="https://bit.ly/3bFR5hd" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Objects/listobject.c:list_resize</a>.</p></div></div></section></div>
+
+
+
+  </body></html>

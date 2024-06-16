@@ -1,0 +1,1545 @@
+<html><head></head><body><div id="sbo-rt-content" class="calibre2"><section data-type="chapter" epub:type="chapter" data-pdf-bookmark="Chapter 10. Clusters and Job Queues" class="calibre3"><div class="preface" id="clustering">
+<h1 class="calibre23"><span class="publishername">Chapter 10. </span>Clusters and Job Queues</h1>
+
+<aside data-type="sidebar" epub:type="sidebar" class="calibre40"><div class="sidebar" id="idm46122405032232">
+<h5 class="calibre41">Questions You’ll Be Able to Answer After This Chapter</h5>
+<ul class="printings">
+<li class="calibre21">
+<p class="calibre42">Why are clusters useful?</p>
+</li>
+<li class="calibre21">
+<p class="calibre42">What are the costs of clustering?</p>
+</li>
+<li class="calibre21">
+<p class="calibre42">How can I convert a multiprocessing solution into a clustered solution?</p>
+</li>
+<li class="calibre21">
+<p class="calibre42">How does an IPython cluster work?</p>
+</li>
+<li class="calibre21">
+<p class="calibre42">How can I parallelize Pandas using Dask and Swifter?</p>
+</li>
+<li class="calibre21">
+<p class="calibre42">How does NSQ help with making robust production systems?</p>
+</li>
+</ul>
+</div></aside>
+
+<p class="author1"><a data-type="indexterm" data-primary="clustering" id="clu_ch" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>A <em class="hyperlink">cluster</em> is commonly recognized to be a collection of computers working
+together to solve a common task. It could be viewed from the outside as a larger
+single system.</p>
+
+<p class="author1">In the 1990s, the notion
+of using a cluster of commodity PCs on a local area network for clustered
+processing—known as a<a data-type="indexterm" data-primary="Beowulf cluster" id="idm46122405022680" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/> <a href="https://oreil.ly/2aNvw" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Beowulf cluster</a>—became popular.<a data-type="indexterm" data-primary="Google" id="idm46122405021160" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/> <a href="https://oreil.ly/V83g1" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Google</a> later gave the practice a boost by using clusters of commodity PCs in its own data centers, particularly for
+running MapReduce tasks. At the other end of the scale, the<a data-type="indexterm" data-primary="TOP500 project" id="idm46122405019416" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/> <a href="https://oreil.ly/rHOQO" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">TOP500 project</a> ranks the most powerful
+computer systems each year; these typically have a clustered design, and the
+fastest machines all use Linux.</p>
+
+<p class="author1"><a data-type="indexterm" data-primary="Amazon Web Services (AWS)" id="idm46122405017592" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="AWS (Amazon Web Services)" id="idm46122405016920" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="clustering" data-secondary="Amazon Web Services (AWS)" id="idm46122405016280" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>Amazon Web Services (AWS) is commonly used both for engineering production clusters in the cloud and for building on-demand clusters for short-lived tasks like machine learning. With AWS you can rent tiny to huge machines with 10s of CPUs and up to 768 GB of RAM for $1 to $15 an hour. Multiple GPUs can be rented at extra cost. Look at <a data-type="xref" href="#clustering-ipython" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">“Using IPython Parallel to Support Research”</a> and the ElastiCluster package if you’d like to explore AWS or other providers for ad hoc clusters on compute-heavy or RAM-heavy tasks.</p>
+
+<p class="author1">Different computing tasks require different configurations, sizes, and
+capabilities in a cluster. We’ll define some common scenarios in this chapter.</p>
+
+<p class="author1"><em class="hyperlink">Before</em> you move to a clustered solution, do make sure that you have done the 
+<span class="publishername">following</span>:<a data-type="indexterm" data-primary="Numba" data-secondary="compiling with" id="idm46122405011992" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/></p>
+
+<ul class="printings">
+<li class="calibre21">
+<p class="calibre27">Profiled your system so you understand the bottlenecks</p>
+</li>
+<li class="calibre21">
+<p class="calibre27">Exploited compiler solutions like Numba and Cython</p>
+</li>
+<li class="calibre21">
+<p class="calibre27">Exploited multiple cores on a single machine (possibly a big machine with many cores) with Joblib or <code class="calibre26">multiprocessing</code></p>
+</li>
+<li class="calibre21">
+<p class="calibre27">Exploited techniques for using less RAM</p>
+</li>
+</ul>
+
+<p class="author1">Keeping your system to one machine will make your life easier (even if the “one machine” is a really beefy computer with lots of RAM and many CPUs). Move to a cluster if you really need a <em class="hyperlink">lot</em> of CPUs or the ability to process data from disks in parallel, or if you have production needs like high resiliency and rapid speed of response. Most research scenarios do not need resilience or scalability and are limited to few people, so the simplest solution is often the most sensible.</p>
+
+<p class="author1">A benefit of staying on one <em class="hyperlink">large</em> machine is that a tool like <a data-type="indexterm" data-primary="Dask" id="idm46122405004408" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>Dask can quickly parallelize your Pandas or plain Python code with no networking complications. Dask can also control a cluster of machines to parallelize Pandas, NumPy, and pure Python problems. <a data-type="indexterm" data-primary="Swifter" id="idm46122405003368" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>Swifter automatically parallelizes some multicore single-machine cases by piggybacking on Dask. We introduce both Dask and Swifter later in this chapter.</p>
+
+
+
+
+
+
+<section data-type="sect1" data-pdf-bookmark="Benefits of Clustering" class="calibre3"><div class="preface" id="idm46122405002264">
+<h1 class="calibre25">Benefits of Clustering</h1>
+
+<p class="author1"><a data-type="indexterm" data-primary="clustering" data-secondary="benefits of" id="idm46122405000856" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>The most obvious benefit of a cluster is that you can easily
+scale computing requirements—if you need to process more data or to get an
+answer faster, you just add more machines (or <em class="hyperlink">nodes</em>).</p>
+
+<p class="author1">By adding machines, you can also improve reliability. Each machine’s components have a certain likelihood of
+failing, but with a good design, the failure of a number of components will
+not stop the operation of the cluster.</p>
+
+<p class="author1">Clusters are also used to create systems that scale dynamically. A common use
+case is to cluster a set of servers that process web requests or associated
+data (e.g., resizing user photos, transcoding video, or transcribing speech) and
+to activate more servers as demand increases at certain times of the day.</p>
+
+<p class="author1"><a data-type="indexterm" data-primary="dynamic scaling" id="idm46122404964984" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>Dynamic scaling is a very cost-effective way of dealing with nonuniform usage
+patterns, as long as the machine activation time is fast enough to deal with the
+speed of changing demand.</p>
+<div data-type="tip" class="calibre35"><h6 class="calibre36">Tip</h6>
+<p class="author1">Consider the effort versus the reward of building a cluster. Whilst the parallelization gains of a cluster can feel attractive, do consider
+the costs associated with constructing and maintaining a cluster. They fit well for
+long-running processes in a production environment or for well-defined and oft-repeated
+R&amp;D tasks. They are less attractive for variable and short-lived R&amp;D
+tasks.</p>
+</div>
+
+<p class="author1">A subtler benefit of clustering is that clusters can be separated geographically
+but still centrally controlled. If one geographic area suffers an outage (due to a
+flood or power loss, for example), the other cluster can continue to work, perhaps with
+more processing units being added to handle the demand. Clusters also allow you
+to run heterogeneous software environments (e.g., different versions of operating
+systems and processing software), which <em class="hyperlink">might</em> improve the robustness of the overall
+system—note, though, that this is definitely an expert-level topic!</p>
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<section data-type="sect1" data-pdf-bookmark="Drawbacks of Clustering" class="calibre3"><div class="preface" id="idm46122404960776">
+<h1 class="calibre25">Drawbacks of Clustering</h1>
+
+<p class="author1"><a data-type="indexterm" data-primary="clustering" data-secondary="drawbacks of" id="clu_db" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>Moving to a clustered solution requires a change in thinking. This is an
+evolution of the change in thinking required when you move from serial to
+parallel code, as we <span class="publishername">introduced</span> back in <a data-type="xref" href="ch09_split_000.xhtml#multiprocessing" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Chapter 9</a>. Suddenly you
+have to consider what happens when you have more than one machine—you have
+latency between machines, you need to know if your other machines are working, and you need to
+keep all the machines running the same version of your software. System administration is probably your biggest challenge.</p>
+
+<p class="author1">In addition,
+you normally have to think hard about the algorithms you are implementing and
+what happens once you have all these additional moving parts that may need to
+stay in sync.  This additional planning can impose a heavy mental tax; it is
+likely to distract you from your core task, and once a system grows large enough,
+you’ll probably need to add a dedicated engineer to your team.</p>
+<div data-type="note" epub:type="note" class="calibre35"><h6 class="calibre36">Note</h6>
+<p class="author1"><a data-type="indexterm" data-primary="clustering" data-secondary="vertical scaling versus" id="idm46122404954152" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="vertical scaling, clustering versus" id="idm46122404953176" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>We’ve tried to focus on using one machine efficiently in this book
+because we believe that life is easier if you’re dealing
+with only one computer rather than a collection (though we confess it can be <em class="hyperlink">way</em> more
+fun to play with a cluster—until it breaks). If you can scale vertically (by
+buying more RAM or more CPUs), it is worth investigating this approach in
+favor of clustering. Of course, your processing needs may exceed what’s possible
+with vertical scaling, or the robustness of a cluster may be more important than
+having a single machine. If you’re a single person working on this task, though, bear in mind also that running a cluster will suck up some of your time.</p>
+</div>
+
+<p class="author1">When designing a clustered solution, you’ll need to remember that each machine’s
+configuration might be different (each machine will have a different load and
+different local data). How will you get all the right data onto the machine
+that’s processing your job? Does the latency involved in moving the job and the data
+amount to a problem? Do your jobs need to communicate partial results to one
+another? What happens if a process fails or a machine dies or some hardware wipes
+itself when several jobs are running? Failures can be introduced if you don’t
+consider these 
+<span class="publishername">questions</span>.</p>
+
+<p class="author1">You should also consider that failures <em class="hyperlink">can be acceptable</em>. For example, you probably don’t
+need 99.999% reliability when you’re running a content-based web service—if on
+occasion a job fails (e.g., a picture doesn’t get resized quickly enough) and the
+user is required to reload a page, that’s something that everyone is already
+used to. It might not be the solution you want to give to the user, but accepting
+a little bit of failure typically reduces your engineering and management costs
+by a worthwhile margin. On the flip side, if a high-frequency trading system
+experiences failures, the cost of bad stock market trades could be
+considerable!</p>
+
+<p class="author1"><a data-type="indexterm" data-primary="clustering" data-secondary="infrastructure and" id="idm46122404947704" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>Maintaining a fixed infrastructure can become expensive. Machines are relatively
+cheap to purchase, but they have an awful habit of going wrong—automatic
+software upgrades can glitch, network cards fail, disks have write errors,
+power supplies can give spikey power that disrupts data, cosmic rays can flip a
+bit in a RAM module. The more computers you have, the more time will be lost to
+dealing with these issues. Sooner or later you’ll want to bring in a system engineer
+who can deal with these problems, so add another $100,000 to the budget. <a data-type="indexterm" data-primary="cloud-based clustering" id="idm46122404946040" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>Using a
+cloud-based cluster can mitigate a lot of these problems (it costs more, but you
+don’t have to deal with the hardware maintenance), and some cloud providers also
+offer a <a data-type="indexterm" data-primary="spot-priced market" id="idm46122404945048" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a href="http://bit.ly/spot-instances" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">spot-priced market</a> for
+cheap but temporary computing resources.</p>
+
+<p class="author1">An insidious problem with a cluster that grows organically over time is that
+it’s possible no one has documented how to restart it safely if everything gets
+turned off. If you don’t have a documented <a data-type="indexterm" data-primary="clustering" data-secondary="restart plan" id="idm46122404942952" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>restart plan, you should assume
+you’ll have to write one at the worst possible time (one of your authors has been involved in
+debugging this sort of problem on Christmas Eve—this is not the Christmas
+present you want!). At this point you’ll also learn just how long it can take
+each part of a system to get up to speed—it might take minutes for each part
+of a cluster to boot and to start to process jobs, so if you have 10 parts that
+operate in succession, it might take an hour to get the whole system running
+from cold. The consequence is that you might have an hour’s worth of backlogged
+data. Do you then have the necessary capacity to deal with this backlog in a
+timely fashion?</p>
+
+<p class="author1">Slack behavior can be a cause of expensive mistakes, and complex and hard-to-anticipate behavior can cause unexpected and expensive outcomes. Let’s look at
+two high-profile cluster failures and see what lessons we can learn.<a data-type="indexterm" data-primary="" data-startref="clu_db" id="idm46122404940520" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/></p>
+
+
+
+
+
+
+
+
+<section data-type="sect2" data-pdf-bookmark="$462 Million Wall Street Loss Through Poor Cluster Upgrade Strategy" class="calibre3"><div class="preface" id="idm46122404939416">
+<h2 class="calibre43">$462 Million Wall Street Loss Through Poor Cluster Upgrade Strategy</h2>
+
+<p class="author1"><a data-type="indexterm" data-primary="clustering" data-secondary="failures" id="idm46122404938104" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="Knight Capital" id="idm46122404937128" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>In 2012, the high-frequency trading firm <a href="http://bit.ly/Wall_Street_crash" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Knight Capital lost $462 million</a> after a
+bug was introduced during a software upgrade in a cluster.
+The software made orders for more shares than customers had requested.</p>
+
+<p class="author1">In the trading software, an older flag was repurposed for a new function. The
+upgrade was rolled out to seven of the eight live machines, but the eighth machine used
+older code to handle the flag, which resulted in the wrong trades being made. The
+Securities and Exchange Commission (SEC) noted that Knight Capital didn’t have a second technician review the upgrade
+and in fact had no established process for reviewing such an upgrade.</p>
+
+<p class="author1">The underlying mistake seems to have had two causes. The first was that the software
+development process hadn’t removed an obsolete feature, so the stale code stayed
+around. The second was that no manual review process was in place to confirm
+that the upgrade was completed successfully.</p>
+
+<p class="author1">Technical debt adds a cost that eventually has to be paid—preferably by taking
+time when not under pressure to remove the debt. Always use unit tests, both when
+building and when refactoring code. The lack of a written checklist to run through during
+system upgrades, along with a second pair of eyes, could cost you an expensive
+failure. There’s a reason that airplane pilots have to work through a takeoff
+checklist: it means that nobody ever skips the important steps, no matter how
+many times they might have done them before!</p>
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<section data-type="sect2" data-pdf-bookmark="Skype’s 24-Hour Global Outage" class="calibre3"><div class="preface" id="idm46122404932920">
+<h2 class="calibre43">Skype’s 24-Hour Global Outage</h2>
+
+<p class="author1"><a data-type="indexterm" data-primary="Skype" id="idm46122404931672" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>Skype suffered a <a href="http://bit.ly/Skype_outage" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">24-hour planetwide failure</a> in 2010.
+Behind the scenes, Skype is supported by a peer-to-peer network. An overload in
+one part of the system (used to process offline instant messages) caused
+delayed responses from Windows clients; some versions of the Windows client
+didn’t properly handle the delayed responses and crashed. In all, approximately 40%
+of the live clients crashed, including 25% of the <a data-type="indexterm" data-primary="supernodes" id="idm46122404929832" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>public supernodes. Supernodes
+are critical to routing data in the network.</p>
+
+<p class="author1">With 25% of the routing offline (it came back on, but
+slowly), the network overall was under great strain. The crashed Windows client
+nodes were also restarting and attempting to rejoin the network, adding a new
+volume of traffic on the already overloaded system. The supernodes have a
+back-off procedure if they experience too much load, so they started to
+shut down in response to the waves of traffic.</p>
+
+<p class="author1">Skype became largely unavailable for 24 hours. The recovery process
+involved first setting up hundreds of new <a data-type="indexterm" data-primary="mega-supernodes" id="idm46122404927720" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>“mega-supernodes” configured to deal with
+the increased traffic, and then following up with thousands more. Over the coming
+days, the network <span class="publishername">recovered</span>.</p>
+
+<p class="author1">This incident caused a lot of embarrassment for Skype; clearly, it also changed
+its focus to damage limitation for several tense days. Customers were forced to look for alternative solutions for voice calls, which was likely a marketing boon for 
+<span class="publishername">competitors</span>.</p>
+
+<p class="author1">Given the complexity of the network and the escalation of failures that
+occurred, this failure likely would have been hard both to predict
+and to plan for. The reason that <em class="hyperlink">all</em> of the nodes on the network didn’t fail
+was due to different versions of the software and different platforms—there’s
+a reliability benefit to having a heterogeneous network rather than a homogeneous
+system.</p>
+</div></section>
+
+
+
+
+
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<section data-type="sect1" data-pdf-bookmark="Common Cluster Designs" class="calibre3"><div class="preface" id="idm46122404960184">
+<h1 class="calibre25">Common Cluster Designs</h1>
+
+<p class="author1"><a data-type="indexterm" data-primary="clustering" data-secondary="common designs" id="idm46122404921992" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>It is common to start with a local ad hoc cluster of reasonably equivalent
+machines. You might wonder if you can add old computers to an ad hoc network, but
+typically older CPUs eat a lot of power and run very slowly, so they don’t
+contribute nearly as much as you might hope compared to one new,
+high-specification machine. An in-office cluster requires someone who can
+maintain it. A cluster on <a data-type="indexterm" data-primary="Amazon EC2" id="idm46122404920248" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="EC2 (Elastic Compute Cloud)" id="idm46122404919576" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a href="http://aws.amazon.com/ec2" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Amazon’s EC2</a> or<a data-type="indexterm" data-primary="Azure (Microsoft)" id="idm46122404918312" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="Microsoft's Azure" id="idm46122404917576" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/> <a href="http://azure.microsoft.com/en-us" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Microsoft’s Azure</a>, or one run by an academic
+institution, offloads the hardware support to the provider’s team.</p>
+
+<p class="author1">If you have well-understood processing requirements, it might make sense to
+design a custom cluster—perhaps one that uses an InfiniBand high-speed
+interconnect in place of gigabit Ethernet, or one that uses a particular
+configuration of <a data-type="indexterm" data-primary="RAID drives" id="idm46122404915448" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>RAID drives that support your read, write, or resiliency
+requirements. You might want to combine CPUs and GPUs on some machines, or
+just default to CPUs.</p>
+
+<p class="author1">You might want a massively decentralized processing cluster, like the ones used by projects
+such as<a data-type="indexterm" data-primary="SETI@home" id="idm46122404913688" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="Folding@home" id="idm46122404912984" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/> <em class="hyperlink">SETI@home</em> and <em class="hyperlink">Folding@home</em> through<a data-type="indexterm" data-primary="Berkeley Open Infrastructure for Network Computing (BOINC) system" id="idm46122404911320" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="BOINC (Berkeley Open Infrastructure for Network Computing) system" id="idm46122404910536" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/> <a href="https://oreil.ly/jNCA9" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">the Berkeley Open Infrastructure for
+Network Computing (BOINC) system</a>. They share a centralized coordination system, but the computing nodes join
+and leave the project in an ad hoc fashion.</p>
+
+<p class="author1">On top of the hardware design, you can run different software architectures.
+<a data-type="indexterm" data-primary="queues" data-secondary="in cluster design" id="idm46122404908520" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>Queues of work are the most common and easiest to understand. Typically, jobs
+are put onto a queue and consumed by a processor. The result of the processing might
+go onto another queue for further processing, or it might be used as a final result (e.g., being added into a database). <a data-type="indexterm" data-primary="message-passing systems" id="idm46122404907112" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>Message-passing systems are slightly different—messages get put onto a message bus and are then consumed by other machines. The messages might time out and get deleted, and they might be consumed by
+multiple machines. In a more complex system, processes talk to each other
+using <a data-type="indexterm" data-primary="IPC (interprocess communication)" data-secondary="cluster design and" id="idm46122404906008" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>interprocess communication—this can be considered an expert-level
+configuration, as there are lots of ways that you can set it up badly, which will
+result in you losing your sanity. Go down the IPC route only if you really know
+that you need it.</p>
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<section data-type="sect1" data-pdf-bookmark="How to Start a Clustered Solution" class="calibre3"><div class="preface" id="idm46122404904584">
+<h1 class="calibre25">How to Start a Clustered Solution</h1>
+
+<p class="author1"><a data-type="indexterm" data-primary="clustering" data-secondary="starting a clustered system" id="idm46122404903304" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>The easiest way to start a clustered system is to begin with one machine that will run
+both the job server and a job processor (just one job processor for one CPU). If your tasks
+are CPU-bound, run one job processor per CPU; if your tasks are I/O-bound,
+run several per CPU. If they’re RAM-bound, be careful that you don’t
+run out of RAM. Get your single-machine solution working with one processor and then
+add more. Make your code fail in unpredictable ways (e.g., do a <code class="calibre26">1/0</code> in your
+code, use <code class="calibre26">kill -9</code> <em class="hyperlink"><code class="calibre34">&lt;pid&gt;</code></em> on your worker, pull the power plug from the socket so the
+whole machine dies) to check if your system is robust.</p>
+
+<p class="author1">Obviously, you’ll want to do heavier testing than this—a unit test suite full
+of coding errors and artificial exceptions is good. Ian likes to throw
+in unexpected events, like having a processor run a set of jobs while an
+external process is systematically killing important processes and confirming
+that these all get restarted cleanly by whatever monitoring process is being used.</p>
+
+<p class="author1">Once you have one running job processor, add a second. Check that you’re not
+using too much RAM. Do you process jobs twice as fast as before?</p>
+
+<p class="author1">Now introduce a second machine, with just one job processor on that new machine
+and no job processors on the coordinating machine. Does it process jobs as fast
+as when you had the processor on the coordinating machine? If not, why not? Is
+latency a problem? Do you have different configurations? Maybe you have
+different machine hardware, like CPUs, RAM, and cache sizes?</p>
+
+<p class="author1">Now add another nine computers and test to see if you’re processing jobs 10 times
+faster than before. If not, why not? Are network collisions now occurring that
+slow down your overall processing rate?</p>
+
+<p class="author1">To reliably start the cluster’s components when the machine boots, we tend to use
+either a<a data-type="indexterm" data-primary="cron" id="idm46122404896424" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="Circus" id="idm46122404895720" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="supervisord" id="idm46122404895048" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/> <code class="calibre26">cron</code> job, <a href="https://oreil.ly/MCUOQ" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Circus</a>,
+or <a href="http://supervisord.org" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"><code class="calibre26">supervisord</code></a>. Circus and <code class="calibre26">supervisord</code> are both Python-based and have been around for years. <code class="calibre26">cron</code> is old
+but very reliable if you’re just starting scripts like a monitoring process that
+can start subprocesses as required.</p>
+
+<p class="author1">Once you have a reliable cluster, you might want to introduce a random-killer tool
+like <a data-type="indexterm" data-primary="Netflix" id="idm46122404890824" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="Chaos Monkey" id="idm46122404890088" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>Netflix’s <a href="https://oreil.ly/sL5nG" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Chaos Monkey</a>,
+which deliberately kills parts of your system to test them for resiliency. Your
+processes and your hardware will die eventually, and it doesn’t hurt to know that you’re
+likely to survive at least the errors you predict might happen.</p>
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<section data-type="sect1" data-pdf-bookmark="Ways to Avoid Pain When Using Clusters" class="calibre3"><div class="preface" id="idm46122404888216">
+<h1 class="calibre25">Ways to Avoid Pain When Using Clusters</h1>
+
+<p class="author1"><a data-type="indexterm" data-primary="clustering" data-secondary="avoiding problems with" id="idm46122404886872" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>In one particularly painful experience Ian encountered, a series of queues in
+a clustered system ground to a halt. Later queues were not being consumed, so
+they <span class="publishername">filled</span> up. Some of the machines ran out of RAM, so their processes died. Earlier
+queues were being processed but couldn’t pass their results to the next queue,
+so they crashed. In the end the first queue was being filled but not consumed,
+so it crashed. After that, we were paying for data from a supplier that
+ultimately was discarded. You must sketch out some notes to consider the various
+ways your cluster will die and what will happen when (not <em class="hyperlink">if</em>) it does. Will you lose data (and is this a problem)? Will you have a large
+backlog that’s too painful to process?</p>
+
+<p class="author1">Having a system  that’s easy to debug <em class="hyperlink">probably</em> beats having a faster system. Engineering time
+and the cost of downtime are <em class="hyperlink">probably</em> your largest expenses (this isn’t true if
+you’re running a missile defense program, but it is probably true for a
+start-up). Rather than shaving a few bytes by using a low-level compressed
+binary protocol, consider using human-readable text in <a data-type="indexterm" data-primary="JSON" id="idm46122404882344" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>JSON when passing
+messages. It does add an overhead for sending the messages and decoding them, but
+when you’re left with a partial database after a core computer has caught fire,
+you’ll be glad that you can read the important messages quickly as you work to
+bring the system back online.</p>
+
+<p class="author1">Make sure it is cheap in time and money to<a data-type="indexterm" data-primary="clustering" data-secondary="deployments" id="idm46122404880760" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/> deploy updates to the system—both
+operating system updates and new versions of your software. Every time anything
+changes in the cluster, you risk the system responding in odd ways if it is in a
+schizophrenic state. Make sure you use a deployment system like<a data-type="indexterm" data-primary="Fabric" id="idm46122404879032" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="Salt" id="idm46122404878360" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="Chef" id="idm46122404877688" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="Puppet" id="idm46122404877016" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/> <a href="http://www.fabfile.org" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Fabric</a>, <a href="https://oreil.ly/esyVt" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Salt</a>, <a href="http://www.getchef.com" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Chef</a>, or <a href="http://puppetlabs.com" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Puppet</a>, or a system image like a <a data-type="indexterm" data-primary="Debian" id="idm46122404873368" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="Red Hat" id="idm46122404872664" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="Amazon Machine Image" id="idm46122404871992" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>Debian <em class="hyperlink">.deb</em>, a RedHat <em class="hyperlink">.rpm</em>, or an <a href="https://oreil.ly/5eLt4" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Amazon Machine Image</a>. Being able to
+robustly deploy an update that upgrades an entire cluster (with a report on any
+problems found) massively reduces stress during difficult times.</p>
+
+<p class="author1"><a data-type="indexterm" data-primary="clustering" data-secondary="reporting" id="idm46122404869432" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>Positive reporting is useful. Every day, send an email to someone detailing the
+<span class="publishername">performance</span> of the cluster. If that email doesn’t turn up, that’s a useful
+clue that something’s happened. You’ll probably want other early warning systems
+that’ll notify you faster <a data-type="indexterm" data-primary="Pingdom" id="idm46122404867256" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="Server Density" id="idm46122404866552" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>too; <a href="https://www.pingdom.com" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Pingdom</a> and
+<a href="https://www.serverdensity.com" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Server Density</a> are particularly useful
+here. A “dead man’s switch” <a data-type="indexterm" data-primary="Dead Man's Switch" id="idm46122404864376" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>that reacts to the absence of an event (e.g., <a href="http://www.deadmansswitch.net" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Dead Man’s Switch</a>) is another useful backup.</p>
+
+<p class="author1">Reporting to the team on the health of the cluster is very useful. This might be
+an admin page inside a web application, or a separate report.<a data-type="indexterm" data-primary="Ganglia" id="idm46122404862360" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/> <a href="http://ganglia.sourceforge.net" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Ganglia</a> is great for this. Ian has seen a <em class="hyperlink">Star
+Trek</em> LCARS-like interface running on a spare PC in an office that plays the “red
+alert” sound when problems are detected—that’s particularly effective at
+getting the attention of an entire office. We’ve even seen Arduinos driving
+analog instruments like old-fashioned boiler pressure gauges (they make a nice
+sound when the needle moves!) showing system load. This kind of reporting is
+important so that everyone understands the difference between “normal” and “this
+might ruin our Friday night!”</p>
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<section data-type="sect1" data-pdf-bookmark="Two Clustering Solutions" class="calibre3"><div class="preface" id="idm46122404859672">
+<h1 class="calibre25">Two Clustering Solutions</h1>
+
+<p class="author1">In this section we introduce IPython Parallel and NSQ.</p>
+
+<p class="author1"><a data-type="indexterm" data-primary="clustering" data-secondary="IPython" id="idm46122404857848" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="IPython" id="idm46122404856872" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>IPython clusters are easy to use on one machine with multiple cores. Since many researchers use IPython as their shell or work through <a data-type="indexterm" data-primary="Jupyter Notebooks" id="idm46122404855928" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>Jupyter Notebooks, it is natural to also use it for parallel job control. Building a cluster requires a little bit of system administration knowledge. A huge win with IPython Parallel is that you can use remote clusters (Amazon’s AWS and EC2, for example) just as easily as local clusters.</p>
+
+<p class="author1"><a data-type="indexterm" data-primary="clustering" data-secondary="NSQ" id="idm46122404854568" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="NSQ" data-secondary="about" id="idm46122404853592" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>NSQ is a production-ready queuing system. It
+has persistence (so if machines die, jobs can be picked up again by another
+machine) and strong mechanisms for scalability.  With this greater power comes a
+slightly greater need for system administration and engineering skills. However,
+NSQ shines in its simplicity and ease of use. While many queuing systems exist<a data-type="indexterm" data-primary="Kafka" id="idm46122404852136" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>
+(such as the popular <a href="https://kafka.apache.org" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Kafka</a>), none have such
+as low a barrier for entry as NSQ.</p>
+
+
+
+
+
+
+
+
+<section data-type="sect2" data-pdf-bookmark="Using IPython Parallel to Support Research" class="calibre3"><div class="preface" id="clustering-ipython">
+<h2 class="calibre43">Using IPython Parallel to Support Research</h2>
+
+<p class="author1"><a data-type="indexterm" data-primary="clustering" data-secondary="IPython Parallel and" id="clu_ipp" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="IPython Parallel" id="ipp_ab" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>The IPython clustering support comes via the <a href="https://oreil.ly/SAV5i" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">IPython Parallel</a> project. IPython becomes an
+interface to local and remote processing engines where data can be pushed
+among the engines and jobs can be pushed to remote machines. Remote debugging
+is possible, and the <a data-type="indexterm" data-primary="MPI (message passing interface)" id="idm46122404844968" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>message passing interface (MPI) is optionally supported. This same <a data-type="indexterm" data-primary="ZeroMQ" id="idm46122404844120" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>ZeroMQ communication mechanism powers the Jupyter Notebook interface.</p>
+
+<p class="author1">This is great for a research
+setting—you can push jobs to machines in a local cluster, interact and debug
+if there’s a problem, push data to machines, and collect results back, all
+interactively. Note also that <a data-type="indexterm" data-primary="PyPy" data-secondary="IPython/IPython Parallel and" id="idm46122404842552" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>PyPy runs IPython and IPython Parallel. The combination might be very powerful (if you don’t use <code class="calibre26">numpy</code>).</p>
+
+<p class="author1">Behind the scenes, ZeroMQ is used as the messaging middleware—be aware that <span class="publishername">ZeroMQ</span> provides no security by design. If you’re building a cluster on a local network, you
+can avoid SSH <span class="publishername">authentication</span>. If you need security, SSH is fully
+supported, but it makes configuration a little more involved—start on a local
+trusted network and build out as you learn how each component works.</p>
+
+<p class="author1">The project is split into four components. An<a data-type="indexterm" data-primary="engine" id="idm46122404838216" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/> <em class="hyperlink">engine</em> is an extension of the IPython kernel; it is a synchronous Python
+interpreter that runs your code. You’ll run a set of engines to enable parallel
+computing. A<a data-type="indexterm" data-primary="controller" id="idm46122404836440" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/> <em class="hyperlink">controller</em> provides an interface to the engines; it is
+responsible for work distribution and supplies a<a data-type="indexterm" data-primary="direct interface" id="idm46122404835080" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/> <em class="hyperlink">direct</em> interface and a<a data-type="indexterm" data-primary="load-balanced interface" id="idm46122404833832" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/> <em class="hyperlink">load-balanced</em> interface that provides a work scheduler. A <a data-type="indexterm" data-primary="hub" id="idm46122404832488" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><em class="hyperlink">hub</em> keeps track of
+engines, schedulers, and clients.<a data-type="indexterm" data-primary="schedulers" id="idm46122404831336" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/> <em class="hyperlink">Schedulers</em> hide the synchronous nature of the
+engines and provide an asynchronous interface.</p>
+
+<p class="author1">On the laptop, we start four engines using <code class="calibre26">ipcluster start -n 4</code>. In
+<a data-type="xref" href="#cluster-ipython-firsttest" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Example 10-1</a>, we start IPython and check that a local <code class="calibre26">Client</code>
+can see our four local engines. We can address all four engines using <code class="calibre26">c[:]</code>, and we
+apply a function to each engine—<code class="calibre26">apply_sync</code> takes a callable, so we supply a zero-argument <code class="calibre26">lambda</code> that will return a string. Each of our four local engines will
+run one of these functions, returning the same result.</p>
+<div id="cluster-ipython-firsttest" data-type="example" class="calibre56">
+<h5 class="calibre58"><span class="publishername">Example 10-1. </span>Testing that we can see the local engines in IPython</h5>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre59"><code class="n">In</code> <code class="p">[</code><code class="mi">1</code><code class="p">]:</code> <code class="kn">import</code> <code class="nn">ipyparallel</code> <code class="kn">as</code> <code class="nn">ipp</code>
+
+<code class="n">In</code> <code class="p">[</code><code class="mi">2</code><code class="p">]:</code> <code class="n">c</code> <code class="o">=</code> <code class="n">ipp</code><code class="o">.</code><code class="n">Client</code><code class="p">()</code>
+
+<code class="n">In</code> <code class="p">[</code><code class="mi">3</code><code class="p">]:</code> <code class="kn">print</code><code class="p">(</code><code class="n">c</code><code class="o">.</code><code class="n">ids</code><code class="p">)</code>
+<code class="p">[</code><code class="mi">0</code><code class="p">,</code> <code class="mi">1</code><code class="p">,</code> <code class="mi">2</code><code class="p">,</code> <code class="mi">3</code><code class="p">]</code>
+
+<code class="n">In</code> <code class="p">[</code><code class="mi">4</code><code class="p">]:</code> <code class="n">c</code><code class="p">[:]</code><code class="o">.</code><code class="n">apply_sync</code><code class="p">(</code><code class="kn">lambda</code><code class="p">:</code> <code class="s">"Hello High Performance Pythonistas!"</code><code class="p">)</code>
+<code class="n">Out</code><code class="p">[</code><code class="mi">4</code><code class="p">]:</code>
+<code class="p">[</code><code class="s">'Hello High Performance Pythonistas!'</code><code class="p">,</code>
+ <code class="s">'Hello High Performance Pythonistas!'</code><code class="p">,</code>
+ <code class="s">'Hello High Performance Pythonistas!'</code><code class="p">,</code>
+ <code class="s">'Hello High Performance Pythonistas!'</code><code class="p">]</code></pre></div>
+
+<p class="author1">The engines we’ve constructed are now in an empty state. If we import
+modules locally, they won’t be imported into the remote engines.</p>
+
+<p class="author1">A clean way to
+import both locally and remotely is to use the <code class="calibre26">sync_imports</code> context manager. In
+<a data-type="xref" href="#cluster-ipython-secondtest" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Example 10-2</a>, we’ll <code class="calibre26">import os</code> on both the local IPython and
+the four connected engines and then call <code class="calibre26">apply_sync</code> again on the four engines to fetch
+their PIDs.</p>
+
+<p class="author1">If we didn’t do the remote imports, we’d get a <code class="calibre26">NameError</code>, as
+the remote engines wouldn’t know about the <code class="calibre26">os</code> module. We can also use
+<code class="calibre26">execute</code> to run any Python command remotely on the engines.</p>
+<div id="cluster-ipython-secondtest" data-type="example" class="calibre56">
+<h5 class="calibre58"><span class="publishername">Example 10-2. </span>Importing modules into our remote engines</h5>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre59"><code class="n">In</code> <code class="p">[</code><code class="mi">5</code><code class="p">]:</code> <code class="n">dview</code><code class="o">=</code><code class="n">c</code><code class="p">[:]</code>  <code class="c"># this is a direct view (not a load-balanced view)</code>
+
+<code class="n">In</code> <code class="p">[</code><code class="mi">6</code><code class="p">]:</code> <code class="kn">with</code> <code class="n">dview</code><code class="o">.</code><code class="n">sync_imports</code><code class="p">():</code>
+   <code class="o">....</code><code class="p">:</code>     <code class="kn">import</code> <code class="nn">os</code>
+   <code class="o">....</code><code class="p">:</code>
+<code class="n">importing</code> <code class="n">os</code> <code class="n">on</code> <code class="n">engine</code><code class="p">(</code><code class="n">s</code><code class="p">)</code>
+
+<code class="n">In</code> <code class="p">[</code><code class="mi">7</code><code class="p">]:</code> <code class="n">dview</code><code class="o">.</code><code class="n">apply_sync</code><code class="p">(</code><code class="kn">lambda</code><code class="p">:</code><code class="n">os</code><code class="o">.</code><code class="n">getpid</code><code class="p">())</code>
+<code class="n">Out</code><code class="p">[</code><code class="mi">7</code><code class="p">]:</code> <code class="p">[</code><code class="mi">16158</code><code class="p">,</code> <code class="mi">16159</code><code class="p">,</code> <code class="mi">16160</code><code class="p">,</code> <code class="mi">16163</code><code class="p">]</code>
+
+<code class="n">In</code> <code class="p">[</code><code class="mi">8</code><code class="p">]:</code> <code class="n">dview</code><code class="o">.</code><code class="n">execute</code><code class="p">(</code><code class="s">"import sys"</code><code class="p">)</code>  <code class="c"># another way to execute commands remotely</code></pre></div>
+
+<p class="author1">You’ll want to push data to the engines. The <code class="calibre26">push</code> command shown in
+<a data-type="xref" href="#cluster-ipython-pushdata" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Example 10-3</a> lets you send a dictionary of items that are added
+to the global namespace of each engine. There’s a corresponding <code class="calibre26">pull</code> to
+retrieve items: you give it keys, and it’ll return the corresponding values from
+each of the engines.</p>
+<div id="cluster-ipython-pushdata" data-type="example" class="calibre56">
+<h5 class="calibre58"><span class="publishername">Example 10-3. </span>Pushing shared data to the engines</h5>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre59"><code class="n">In</code> <code class="p">[</code><code class="mi">9</code><code class="p">]:</code> <code class="n">dview</code><code class="o">.</code><code class="n">push</code><code class="p">({</code><code class="s">'shared_data'</code><code class="p">:[</code><code class="mi">50</code><code class="p">,</code> <code class="mi">100</code><code class="p">]})</code>
+<code class="n">Out</code><code class="p">[</code><code class="mi">9</code><code class="p">]:</code> <code class="o">&lt;</code><code class="n">AsyncResult</code><code class="p">:</code> <code class="n">_push</code><code class="o">&gt;</code>
+
+<code class="n">In</code> <code class="p">[</code><code class="mi">10</code><code class="p">]:</code> <code class="n">dview</code><code class="o">.</code><code class="n">apply_sync</code><code class="p">(</code><code class="kn">lambda</code><code class="p">:</code><code class="nb">len</code><code class="p">(</code><code class="n">shared_data</code><code class="p">))</code>
+<code class="n">Out</code><code class="p">[</code><code class="mi">10</code><code class="p">]:</code> <code class="p">[</code><code class="mi">2</code><code class="p">,</code> <code class="mi">2</code><code class="p">,</code> <code class="mi">2</code><code class="p">,</code> <code class="mi">2</code><code class="p">]</code></pre></div>
+
+<p class="author1">In <a data-type="xref" href="#cluster-ipython-pi" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Example 10-4</a>, we use these four engines to
+estimate pi. This time we use the
+<code class="calibre26">@require</code> decorator to import the <code class="calibre26">random</code> module in the engines. We use a
+direct view to send our work out to the engines; this blocks until all the
+results come back. Then we estimate pi as we did in <a data-type="xref" href="ch09_split_000.xhtml#code-pi-lists-calculation" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Example 9-1</a>.</p>
+<div id="cluster-ipython-pi" data-type="example" class="calibre56">
+<h5 class="calibre58"><span class="publishername">Example 10-4. </span>Estimating pi using our local cluster</h5>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre59"><code class="kn">import</code> <code class="nn">time</code>
+<code class="kn">import</code> <code class="nn">ipyparallel</code> <code class="kn">as</code> <code class="nn">ipp</code>
+<code class="kn">from</code> <code class="nn">ipyparallel</code> <code class="kn">import</code> <code class="n">require</code>
+
+<code class="nd">@require</code><code class="p">(</code><code class="s">'random'</code><code class="p">)</code>
+<code class="kn">def</code> <code class="nf">estimate_nbr_points_in_quarter_circle</code><code class="p">(</code><code class="n">nbr_estimates</code><code class="p">):</code>
+    <code class="o">...</code>
+    <code class="kn">return</code> <code class="n">nbr_trials_in_quarter_unit_circle</code>
+
+<code class="kn">if</code> <code class="calibre26">__name__</code> <code class="o">==</code> <code class="s">"__main__"</code><code class="p">:</code>
+    <code class="n">c</code> <code class="o">=</code> <code class="n">ipp</code><code class="o">.</code><code class="n">Client</code><code class="p">()</code>
+    <code class="n">nbr_engines</code> <code class="o">=</code> <code class="nb">len</code><code class="p">(</code><code class="n">c</code><code class="o">.</code><code class="n">ids</code><code class="p">)</code>
+    <code class="kn">print</code><code class="p">(</code><code class="s">"We're using {} engines"</code><code class="o">.</code><code class="n">format</code><code class="p">(</code><code class="n">nbr_engines</code><code class="p">))</code>
+    <code class="n">nbr_samples_in_total</code> <code class="o">=</code> <code class="mi">1e8</code>
+    <code class="n">nbr_parallel_blocks</code> <code class="o">=</code> <code class="mi">4</code>
+
+    <code class="n">dview</code> <code class="o">=</code> <code class="n">c</code><code class="p">[:]</code>
+
+    <code class="n">nbr_samples_per_worker</code> <code class="o">=</code> <code class="n">nbr_samples_in_total</code> <code class="o">/</code> <code class="n">nbr_parallel_blocks</code>
+    <code class="n">t1</code> <code class="o">=</code> <code class="n">time</code><code class="o">.</code><code class="n">time</code><code class="p">()</code>
+    <code class="n">nbr_in_quarter_unit_circles</code> <code class="o">=</code> \
+
+	     <code class="n">dview</code><code class="o">.</code><code class="n">apply_sync</code><code class="p">(</code><code class="n">estimate_nbr_points_in_quarter_circle</code><code class="p">,</code>
+                         <code class="n">nbr_samples_per_worker</code><code class="p">)</code>
+    <code class="kn">print</code><code class="p">(</code><code class="s">"Estimates made:"</code><code class="p">,</code> <code class="n">nbr_in_quarter_unit_circles</code><code class="p">)</code>
+
+    <code class="n">nbr_jobs</code> <code class="o">=</code> <code class="nb">len</code><code class="p">(</code><code class="n">nbr_in_quarter_unit_circles</code><code class="p">)</code>
+    <code class="n">pi_estimate</code> <code class="o">=</code> <code class="nb">sum</code><code class="p">(</code><code class="n">nbr_in_quarter_unit_circles</code><code class="p">)</code> <code class="o">*</code> <code class="mi">4</code> <code class="o">/</code> <code class="n">nbr_samples_in_total</code>
+    <code class="kn">print</code><code class="p">(</code><code class="s">"Estimated pi"</code><code class="p">,</code> <code class="n">pi_estimate</code><code class="p">)</code>
+    <code class="kn">print</code><code class="p">(</code><code class="s">"Delta:"</code><code class="p">,</code> <code class="n">time</code><code class="o">.</code><code class="n">time</code><code class="p">()</code> <code class="o">-</code> <code class="n">t1</code><code class="p">)</code></pre></div>
+
+<p class="author1">In <a data-type="xref" href="#cluster-ipython-pi-2" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Example 10-5</a> we run this on our four local engines. As in <a data-type="xref" href="ch09_split_000.xhtml#FIG-pi_monte_carlo_lists_4_processes" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Figure 9-5</a>, this takes approximately 20 seconds on the laptop.</p>
+<div id="cluster-ipython-pi-2" data-type="example" class="calibre56">
+<h5 class="calibre58"><span class="publishername">Example 10-5. </span>Estimating pi using our local cluster in IPython</h5>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre59"><code class="n">In</code> <code class="p">[</code><code class="mi">1</code><code class="p">]:</code> <code class="o">%</code><code class="n">run</code> <code class="n">pi_ipython_cluster</code><code class="o">.</code><code class="n">py</code>
+<code class="n">We</code><code class="s">'re using 4 engines</code>
+<code class="n">Estimates</code> <code class="n">made</code><code class="p">:</code> <code class="p">[</code><code class="mi">19636752</code><code class="p">,</code> <code class="mi">19634225</code><code class="p">,</code> <code class="mi">19635101</code><code class="p">,</code> <code class="mi">19638841</code><code class="p">]</code>
+<code class="n">Estimated</code> <code class="n">pi</code> <code class="mi">3.14179676</code>
+<code class="n">Delta</code><code class="p">:</code> <code class="mi">20.68650197982788</code></pre></div>
+
+<p class="author1">IPython Parallel offers much more than what’s shown here. Asynchronous jobs and
+mappings over larger input ranges are, of course, possible. MPI is supported, which can provide efficient data
+sharing. The <a data-type="indexterm" data-primary="Joblib" id="idm46122404275256" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>Joblib library introduced in <a data-type="xref" href="ch09_split_000.xhtml#replacing-multiprocessing-with-joblib" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">“Replacing multiprocessing with Joblib”</a>
+can use IPython Parallel as a backend along with Dask (which we introduce in <a data-type="xref" href="#clustering-dask" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">“Parallel Pandas with Dask”</a>).</p>
+
+<p class="author1">One particularly powerful feature of IPython Parallel is that it allows you to use larger clustering environments, including
+supercomputers and cloud services like Amazon’s EC2. The<a data-type="indexterm" data-primary="ElastiCluster" id="idm46122404345672" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/> <a href="https://elasticluster.readthedocs.io" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">ElastiCluster project</a> has support for common parallel environments such as IPython and for deployment targets, including AWS, Azure, and OpenStack.<a data-type="indexterm" data-primary="" data-startref="cli_ipp" id="idm46122404344040" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="" data-startref="ipp_ab" id="idm46122404339688" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/></p>
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<section data-type="sect2" data-pdf-bookmark="Parallel Pandas with Dask" class="calibre3"><div class="preface" id="clustering-dask">
+<h2 class="calibre43">Parallel Pandas with Dask</h2>
+
+<p class="author1"><a data-type="indexterm" data-primary="clustering" data-secondary="Dask" id="clu_da" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="Dask" id="da_ab" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="array (data structure)" data-secondary="about" id="arr_ab" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>Dask aims to provide a suite of parallelization solutions that scales from a single core on a laptop to multicore machines to thousands of cores in a cluster. Think of it as “Apache Spark lite.” If you don’t need all of Apache Spark’s functionality (which includes replicated writes and multimachine failover) and you don’t want to support a second computation and storage environment, then Dask may provide the parallelized and bigger-than-RAM solution you’re after.</p>
+
+<p class="author1">A task graph is constructed for the lazy evaluation of a number of computation scenarios, including pure Python, scientific Python, and machine learning with small, medium, and big datasets:</p>
+<dl class="calibre28">
+<dt class="calibre29"><a data-type="indexterm" data-primary="bag" id="idm46122404331688" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>Bag</dt>
+<dd class="calibre30">
+<p class="calibre31"><code class="calibre26">bag</code> enables parallelized computation on unstructured and semistructured data, including text files, JSON or user-defined objects. <code class="calibre26">map</code>, <code class="calibre26">filter</code>, and <code class="calibre26">groupby</code> are supported on generic Python objects, including lists and sets.</p>
+</dd>
+<dt class="calibre29">Array</dt>
+<dd class="calibre30">
+<p class="calibre31"><code class="calibre26">array</code> enables distributed and larger-than-RAM <code class="calibre26">numpy</code> operations. Many common operations are supported, including some linear algebra functions. Operations that are inefficient across cores (sorting, for example, and many linear algebra operations) are not supported. Threads are used, as NumPy has good thread support, so data doesn’t have to be copied during parallelized operations.</p>
+</dd>
+<dt class="calibre29"><a data-type="indexterm" data-primary="Distributed DataFrame" id="idm46122404325560" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>Distributed DataFrame</dt>
+<dd class="calibre30">
+<p class="calibre31"><code class="calibre26">dataframe</code> enables distributed and larger-than-RAM <code class="calibre26">Pandas</code> operations; behind the scenes, Pandas is used to represent partial DataFrames that have been partitioned using their index. Operations are lazily computed using <code class="calibre26">.compute()</code> and otherwise look very similar to their Pandas counterparts. Supported functions include <code class="calibre26">groupby-aggregate</code>, <code class="calibre26">groupby-apply</code>, <code class="calibre26">value_counts</code>, <code class="calibre26">drop_duplicates</code>, and <code class="calibre26">merge</code>. By default, threads are used, but as Pandas is more GIL-bound than NumPy, you may want to look at the Process or Distributed scheduler options.</p>
+</dd>
+<dt class="calibre29"><a data-type="indexterm" data-primary="visualize() function" id="idm46122404319704" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="delayed" id="idm46122404319000" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>Delayed</dt>
+<dd class="calibre30">
+<p class="calibre31"><code class="calibre26">delayed</code> extends the idea we introduced with Joblib in <a data-type="xref" href="ch09_split_000.xhtml#replacing-multiprocessing-with-joblib" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">“Replacing multiprocessing with Joblib”</a> to parallelize <em class="hyperlink">chains</em> of arbitrary Python functions in a lazy fashion. A <code class="calibre26">visualize()</code> function will draw the task graph to assist in diagnosing issues.</p>
+</dd>
+<dt class="calibre29"><a data-type="indexterm" data-primary="Client interface" id="idm46122404315128" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="Future interface" id="idm46122404314424" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>Futures</dt>
+<dd class="calibre30">
+<p class="calibre31">The <code class="calibre26">Client</code> interface enables immediate execution and evolution of tasks, unlike <code class="calibre26">delayed</code>, which is lazy and doesn’t allow operations like adding or destroying tasks. The <code class="calibre26">Future</code> interface includes <code class="calibre26">Queue</code> and <code class="calibre26">Lock</code> to support task 
+<span class="publishername">collaboration</span>.</p>
+</dd>
+<dt class="calibre29"><a data-type="indexterm" data-primary="TensorFlow" id="idm46122404309448" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="XGBoost" id="idm46122404247704" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="scikit-learn" data-secondary="algorithms" id="idm46122404247096" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="Spark (Apache)" id="idm46122404246248" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="Apache Spark" id="idm46122404245640" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="Dask-ML" id="idm46122404245000" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>Dask-ML</dt>
+<dd class="calibre30">
+<p class="calibre31">A scikit-learn-like interface is provided for scalable machine learning. Dask-ML provides cluster support to some scikit-learn algorithms, and it reimplements some algorithms (e.g., the <code class="calibre26">linear_model</code> set) using Dask to enable learning on big data. It closes some of the gap to the Apache Spark distributed machine learning toolkit. It also provides support for XGBoost and TensorFlow to be used in a Dask cluster.</p>
+</dd>
+</dl>
+
+<p class="author1">For Pandas users, Dask can help in two use cases: larger-than-RAM datasets and a desire for multicore parallelization.<a data-type="indexterm" data-primary="" data-startref="arr_ab" id="idm46122404242104" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/></p>
+
+<p class="author1">If your dataset is larger than Pandas can fit into RAM, Dask can split the dataset by rows into a set of partitioned DataFrames called a <em class="hyperlink">Distributed DataFrame</em>. These DataFrames are split by their index; a subset of operations can be performed across each partition. As an example, if you have a set of multi-GB CSV files and want to calculate <code class="calibre26">value_counts</code> across all the files, Dask will perform partial <code class="calibre26">value_counts</code> on each DataFrame (one per file) and then combine the results into a single set of counts.</p>
+
+<p class="author1">A second use case is to take advantage of the multiple cores on your laptop (and just as easily across a cluster); we’ll examine this use case here.  Recall that in <a data-type="xref" href="ch06_split_001.xhtml#pandas_ols_functions" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Example 6-24</a>, we calculated the slope of the line across rows of values in a DataFrame with various approaches. Let’s use the two fastest approaches and parallelize them with Dask.</p>
+<div data-type="tip" class="calibre35"><h6 class="calibre36">Tip</h6>
+<p class="author1">You can use Dask (and Swifter, discussed in the next section) to parallelize any side-effect-free function that you’d usually use in an <code class="calibre26">apply</code> call. Ian has done this for numeric calculations and for calculating text metrics on multiple columns of text in a large DataFrame.</p>
+</div>
+
+<p class="author1">With Dask, we have to specify the number of<a data-type="indexterm" data-primary="partitions" id="idm46122404235032" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/> <em class="hyperlink">partitions</em> to make from our DataFrame; a good rule of thumb is to use at least as many partitions as cores so that each core can be used. In <a data-type="xref" href="#calculate-ols-dask" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Example 10-6</a>, we ask for eight partitions. We use <code class="calibre26">dd.from_pandas</code> to convert our regular Pandas DataFrame into a Dask Distributed DataFrame split into eight equal-sized sections.</p>
+
+<p class="author1">We call our familiar <code class="calibre26">ddf.apply</code> on the Distributed DataFrame, specifying our function <code class="calibre26">ols_lstsq</code> and the optional expected return type via the <code class="calibre26">meta</code> argument. Dask requires us to specify when we should apply the computation with the <code class="calibre26">compute()</code> call; here, we specify the use of <code class="calibre26">processes</code> rather than the default <code class="calibre26">threads</code> to spread our work over multiple cores, avoiding Python’s GIL.</p>
+<div id="calculate-ols-dask" data-type="example" class="calibre56">
+<h5 class="calibre58"><span class="publishername">Example 10-6. </span>Calculating line slopes with multiple cores using Dask</h5>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre59"><code class="kn">import</code> <code class="nn">dask.dataframe</code> <code class="kn">as</code> <code class="nn">dd</code>
+
+<code class="n">N_PARTITIONS</code> <code class="o">=</code> <code class="mi">8</code>
+<code class="n">ddf</code> <code class="o">=</code> <code class="n">dd</code><code class="o">.</code><code class="n">from_pandas</code><code class="p">(</code><code class="n">df</code><code class="p">,</code> <code class="n">npartitions</code><code class="o">=</code><code class="n">N_PARTITIONS</code><code class="p">,</code> <code class="n">sort</code><code class="o">=</code><code class="nb">False</code><code class="p">)</code>
+<code class="n">SCHEDULER</code> <code class="o">=</code> <code class="s">"processes"</code>
+
+<code class="n">results</code> <code class="o">=</code> <code class="n">ddf</code><code class="o">.</code><code class="n">apply</code><code class="p">(</code><code class="n">ols_lstsq</code><code class="p">,</code> <code class="n">axis</code><code class="o">=</code><code class="mi">1</code><code class="p">,</code> <code class="n">meta</code><code class="o">=</code><code class="p">(</code><code class="nb">None</code><code class="p">,</code> <code class="s">'float64'</code><code class="p">,))</code><code class="o">.</code> \
+              <code class="n">compute</code><code class="p">(</code><code class="n">scheduler</code><code class="o">=</code><code class="n">SCHEDULER</code><code class="p">)</code></pre></div>
+
+<p class="author1">Running <code class="calibre26">ols_lstsq_raw</code> in <a data-type="xref" href="#calculate-ols-dask-raw" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Example 10-7</a> with the same eight partitions (on four cores with four hyperthreads) in Ian’s laptop, we go from the previous single-threaded <code class="calibre26">apply</code> result of 6.8 seconds to 1.5 seconds—almost a 5× speedup.</p>
+<div id="calculate-ols-dask-raw" data-type="example" class="calibre56">
+<h5 class="calibre58"><span class="publishername">Example 10-7. </span>Calculating line slopes with multiple cores using Dask</h5>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre59"><code class="n">results</code> <code class="o">=</code> <code class="n">ddf</code><code class="o">.</code><code class="n">apply</code><code class="p">(</code><code class="n">ols_lstsq_raw</code><code class="p">,</code> <code class="n">axis</code><code class="o">=</code><code class="mi">1</code><code class="p">,</code> <code class="n">meta</code><code class="o">=</code><code class="p">(</code><code class="nb">None</code><code class="p">,</code> <code class="s">'float64'</code><code class="p">,),</code> <code class="n">raw</code><code class="o">=</code><code class="nb">True</code><code class="p">)</code><code class="o">.</code> \
+              <code class="n">compute</code><code class="p">(</code><code class="n">scheduler</code><code class="o">=</code><code class="n">SCHEDULER</code><code class="p">)</code></pre></div>
+
+<p class="author1">Running <code class="calibre26">ols_lstsq_raw</code> with the same eight partitions takes us from the previous single-threaded <code class="calibre26">apply</code> result of 5.3 seconds with <code class="calibre26">raw=True</code> to 1.2 seconds—also almost a 5× speedup.</p>
+
+<p class="author1">If we also use the compiled Numba function from <a data-type="xref" href="ch07.xhtml#compiling-numba-for-pandas" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">“Numba to Compile NumPy for Pandas”</a>  with <code class="calibre26">raw=True</code>, our runtime drops from 0.58 seconds to 0.3 seconds—a further 2× speedup. Functions compiled with Numba using NumPy arrays on Pandas DataFrames work well with Dask for very little effort.</p>
+
+
+
+
+
+
+
+
+
+
+<section data-type="sect3" data-pdf-bookmark="Parallelized apply with Swifter on Dask" class="calibre3"><div class="preface" id="clustering-dask-swiftly">
+<h3 class="calibre51">Parallelized apply with Swifter on Dask</h3>
+
+<p class="author1"><a data-type="indexterm" data-primary="Swifter" id="idm46122404152424" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a href="https://oreil.ly/1SOcL" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Swifter</a> builds on Dask to provide three parallelized options with very simple calls—<code class="calibre26">apply</code>, <code class="calibre26">resample</code>, and <code class="calibre26">rolling</code>. Behind the scenes, it takes a subsample of your DataFrame and attempts to vectorize your function call. If that works, Swifter will apply it; if it works but it is slow, Swifter will run it on multiple cores using Dask.</p>
+
+<p class="author1">Since Swifter uses heuristics to determine how to run your code, it could run slower than if you didn’t use it at all—but the “cost” of trying it is one line of effort. It is well worth evaluating.</p>
+
+<p class="author1">Swifter makes its own decisions about how many cores to use with Dask and how many rows to sample for its evaluation; as a result, in <a data-type="xref" href="#calculate-ols-swiftly" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Example 10-8</a> we see the call to <code class="calibre26">df.swifter...apply()</code> looks just like a regular call to <code class="calibre26">df.apply</code>. In this case, we’ve disabled the progress bar; the progress bar works fine in a Jupyter Notebook using the excellent <code class="calibre26">tqdm</code> library.</p>
+<div id="calculate-ols-swiftly" data-type="example" class="calibre56">
+<h5 class="calibre58"><span class="publishername">Example 10-8. </span>Calculating line slopes with multiple cores using Dask</h5>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre59"><code class="kn">import</code> <code class="nn">swifter</code>
+
+<code class="n">results</code> <code class="o">=</code> <code class="n">df</code><code class="o">.</code><code class="n">swifter</code><code class="o">.</code><code class="n">progress_bar</code><code class="p">(</code><code class="nb">False</code><code class="p">)</code><code class="o">.</code><code class="n">apply</code><code class="p">(</code><code class="n">ols_lstsq_raw</code><code class="p">,</code> <code class="n">axis</code><code class="o">=</code><code class="mi">1</code><code class="p">,</code> <code class="n">raw</code><code class="o">=</code><code class="nb">True</code><code class="p">)</code></pre></div>
+
+<p class="author1">Swifter with <code class="calibre26">ols_lstsq_raw</code> and no partitioning choices takes our previous single-threaded result of 5.3 seconds down to 1.6 seconds. For this particular function and dataset, this is not as fast as the slightly longer Dask solution we’ve just looked at, but it does offer a 3× speedup for only one line of code. For different functions and datasets, you’ll see different results; it is definitely worth an experiment to see whether you can <span class="publishername">achieve</span> a very easy win.</p>
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<section data-type="sect3" data-pdf-bookmark="Vaex for bigger-than-RAM DataFrames" class="calibre3"><div class="preface" id="idm46122404043896">
+<h3 class="calibre51">Vaex for bigger-than-RAM DataFrames</h3>
+
+<p class="author1"><a data-type="indexterm" data-primary="Vaex" id="idm46122404033432" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a href="https://vaex.io" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Vaex</a> is an intriguing new library that provides a Pandas DataFrame–like structure that has built-in support for larger-than-RAM computations. It neatly combines the features of Pandas and Dask into a single package.</p>
+
+<p class="author1">Vaex uses lazy computation to compute column results just-in-time; it’ll compute on only the subset of rows required by the user. If, for example, you ask for a sum on a billion rows between two columns and you ask for only a <em class="hyperlink">sample</em> of those rows as the result, Vaex will touch only the data for that sample and will not compute the sum for all of the nonsampled rows. For interactive work and visualization-driven investigation, this can be very efficient.</p>
+
+<p class="author1"><a data-type="indexterm" data-primary="CPython" data-secondary="support of strings" id="idm46122404030248" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>Pandas’s support of strings comes from CPython; it is GIL-bound, and the string objects are larger objects that are scattered in memory and do not support vectorized operations. Vaex uses its own custom string library, which enables significantly faster string-based operations with a similar Pandas-like interface.</p>
+
+<p class="author1">If you’re working on string-heavy DataFrames or larger-than-RAM datasets, Vaex is an obvious choice for evaluation. If you commonly work on subsets of a DataFrame, the implicit lazy evaluation may make your workflow simpler than adding Dask to Pandas DataFrames.<a data-type="indexterm" data-primary="" data-startref="clu_da" id="idm46122404028136" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="" data-startref="da_ab" id="idm46122404027160" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/></p>
+</div></section>
+
+
+
+</div></section>
+
+
+
+
+
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<section data-type="sect1" data-pdf-bookmark="NSQ for Robust Production Clustering" class="calibre3"><div class="preface" id="nsq">
+<h1 class="calibre25">NSQ for Robust Production Clustering</h1>
+
+<p class="author1"><a data-type="indexterm" data-primary="clustering" data-secondary="NSQ" id="clu_nsq" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="clustering" data-secondary="production clustering" id="clu_pc" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="NSQ" id="nsq_ab" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>In a production environment, you will need a solution that is more robust than
+the other solutions we’ve talked about so far.  This is because during the
+everyday operation of your cluster, nodes may become unavailable, code may
+crash, networks may go down, or one of the other thousands of problems that can
+happen may happen.  The problem is that all the previous systems have had one computer
+where commands are issued, and a limited and static number of computers that read
+the commands and execute them.  We would instead like a system that can
+have multiple actors communicating via a message bus—this would allow us
+to have an arbitrary and constantly changing number of message creators and
+consumers.</p>
+
+<p class="author1">One simple solution to these problems is <a href="https://github.com/nsqio/nsq" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">NSQ</a>, a
+highly performant distributed <span class="publishername">messaging</span> platform.  While it is written in GO, it
+is completely data format and language agnostic.  As a result, there are
+libraries in many languages, and the basic 
+<span class="publishername">interface</span> into NSQ is a REST API that
+requires only the ability to make HTTP calls.  Furthermore, we can send messages
+in any format we want: JSON, Pickle, <code class="calibre26">msgpack</code>, and so on.  Most importantly, however,
+it provides fundamental guarantees regarding message delivery, and it does all
+of this using two simple design patterns: queues and pub/subs.</p>
+<div data-type="note" epub:type="note" class="calibre35"><h6 class="calibre36">Note</h6>
+<p class="author1">We picked NSQ to discuss because it is simple to use and generally performant.
+Most importantly for our purposes, it clearly highlights the considerations
+you must make when thinking about queuing and message passing in a cluster.
+However, other solutions such as ZeroMQ, Amazon’s SQS, Celery, or even Redis may be better
+suited for your application.</p>
+</div>
+
+
+
+
+
+
+
+
+<section data-type="sect2" data-pdf-bookmark="Queues" class="calibre3"><div class="preface" id="idm46122404015304">
+<h2 class="calibre43">Queues</h2>
+
+<p class="author1"><a data-type="indexterm" data-primary="clustering" data-secondary="queues in" id="idm46122404013864" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="NSQ" data-secondary="queues in" id="idm46122404012888" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="queues" data-secondary="in clustering" id="idm46122404011944" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>A <em class="hyperlink">queue</em> is a type of buffer for messages.  Whenever you want to send a message
+to another part of your processing pipeline, you send it to the queue, and it’ll
+wait there until a worker is available.  A queue is
+most useful in distributed processing when an imbalance exists between
+production and consumption. When this imbalance occurs, we can simply scale
+horizontally by adding more data consumers until the message production rate and the
+consumption rate are equal.  In addition, if the computers responsible for
+consuming messages go down, the messages are not lost but are simply queued until
+a consumer is available, thus giving us message delivery guarantees.</p>
+
+<p class="author1">For example, let’s say we would like to process new recommendations for a user
+every time that user rates a new item on our site.  If we didn’t have a queue,
+the “rate” action would directly call the “recalculate-recommendations” action,
+regardless of how busy the servers dealing with recommendations were.  If all of
+a sudden thousands of users decided to rate something, our recommendation servers could
+get so swamped with requests that they could start timing out, dropping messages, and
+generally becoming unresponsive!</p>
+
+<p class="author1">On the other hand, with a queue, the recommendation servers ask for more tasks
+when they are ready.  A new “rate” action would put a new task on the queue, and
+when a recommendation server becomes ready to do more work, it would grab the task
+from the queue and process it.  In this setup, if more users than normal start
+rating items, our queue would fill up and act as a buffer for the
+recommendation servers—their workload would be unaffected, and they could
+still process messages until the queue was empty.</p>
+
+<p class="author1">One potential problem with this is that if a queue becomes completely
+overwhelmed with work, it will be storing quite a lot of messages.  NSQ solves
+this by having multiple storage backends—when there aren’t many messages,
+they are stored in memory, and as more messages start coming in, the messages get
+put onto disk.</p>
+<div data-type="note" epub:type="note" class="calibre35"><h6 class="calibre36">Note</h6>
+<p class="author1">Generally, when working with queued systems, it is a good idea to try to have the
+downstream systems (i.e., the recommendation systems in the preceding example) be at
+60% capacity with a normal workload.  This is a good compromise between
+allocating too many resources for a problem and giving your servers enough extra
+power for when the amount of work increases beyond normal 
+<span class="publishername">levels</span>.</p>
+</div>
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<section data-type="sect2" data-pdf-bookmark="Pub/sub" class="calibre3"><div class="preface" id="idm46122403988264">
+<h2 class="calibre43">Pub/sub</h2>
+
+<p class="author1"><a data-type="indexterm" data-primary="NSQ" data-secondary="pub/subs" id="nsq_ps" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="pub/subs" id="ps_abt" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>A <em class="hyperlink">pub/sub</em> (short for <em class="hyperlink">publisher/subscriber</em>), on the other hand, describes who
+gets what messages.  A data publisher can push data out of a
+particular topic, and data subscribers can subscribe to different feeds of data.
+Whenever the publisher puts out a piece of information, it gets sent to all
+the subscribers—each gets an identical copy of the original information.
+You can think of this like a newspaper: many people can subscribe to a
+particular newspaper, and whenever a new edition of the newspaper comes out,
+every subscriber gets an identical copy of it.  In addition, the producer of the
+newspaper doesn’t need to know all the people its papers are being sent to.
+As a result, publishers and subscribers are decoupled from each other, which
+allows our system to be more robust as our network changes while still in
+production.</p>
+
+<p class="author1">In addition, NSQ adds the notion of a<a data-type="indexterm" data-primary="data consumers" id="idm46122403982536" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/> <em class="hyperlink">data consumer</em>; that is, multiple
+processes can be connected to the same data subscription.  Whenever a new piece
+of data comes out, every subscriber gets a copy of the data; however, only one
+consumer of each <span class="publishername">subscription</span> sees that data.  In the newspaper analogy, you can think of this as having multiple people in the same household who read the newspaper.
+The publisher will deliver one paper to the house, since that house has only one
+subscription, and whoever in the house gets to it first gets to read that
+data. Each subscriber’s consumers do the same processing to a message when they see
+it; however, they can potentially be on multiple computers and thus add more
+processing power to the entire pool.</p>
+
+<p class="author1">We can see a depiction of this pub/sub/consumer paradigm in
+<a data-type="xref" href="#clustering_nsq_overview" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Figure 10-1</a>.  If a new message gets published on the “clicks”
+topic, all the subscribers (or, in NSQ parlance, <em class="hyperlink">channels</em>—i.e., “metrics,” “spam_analysis,”
+and “archive”) will get a copy.  Each subscriber is composed of one or more consumers,
+which represent actual processes that react to the messages.  In the case of the “metrics” subscriber, only one consumer will see the new message.  The next
+message will go to another consumer, and so on.</p>
+
+<figure class="calibre46"><div id="clustering_nsq_overview" class="figure">
+<img src="Images/hpp2_1001.png" alt="hpp2 1001" class="calibre114"/>
+<h6 class="calibre47"><span class="publishername">Figure 10-1. </span>NSQ’s pub/sub-like topology</h6>
+</div></figure>
+
+<p class="author1">The benefit of spreading the messages among a potentially large pool of
+consumers is essentially automatic load balancing.  If a message takes quite a
+long time to process, that consumer will not signal to NSQ that it is ready for
+more messages until it’s done, and thus the other consumers will get the majority of future
+messages (until that original consumer is ready to process again).  In addition,
+it allows existing consumers to disconnect (whether by choice or because of failure) and
+new consumers to connect to the cluster while still maintaining processing
+power within a particular subscription group.  For example, if we find that
+“metrics” takes quite a while to process and often is not keeping up with
+demand, we can simply add more processes to the consumer pool for that
+subscription group, giving us more processing power.  On the other hand,
+if we see that most of our processes are idle (i.e., not getting any messages), we
+can easily remove consumers from this subscription pool.</p>
+
+<p class="author1">It is also important to note that anything can publish data.  A consumer doesn’t
+simply need to be a consumer—it can consume data from one topic and then
+publish it to another topic.  In fact, this chain is an important workflow when
+it comes to this <span class="publishername">paradigm</span> for distributed computing.  Consumers will read from a
+topic of data, transform the data in some way, and then publish the data onto a
+new topic that other consumers can further transform.  In this way, different
+topics represent different data, subscription groups represent different
+transformations on the data, and consumers are the actual workers who transform
+individual messages.</p>
+
+<p class="author1">Furthermore, this system provides an incredible redundancy. There can be
+many <code class="calibre26">nsqd</code> processes that each consumer connects to, and there can be many
+consumers connected to a particular subscription.  This makes it so that no single point of failure exists, and your system will be robust even if several
+machines disappear.  We can see in <a data-type="xref" href="#clustering_nsq_spof" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Figure 10-2</a> that even if one of
+the computers in the diagram goes down, the system is still able to deliver and
+process messages.  In addition, since NSQ saves pending messages to disk when
+shutting down, unless the hardware loss is catastrophic, your data will most
+likely still be intact and be delivered.  Last, if a consumer is shut down
+before responding to a particular message, NSQ will resend that message to
+another consumer.  This means that even as consumers get shut down, we know that
+all the messages in a topic will be responded to at least<a data-type="indexterm" data-primary="" data-startref="nsq_ps" id="idm46122403970360" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="" data-startref="ps_abt" id="idm46122403969512" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/> once.<sup class="calibre44"><a data-type="noteref" id="idm46122403968536-marker" href="ch10.xhtml#idm46122403968536" class="pcalibre2 pcalibre calibre45 pcalibre3 pcalibre1">1</a></sup></p>
+
+<figure class="calibre46"><div id="clustering_nsq_spof" class="figure">
+<img src="Images/hpp2_1002.png" alt="hpp2 1002" class="calibre115"/>
+<h6 class="calibre47"><span class="publishername">Figure 10-2. </span>NSQ connection topology</h6>
+</div></figure>
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<section data-type="sect2" data-pdf-bookmark="Distributed Prime Calculation" class="calibre3"><div class="preface" id="idm46122403965352">
+<h2 class="calibre43">Distributed Prime Calculation</h2>
+
+<p class="author1"><a data-type="indexterm" data-primary="distributed prime calculation" id="dpc_ab" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="NSQ" data-secondary="distributed prime calculation" id="nsq_dpc" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>Code that uses NSQ is generally asynchronous (see <a data-type="xref" href="ch08.xhtml#chapter-concurrency" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Chapter 8</a> for
+a full explanation), although it doesn’t necessarily have to be.<sup class="calibre44"><a data-type="noteref" id="idm46122403960472-marker" href="ch10.xhtml#idm46122403960472" class="pcalibre2 pcalibre calibre45 pcalibre3 pcalibre1">2</a></sup> In the
+following example, we will create a pool of workers that read from a topic
+called <em class="hyperlink">numbers</em> where the messages are simply JSON blobs with numbers in them.  The
+consumers will read this topic, find out if the numbers are primes, and then
+write to another topic, depending on whether the numbers were prime.  This will
+give us two new topics, <em class="hyperlink">prime</em> and <em class="hyperlink">non_prime</em>, that other consumers can
+connect to in order to do more calculations.<sup class="calibre44"><a data-type="noteref" id="idm46122403957848-marker" href="ch10.xhtml#idm46122403957848" class="pcalibre2 pcalibre calibre45 pcalibre3 pcalibre1">3</a></sup></p>
+<div data-type="note" epub:type="note" class="calibre35"><h6 class="calibre36">Note</h6>
+<p class="author1"><a data-type="indexterm" data-primary="pynsq" id="idm46122403955096" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><code class="calibre26">pynsq</code> (last release Nov 11, 2018) depends on a very outdated release of<a data-type="indexterm" data-primary="tornado" id="idm46122403953784" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="asynchronous programming" data-secondary="tornado" id="idm46122403953000" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>
+<code class="calibre26">tornado</code> (4.5.3, from Jan 6, 2018). <a data-type="indexterm" data-primary="Docker" data-secondary="use case for" id="idm46122403951544" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>This is a good example use case for Docker
+(discussed in <a data-type="xref" href="#docker" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">“Docker”</a>).</p>
+</div>
+
+<p class="author1">As we’ve said before, there are many benefits to doing CPU-bound work like this.
+First, we have all the guarantees of robustness, which may or may not be
+useful for this project.  More importantly, however, we get automatic load
+balancing.  That means that if one consumer gets a number that takes a
+particularly long time to process, the other consumers will pick up the slack.</p>
+
+<p class="author1">We create a consumer by creating an <code class="calibre26">nsq.Reader</code> object with the topic and
+subscription group specified (as can be seen at the end of
+<a data-type="xref" href="#clustering_nsq_example" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Example 10-9</a>).  We also must specify the location of the running
+<code class="calibre26">nsqd</code> instance (or the <code class="calibre26">nsqlookupd</code> instance, which we will not get into in this
+section).  In addition, we specify a<a data-type="indexterm" data-primary="handler" id="idm46122403945960" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/> <em class="hyperlink">handler</em>, which is simply a function that
+gets called for each message from the topic. To create a producer, we create an <code class="calibre26">nsq.Writer</code> object and specify the location
+of one or more <code class="calibre26">nsqd</code> instances to write to.  This gives us the ability to
+write to <code class="calibre26">nsq</code>, simply by specifying the topic name and the
+message.<sup class="calibre44"><a data-type="noteref" id="idm46122403943144-marker" href="ch10.xhtml#idm46122403943144" class="pcalibre2 pcalibre calibre45 pcalibre3 pcalibre1">4</a></sup></p>
+<div id="clustering_nsq_example" data-type="example" class="calibre56">
+<h5 class="calibre58"><span class="publishername">Example 10-9. </span>Distributed prime calculation with NSQ</h5>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre59"><code class="kn">import</code><code class="calibre26"> </code><code class="nn">json</code><code class="calibre26">
+</code><code class="kn">from</code><code class="calibre26"> </code><code class="nn">functools</code><code class="calibre26"> </code><code class="kn">import</code><code class="calibre26"> </code><code class="n">partial</code><code class="calibre26">
+</code><code class="kn">from</code><code class="calibre26"> </code><code class="nn">math</code><code class="calibre26"> </code><code class="kn">import</code><code class="calibre26"> </code><code class="n">sqrt</code><code class="calibre26">
+</code><code class="calibre26">
+</code><code class="kn">import</code><code class="calibre26"> </code><code class="nn">nsq</code><code class="calibre26">
+</code><code class="calibre26">
+</code><code class="kn">def</code><code class="calibre26"> </code><code class="nf">is_prime</code><code class="p">(</code><code class="n">number</code><code class="p">)</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="kn">if</code><code class="calibre26"> </code><code class="n">number</code><code class="calibre26"> </code><code class="o">%</code><code class="calibre26"> </code><code class="mi">2</code><code class="calibre26"> </code><code class="o">==</code><code class="calibre26"> </code><code class="mi">0</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">        </code><code class="kn">return</code><code class="calibre26"> </code><code class="nb">False</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="kn">for</code><code class="calibre26"> </code><code class="n">i</code><code class="calibre26"> </code><code class="ow">in</code><code class="calibre26"> </code><code class="nb">range</code><code class="p">(</code><code class="mi">3</code><code class="p">,</code><code class="calibre26"> </code><code class="nb">int</code><code class="p">(</code><code class="n">sqrt</code><code class="p">(</code><code class="n">number</code><code class="p">)</code><code class="p">)</code><code class="calibre26"> </code><code class="o">+</code><code class="calibre26"> </code><code class="mi">1</code><code class="p">,</code><code class="calibre26"> </code><code class="mi">2</code><code class="p">)</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">        </code><code class="kn">if</code><code class="calibre26"> </code><code class="n">number</code><code class="calibre26"> </code><code class="o">%</code><code class="calibre26"> </code><code class="n">i</code><code class="calibre26"> </code><code class="o">==</code><code class="calibre26"> </code><code class="mi">0</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">            </code><code class="kn">return</code><code class="calibre26"> </code><code class="nb">False</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="kn">return</code><code class="calibre26"> </code><code class="nb">True</code><code class="calibre26">
+</code><code class="calibre26">
+</code><code class="kn">def</code><code class="calibre26"> </code><code class="nf">write_message</code><code class="p">(</code><code class="n">topic</code><code class="p">,</code><code class="calibre26"> </code><code class="n">data</code><code class="p">,</code><code class="calibre26"> </code><code class="n">writer</code><code class="p">)</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">response</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="n">writer</code><code class="o">.</code><code class="n">pub</code><code class="p">(</code><code class="n">topic</code><code class="p">,</code><code class="calibre26"> </code><code class="n">data</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="kn">if</code><code class="calibre26"> </code><code class="nb">isinstance</code><code class="p">(</code><code class="n">response</code><code class="p">,</code><code class="calibre26"> </code><code class="n">nsq</code><code class="o">.</code><code class="n">Error</code><code class="p">)</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">        </code><code class="kn">print</code><code class="p">(</code><code class="s">"</code><code class="s">Error with Message: {}: {}</code><code class="s">"</code><code class="o">.</code><code class="n">format</code><code class="p">(</code><code class="n">data</code><code class="p">,</code><code class="calibre26"> </code><code class="n">response</code><code class="p">)</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">        </code><code class="kn">return</code><code class="calibre26"> </code><code class="n">write_message</code><code class="p">(</code><code class="n">data</code><code class="p">,</code><code class="calibre26"> </code><code class="n">writer</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="kn">else</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">        </code><code class="kn">print</code><code class="p">(</code><code class="s">"</code><code class="s">Published Message: </code><code class="s">"</code><code class="p">,</code><code class="calibre26"> </code><code class="n">data</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">
+</code><code class="kn">def</code><code class="calibre26"> </code><code class="nf">calculate_prime</code><code class="p">(</code><code class="n">message</code><code class="p">,</code><code class="calibre26"> </code><code class="n">writer</code><code class="p">)</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">data</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="n">json</code><code class="o">.</code><code class="n">loads</code><code class="p">(</code><code class="n">message</code><code class="o">.</code><code class="n">body</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">prime</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="n">is_prime</code><code class="p">(</code><code class="n">data</code><code class="p">[</code><code class="s">"</code><code class="s">number</code><code class="s">"</code><code class="p">]</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">data</code><code class="p">[</code><code class="s">"</code><code class="s">prime</code><code class="s">"</code><code class="p">]</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="n">prime</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="kn">if</code><code class="calibre26"> </code><code class="n">prime</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">        </code><code class="n">topic</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="s">"</code><code class="s">prime</code><code class="s">"</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="kn">else</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">        </code><code class="n">topic</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="s">"</code><code class="s">non_prime</code><code class="s">"</code><code class="calibre26">
+</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">output_message</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="n">json</code><code class="o">.</code><code class="n">dumps</code><code class="p">(</code><code class="n">data</code><code class="p">)</code><code class="o">.</code><code class="n">encode</code><code class="p">(</code><code class="s">"</code><code class="s">utf8</code><code class="s">"</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">write_message</code><code class="p">(</code><code class="n">topic</code><code class="p">,</code><code class="calibre26"> </code><code class="n">output_message</code><code class="p">,</code><code class="calibre26"> </code><code class="n">writer</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">message</code><code class="o">.</code><code class="n">finish</code><code class="p">(</code><code class="p">)</code><code class="calibre26">  </code><a class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6" id="co_clusters_and_job_queues_CO1-1" href="#callout_clusters_and_job_queues_CO1-1"><img src="Images/1.png" alt="1" class="calibre74"/></a><code class="calibre26">
+</code><code class="calibre26">
+</code><code class="kn">if</code><code class="calibre26"> </code><code class="calibre26">__name__</code><code class="calibre26"> </code><code class="o">==</code><code class="calibre26"> </code><code class="s">"</code><code class="s">__main__</code><code class="s">"</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">writer</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="n">nsq</code><code class="o">.</code><code class="n">Writer</code><code class="p">(</code><code class="p">[</code><code class="s">"</code><code class="s">127.0.0.1:4150</code><code class="s">"</code><code class="p">]</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">handler</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="n">partial</code><code class="p">(</code><code class="n">calculate_prime</code><code class="p">,</code><code class="calibre26"> </code><code class="n">writer</code><code class="o">=</code><code class="n">writer</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">reader</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="n">nsq</code><code class="o">.</code><code class="n">Reader</code><code class="p">(</code><code class="calibre26">
+</code><code class="calibre26">        </code><code class="n">message_handler</code><code class="o">=</code><code class="n">handler</code><code class="p">,</code><code class="calibre26">
+</code><code class="calibre26">        </code><code class="n">nsqd_tcp_addresses</code><code class="o">=</code><code class="p">[</code><code class="s">"</code><code class="s">127.0.0.1:4150</code><code class="s">"</code><code class="p">]</code><code class="p">,</code><code class="calibre26">
+</code><code class="calibre26">        </code><code class="n">topic</code><code class="o">=</code><code class="s">"</code><code class="s">numbers</code><code class="s">"</code><code class="p">,</code><code class="calibre26">
+</code><code class="calibre26">        </code><code class="n">channel</code><code class="o">=</code><code class="s">"</code><code class="s">worker_group_a</code><code class="s">"</code><code class="p">,</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">nsq</code><code class="o">.</code><code class="n">run</code><code class="p">(</code><code class="p">)</code></pre>
+<dl class="calibre28">
+<dt class="calibre29"><a class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6" id="callout_clusters_and_job_queues_CO1-1" href="#co_clusters_and_job_queues_CO1-1"><img src="Images/1.png" alt="1" class="calibre74"/></a></dt>
+<dd class="calibre75"><p class="calibre76">We must signal to NSQ when we are done with a message. This will make sure the message is not redelivered to another reader in case of failure.</p></dd>
+</dl></div>
+<div data-type="note" epub:type="note" class="calibre35"><h6 class="calibre36">Note</h6>
+<p class="author1">We can handle messages asynchronously by enabling<a data-type="indexterm" data-primary="message.enable_async()" id="idm46122402819752" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/> <code class="calibre26">message.enable_async()</code> in
+the message handler after the message is received. However, note that NSQ uses the older callback mechanisms with
+<code class="calibre26">tornado</code>’s IOLoop (discussed in <a data-type="xref" href="ch08.xhtml#tornado" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">“tornado”</a>).</p>
+</div>
+
+<p class="author1">To set up the NSQ ecosystem, <a data-type="indexterm" data-primary="Docker" data-secondary="use case for" id="idm46122402450056" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>start an instance of <code class="calibre26">nsqd</code>
+on our local machine:<sup class="calibre44"><a data-type="noteref" id="idm46122402448536-marker" href="ch10.xhtml#idm46122402448536" class="pcalibre2 pcalibre calibre45 pcalibre3 pcalibre1">5</a></sup></p>
+
+<pre data-type="programlisting" class="calibre50">$ nsqd
+[nsqd] 2020/01/25 13:36:39.333097 INFO: nsqd v1.2.0 (built w/go1.12.9)
+[nsqd] 2020/01/25 13:36:39.333141 INFO: ID: 235
+[nsqd] 2020/01/25 13:36:39.333352 INFO: NSQ: persisting topic/channel metadata
+                                             to nsqd.dat
+[nsqd] 2020/01/25 13:36:39.340583 INFO: TCP: listening on [::]:4150
+[nsqd] 2020/01/25 13:36:39.340630 INFO: HTTP: listening on [::]:4151</pre>
+
+<p class="author1">Now we can start as many instances of our Python code
+(<a data-type="xref" href="#clustering_nsq_example" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Example 10-9</a>) as we want.  In fact, we can have these instances
+running on other computers as long as the reference to the <code class="calibre26">nsqd_tcp_address</code> in
+the instantiation of the <code class="calibre26">nsq.Reader</code> is still valid.  These consumers will
+connect to <code class="calibre26">nsqd</code> and wait for messages to be published on the <em class="hyperlink">numbers</em> topic.</p>
+
+<p class="author1">Data can be published to the <a data-type="indexterm" data-primary="numbers topic" id="idm46122414198120" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><em class="hyperlink">numbers</em> topic in many ways.  We will use
+command-line tools to do this, since knowing how to poke and prod a system goes a
+long way in understanding how to properly deal with it.  We can simply use the
+HTTP interface to publish messages to the topic:</p>
+
+<pre data-type="programlisting" data-code-language="bash" class="calibre50"><code class="nv">$ </code><code class="kn">for</code> i in <code class="s">`</code>seq 10000<code class="s">`</code>
+&gt; <code class="kn">do</code>
+&gt;   <code class="nb">echo</code> <code class="o">{</code><code class="se">\"</code>number<code class="se">\"</code>: <code class="nv">$i</code><code class="o">}</code> <code class="p">|</code> curl -d@- <code class="s">"http://127.0.0.1:4151/pub?topic=numbers"</code>
+&gt; <code class="kn">done</code></pre>
+
+<p class="author1">As this command starts running, we are publishing messages with different
+numbers in them to the <em class="hyperlink">numbers</em> topic.  At the same time, all of our producers
+will start outputting status messages indicating that they have seen and processed
+messages.  In addition, these numbers are being published to either the <em class="hyperlink">prime</em>
+or the<a data-type="indexterm" data-primary="non_prime topic" id="idm46122403231208" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/> <em class="hyperlink">non_prime</em> topic.  This allows us to have other data consumers that connect
+to either of these topics to get a filtered subset of our original data.  For
+example, an application that requires only the prime numbers can simply connect
+to the<a data-type="indexterm" data-primary="prime topic" id="idm46122403229784" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/> <em class="hyperlink">prime</em> topic and constantly have new primes for its calculation.  We
+can see the status of our calculation by using the <code class="calibre26">stats</code> HTTP endpoint for <code class="calibre26">nsqd</code>:</p>
+<pre data-type="programlisting" class="calibre50">$ <strong class="calibre83">curl "http://127.0.0.1:4151/stats"</strong>
+nsqd v1.2.0 (built w/go1.12.9)
+start_time 2020-01-25T14:16:35Z
+uptime 26.087839544s
+
+Health: OK
+
+Memory:
+   heap_objects                 25973
+   heap_idle_bytes              61399040
+   heap_in_use_bytes            4661248
+   heap_released_bytes          0
+   gc_pause_usec_100            43
+   gc_pause_usec_99             43
+   gc_pause_usec_95             43
+   next_gc_bytes                4194304
+   gc_total_runs                6
+
+Topics:
+   [non_prime      ] depth: 902   be-depth: 0     msgs: 902      e2e%:
+
+   [numbers        ] depth: 0     be-depth: 0     msgs: 3009     e2e%:
+      [worker_group_a           ] depth: 1926  be-depth: 0     inflt: 1
+                                  def: 0    re-q: 0     timeout: 0
+                                  msgs: 3009     e2e%:
+        [V2 electron             ] state: 3 inflt: 1    rdy: 1    fin: 1082
+                                   re-q: 0    msgs: 1083     connected: 15s
+
+   [prime          ] depth: 180   be-depth: 0     msgs: 180      e2e%:
+
+Producers:
+   [V2 electron             ] msgs: 1082     connected: 15s
+      [prime          ] msgs: 180
+      [non_prime      ] msgs: 902
+</pre>
+
+<p class="author1">We can see here that the <em class="hyperlink">numbers</em> topic has one subscription group,
+<em class="hyperlink">worker_group_a</em>, with one consumer.  In addition, the subscription group has a
+large depth of 1,926 messages, which means that we are putting messages into NSQ
+faster than we can process them.  This would be an indication to add more
+consumers so that we have more <span class="publishername">processing</span> power to get through more messages.
+Furthermore, we can see that this particular consumer has been connected for 15
+seconds, has processed 1,083 messages, and currently has 1 message in flight.
+This status endpoint gives quite a good deal of information for debugging your NSQ
+setup!  Last, we see the <em class="hyperlink">prime</em> and <em class="hyperlink">non_prime</em> topics, which have no
+subscribers or consumers.  This means that the messages will be stored until a
+subscriber comes requesting the data.</p>
+<div data-type="note" epub:type="note" class="calibre35"><h6 class="calibre36">Note</h6>
+<p class="author1">In production systems, you can use the even more powerful tool<a data-type="indexterm" data-primary="nsqadmin tool" id="idm46122402962040" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/> <code class="calibre26">nsqadmin</code>, which provides
+a web interface with very detailed overviews of all topics/subscribers and
+consumers.  In addition, it allows you to easily pause and delete subscribers and
+topics.</p>
+</div>
+
+<p class="author1">To actually see the messages, we would create a new consumer for the
+<em class="hyperlink">prime</em> (or <span class="publishername"><em class="hyperlink">non_prime</em></span>) topic that simply archives the results to a file or database.  Alternatively,
+we can use the <a data-type="indexterm" data-primary="nsq_tail tool" id="idm46122402958424" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><code class="calibre26">nsq_tail</code> tool to take a peek at the data and see what it
+contains:<a data-type="indexterm" data-primary="" data-startref="clu_nsq" id="idm46122402957368" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="" data-startref="clu_pc" id="idm46122402956392" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="" data-startref="nsq_ab" id="idm46122402955448" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="" data-startref="dpc_ab" id="idm46122402954504" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="" data-startref="nsq_dpc" id="idm46122402953560" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/></p>
+
+<pre data-type="programlisting" class="calibre50">$ nsq_tail --topic prime -n 5 --nsqd-tcp-address=127.0.0.1:4150
+2020/01/25 14:34:17 Adding consumer for topic: prime
+2020/01/25 14:34:17 INF    1 [prime/tail574169#ephemeral] (127.0.0.1:4150)
+                    connecting to nsqd
+{"number": 1, "prime": true}
+{"number": 3, "prime": true}
+{"number": 5, "prime": true}
+{"number": 7, "prime": true}
+{"number": 11, "prime": true}</pre>
+</div></section>
+
+
+
+
+
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<section data-type="sect1" data-pdf-bookmark="Other Clustering Tools to Look At" class="calibre3"><div class="preface" id="idm46122403964696">
+<h1 class="calibre25">Other Clustering Tools to Look At</h1>
+
+<p class="author1">Job processing systems using queues have existed since the start of the computer
+science industry, back when computers were very slow and lots of jobs needed to
+be processed. As a result, there are <em class="hyperlink">many</em> libraries for queues, and many of
+these can be used in a cluster configuration. We strongly suggest that you pick
+a mature library with an active community behind it and supporting the same feature
+set that you’ll need without too many additional features.</p>
+
+<p class="author1">The more features a library has, the more ways you’ll find to misconfigure it
+and waste time on debugging. Simplicity is <em class="hyperlink">generally</em> the right aim when
+dealing with clustered solutions. Here are a few of the more commonly used
+clustering solutions:</p>
+
+<ul class="printings">
+<li class="calibre21">
+<p class="calibre27"><a href="https://zeromq.org" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">ZeroMQ</a> <a data-type="indexterm" data-primary="clustering" data-secondary="ZeroMQ" id="idm46122402934456" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="ZeroMQ" id="idm46122402933448" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>is a low-level and performant messaging library
+that enables you to send messages between nodes. It natively supports pub/sub
+paradigms and can also communicate over multiple types of transports (TCP,
+UDP, WebSocket, etc).  It is quite low level and doesn’t provide many useful abstractions, which can make its use a bit difficult. That being said, it’s in use in
+<a data-type="indexterm" data-primary="Jupyter Notebooks" id="idm46122402932264" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="Auth0" id="idm46122402931592" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="Spotify" id="idm46122402930920" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>Jupyter, Auth0, Spotify, and many more places!</p>
+</li>
+<li class="calibre21">
+<p class="calibre27"><a href="http://www.celeryproject.org" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Celery</a> (BSD license)<a data-type="indexterm" data-primary="clustering" data-secondary="Celery" id="idm46122402928536" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="Celery" id="idm46122402927528" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/> is a widely used
+asynchronous task queue using a distributed messaging architecture, written in
+Python. It supports Python, <a data-type="indexterm" data-primary="PyPy" data-secondary="Celery and" id="idm46122402926584" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="Jython" id="idm46122402925640" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>PyPy, and Jython. It typically it uses RabbitMQ as the
+message broker, but it also supports Redis, MongoDB, and other storage systems.
+It is often used in web development projects. <a data-type="indexterm" data-primary="Godwin, Andrew" id="idm46122402924648" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>Andrew Godwin discusses Celery in
+<a data-type="xref" href="ch12.xhtml#lessons-from-field-andrew" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">“Task Queues at Lanyrd.com (2014)”</a>.</p>
+</li>
+<li class="calibre21">
+<p class="calibre27"><a href="https://airflow.apache.org" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Airflow</a><a data-type="indexterm" data-primary="Airflow" id="idm46122402921944" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="clustering" data-secondary="Airflow" id="idm46122402921240" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="Luigi" id="idm46122402920296" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="clustering" data-secondary="Luigi" id="idm46122402919624" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/> and
+<a href="https://github.com/spotify/luigi" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Luigi</a> use directed acyclic graphs to chain
+dependent jobs into sequences that run reliably, with monitoring and reporting
+services. They’re widely used in industry for data science tasks, and we
+recommend reviewing these before you embark on a custom solution.</p>
+</li>
+<li class="calibre21">
+<p class="calibre27"><a href="http://aws.amazon.com/sqs" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Amazon’s Simple Queue Service (SQS)</a><a data-type="indexterm" data-primary="Amazon's Simple Queue Service (SQS)" id="idm46122402916264" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="clustering" data-secondary="Simple Queue Service" id="idm46122402915528" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="Simple Queue Service (SQS)" id="idm46122402914584" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="SQS (Simple Queue Service)" id="idm46122402913896" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/> is a job
+processing system integrated into AWS. Job consumers and
+producers can live inside AWS or can be external, so SQS is easy to start with
+and supports easy migration into the cloud. Library support exists for many
+languages.</p>
+</li>
+</ul>
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<section data-type="sect1" data-pdf-bookmark="Docker" class="calibre3"><div class="preface" id="docker">
+<h1 class="calibre25">Docker</h1>
+
+<p class="author1"><a href="https://docker.com" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Docker</a> <a data-type="indexterm" data-primary="clustering" data-secondary="Docker" id="clu_doc" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="Docker" data-secondary="about" id="idm46122402908728" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>is a tool of general importance in the
+Python ecosystem.  However, the problems it solves are particularly important
+when dealing with a large team or a cluster. In particular, Docker helps to
+create reproducible environments in which to run your code, share/control runtime
+environments, easily share runnable code between team members, and deploy code to
+a cluster of nodes based on resource needs.</p>
+
+
+
+
+
+
+
+
+<section data-type="sect2" data-pdf-bookmark="Docker’s Performance" class="calibre3"><div class="preface" id="idm46122402907112">
+<h2 class="calibre43">Docker’s Performance</h2>
+
+<p class="author1"><a data-type="indexterm" data-primary="Docker" data-secondary="performance of" id="doc_per" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>One common misconception about Docker is that it substantially slows down the
+runtime performance of the applications it is running. While this can be true in
+some cases, it generally is not. Furthermore, most of the performance
+degradations can almost always be removed with some easy configuration changes.</p>
+
+<p class="author1">In terms of CPU and memory access, Docker (and all other container-based
+solutions) will <em class="hyperlink">not</em> lead to any performance degradations. This is because
+Docker simply creates a special namespace within the host operating system where
+the code can run normally, albeit with separate constraints from other running
+programs. Essentially, Docker code accesses the CPU and memory in the same way
+that every other 
+<span class="publishername">program</span> on the computer does; however, it can have a separate set
+of configuration values to fine-tune resource limits.<sup class="calibre44"><a data-type="noteref" id="idm46122402901784-marker" href="ch10.xhtml#idm46122402901784" class="pcalibre2 pcalibre calibre45 pcalibre3 pcalibre1">6</a></sup></p>
+
+<p class="author1">This is because Docker is an instance of OS-level virtualization, as opposed to
+hardware virtualization such as<a data-type="indexterm" data-primary="VMware" id="idm46122402900536" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="VirtualBox" id="idm46122402899832" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/> VMware or VirtualBox. With hardware
+virtualization, software runs on “fake” hardware that introduces overhead
+accessing all resources. On the other hand, OS virtualization uses the native
+hardware but runs on a “fake” operating system. Thanks to the <a data-type="indexterm" data-primary="cgroups" id="idm46122402898760" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><code class="calibre26">cgroups</code> Linux
+feature, this “fake” operating system can be tightly coupled to the running
+operating system, which gives the possibility of running with almost no
+overhead.</p>
+<div data-type="warning" epub:type="warning" class="calibre37"><h6 class="calibre38">Warning</h6>
+<p class="author1"><code class="calibre26">cgroups</code> is specifically a feature in the <a data-type="indexterm" data-primary="Linux kernel" id="idm46122403746168" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>Linux kernel. As a result, performance
+implications discussed here are restricted to Linux systems. In fact,
+to run Docker on macOS or Windows, we first must run the Linux kernel in a
+hardware-virtualized environment. Docker Machine, the application helping
+streamline this process, uses VirtualBox to accomplish this. As a result, you
+will see performance overhead from the hardware-virtualized portion of the
+process. This overhead will be greatly reduced when running on a Linux system,
+where hardware virtualization is not needed.</p>
+</div>
+
+<p class="author1">As an example, let’s create a simple Docker container to run the 2D diffusion
+code from <a data-type="xref" href="ch06_split_001.xhtml#matrix_numpy_memory2" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Example 6-17</a>. As a baseline, we can run the code on the
+host system’s Python to get a benchmark:</p>
+
+<pre data-type="programlisting" class="calibre50">$ python diffusion_numpy_memory2.py
+Runtime for 100 iterations with grid size (256, 256): 1.4418s</pre>
+
+<p class="author1">To create our Docker container, we have to make a directory that
+contains the Python file <em class="hyperlink">diffusion_numpy_memory2.py</em>, a <code class="calibre26">pip</code> requirements
+file for dependencies, and a <em class="hyperlink">Dockerfile</em>, as shown in <a data-type="xref" href="#simple-docker" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Example 10-10</a>.</p>
+<div id="simple-docker" data-type="example" class="calibre56">
+<h5 class="calibre58"><span class="publishername">Example 10-10. </span>Simple Docker container</h5>
+
+<pre data-type="programlisting" class="calibre59">$ ls
+diffusion_numpy_memory2.py
+Dockerfile
+requirements.txt
+
+$ cat requirements.txt
+numpy&gt;=1.18.0
+
+$ cat Dockerfile
+FROM python:3.7
+
+WORKDIR /usr/src/app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+CMD python ./diffusion_numpy_memory2.py</pre></div>
+
+<p class="author1">The<a data-type="indexterm" data-primary="Dockerfile" id="idm46122403736984" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/> <em class="hyperlink">Dockerfile</em> starts by stating what container we’d like to use as our base.
+These base containers can be a wide selection of Linux-based operating systems
+or a higher-level service. The Python Foundation provides <a href="https://hub.docker.com/_/python" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">official
+containers for all major Python versions</a>, which makes selecting the
+Python version you’d like to use incredibly simple. Next, we define the location of our
+working directory (the selection of <code class="calibre26">/usr/src/app</code> is arbitrary), copy our
+requirements file into it, and begin setting up our environment as we normally
+would on our local machine, using <code class="calibre26">RUN</code> commands.</p>
+
+<p class="author1">One major difference between setting up your development environment normally
+and on Docker are the <code class="calibre26">COPY</code> commands. They copy files from the local directory
+into the container. For example, the <em class="hyperlink">requirements.txt</em> file is copied into
+the container so that it is there for the <code class="calibre26">pip install</code> command.  Finally, at
+the end of the <em class="hyperlink">Dockerfile</em>, we copy all the files from the current directory into
+the container and tell Docker to run <code class="calibre26">python ./diffusion_numpy_memory2.py</code> when
+the container starts.</p>
+<div data-type="caution" class="calibre37"><h6 class="calibre38">Caution</h6>
+<p class="author1">In the <em class="hyperlink">Dockerfile</em> in <a data-type="xref" href="#simple-docker" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Example 10-10</a>, beginners often wonder why we first copy only the
+requirements file and then later copy the entire directory into the container. When
+building a container, Docker tries hard to cache each step in the build process.
+To determine whether the cache is still valid, the contents of the
+files being copied back and forth are checked. By first copying only the
+requirements file and <em class="hyperlink">then</em> moving the rest of the directory, we will have to
+run <code class="calibre26">pip install</code> only if the requirements file changes. If only the Python source
+has changed, a new build will use cached build steps and skip straight to the
+second <code class="calibre26">COPY</code> command.</p>
+</div>
+
+<p class="author1">Now we are ready to build and run the container, which can be named and tagged.
+Container names generally take the format
+<code class="calibre26"><em class="calibre66">&lt;username&gt;</em>/<em class="calibre66">&lt;project-name&gt;</em></code>,<sup class="calibre44"><a data-type="noteref" id="idm46122403724904-marker" href="ch10.xhtml#idm46122403724904" class="pcalibre2 pcalibre calibre45 pcalibre3 pcalibre1">7</a></sup>
+while the optional tag generally is either descriptive of the current version of
+the code or simply the tag <code class="calibre26">latest</code> (this is the default and will be applied
+automatically if no tag is specified). To help with versioning, it is
+general convention to always tag the most recent build with <code class="calibre26">latest</code> (which
+will get overwritten when a new build is made) as well as a descriptive tag so
+that we can easily find this version again in the future:</p>
+
+<pre data-type="programlisting" class="calibre50">$ docker build -t high_performance/diffusion2d:numpy-memory2 \
+               -t high_performance/diffusion2d:latest .
+Sending build context to Docker daemon  5.632kB
+Step 1/6 : FROM python:3.7
+ ---&gt; 3624d01978a1
+Step 2/6 : WORKDIR /usr/src/app
+ ---&gt; Running in 04efc02f2ddf
+Removing intermediate container 04efc02f2ddf
+ ---&gt; 9110a0496749
+Step 3/6 : COPY requirements.txt ./
+ ---&gt; 45f9ecf91f74
+Step 4/6 : RUN pip install --no-cache-dir -r requirements.txt
+ ---&gt; Running in 8505623a9fa6
+Collecting numpy&gt;=1.18.0 (from -r requirements.txt (line 1))
+  Downloading https://.../numpy-1.18.0-cp37-cp37m-manylinux1_x86_64.whl (20.1MB)
+Installing collected packages: numpy
+Successfully installed numpy-1.18.0
+You are using pip version 18.1, however version 19.3.1 is available.
+You should consider upgrading via the 'pip install --upgrade pip' command.
+Removing intermediate container 8505623a9fa6
+ ---&gt; 5abc2df1116f
+Step 5/6 : COPY . .
+ ---&gt; 52727a6e9715
+Step 6/6 : CMD python ./diffusion_numpy_memory2.py
+ ---&gt; Running in c1e885b926b3
+Removing intermediate container c1e885b926b3
+ ---&gt; 892a33754f1d
+Successfully built 892a33754f1d
+Successfully tagged high_performance/diffusion2d:numpy-memory2
+Successfully tagged high_performance/diffusion2d:latest
+
+$ docker run high_performance/diffusion2d:numpy-memory2
+Runtime for 100 iterations with grid size (256, 256): 1.4493s</pre>
+
+<p class="author1">We can see that at its core, Docker is not slower than running on the host
+machine in any meaningful way when the task relies mainly on CPU/memory.
+However, as with anything, there is no free lunch, and at times
+Docker performance suffers. While a full discussion of optimizing Docker
+containers is outside the scope of this book, we offer the following list of considerations
+for when you are creating Docker containers for high performance code:</p>
+
+<ul class="printings">
+<li class="calibre21">
+<p class="calibre27">Be wary of copying too much data into a Docker container or even having too
+much data in the same directory as a Docker build. If the <code class="calibre26">build context</code>,
+as advertised by the first line of the <code class="calibre26">docker build</code> command, is too large,
+performance can suffer (remedy this with a <em class="hyperlink">.dockerignore</em> file).</p>
+</li>
+<li class="calibre21">
+<p class="calibre27">Docker uses various filesystem tricks to layer filesystems on top of each other.
+This helps the caching of builds but can be slower than dealing with the host
+filesystem. Use host-level mounts when you need to access data quickly, and
+consider using <code class="calibre26">volumes</code> set as read-only to choose a volume driver that is
+fitting for your infrastructure.</p>
+</li>
+<li class="calibre21">
+<p class="calibre27">Docker creates a virtual network for all your containers to live behind. This
+can be great for keeping most of your services hidden behind a gateway, but it
+also adds slight network overhead. For most use cases, this overhead is
+negligible, but it can be mitigated by changing the network driver.</p>
+</li>
+<li class="calibre21">
+<p class="calibre27">GPUs and other host-level devices can be accessed using special runtime
+drivers for Docker. For example, <code class="calibre26">nvidia-docker</code> allows Docker environments
+to easily use connected NVIDIA GPUs. In general, devices can be made available
+with the <code class="calibre26">--device</code> runtime flag.</p>
+</li>
+</ul>
+
+<p class="author1">As always, it is important to profile your Docker containers to know what the
+issues are and whether there are some easy wins in terms of efficiency. The
+<code class="calibre26">docker stats</code> command provides a good high-level view to help understand
+the current runtime performance of your containers.<a data-type="indexterm" data-primary="" data-startref="doc_per" id="idm46122403710712" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/></p>
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<section data-type="sect2" data-pdf-bookmark="Advantages of Docker" class="calibre3"><div class="preface" id="idm46122402906584">
+<h2 class="calibre43">Advantages of Docker</h2>
+
+<p class="author1"><a data-type="indexterm" data-primary="Docker" data-secondary="advantages of" id="doc_adv" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>So far it has seemed that Docker is simply adding a whole new host of issues to
+contend with in terms of performance. However, the gains to reproducibility and
+reliability of runtime environments far surpass any extra complexity.</p>
+
+<p class="author1">Locally, having access to all our previously run Docker containers allows us to
+quickly rerun and retest previous versions of our code without having to worry
+about changes to the runtime environment, such as dependencies and system
+packages (<a data-type="xref" href="#docker_tags_runtime_env" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Example 10-11</a> shows a list of containers we can run with a simple <code class="calibre26">docker_run</code> command). This makes it incredibly easy to constantly be testing for performance
+regressions that otherwise would be difficult to reproduce.</p>
+<div id="docker_tags_runtime_env" data-type="example" class="calibre56">
+<h5 class="calibre58"><span class="publishername">Example 10-11. </span>Docker tags to keep track of previous runtime environments</h5>
+
+<pre data-type="programlisting" class="calibre59">$ docker images -a
+REPOSITORY                        TAG                 IMAGE ID
+highperformance/diffusion2d       latest              ceabe8b555ab
+highperformance/diffusion2d       numpy-memory2       ceabe8b555ab
+highperformance/diffusion2d       numpy-memory1       66523a1a107d
+highperformance/diffusion2d       python-memory       46381a8db9bd
+highperformance/diffusion2d       python              4cac9773ca5e</pre></div>
+
+<p class="author1">Many more benefits come with the use of a<a data-type="indexterm" data-primary="container registry" id="idm46122403701880" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/> <a href="https://oreil.ly/BaJhI" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">container registry</a>, which allows the
+storage and sharing of Docker images with the simple <code class="calibre26">docker</code> <code class="calibre26">pull</code> and <code class="calibre26">docker</code>
+<code class="calibre26">push</code> commands, in a similar way to <code class="calibre26">git</code>. This lets us put all our containers
+in a publicly available location, allowing team members to pull in changes or new
+versions and letting them immediately run the code.</p>
+<div data-type="note" epub:type="note" class="calibre35"><h6 class="calibre36">Note</h6>
+<p class="author1">This book is a great example of the benefits of sharing a Docker container for
+standardizing a runtime environment. To convert this book from<a data-type="indexterm" data-primary="asciidoc" id="idm46122403696952" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>
+<code class="calibre26">asciidoc</code>, the markup language it was written in, into PDF, a Docker container was
+shared between us so we could reliably and reproducibly build book artifacts.
+This standardization saved us countless hours that were spent in the first
+edition as one of us would have a build issue that the other couldn’t
+reproduce or help debug.</p>
+</div>
+
+<p class="author1">Running <code class="calibre26">docker pull highperformance/diffusion2d:latest</code> is much easier than
+having to clone a repository and doing all the associated setup that may be
+necessary to run a project. This is particularly true for research code, which
+may have some very fragile system dependencies. Having all of this inside an
+easily pullable Docker container means all of these setup steps can be skipped
+and the code can be run easily. As a result, code can be shared more easily, and
+a coding team can work more effectively together.</p>
+
+<p class="author1">Finally, in conjunction with <a data-type="indexterm" data-primary="kubernetes" id="idm46122403693400" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a href="https://kubernetes.io" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"><code class="calibre26">kubernetes</code></a> and other
+similar technologies, Dockerizing your code helps with actually running it with
+the resources it needs. Kubernetes allows you to create a cluster of nodes, each
+labeled with resources it may have, and to orchestrate running containers on
+the nodes. It will take care of making sure the correct number of instances are being
+run, and thanks to the Docker virtualization, the code will be run in the same
+environment that you saved it to. One of the biggest pains of working with a cluster
+is making sure that the cluster nodes have the correct runtime environment as
+your workstation, and using Docker virtualization completely resolves this<a data-type="indexterm" data-primary="" data-startref="clu_doc" id="idm46122403691208" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="" data-startref="doc_adv" id="idm46122403690264" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>.<sup class="calibre44"><a data-type="noteref" id="idm46122403689192-marker" href="ch10.xhtml#idm46122403689192" class="pcalibre2 pcalibre calibre45 pcalibre3 pcalibre1">8</a></sup></p>
+</div></section>
+
+
+
+
+
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<section data-type="sect1" data-pdf-bookmark="Wrap-Up" class="calibre3"><div class="preface" id="idm46122403687384">
+<h1 class="calibre25">Wrap-Up</h1>
+
+<p class="author1">So far in the book, we’ve looked at profiling to understand slow parts of your
+code, compiling and using <code class="calibre26">numpy</code> to make your code run faster, and various
+approaches to multiple processes and computers. In addition, we surveyed
+container virtualization to manage code environments and help in cluster
+deployment. In the penultimate chapter, we’ll look at ways of using less RAM
+through different data structures and probabilistic approaches. These lessons
+could help you keep all your data on one machine, avoiding the need to run a
+cluster.<a data-type="indexterm" data-primary="" data-startref="clu_ch" id="idm46122403685096" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/></p>
+</div></section>
+
+
+
+
+
+
+
+<div data-type="footnotes" class="calibre52"><p data-type="footnote" id="idm46122403968536" class="calibre53"><sup class="calibre54"><a href="ch10.xhtml#idm46122403968536-marker" class="pcalibre2 pcalibre calibre45 pcalibre3 pcalibre1">1</a></sup> This can be quite advantageous when we’re working in AWS, where we can have our <code class="calibre26">nsqd</code> processes running on a reserved instance and our consumers working on a cluster of spot instances.</p><p data-type="footnote" id="idm46122403960472" class="calibre53"><sup class="calibre54"><a href="ch10.xhtml#idm46122403960472-marker" class="pcalibre2 pcalibre calibre45 pcalibre3 pcalibre1">2</a></sup> This asynchronicity comes from NSQ’s protocol for sending messages to consumers being push-based.  This makes it so our code can have an asynchronous read from our connection to NSQ happen in the background and wake up when a message is found.</p><p data-type="footnote" id="idm46122403957848" class="calibre53"><sup class="calibre54"><a href="ch10.xhtml#idm46122403957848-marker" class="pcalibre2 pcalibre calibre45 pcalibre3 pcalibre1">3</a></sup> This sort of chaining of data analysis is called<a data-type="indexterm" data-primary="pipelining" id="idm46122403957144" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/> <em class="hyperlink">pipelining</em> and can be an effective way to perform multiple types of analysis on the same data efficiently.</p><p data-type="footnote" id="idm46122403943144" class="calibre53"><sup class="calibre54"><a href="ch10.xhtml#idm46122403943144-marker" class="pcalibre2 pcalibre calibre45 pcalibre3 pcalibre1">4</a></sup> You can also easily publish a message manually with an HTTP call; however, this <code class="calibre26">nsq.Writer</code> object simplifies much of the error handling.</p><p data-type="footnote" id="idm46122402448536" class="calibre53"><sup class="calibre54"><a href="ch10.xhtml#idm46122402448536-marker" class="pcalibre2 pcalibre calibre45 pcalibre3 pcalibre1">5</a></sup> For this example, we installed NSQ straight onto our system by unpacking the provided binaries into our <code class="calibre26">PATH</code> environment variable. Alternatively, you can use Docker, discussed in <a data-type="xref" href="#docker" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">“Docker”</a>, to easily run the latest versions.</p><p data-type="footnote" id="idm46122402901784" class="calibre53"><sup class="calibre54"><a href="ch10.xhtml#idm46122402901784-marker" class="pcalibre2 pcalibre calibre45 pcalibre3 pcalibre1">6</a></sup> This fine-tuning can, for example, be used to adjust the amount of memory a process has access to, or which CPUs or even how much of the CPU it can use.</p><p data-type="footnote" id="idm46122403724904" class="calibre53"><sup class="calibre54"><a href="ch10.xhtml#idm46122403724904-marker" class="pcalibre2 pcalibre calibre45 pcalibre3 pcalibre1">7</a></sup> The <code class="calibre26"><em class="calibre66">username</em></code> portion of the container name is useful when also pushing built containers to a repository.</p><p data-type="footnote" id="idm46122403689192" class="calibre53"><sup class="calibre54"><a href="ch10.xhtml#idm46122403689192-marker" class="pcalibre2 pcalibre calibre45 pcalibre3 pcalibre1">8</a></sup> A great tutorial to get started with Docker and Kubernetes can be found at <a href="https://oreil.ly/l9jXD" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"><em class="hyperlink">https://oreil.ly/l9jXD</em></a>.</p></div></div></section></div>
+
+
+
+  </body></html>

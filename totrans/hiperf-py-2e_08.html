@@ -1,0 +1,1342 @@
+<html><head></head><body><div id="sbo-rt-content" class="calibre2"><section data-type="chapter" epub:type="chapter" data-pdf-bookmark="Chapter 8. Asynchronous I/O" class="calibre3"><div class="preface" id="chapter-concurrency">
+<h1 class="calibre23"><span class="publishername">Chapter 8. </span>Asynchronous I/O</h1>
+
+<aside data-type="sidebar" epub:type="sidebar" class="calibre40"><div class="sidebar" id="idm46122412981304">
+<h5 class="calibre41">Questions You’ll Be Able to Answer After This Chapter</h5>
+<ul class="printings">
+<li class="calibre21">
+<p class="calibre42">What is concurrency, and how is it helpful?</p>
+</li>
+<li class="calibre21">
+<p class="calibre42">What is the difference between concurrency and parallelism?</p>
+</li>
+<li class="calibre21">
+<p class="calibre42">Which tasks can be done concurrently, and which can’t?</p>
+</li>
+<li class="calibre21">
+<p class="calibre42">What are the various paradigms for concurrency?</p>
+</li>
+<li class="calibre21">
+<p class="calibre42">When is the right time to take advantage of concurrency?</p>
+</li>
+<li class="calibre21">
+<p class="calibre42">How can concurrency speed up my programs?</p>
+</li>
+</ul>
+</div></aside>
+
+<p class="author1"><a data-type="indexterm" data-primary="I/O" data-seealso="asynchronous programming" id="io_ab" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="concurrency" data-seealso="asynchronous programming" id="con_ab" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="asynchronous programming" id="asyn_ch" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>So far we have focused on speeding up code by increasing the number of compute
+cycles that a program can complete in a given time. However, in the days of big
+data, getting the relevant data to your code can be the bottleneck, as opposed to
+the actual code itself. When this is the case, your program is called <em class="hyperlink">I/O bound</em>; in
+other words, the speed is bounded by the efficiency of the input/output.</p>
+
+<p class="author1">I/O can be quite burdensome to the flow of a program.  Every time your code
+reads from a file or writes to a network socket, it must pause to contact the
+kernel, request that the actual read happens, and then wait for it to complete.
+This is because it is not your program but the kernel that does the actual read operation, since the kernel is responsible for managing any interaction with hardware.
+The additional layer may not seem like the end of the world, especially once
+you realize that a similar operation happens every time memory is allocated;
+however, if we look back at <a data-type="xref" href="ch01_split_000.xhtml#FIG-performant-connection-speed" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Figure 1-3</a>, we see that most
+of the I/O operations we perform are on devices that are orders of magnitude
+slower than the CPU. So even if the communication with the kernel is fast, we’ll
+be waiting quite some time for the kernel to get the result from the device and return it to us.</p>
+
+<p class="author1">For example, in the time it takes to write to a network socket, an operation
+that typically takes about 1 millisecond, we could have completed 2,400,000 instructions
+on a 2.4 GHz computer.  Worst of all, our program is halted for much of this 1
+millisecond of time—our execution is paused, and then we wait for a signal that the
+write operation has completed.  This time spent in a paused state is called<a data-type="indexterm" data-primary="I/O wait" id="idm46122413226536" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/> <em class="hyperlink">I/O
+wait</em>.</p>
+
+<p class="author1">Asynchronous I/O helps us utilize this wasted time by allowing us to perform
+other operations while we are in the I/O wait state.  For example, in
+<a data-type="xref" href="#conn_serial_vs_concurrent" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Figure 8-1</a> we see a depiction of a program that must run
+three tasks, all of which have periods of I/O wait within them.  If we run them
+serially, we suffer the I/O wait penalty three times.  However, if we run
+these tasks concurrently, we can essentially hide the wait time by running
+another task in the meantime.  It is important to note that this is all still
+happening on a single thread and still uses only one CPU at a time!</p>
+
+<p class="author1">This is possible because while a program is in I/O wait, the kernel is simply
+waiting for whatever device we’ve requested to read from (hard drive, network
+adapter, GPU, etc.) to send a signal that the requested data is ready. Instead
+of waiting, we can create a mechanism <a data-type="indexterm" data-primary="event loops" id="idm46122413222728" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="concurrency" data-secondary="event loops" id="idm46122413222024" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>(the event loop) so that we can dispatch
+requests for data, continue performing compute operations, and be notified when
+the data is ready to be read. This is in stark contrast to the
+multiprocessing/multithreading (<a data-type="xref" href="ch09_split_000.xhtml#multiprocessing" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Chapter 9</a>) paradigm, where a new
+process is launched that does experience I/O wait but uses the multi-tasking
+nature of modern CPUs to allow the main process to continue. However,
+the two mechanisms are often used in tandem, where we launch multiple processes,
+each of which is efficient at asynchronous I/O, in order to fully take advantage
+of our computer’s resources.</p>
+<div data-type="note" epub:type="note" class="calibre35"><h6 class="calibre36">Note</h6>
+<p class="author1">Since <a data-type="indexterm" data-primary="concurrent programs/functions" id="idm46122413218552" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>concurrent programs run on a single thread, they are generally easier to
+write and manage than standard multithreaded programs. All concurrent functions
+share the same memory space, so sharing data between them works in
+the normal ways you would expect. However, you still need to be careful about
+race conditions since you can’t be sure which lines of code get run when.</p>
+</div>
+
+<p class="author1">By modeling a program in this event-driven way, we are able to take advantage of
+I/O wait to perform more operations on a single thread than would otherwise be
+possible.<a data-type="indexterm" data-primary="" data-startref="io_ab" id="idm46122413216584" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/></p>
+
+<figure class="calibre46"><div id="conn_serial_vs_concurrent" class="figure">
+<img src="Images/hpp2_0801.png" alt="hpp2 0801" class="calibre101"/>
+<h6 class="calibre47"><span class="publishername">Figure 8-1. </span>Comparison of serial and concurrent programs</h6>
+</div></figure>
+
+
+
+
+
+
+<section data-type="sect1" data-pdf-bookmark="Introduction to Asynchronous Programming" class="calibre3"><div class="preface" id="idm46122413213464">
+<h1 class="calibre25">Introduction to Asynchronous Programming</h1>
+
+<p class="author1">Typically, when a program enters I/O wait, the execution is paused so that the
+kernel can perform the low-level operations associated with the I/O request<a data-type="indexterm" data-primary="context switches" id="idm46122413211592" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>
+(this is called a <em class="hyperlink">context switch</em>), and it is not resumed until the I/O operation
+is completed.  Context switching is quite a heavy operation.  It requires us to
+save the state of our program (losing any sort of caching we had at the CPU
+level) and give up the use of the CPU.  Later, when we are allowed to run again,
+we must spend time reinitializing our program on the motherboard and getting
+ready to resume (of course, all this happens behind the scenes).</p>
+
+<p class="author1">With concurrency, on the other hand, we typically have an <em class="hyperlink">event
+loop</em> running that manages what gets to run in our program, and when.  In
+essence, an event loop  is simply a list of functions that need to be run.  The
+function at the top of the list gets run, then the next, etc.
+<a data-type="xref" href="#conn_toy_eventloop" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Example 8-1</a> shows a simple example of an event loop.</p>
+<div id="conn_toy_eventloop" data-type="example" class="calibre56">
+<h5 class="calibre58"><span class="publishername">Example 8-1. </span>Toy event loop</h5>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre59"><code class="kn">from</code> <code class="nn">queue</code> <code class="kn">import</code> <code class="n">Queue</code>
+<code class="kn">from</code> <code class="nn">functools</code> <code class="kn">import</code> <code class="n">partial</code>
+
+<code class="n">eventloop</code> <code class="o">=</code> <code class="nb">None</code>
+
+<code class="kn">class</code> <code class="nc">EventLoop</code><code class="p">(</code><code class="n">Queue</code><code class="p">):</code>
+    <code class="kn">def</code> <code class="nf">start</code><code class="p">(</code><code class="nb">self</code><code class="p">):</code>
+        <code class="kn">while</code> <code class="nb">True</code><code class="p">:</code>
+            <code class="n">function</code> <code class="o">=</code> <code class="nb">self</code><code class="o">.</code><code class="n">get</code><code class="p">()</code>
+            <code class="n">function</code><code class="p">()</code>
+
+<code class="kn">def</code> <code class="nf">do_hello</code><code class="p">():</code>
+    <code class="kn">global</code> <code class="n">eventloop</code>
+    <code class="kn">print</code><code class="p">(</code><code class="s">"Hello"</code><code class="p">)</code>
+    <code class="n">eventloop</code><code class="o">.</code><code class="n">put</code><code class="p">(</code><code class="n">do_world</code><code class="p">)</code>
+
+<code class="kn">def</code> <code class="nf">do_world</code><code class="p">():</code>
+    <code class="kn">global</code> <code class="n">eventloop</code>
+    <code class="kn">print</code><code class="p">(</code><code class="s">"world"</code><code class="p">)</code>
+    <code class="n">eventloop</code><code class="o">.</code><code class="n">put</code><code class="p">(</code><code class="n">do_hello</code><code class="p">)</code>
+
+<code class="kn">if</code> <code class="calibre26">__name__</code> <code class="o">==</code> <code class="s">"__main__"</code><code class="p">:</code>
+    <code class="n">eventloop</code> <code class="o">=</code> <code class="n">EventLoop</code><code class="p">()</code>
+    <code class="n">eventloop</code><code class="o">.</code><code class="n">put</code><code class="p">(</code><code class="n">do_hello</code><code class="p">)</code>
+    <code class="n">eventloop</code><code class="o">.</code><code class="n">start</code><code class="p">()</code></pre></div>
+
+<p class="author1">This may not seem like a big change; however, we can couple event loops with
+asynchronous (async) I/O operations for massive gains when performing I/O tasks.
+In this example, the call <code class="calibre26">eventloop.put(do_world)</code> approximates an asynchronous
+call to the<a data-type="indexterm" data-primary="do_world function" id="idm46122413203448" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/> <code class="calibre26">do_world</code> function. This operation is called <code class="calibre26">nonblocking</code>,
+meaning it will return immediately but guarantee that <code class="calibre26">do_world</code> is called at
+some point later. Similarly, if this were a network write with an async
+function, it will return right away even though the write has not happened yet.
+When the write has completed, an event fires so our program knows about it.</p>
+
+<p class="author1">Putting these two concepts together, we can have a program that, when an I/O
+operation is requested, runs other functions while waiting for the original I/O
+operation to complete.  This essentially allows us to still do meaningful
+calculations when we otherwise would have been in I/O wait.</p>
+<div data-type="note" epub:type="note" class="calibre35"><h6 class="calibre36">Note</h6>
+<p class="author1">Switching from function to function does have a cost.  The <a data-type="indexterm" data-primary="Kernel" id="idm46122412768296" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>kernel must take the
+time to set up the function to be called in memory, and the state of our caches
+won’t be as predictable.  It is because of this that concurrency gives the best
+results when your program has a lot of I/O wait—the cost associated with switching can be much less than what is gained by making use of I/O wait
+time.</p>
+</div>
+
+<p class="author1">Generally, programming using event loops can take two forms: <a data-type="indexterm" data-primary="callbacks" id="idm46122412766600" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="futures" id="idm46122412765896" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>callbacks or
+futures. In the callback paradigm, functions are called with an argument that is
+generally called the <em class="hyperlink">callback</em>.  Instead of the function returning its value,
+it calls the callback function with the value instead. This sets up long chains
+of functions that are called, with each function getting the result of the previous
+function in the chain (these chains are sometimes referred to as “callback
+hell”). <a data-type="xref" href="#example8-2" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Example 8-2</a> is a simple example of the callback paradigm.</p>
+<div id="example8-2" data-type="example" class="calibre56">
+<h5 class="calibre58"><span class="publishername">Example 8-2. </span>Example with callbacks</h5>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre59"><code class="kn">from</code><code class="calibre26"> </code><code class="nn">functools</code><code class="calibre26"> </code><code class="kn">import</code><code class="calibre26"> </code><code class="n">partial</code><code class="calibre26">
+</code><code class="kn">from</code><code class="calibre26"> </code><code class="nn">some_database_library</code><code class="calibre26"> </code><code class="kn">import</code><code class="calibre26"> </code><code class="n">save_results_to_db</code><code class="calibre26">
+</code><code class="calibre26">
+</code><code class="kn">def</code><code class="calibre26"> </code><code class="nf">save_value</code><code class="p">(</code><code class="n">value</code><code class="p">,</code><code class="calibre26"> </code><code class="n">callback</code><code class="p">)</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="kn">print</code><code class="p">(</code><code class="n">f</code><code class="s">"</code><code class="s">Saving {value} to database</code><code class="s">"</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">save_result_to_db</code><code class="p">(</code><code class="n">result</code><code class="p">,</code><code class="calibre26"> </code><code class="n">callback</code><code class="p">)</code><code class="calibre26">  </code><a class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6" id="co_asynchronous_i_o_CO1-1" href="#callout_asynchronous_i_o_CO1-1"><img src="Images/1.png" alt="1" class="calibre74"/></a><code class="calibre26">
+</code><code class="calibre26">
+</code><code class="kn">def</code><code class="calibre26"> </code><code class="nf">print_response</code><code class="p">(</code><code class="n">db_response</code><code class="p">)</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="kn">print</code><code class="p">(</code><code class="s">"</code><code class="s">Response from database: {db_response}</code><code class="s">"</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">
+</code><code class="kn">if</code><code class="calibre26"> </code><code class="calibre26">__name__</code><code class="calibre26"> </code><code class="o">==</code><code class="calibre26"> </code><code class="s">"</code><code class="s">__main__</code><code class="s">"</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">eventloop</code><code class="o">.</code><code class="n">put</code><code class="p">(</code><code class="n">partial</code><code class="p">(</code><code class="n">save_value</code><code class="p">,</code><code class="calibre26"> </code><code class="s">"</code><code class="s">Hello World</code><code class="s">"</code><code class="p">,</code><code class="calibre26"> </code><code class="n">print_response</code><code class="p">)</code><code class="p">)</code></pre>
+<dl class="calibre28">
+<dt class="calibre29"><a class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6" id="callout_asynchronous_i_o_CO1-1" href="#co_asynchronous_i_o_CO1-1"><img src="Images/1.png" alt="1" class="calibre74"/></a></dt>
+<dd class="calibre75"><p class="calibre76"><code class="calibre26">save_result_to_db</code> is an asynchronous function; it will return immediately, and the function will end and allow other code to run.  However, once the data is ready, <code class="calibre26">print_response</code> will be called.</p></dd>
+</dl></div>
+
+<p class="author1">Before Python 3.4, the callback paradigm was quite popular. However, the
+<a data-type="indexterm" data-primary="asynchronous programming" data-secondary="AsyncIO (module)" id="idm46122412609384" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="AsyncIO (module)" id="idm46122412608440" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><code class="calibre26">asyncio</code> standard library module and <a data-type="indexterm" data-primary="PEP 492" id="idm46122412624296" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>PEP 492 made the future’s mechanism native
+to Python. This was done by creating a standard API for dealing with
+asynchronous I/O and the new <a data-type="indexterm" data-primary="await statement" id="idm46122412623416" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="async function" id="idm46122412622744" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="asynchronous programming" data-secondary="async function" id="idm46122412622072" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="asynchronous programming" data-secondary="await statement" id="idm46122412621112" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><code class="calibre26">await</code> and <code class="calibre26">async</code> keywords, which define an
+asynchronous function and a way to wait for a result.</p>
+
+<p class="author1">In this paradigm, an asynchronous function returns a <code class="calibre26">Future</code> object, which is a
+promise of a future result.  Because of this, if we want the result at some
+point we must wait for the future that is returned by this sort of asynchronous
+function to complete and be filled with the value we desire (either by doing an
+<code class="calibre26">await</code> on it or by running a function that explicitly waits for a value to be
+ready).  However, this also means that the result can be available in the
+callers context, while in the callback paradigm the result is available only in
+the callback function. While waiting for the <code class="calibre26">Future</code> object to be filled with the
+data we requested, we can do other calculations.  If we couple this with the
+concept of generators—functions that can be paused and whose execution can later
+be resumed—we can write asynchronous code that looks very close to serial code
+in form:</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre50"><code class="kn">from</code><code class="calibre26"> </code><code class="nn">some_async_database_library</code><code class="calibre26"> </code><code class="kn">import</code><code class="calibre26"> </code><code class="n">save_results_to_db</code><code class="calibre26">
+</code><code class="calibre26">
+</code><code class="n">async</code><code class="calibre26"> </code><code class="kn">def</code><code class="calibre26"> </code><code class="nf">save_value</code><code class="p">(</code><code class="n">value</code><code class="p">)</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="kn">print</code><code class="p">(</code><code class="n">f</code><code class="s">"</code><code class="s">Saving {value} to database</code><code class="s">"</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">db_response</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="n">await</code><code class="calibre26"> </code><code class="n">save_result_to_db</code><code class="p">(</code><code class="n">result</code><code class="p">)</code><code class="calibre26"> </code><a class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6" id="co_asynchronous_i_o_CO2-1" href="#callout_asynchronous_i_o_CO2-1"><img src="Images/1.png" alt="1" class="calibre74"/></a><code class="calibre26">
+</code><code class="calibre26">    </code><code class="kn">print</code><code class="p">(</code><code class="s">"</code><code class="s">Response from database: {db_response}</code><code class="s">"</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">
+</code><code class="kn">if</code><code class="calibre26"> </code><code class="calibre26">__name__</code><code class="calibre26"> </code><code class="o">==</code><code class="calibre26"> </code><code class="s">"</code><code class="s">__main__</code><code class="s">"</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">eventloop</code><code class="o">.</code><code class="n">put</code><code class="p">(</code><code class="calibre26">
+</code><code class="calibre26">        </code><code class="n">partial</code><code class="p">(</code><code class="n">save_value</code><code class="p">,</code><code class="calibre26"> </code><code class="s">"</code><code class="s">Hello World</code><code class="s">"</code><code class="p">,</code><code class="calibre26"> </code><code class="kn">print</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="p">)</code></pre>
+<dl class="calibre28">
+<dt class="calibre29"><a class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6" id="callout_asynchronous_i_o_CO2-1" href="#co_asynchronous_i_o_CO2-1"><img src="Images/1.png" alt="1" class="calibre74"/></a></dt>
+<dd class="calibre75"><p class="calibre76">In this case, <code class="calibre26">save_result_to_db</code> returns a <code class="calibre26">Future</code> type.  By <code class="calibre26">await</code>ing it, we ensure that <code class="calibre26">save_value</code> gets paused until the value is ready and then resumes and completes its operations.</p></dd>
+</dl>
+
+<p class="author1">It’s important to realize that the <code class="calibre26">Future</code> object returned by
+<code class="calibre26">save_result_to_db</code> holds the <em class="hyperlink">promise</em> of a <code class="calibre26">Future</code> result and doesn’t hold the
+result itself or even call any of the <code class="calibre26">save_result_to_db</code> code. In fact, if we
+simply did <code class="calibre26">db_response_future = save_result_to_db(result)</code>, the statement would
+complete immediately and we could do other things with the <code class="calibre26">Future</code> object. For
+example, we could collect a list of futures and wait for all of them at the same
+time.</p>
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<section data-type="sect1" data-pdf-bookmark="How Does async/await Work?" class="calibre3"><div class="preface" id="idm46122413212840">
+<h1 class="calibre25">How Does async/await Work?</h1>
+
+<p class="author1">An <code class="calibre26">async</code> function (defined with <code class="calibre26">async def</code>) is called a <a data-type="indexterm" data-primary="coroutines, as generators" id="idm46122412488008" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="generators and iterators" data-secondary="coroutines as generators" id="idm46122412487304" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="iterators and generators" data-secondary="coroutines as generators" id="idm46122412486424" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><em class="hyperlink">coroutine</em>. In
+Python, coroutines are implemented with the same philosophies as generators.
+This is convenient because generators already have the machinery to pause their
+execution and resume later. Using this paradigm, an <code class="calibre26">await</code> statement is
+similar in function to a <code class="calibre26">yield</code> statement; the execution of the current
+function gets paused while other code is run. Once the <code class="calibre26">await</code> or <a data-type="indexterm" data-primary="yield statement" id="idm46122412483576" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><code class="calibre26">yield</code>
+resolves with data, the function is resumed. So in the preceding example, our
+<code class="calibre26">save_result_to_db</code> will return a <code class="calibre26">Future</code> object, and the <code class="calibre26">await</code> statement
+pauses the function until that <code class="calibre26">Future</code> contains a result. The event loop is
+responsible for scheduling the resumption of <code class="calibre26">save_value</code> after the <code class="calibre26">Future</code> is
+ready to return a result.</p>
+
+<p class="author1">For Python 2.7 implementations of future-based concurrency, things can get a bit
+strange when we’re trying to use coroutines as actual functions. Remember that
+<span class="publishername">generators</span> cannot return values, so libraries deal with this issue in various ways. The in Python 3.4,
+new machinery has been introduced in order to easily create coroutines and have
+them still return values. However, many asynchronous libraries that have been
+around since Python 2.7 have legacy code meant to deal with this awkward
+transition (in particular, <code class="calibre26">tornado</code>’s <code class="calibre26">gen</code> module).</p>
+
+<p class="author1">It is critical to realize our reliance on an event loop when running concurrent
+code. In general, this leads to most fully concurrent code’s main code
+entry point consisting mainly of setting up and starting the event loop.
+However, this assumes that your entire program is concurrent. In other cases, a
+set of futures is created within the program, and then a temporary event loop is
+started simply to manage the existing futures, before the event loop exits and
+the code can resume normally. This is generally done with either the
+<code class="calibre26">loop.run_until_complete(coro)</code> or <code class="calibre26">loop.run_forever()</code> method from the
+<code class="calibre26">asyncio.loop</code> module. However, asyncio also provides a convenience function
+(<code class="calibre26">asyncio.run(coro)</code>) to simplify this process.</p>
+
+<p class="author1">In this chapter we will analyze a web crawler that fetches data from an HTTP
+server that has latency built into it.  This represents the general response-time latency that will occur whenever dealing with I/O.  We will first create a
+serial crawler that looks at the naive Python solution to this problem.  Then we
+will build up to a full <code class="calibre26">aiohttp</code> solution by iterating through <code class="calibre26">gevent</code> and
+then <code class="calibre26">tornado</code>. Finally, we will look at combining async I/O tasks with CPU
+tasks in order to effectively hide any time spent doing I/O.</p>
+<div data-type="note" epub:type="note" class="calibre35"><h6 class="calibre36">Note</h6>
+<p class="author1">The web server we implemented can support multiple connections at a time. This
+will be true for most services that you will be performing I/O with—most
+databases can support multiple requests at a time, and most web servers support
+10,000+ simultaneous connections.  However, when interacting with a service that
+cannot handle multiple connections at a time, we will always have the same
+performance as the serial case.</p>
+</div>
+
+
+
+
+
+
+
+
+<section data-type="sect2" data-pdf-bookmark="Serial Crawler" class="calibre3"><div class="preface" id="idm46122412470968">
+<h2 class="calibre43">Serial Crawler</h2>
+
+<p class="author1"><a data-type="indexterm" data-primary="asynchronous programming" data-secondary="serial crawler" id="asyn_sc" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="concurrency" data-secondary="serial crawler and" id="con_sc" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="serial crawler" id="sc_abt" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>For the control in our experiment with concurrency, we will write a serial web
+scraper that takes a list of URLs, fetches them, and sums the total length of
+the content from the pages.  We will use a custom HTTP server that takes two
+parameters, <code class="calibre26">name</code> and <code class="calibre26">delay</code>.  The <code class="calibre26">delay</code> field will tell the server how
+long, in milliseconds, to pause before responding.  The <code class="calibre26">name</code> field is
+for logging purposes.</p>
+
+<p class="author1">By controlling the <a data-type="indexterm" data-primary="delay parameter" id="idm46122412463464" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><code class="calibre26">delay</code> parameter, we can simulate the time it takes a server
+to respond to our query.  In the real world, this could correspond to a slow web
+server, a strenuous database call, or any I/O call that takes a long time to
+perform.  For the serial case, this leads to more time that our program
+is stuck in I/O wait, but in the concurrent examples later on, it will provide an
+opportunity to spend the I/O wait time doing other tasks.</p>
+
+<p class="author1">In <a data-type="xref" href="#conn_serial_http" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Example 8-3</a>, we chose to use the<a data-type="indexterm" data-primary="requests module" id="idm46122412460616" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/> <code class="calibre26">requests</code> module to perform the HTTP call.
+We made this choice because of the simplicity of the module.  We use HTTP in general for this
+section because it is a simple example of I/O and can be performed easily.
+In general, any call to a <a data-type="indexterm" data-primary="HTTP library" id="idm46122412459128" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>HTTP library can be replaced with any I/O.</p>
+<div id="conn_serial_http" data-type="example" class="calibre56">
+<h5 class="calibre58"><span class="publishername">Example 8-3. </span>Serial HTTP scraper</h5>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre59"><code class="kn">import</code> <code class="nn">random</code>
+<code class="kn">import</code> <code class="nn">string</code>
+
+<code class="kn">import</code> <code class="nn">requests</code>
+
+<code class="kn">def</code> <code class="nf">generate_urls</code><code class="p">(</code><code class="n">base_url</code><code class="p">,</code> <code class="n">num_urls</code><code class="p">):</code>
+    <code class="sd">"""</code>
+<code class="sd">    We add random characters to the end of the URL to break any caching</code>
+<code class="sd">    mechanisms in the requests library or the server</code>
+<code class="sd">    """</code>
+    <code class="kn">for</code> <code class="n">i</code> <code class="ow">in</code> <code class="nb">range</code><code class="p">(</code><code class="n">num_urls</code><code class="p">):</code>
+        <code class="kn">yield</code> <code class="n">base_url</code> <code class="o">+</code> <code class="s">""</code><code class="o">.</code><code class="n">join</code><code class="p">(</code><code class="n">random</code><code class="o">.</code><code class="n">sample</code><code class="p">(</code><code class="n">string</code><code class="o">.</code><code class="n">ascii_lowercase</code><code class="p">,</code> <code class="mi">10</code><code class="p">))</code>
+
+<code class="kn">def</code> <code class="nf">run_experiment</code><code class="p">(</code><code class="n">base_url</code><code class="p">,</code> <code class="n">num_iter</code><code class="o">=</code><code class="mi">1000</code><code class="p">):</code>
+    <code class="n">response_size</code> <code class="o">=</code> <code class="mi">0</code>
+    <code class="kn">for</code> <code class="n">url</code> <code class="ow">in</code> <code class="n">generate_urls</code><code class="p">(</code><code class="n">base_url</code><code class="p">,</code> <code class="n">num_iter</code><code class="p">):</code>
+        <code class="n">response</code> <code class="o">=</code> <code class="n">requests</code><code class="o">.</code><code class="n">get</code><code class="p">(</code><code class="n">url</code><code class="p">)</code>
+        <code class="n">response_size</code> <code class="o">+=</code> <code class="nb">len</code><code class="p">(</code><code class="n">response</code><code class="o">.</code><code class="n">text</code><code class="p">)</code>
+    <code class="kn">return</code> <code class="n">response_size</code>
+
+<code class="kn">if</code> <code class="calibre26">__name__</code> <code class="o">==</code> <code class="s">"__main__"</code><code class="p">:</code>
+    <code class="kn">import</code> <code class="nn">time</code>
+
+    <code class="n">delay</code> <code class="o">=</code> <code class="mi">100</code>
+    <code class="n">num_iter</code> <code class="o">=</code> <code class="mi">1000</code>
+    <code class="n">base_url</code> <code class="o">=</code> <code class="n">f</code><code class="s">"http://127.0.0.1:8080/add?name=serial&amp;delay={delay}&amp;"</code>
+
+    <code class="n">start</code> <code class="o">=</code> <code class="n">time</code><code class="o">.</code><code class="n">time</code><code class="p">()</code>
+    <code class="n">result</code> <code class="o">=</code> <code class="n">run_experiment</code><code class="p">(</code><code class="n">base_url</code><code class="p">,</code> <code class="n">num_iter</code><code class="p">)</code>
+    <code class="n">end</code> <code class="o">=</code> <code class="n">time</code><code class="o">.</code><code class="n">time</code><code class="p">()</code>
+    <code class="kn">print</code><code class="p">(</code><code class="n">f</code><code class="s">"Result: {result}, Time: {end - start}"</code><code class="p">)</code></pre></div>
+
+<p class="author1">When running this code, an interesting metric to look at is the start and stop
+time of each request as seen by the HTTP server.  This tells us how efficient
+our code was during I/O wait—since our task is to launch HTTP requests
+and then sum the number of characters that were returned, we should be able to
+launch more HTTP requests, and process any responses, while waiting for other
+requests to complete.</p>
+
+<p class="author1">We can see in <a data-type="xref" href="#conn_serial_request_time" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Figure 8-2</a> that, as expected, there is no
+interleaving of our requests.  We do one request at a time and wait for the
+previous request to happen before we move to the next request.  In fact, the
+total runtime of the serial process makes perfect sense knowing this.  Since
+each request takes 0.1 seconds (because of our <code class="calibre26">delay</code> parameter) and we are doing 500
+requests, we expect this runtime to be about 50 
+<span class="publishername">seconds</span>.<a data-type="indexterm" data-primary="" data-startref="asyn_sc" id="idm46122412332168" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="" data-startref="con_sc" id="idm46122412331160" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="" data-startref="sc_abt" id="idm46122412330216" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/></p>
+
+<figure class="calibre46"><div id="conn_serial_request_time" class="figure">
+<img src="Images/hpp2_0802.png" alt="Request times for serial scraper" class="calibre102"/>
+<h6 class="calibre47"><span class="publishername">Figure 8-2. </span>Request time for <a data-type="xref" href="#conn_serial_http" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Example 8-3</a></h6>
+</div></figure>
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<section data-type="sect2" data-pdf-bookmark="Gevent" class="calibre3"><div class="preface" id="idm46122412326536">
+<h2 class="calibre43">Gevent</h2>
+
+<p class="author1"><a data-type="indexterm" data-primary="asynchronous programming" data-secondary="gevent" id="asyn_gev" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="gevent" id="gev_ab" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>One of the simplest asynchronous libraries is <code class="calibre26">gevent</code>.  It follows the paradigm
+of having asynchronous functions return futures, which means most of the logic in
+your code can stay the same.  In addition, <code class="calibre26">gevent</code> monkey patches the standard I/O
+functions to be asynchronous, so most of the time you can simply use the
+standard I/O packages and benefit from asynchronous behavior.</p>
+
+<p class="author1">Gevent provides two mechanisms to enable asynchronous programming—as
+mentioned before, it patches the standard library with asynchronous I/O
+functions, and it has a <code class="calibre26">Greenlets</code> object that can be used for concurrent
+execution.  A<a data-type="indexterm" data-primary="greenlets" id="idm46122412320184" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="processes and threads" data-secondary="greenlets" id="idm46122412319480" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="threads and processes" data-secondary="greenlets" id="idm46122412318536" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/> <em class="hyperlink">greenlet</em> is a type of coroutine and can be thought of as a thread
+(see <a data-type="xref" href="ch09_split_000.xhtml#multiprocessing" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Chapter 9</a> for a discussion of threads); however, all greenlets run
+on the same physical thread.  Instead of using multiple CPUs to run all the
+greenlets, we have an event loop on a single CPU that is able to switch between them during I/O wait.
+For the most part, <code class="calibre26">gevent</code> tries to make the handling of the event loop as
+transparent as possible through the use of <code class="calibre26">wait</code> functions.  The <code class="calibre26">wait</code>
+function will start an event loop and run it as long as is needed for all
+greenlets to finish.  Because of this, most of your <code class="calibre26">gevent</code> code will run
+serially; then at some point you will set up many greenlets to do a
+concurrent task and start the event loop with the <code class="calibre26">wait</code> function.  While
+the <a data-type="indexterm" data-primary="wait function" id="idm46122412313464" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><code class="calibre26">wait</code> function is executing, all of the concurrent tasks you have queued up
+will run until completion (or some stopping condition), and then your code will
+go back to being serial again.</p>
+
+<p class="author1">The futures are created with <code class="calibre26">gevent.spawn</code>, which takes a function and the
+arguments to that function and launches a greenlet that is responsible for
+running that function.  The greenlet can be thought of as a future since, once
+the function we specified completes, its value will be contained within the
+greenlet’s <code class="calibre26">value</code> field.</p>
+
+<p class="author1">This patching of Python standard modules can make it harder to control the
+subtleties of what is going on.  For example, one thing we want to ensure
+when doing async I/O is that we don’t open too many files or connections at one
+time.  If we do, we can overload the remote server or slow down our process
+by having to <span class="publishername">context-switch</span> between too many operations.</p>
+
+<p class="author1">To limit the number of open files manually, we use a semaphore to only do HTTP requests from one hundred
+greenlets at a time.  A <a data-type="indexterm" data-primary="semaphores" id="idm46122412308872" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>semaphore works by making sure that only a certain
+number of coroutines can enter the context block at a time.  As a result, we
+launch all the greenlets that we need to fetch the URLs right away;
+however, only one hundred of them can make HTTP calls at a time.  Semaphores are one
+type of locking mechanism used a lot in various parallel code flows.  By
+restricting the progression of your code based on various rules, locks can help
+you make sure that the various components of your program don’t interfere with
+one another.</p>
+
+<p class="author1">Now that we have all the futures set up and have put in a locking mechanism to
+control the flow of the greenlets, we can wait until we start having results by
+using the<a data-type="indexterm" data-primary="gevent.iwait function" id="idm46122412306920" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/> <code class="calibre26">gevent.iwait</code> function, which will take a sequence of futures and
+iterate over the ready items.  Conversely, we could have used <code class="calibre26">gevent.wait</code>,
+which would block execution of our program until all requests are done.</p>
+
+<p class="author1">We go through the trouble of grouping our requests with the semaphore instead of
+sending them all at once because overloading the event loop can cause performance
+decreases (and this is true for all asynchronous programming). In addition, the
+server we are communicating with will have a limit to the number of concurrent
+requests it can respond to at the same time.</p>
+
+<p class="author1">From experimentation (shown in <a data-type="xref" href="#conn_num_concurrent_requests" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Figure 8-3</a>), we generally
+see that one hundred or so open connections at a time is optimal for requests with a
+reply time of about 50 milliseconds.  If we were to use fewer connections, we would still have wasted
+time during I/O wait.  With more, we are switching contexts too often in the
+event loop and adding unnecessary overhead to our program. We can see this
+effect come into play with four hundred concurrent requests for 50-millisecond requests. That being
+said, this value of one hundred depends on many things—the computer the code is being
+run on, the implementation of the event loop, the properties of the remote host,
+the expected time to respond of the remote server, and so on. We recommend doing some
+experimentation before settling on a choice.</p>
+
+<figure class="calibre46"><div id="conn_num_concurrent_requests" class="figure">
+<img src="Images/hpp2_0803.png" alt="Experimenting with different numbers of concurrent requests for various request times" class="calibre100"/>
+<h6 class="calibre47"><span class="publishername">Figure 8-3. </span>Experimenting with different numbers of concurrent requests for various request times</h6>
+</div></figure>
+
+<p class="author1">In <a data-type="xref" href="#conn_grequest_http" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Example 8-4</a>, we implement the <code class="calibre26">gevent</code> scraper by using a semaphore to ensure only 100 requests at a time.</p>
+<div id="conn_grequest_http" data-type="example" class="calibre56">
+<h5 class="calibre58"><span class="publishername">Example 8-4. </span><code class="calibre26">gevent</code> HTTP scraper</h5>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre59"><code class="kn">import</code><code class="calibre26"> </code><code class="nn">random</code><code class="calibre26">
+</code><code class="kn">import</code><code class="calibre26"> </code><code class="nn">string</code><code class="calibre26">
+</code><code class="kn">import</code><code class="calibre26"> </code><code class="nn">urllib.error</code><code class="calibre26">
+</code><code class="kn">import</code><code class="calibre26"> </code><code class="nn">urllib.parse</code><code class="calibre26">
+</code><code class="kn">import</code><code class="calibre26"> </code><code class="nn">urllib.request</code><code class="calibre26">
+</code><code class="kn">from</code><code class="calibre26"> </code><code class="nn">contextlib</code><code class="calibre26"> </code><code class="kn">import</code><code class="calibre26"> </code><code class="n">closing</code><code class="calibre26">
+</code><code class="calibre26">
+</code><code class="kn">import</code><code class="calibre26"> </code><code class="nn">gevent</code><code class="calibre26">
+</code><code class="kn">from</code><code class="calibre26"> </code><code class="nn">gevent</code><code class="calibre26"> </code><code class="kn">import</code><code class="calibre26"> </code><code class="n">monkey</code><code class="calibre26">
+</code><code class="kn">from</code><code class="calibre26"> </code><code class="nn">gevent.lock</code><code class="calibre26"> </code><code class="kn">import</code><code class="calibre26"> </code><code class="n">Semaphore</code><code class="calibre26">
+</code><code class="calibre26">
+</code><code class="n">monkey</code><code class="o">.</code><code class="n">patch_socket</code><code class="p">(</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">
+</code><code class="kn">def</code><code class="calibre26"> </code><code class="nf">generate_urls</code><code class="p">(</code><code class="n">base_url</code><code class="p">,</code><code class="calibre26"> </code><code class="n">num_urls</code><code class="p">)</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="kn">for</code><code class="calibre26"> </code><code class="n">i</code><code class="calibre26"> </code><code class="ow">in</code><code class="calibre26"> </code><code class="nb">range</code><code class="p">(</code><code class="n">num_urls</code><code class="p">)</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">        </code><code class="kn">yield</code><code class="calibre26"> </code><code class="n">base_url</code><code class="calibre26"> </code><code class="o">+</code><code class="calibre26"> </code><code class="s">"</code><code class="s">"</code><code class="o">.</code><code class="n">join</code><code class="p">(</code><code class="n">random</code><code class="o">.</code><code class="n">sample</code><code class="p">(</code><code class="n">string</code><code class="o">.</code><code class="n">ascii_lowercase</code><code class="p">,</code><code class="calibre26"> </code><code class="mi">10</code><code class="p">)</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">
+</code><code class="kn">def</code><code class="calibre26"> </code><code class="nf">download</code><code class="p">(</code><code class="n">url</code><code class="p">,</code><code class="calibre26"> </code><code class="n">semaphore</code><code class="p">)</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="kn">with</code><code class="calibre26"> </code><code class="n">semaphore</code><code class="p">:</code><code class="calibre26">  </code><a class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6" id="co_asynchronous_i_o_CO3-1" href="#callout_asynchronous_i_o_CO3-2"><img src="Images/2.png" alt="2" class="calibre74"/></a><code class="calibre26">
+</code><code class="calibre26">        </code><code class="kn">with</code><code class="calibre26"> </code><code class="n">closing</code><code class="p">(</code><code class="n">urllib</code><code class="o">.</code><code class="n">request</code><code class="o">.</code><code class="n">urlopen</code><code class="p">(</code><code class="n">url</code><code class="p">)</code><code class="p">)</code><code class="calibre26"> </code><code class="kn">as</code><code class="calibre26"> </code><code class="n">data</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">            </code><code class="kn">return</code><code class="calibre26"> </code><code class="n">data</code><code class="o">.</code><code class="n">read</code><code class="p">(</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">
+</code><code class="kn">def</code><code class="calibre26"> </code><code class="nf">chunked_requests</code><code class="p">(</code><code class="n">urls</code><code class="p">,</code><code class="calibre26"> </code><code class="n">chunk_size</code><code class="o">=</code><code class="mi">100</code><code class="p">)</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="sd">"""
+    Given an iterable of urls, this function will yield back the contents of the
+    URLs. The requests will be batched up in "chunk_size" batches using a
+    semaphore
+    """</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">semaphore</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="n">Semaphore</code><code class="p">(</code><code class="n">chunk_size</code><code class="p">)</code><code class="calibre26">  </code><a class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6" id="co_asynchronous_i_o_CO3-2" href="#callout_asynchronous_i_o_CO3-1"><img src="Images/1.png" alt="1" class="calibre74"/></a><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">requests</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="p">[</code><code class="n">gevent</code><code class="o">.</code><code class="n">spawn</code><code class="p">(</code><code class="n">download</code><code class="p">,</code><code class="calibre26"> </code><code class="n">u</code><code class="p">,</code><code class="calibre26"> </code><code class="n">semaphore</code><code class="p">)</code><code class="calibre26"> </code><code class="kn">for</code><code class="calibre26"> </code><code class="n">u</code><code class="calibre26"> </code><code class="ow">in</code><code class="calibre26"> </code><code class="n">urls</code><code class="p">]</code><code class="calibre26">  </code><a class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6" id="co_asynchronous_i_o_CO3-3" href="#callout_asynchronous_i_o_CO3-3"><img src="Images/3.png" alt="3" class="calibre74"/></a><code class="calibre26">
+</code><code class="calibre26">    </code><code class="kn">for</code><code class="calibre26"> </code><code class="n">response</code><code class="calibre26"> </code><code class="ow">in</code><code class="calibre26"> </code><code class="n">gevent</code><code class="o">.</code><code class="n">iwait</code><code class="p">(</code><code class="n">requests</code><code class="p">)</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">        </code><code class="kn">yield</code><code class="calibre26"> </code><code class="n">response</code><code class="calibre26">
+</code><code class="calibre26">
+</code><code class="kn">def</code><code class="calibre26"> </code><code class="nf">run_experiment</code><code class="p">(</code><code class="n">base_url</code><code class="p">,</code><code class="calibre26"> </code><code class="n">num_iter</code><code class="o">=</code><code class="mi">1000</code><code class="p">)</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">urls</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="n">generate_urls</code><code class="p">(</code><code class="n">base_url</code><code class="p">,</code><code class="calibre26"> </code><code class="n">num_iter</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">response_futures</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="n">chunked_requests</code><code class="p">(</code><code class="n">urls</code><code class="p">,</code><code class="calibre26"> </code><code class="mi">100</code><code class="p">)</code><code class="calibre26">  </code><a class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6" id="co_asynchronous_i_o_CO3-4" href="#callout_asynchronous_i_o_CO3-4"><img src="Images/4.png" alt="4" class="calibre74"/></a><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">response_size</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="nb">sum</code><code class="p">(</code><code class="nb">len</code><code class="p">(</code><code class="n">r</code><code class="o">.</code><code class="n">value</code><code class="p">)</code><code class="calibre26"> </code><code class="kn">for</code><code class="calibre26"> </code><code class="n">r</code><code class="calibre26"> </code><code class="ow">in</code><code class="calibre26"> </code><code class="n">response_futures</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="kn">return</code><code class="calibre26"> </code><code class="n">response_size</code><code class="calibre26">
+</code><code class="calibre26">
+</code><code class="kn">if</code><code class="calibre26"> </code><code class="calibre26">__name__</code><code class="calibre26"> </code><code class="o">==</code><code class="calibre26"> </code><code class="s">"</code><code class="s">__main__</code><code class="s">"</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="kn">import</code><code class="calibre26"> </code><code class="nn">time</code><code class="calibre26">
+</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">delay</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="mi">100</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">num_iter</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="mi">1000</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">base_url</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="n">f</code><code class="s">"</code><code class="s">http://127.0.0.1:8080/add?name=gevent&amp;delay={delay}&amp;</code><code class="s">"</code><code class="calibre26">
+</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">start</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="n">time</code><code class="o">.</code><code class="n">time</code><code class="p">(</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">result</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="n">run_experiment</code><code class="p">(</code><code class="n">base_url</code><code class="p">,</code><code class="calibre26"> </code><code class="n">num_iter</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">end</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="n">time</code><code class="o">.</code><code class="n">time</code><code class="p">(</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="kn">print</code><code class="p">(</code><code class="n">f</code><code class="s">"</code><code class="s">Result: {result}, Time: {end - start}</code><code class="s">"</code><code class="p">)</code></pre>
+<dl class="calibre28">
+<dt class="calibre29"><a class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6" id="callout_asynchronous_i_o_CO3-1" href="#co_asynchronous_i_o_CO3-2"><img src="Images/1.png" alt="1" class="calibre74"/></a></dt>
+<dd class="calibre75"><p class="calibre76">Here we generate a semaphore that lets <code class="calibre26">chunk_size</code> downloads happen.</p></dd>
+<dt class="calibre29"><a class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6" id="callout_asynchronous_i_o_CO3-2" href="#co_asynchronous_i_o_CO3-1"><img src="Images/2.png" alt="2" class="calibre74"/></a></dt>
+<dd class="calibre75"><p class="calibre76">By using the semaphore as a context manager, we ensure that only <code class="calibre26">chunk_size</code> greenlets can run the body of the context at one time.</p></dd>
+<dt class="calibre29"><a class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6" id="callout_asynchronous_i_o_CO3-3" href="#co_asynchronous_i_o_CO3-3"><img src="Images/3.png" alt="3" class="calibre74"/></a></dt>
+<dd class="calibre75"><p class="calibre76">We can queue up as many greenlets as we need, knowing that none of them will run until we start an event loop with <code class="calibre26">wait</code> or <code class="calibre26">iwait</code>.</p></dd>
+<dt class="calibre29"><a class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6" id="callout_asynchronous_i_o_CO3-4" href="#co_asynchronous_i_o_CO3-4"><img src="Images/4.png" alt="4" class="calibre74"/></a></dt>
+<dd class="calibre75"><p class="calibre76"><code class="calibre26">response_futures</code> now holds a generator over completed futures, all of which have our desired data in the <code class="calibre26">.value</code> property.</p></dd>
+</dl></div>
+
+<p class="author1">An important thing to note is that we have used <code class="calibre26">gevent</code> to make our I/O requests
+asynchronous, but we are not doing any non-I/O computations while in I/O wait.
+However, in <a data-type="xref" href="#conn_gevent_request_time" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Figure 8-4</a> we can see the massive speedup we get
+(see <a data-type="xref" href="#conn_runtime_comparison" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Table 8-1</a>).  By launching more requests while waiting for
+previous requests to finish, we are able to achieve a 90× speedup!  We can
+explicitly see that requests are being sent out before previous requests finish
+through the stacked horizontal lines representing the requests.  This
+is in sharp contrast to the case of the serial crawler
+(<a data-type="xref" href="#conn_serial_request_time" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Figure 8-2</a>), where a line starts only when the previous line
+finishes.</p>
+
+<p class="author1">Furthermore, we can see more interesting effects reflected in the shape of
+the <code class="calibre26">gevent</code> request timeline in <a data-type="xref" href="#conn_gevent_request_time" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Figure 8-4</a>.  For example, at around the 100th request, we
+see a pause where new requests are not launched.  This is because it is the
+first time that our semaphore is hit, and we are able to lock the semaphore
+before any previous requests finish.  After this, the semaphore goes into an
+equilibrium: it locks just as another request finishes and unlocks it.<a data-type="indexterm" data-primary="" data-startref="asyn_gev" id="idm46122411959864" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="" data-startref="gev_ab" id="idm46122411958888" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/></p>
+
+<figure class="calibre46"><div id="conn_gevent_request_time" class="figure">
+<img src="Images/hpp2_0804.png" alt="Request times for gevent scraper. The red line highlights the 100th request where we can see a pause before subsequent requests are issued." class="calibre102"/>
+<h6 class="calibre47"><span class="publishername">Figure 8-4. </span>Request times for <code class="calibre26">gevent</code> scraper—the red line highlights the 100th request, where we can see a pause before subsequent requests are issued</h6>
+</div></figure>
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<section data-type="sect2" data-pdf-bookmark="tornado" class="calibre3"><div class="preface" id="tornado">
+<h2 class="calibre43">tornado</h2>
+
+<p class="author1"><a data-type="indexterm" data-primary="asynchronous programming" data-secondary="tornado" id="asyn_tor" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="tornado" id="tor_ab" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>Another frequently used package for asynchronous I/O in Python is
+<code class="calibre26">tornado</code>, originally developed by Facebook primarily for HTTP clients
+and servers.  This framework has been around since Python 3.5, when <code class="calibre26">async/await</code>
+was introduced, and originally used a system of callbacks to organize
+asynchronous calls. Recently, however, the maintainers of the project have chosen to embrace the
+use of coroutines and in general have been critical in the architecture of the<a data-type="indexterm" data-primary="asynchronous programming" data-secondary="AsyncIO (module)" id="idm46122412016568" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="AsyncIO (module)" id="idm46122412015624" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>
+<code class="calibre26">asyncio</code> module.</p>
+
+<p class="author1">Currently, <code class="calibre26">tornado</code> can be used either by using <code class="calibre26">async</code>/<code class="calibre26">await</code> syntax, as is
+standard in Python, or by using Python’s <code class="calibre26">tornado.gen</code> module. This module was
+provided as a precursor to the native coroutines in Python. It did so by
+providing a decorator to turn a method into a coroutine (i.e., a way to get the
+same result as defining a function with <code class="calibre26">async def</code>) and various utilities to
+manage the runtime of coroutines. Currently this decorator approach is
+necessary only if you intend on providing support to Python versions older than 3.5.<sup class="calibre44"><a data-type="noteref" id="idm46122412293032-marker" href="ch08.xhtml#idm46122412293032" class="pcalibre2 pcalibre calibre45 pcalibre3 pcalibre1">1</a></sup></p>
+<div data-type="tip" class="calibre35"><h6 class="calibre36">Tip</h6>
+<p class="author1">When using <code class="calibre26">tornado</code>, make sure to have <code class="calibre26">pycurl</code> installed. It is an
+optional backend for tornado but performs better, especially with DNS requests,
+than the default backend.</p>
+</div>
+
+<p class="author1">In <a data-type="xref" href="#conn_tornado_http" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Example 8-5</a>, we implement the same web crawler as we did for
+<code class="calibre26">gevent</code>, but we use the <code class="calibre26">tornado</code> I/O loop (its version of an event loop)
+and HTTP client.  This saves us the trouble of having to batch our
+requests and deal with other, more low-level aspects of our code.</p>
+<div id="conn_tornado_http" data-type="example" class="calibre56">
+<h5 class="calibre58"><span class="publishername">Example 8-5. </span><code class="calibre26">tornado</code> HTTP scraper</h5>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre59"><code class="kn">import</code><code class="calibre26"> </code><code class="nn">asyncio</code><code class="calibre26">
+</code><code class="kn">import</code><code class="calibre26"> </code><code class="nn">random</code><code class="calibre26">
+</code><code class="kn">import</code><code class="calibre26"> </code><code class="nn">string</code><code class="calibre26">
+</code><code class="kn">from</code><code class="calibre26"> </code><code class="nn">functools</code><code class="calibre26"> </code><code class="kn">import</code><code class="calibre26"> </code><code class="n">partial</code><code class="calibre26">
+</code><code class="calibre26">
+</code><code class="kn">from</code><code class="calibre26"> </code><code class="nn">tornado.httpclient</code><code class="calibre26"> </code><code class="kn">import</code><code class="calibre26"> </code><code class="n">AsyncHTTPClient</code><code class="calibre26">
+</code><code class="calibre26">
+</code><code class="n">AsyncHTTPClient</code><code class="o">.</code><code class="n">configure</code><code class="p">(</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="s">"</code><code class="s">tornado.curl_httpclient.CurlAsyncHTTPClient</code><code class="s">"</code><code class="p">,</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">max_clients</code><code class="o">=</code><code class="mi">100</code><code class="calibre26">  </code><a class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6" id="co_asynchronous_i_o_CO4-1" href="#callout_asynchronous_i_o_CO4-1"><img src="Images/1.png" alt="1" class="calibre74"/></a><code class="calibre26">
+</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">
+</code><code class="kn">def</code><code class="calibre26"> </code><code class="nf">generate_urls</code><code class="p">(</code><code class="n">base_url</code><code class="p">,</code><code class="calibre26"> </code><code class="n">num_urls</code><code class="p">)</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="kn">for</code><code class="calibre26"> </code><code class="n">i</code><code class="calibre26"> </code><code class="ow">in</code><code class="calibre26"> </code><code class="nb">range</code><code class="p">(</code><code class="n">num_urls</code><code class="p">)</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">        </code><code class="kn">yield</code><code class="calibre26"> </code><code class="n">base_url</code><code class="calibre26"> </code><code class="o">+</code><code class="calibre26"> </code><code class="s">"</code><code class="s">"</code><code class="o">.</code><code class="n">join</code><code class="p">(</code><code class="n">random</code><code class="o">.</code><code class="n">sample</code><code class="p">(</code><code class="n">string</code><code class="o">.</code><code class="n">ascii_lowercase</code><code class="p">,</code><code class="calibre26"> </code><code class="mi">10</code><code class="p">)</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">
+</code><code class="n">async</code><code class="calibre26"> </code><code class="kn">def</code><code class="calibre26"> </code><code class="nf">run_experiment</code><code class="p">(</code><code class="n">base_url</code><code class="p">,</code><code class="calibre26"> </code><code class="n">num_iter</code><code class="o">=</code><code class="mi">1000</code><code class="p">)</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">http_client</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="n">AsyncHTTPClient</code><code class="p">(</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">urls</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="n">generate_urls</code><code class="p">(</code><code class="n">base_url</code><code class="p">,</code><code class="calibre26"> </code><code class="n">num_iter</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">response_sum</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="mi">0</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">tasks</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="p">[</code><code class="n">http_client</code><code class="o">.</code><code class="n">fetch</code><code class="p">(</code><code class="n">url</code><code class="p">)</code><code class="calibre26"> </code><code class="kn">for</code><code class="calibre26"> </code><code class="n">url</code><code class="calibre26"> </code><code class="ow">in</code><code class="calibre26"> </code><code class="n">urls</code><code class="p">]</code><code class="calibre26">  </code><a class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6" id="co_asynchronous_i_o_CO4-2" href="#callout_asynchronous_i_o_CO4-2"><img src="Images/2.png" alt="2" class="calibre74"/></a><code class="calibre26">
+</code><code class="calibre26">    </code><code class="kn">for</code><code class="calibre26"> </code><code class="n">task</code><code class="calibre26"> </code><code class="ow">in</code><code class="calibre26"> </code><code class="n">asyncio</code><code class="o">.</code><code class="n">as_completed</code><code class="p">(</code><code class="n">tasks</code><code class="p">)</code><code class="p">:</code><code class="calibre26">  </code><a class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6" id="co_asynchronous_i_o_CO4-3" href="#callout_asynchronous_i_o_CO4-3"><img src="Images/3.png" alt="3" class="calibre74"/></a><code class="calibre26">
+</code><code class="calibre26">        </code><code class="n">response</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="n">await</code><code class="calibre26"> </code><code class="n">task</code><code class="calibre26">  </code><a class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6" id="co_asynchronous_i_o_CO4-4" href="#callout_asynchronous_i_o_CO4-4"><img src="Images/4.png" alt="4" class="calibre74"/></a><code class="calibre26">
+</code><code class="calibre26">        </code><code class="n">response_sum</code><code class="calibre26"> </code><code class="o">+</code><code class="o">=</code><code class="calibre26"> </code><code class="nb">len</code><code class="p">(</code><code class="n">response</code><code class="o">.</code><code class="n">body</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="kn">return</code><code class="calibre26"> </code><code class="n">response_sum</code><code class="calibre26">
+</code><code class="calibre26">
+</code><code class="kn">if</code><code class="calibre26"> </code><code class="calibre26">__name__</code><code class="calibre26"> </code><code class="o">==</code><code class="calibre26"> </code><code class="s">"</code><code class="s">__main__</code><code class="s">"</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="kn">import</code><code class="calibre26"> </code><code class="nn">time</code><code class="calibre26">
+</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">delay</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="mi">100</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">num_iter</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="mi">1000</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">run_func</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="n">partial</code><code class="p">(</code><code class="calibre26">
+</code><code class="calibre26">        </code><code class="n">run_experiment</code><code class="p">,</code><code class="calibre26">
+</code><code class="calibre26">        </code><code class="n">f</code><code class="s">"</code><code class="s">http://127.0.0.1:8080/add?name=tornado&amp;delay={delay}&amp;</code><code class="s">"</code><code class="p">,</code><code class="calibre26">
+</code><code class="calibre26">        </code><code class="n">num_iter</code><code class="p">,</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">start</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="n">time</code><code class="o">.</code><code class="n">time</code><code class="p">(</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">result</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="n">asyncio</code><code class="o">.</code><code class="n">run</code><code class="p">(</code><code class="n">run_func</code><code class="p">)</code><code class="calibre26">  </code><a class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6" id="co_asynchronous_i_o_CO4-5" href="#callout_asynchronous_i_o_CO4-5"><img src="Images/5.png" alt="5" class="calibre74"/></a><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">end</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="n">time</code><code class="o">.</code><code class="n">time</code><code class="p">(</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="kn">print</code><code class="p">(</code><code class="n">f</code><code class="s">"</code><code class="s">Result: {result}, Time: {end - start}</code><code class="s">"</code><code class="p">)</code></pre>
+<dl class="calibre28">
+<dt class="calibre29"><a class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6" id="callout_asynchronous_i_o_CO4-1" href="#co_asynchronous_i_o_CO4-1"><img src="Images/1.png" alt="1" class="calibre74"/></a></dt>
+<dd class="calibre75"><p class="calibre76">We can configure our HTTP client and pick what backend library we wish to use and how many requests we would like to batch together. Tornado defaults to a max of 10 concurrent requests.</p></dd>
+<dt class="calibre29"><a class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6" id="callout_asynchronous_i_o_CO4-2" href="#co_asynchronous_i_o_CO4-2"><img src="Images/2.png" alt="2" class="calibre74"/></a></dt>
+<dd class="calibre75"><p class="calibre76">We generate many <code class="calibre26">Future</code> objects to queue the task of fetching the URL 
+<span class="publishername">contents</span>.</p></dd>
+<dt class="calibre29"><a class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6" id="callout_asynchronous_i_o_CO4-3" href="#co_asynchronous_i_o_CO4-3"><img src="Images/3.png" alt="3" class="calibre74"/></a></dt>
+<dd class="calibre75"><p class="calibre76">This will run all of the coroutines that are queued in the <code class="calibre26">tasks</code> list
+and yield them as they complete.</p></dd>
+<dt class="calibre29"><a class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6" id="callout_asynchronous_i_o_CO4-4" href="#co_asynchronous_i_o_CO4-4"><img src="Images/4.png" alt="4" class="calibre74"/></a></dt>
+<dd class="calibre75"><p class="calibre76">Since the coroutine is already completed, the <code class="calibre26">await</code> statement here returns
+immediately with the result of the earliest completed task.</p></dd>
+<dt class="calibre29"><a class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6" id="callout_asynchronous_i_o_CO4-5" href="#co_asynchronous_i_o_CO4-5"><img src="Images/5.png" alt="5" class="calibre74"/></a></dt>
+<dd class="calibre75"><p class="calibre76"><code class="calibre26">ioloop.run_sync</code> will start the <code class="calibre26">IOLoop</code> just for the duration of the runtime of the specified function. <code class="calibre26">ioloop.start()</code>, on the other hand, starts an <code class="calibre26">IOLoop</code> that must be terminated manually.</p></dd>
+</dl></div>
+
+<p class="author1">An important difference between the <code class="calibre26">tornado</code> code in <a data-type="xref" href="#conn_tornado_http" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Example 8-5</a> and
+the <code class="calibre26">gevent</code> code in <a data-type="xref" href="#conn_grequest_http" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Example 8-4</a> is when the event loop runs.
+For <code class="calibre26">gevent</code>, the event loop is 
+<span class="publishername">running</span> only while the <code class="calibre26">iwait</code> function is
+running.  On the other hand, in <code class="calibre26">tornado</code> the event loop is running the entire time
+and controls the complete execution flow of the program, not just the
+asynchronous I/O parts.</p>
+
+<p class="author1">This makes <code class="calibre26">tornado</code> ideal for any application that is mostly I/O-bound and where
+most, if not all, of the application should be asynchronous.  This is where
+<code class="calibre26">tornado</code> makes its biggest claim to fame, as a performant web server.  In fact,
+Micha has on many occasions written <code class="calibre26">tornado</code>-backed databases and data
+structures that require a lot of <a data-type="indexterm" data-primary="fuggetaboutit data structure" id="idm46122411544568" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>I/O.<sup class="calibre44"><a data-type="noteref" id="idm46122411776344-marker" href="ch08.xhtml#idm46122411776344" class="pcalibre2 pcalibre calibre45 pcalibre3 pcalibre1">2</a></sup></p>
+
+<p class="author1">On the other hand, since <a data-type="indexterm" data-primary="asynchronous programming" data-secondary="gevent" id="idm46122411437064" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="gevent" id="idm46122411436024" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><code class="calibre26">gevent</code> makes no requirements of your program as a
+whole, it is an ideal solution for mainly CPU-based problems that sometimes
+involve heavy I/O—for example, a program that does a lot of computations over a
+dataset and then must send the results back to the database for storage.  This
+becomes even simpler with the fact that most databases have simple HTTP APIs,
+which means you can even use <a data-type="indexterm" data-primary="grequests" id="idm46122411434568" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><code class="calibre26">grequests</code>.</p>
+
+<p class="author1">Another interesting difference between <code class="calibre26">gevent</code> and <code class="calibre26">tornado</code> is the way the
+internals change the request call graphs. Compare <a data-type="xref" href="#conn_tornado_request_time" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Figure 8-5</a>
+with <a data-type="xref" href="#conn_gevent_request_time" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Figure 8-4</a>.  For the <code class="calibre26">gevent</code> call graph, we see a very
+uniform call graph in which new requests are issued the second a slot in the
+semaphore opens up. On the other hand, the call graph for tornado is very stop-and-go. This means that the internal mechanism limiting the number of open
+connects is not reacting fast enough to request finishing.  These areas of the
+call graph in which the line seems to be thinner/thicker than usual represent times
+when the event loop isn’t doing its job optimally—times when we are either
+underutilizing or overutilizing our resources.</p>
+<div data-type="note" epub:type="note" class="calibre35"><h6 class="calibre36">Note</h6>
+<p class="author1">For all libraries that use <code class="calibre26">asyncio</code> to run the event loop, we can actually
+change the backend library that is being used. For example, the<a data-type="indexterm" data-primary="uvloop project" id="idm46122411663320" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>
+<a href="https://oreil.ly/Qvgq6" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"><code class="calibre26">uvloop</code></a> project supplies a drop-in
+replacement to <code class="calibre26">asyncio</code>’s event loop that claims massive speedups. These
+speedups are mainly seen server-side; in the client-side examples outlined in this chapter, they provide only a small performance boost. However, since it takes only two extra
+lines of code to use this event loop, there aren’t many reasons not to use it!</p>
+</div>
+
+<p class="author1">We can start to understand this slowdown in light of the lesson we’ve been
+learning over and over again: that generalized code is useful because it solves
+all problems well but no individual problem perfectly. The mechanism to limit
+one hundred ongoing connections is fantastic when working with a large web app or a
+code base that may make HTTP requests in many different places. One simple
+configuration guarantees that overall we won’t have more than the defined
+connections opened. However, in our situation we can benefit from being very
+specific as to how this is handled (as we did in the <code class="calibre26">gevent</code> example).<a data-type="indexterm" data-primary="" data-startref="asyn_tor" id="idm46122412040392" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="" data-startref="tor_ab" id="idm46122412039384" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/></p>
+
+<figure class="calibre46"><div id="conn_tornado_request_time" class="figure">
+<img src="Images/hpp2_0805.png" alt="Request times for tornado scraper" class="calibre102"/>
+<h6 class="calibre47"><span class="publishername">Figure 8-5. </span>Chronology of HTTP requests for <a data-type="xref" href="#conn_tornado_http" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Example 8-5</a></h6>
+</div></figure>
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<section data-type="sect2" data-pdf-bookmark="aiohttp" class="calibre3"><div class="preface" id="idm46122411932632">
+<h2 class="calibre43">aiohttp</h2>
+
+<p class="author1"><a data-type="indexterm" data-primary="aiohttp" id="aio_ab" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="asynchronous programming" data-secondary="aiohttp" id="asyn_aio" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>In response to the popularity of using async functionality to deal with
+heavy I/O systems, Python 3.4+ introduced a revamping of the old <a data-type="indexterm" data-primary="asynchronous programming" data-secondary="AsyncIO (module)" id="idm46122411508872" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="AsyncIO (module)" id="idm46122411507912" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><code class="calibre26">asyncio</code>
+standard library module. At the time, however, this module was quite low level,
+providing all of the low-level mechanisms for third-party libraries to create
+easy-to-use asynchronous libraries. <code class="calibre26">aiohttp</code> arose as the first popular
+library built entirely on the new <code class="calibre26">asyncio</code> library. It provides both HTTP
+client and server functionality and uses a similar API to those familiar with
+<code class="calibre26">tornado</code>. The entire project, <a href="https://oreil.ly/c0dgk" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"><code class="calibre26">aio-libs</code></a>,
+provides native asynchronous libraries for a wide variety of uses.  In <a data-type="xref" href="#conn_asyncio_http" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Example 8-6</a>, we show how to implement the <code class="calibre26">asyncio</code> scraper using <code class="calibre26">aiohttp</code>.</p>
+<div id="conn_asyncio_http" data-type="example" class="calibre56">
+<h5 class="calibre58"><span class="publishername">Example 8-6. </span><code class="calibre26">asyncio</code> HTTP scraper</h5>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre59"><code class="kn">import</code><code class="calibre26"> </code><code class="nn">asyncio</code><code class="calibre26">
+</code><code class="kn">import</code><code class="calibre26"> </code><code class="nn">random</code><code class="calibre26">
+</code><code class="kn">import</code><code class="calibre26"> </code><code class="nn">string</code><code class="calibre26">
+</code><code class="calibre26">
+</code><code class="kn">import</code><code class="calibre26"> </code><code class="nn">aiohttp</code><code class="calibre26">
+</code><code class="calibre26">
+</code><code class="kn">def</code><code class="calibre26"> </code><code class="nf">generate_urls</code><code class="p">(</code><code class="n">base_url</code><code class="p">,</code><code class="calibre26"> </code><code class="n">num_urls</code><code class="p">)</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="kn">for</code><code class="calibre26"> </code><code class="n">i</code><code class="calibre26"> </code><code class="ow">in</code><code class="calibre26"> </code><code class="nb">range</code><code class="p">(</code><code class="n">num_urls</code><code class="p">)</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">        </code><code class="kn">yield</code><code class="calibre26"> </code><code class="n">base_url</code><code class="calibre26"> </code><code class="o">+</code><code class="calibre26"> </code><code class="s">"</code><code class="s">"</code><code class="o">.</code><code class="n">join</code><code class="p">(</code><code class="n">random</code><code class="o">.</code><code class="n">sample</code><code class="p">(</code><code class="n">string</code><code class="o">.</code><code class="n">ascii_lowercase</code><code class="p">,</code><code class="calibre26"> </code><code class="mi">10</code><code class="p">)</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">
+</code><code class="kn">def</code><code class="calibre26"> </code><code class="nf">chunked_http_client</code><code class="p">(</code><code class="n">num_chunks</code><code class="p">)</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="sd">"""
+    Returns a function that can fetch from a URL, ensuring that only
+    "num_chunks" of simultaneous connects are made.
+    """</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">semaphore</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="n">asyncio</code><code class="o">.</code><code class="n">Semaphore</code><code class="p">(</code><code class="n">num_chunks</code><code class="p">)</code><code class="calibre26">  </code><a class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6" id="co_asynchronous_i_o_CO5-1" href="#callout_asynchronous_i_o_CO5-1"><img src="Images/1.png" alt="1" class="calibre74"/></a><code class="calibre26">
+</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">async</code><code class="calibre26"> </code><code class="kn">def</code><code class="calibre26"> </code><code class="nf">http_get</code><code class="p">(</code><code class="n">url</code><code class="p">,</code><code class="calibre26"> </code><code class="n">client_session</code><code class="p">)</code><code class="p">:</code><code class="calibre26">  </code><a class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6" id="co_asynchronous_i_o_CO5-2" href="#callout_asynchronous_i_o_CO5-2"><img src="Images/2.png" alt="2" class="calibre74"/></a><code class="calibre26">
+</code><code class="calibre26">        </code><code class="n">nonlocal</code><code class="calibre26"> </code><code class="n">semaphore</code><code class="calibre26">
+</code><code class="calibre26">        </code><code class="n">async</code><code class="calibre26"> </code><code class="kn">with</code><code class="calibre26"> </code><code class="n">semaphore</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">            </code><code class="n">async</code><code class="calibre26"> </code><code class="kn">with</code><code class="calibre26"> </code><code class="n">client_session</code><code class="o">.</code><code class="n">request</code><code class="p">(</code><code class="s">"</code><code class="s">GET</code><code class="s">"</code><code class="p">,</code><code class="calibre26"> </code><code class="n">url</code><code class="p">)</code><code class="calibre26"> </code><code class="kn">as</code><code class="calibre26"> </code><code class="n">response</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">                </code><code class="kn">return</code><code class="calibre26"> </code><code class="n">await</code><code class="calibre26"> </code><code class="n">response</code><code class="o">.</code><code class="n">content</code><code class="o">.</code><code class="n">read</code><code class="p">(</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="kn">return</code><code class="calibre26"> </code><code class="n">http_get</code><code class="calibre26">
+</code><code class="calibre26">
+</code><code class="n">async</code><code class="calibre26"> </code><code class="kn">def</code><code class="calibre26"> </code><code class="nf">run_experiment</code><code class="p">(</code><code class="n">base_url</code><code class="p">,</code><code class="calibre26"> </code><code class="n">num_iter</code><code class="o">=</code><code class="mi">1000</code><code class="p">)</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">urls</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="n">generate_urls</code><code class="p">(</code><code class="n">base_url</code><code class="p">,</code><code class="calibre26"> </code><code class="n">num_iter</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">http_client</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="n">chunked_http_client</code><code class="p">(</code><code class="mi">100</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">responses_sum</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="mi">0</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">async</code><code class="calibre26"> </code><code class="kn">with</code><code class="calibre26"> </code><code class="n">aiohttp</code><code class="o">.</code><code class="n">ClientSession</code><code class="p">(</code><code class="p">)</code><code class="calibre26"> </code><code class="kn">as</code><code class="calibre26"> </code><code class="n">client_session</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">        </code><code class="n">tasks</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="p">[</code><code class="n">http_client</code><code class="p">(</code><code class="n">url</code><code class="p">,</code><code class="calibre26"> </code><code class="n">client_session</code><code class="p">)</code><code class="calibre26"> </code><code class="kn">for</code><code class="calibre26"> </code><code class="n">url</code><code class="calibre26"> </code><code class="ow">in</code><code class="calibre26"> </code><code class="n">urls</code><code class="p">]</code><code class="calibre26">  </code><a class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6" id="co_asynchronous_i_o_CO5-3" href="#callout_asynchronous_i_o_CO5-3"><img src="Images/3.png" alt="3" class="calibre74"/></a><code class="calibre26">
+</code><code class="calibre26">        </code><code class="kn">for</code><code class="calibre26"> </code><code class="n">future</code><code class="calibre26"> </code><code class="ow">in</code><code class="calibre26"> </code><code class="n">asyncio</code><code class="o">.</code><code class="n">as_completed</code><code class="p">(</code><code class="n">tasks</code><code class="p">)</code><code class="p">:</code><code class="calibre26">  </code><a class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6" id="co_asynchronous_i_o_CO5-4" href="#callout_asynchronous_i_o_CO5-4"><img src="Images/4.png" alt="4" class="calibre74"/></a><code class="calibre26">
+</code><code class="calibre26">            </code><code class="n">data</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="n">await</code><code class="calibre26"> </code><code class="n">future</code><code class="calibre26">
+</code><code class="calibre26">            </code><code class="n">responses_sum</code><code class="calibre26"> </code><code class="o">+</code><code class="o">=</code><code class="calibre26"> </code><code class="nb">len</code><code class="p">(</code><code class="n">data</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="kn">return</code><code class="calibre26"> </code><code class="n">responses_sum</code><code class="calibre26">
+</code><code class="calibre26">
+</code><code class="kn">if</code><code class="calibre26"> </code><code class="calibre26">__name__</code><code class="calibre26"> </code><code class="o">==</code><code class="calibre26"> </code><code class="s">"</code><code class="s">__main__</code><code class="s">"</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="kn">import</code><code class="calibre26"> </code><code class="nn">time</code><code class="calibre26">
+</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">loop</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="n">asyncio</code><code class="o">.</code><code class="n">get_event_loop</code><code class="p">(</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">delay</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="mi">100</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">num_iter</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="mi">1000</code><code class="calibre26">
+</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">start</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="n">time</code><code class="o">.</code><code class="n">time</code><code class="p">(</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">result</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="n">loop</code><code class="o">.</code><code class="n">run_until_complete</code><code class="p">(</code><code class="calibre26">
+</code><code class="calibre26">        </code><code class="n">run_experiment</code><code class="p">(</code><code class="calibre26">
+</code><code class="calibre26">            </code><code class="n">f</code><code class="s">"</code><code class="s">http://127.0.0.1:8080/add?name=asyncio&amp;delay={delay}&amp;</code><code class="s">"</code><code class="p">,</code><code class="calibre26"> </code><code class="n">num_iter</code><code class="calibre26">
+</code><code class="calibre26">        </code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">end</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="n">time</code><code class="o">.</code><code class="n">time</code><code class="p">(</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="kn">print</code><code class="p">(</code><code class="n">f</code><code class="s">"</code><code class="s">Result: {result}, Time: {end - start}</code><code class="s">"</code><code class="p">)</code></pre>
+<dl class="calibre28">
+<dt class="calibre29"><a class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6" id="callout_asynchronous_i_o_CO5-1" href="#co_asynchronous_i_o_CO5-1"><img src="Images/1.png" alt="1" class="calibre74"/></a></dt>
+<dd class="calibre75"><p class="calibre76">As in the <code class="calibre26">gevent</code> example, we must use a semaphore to limit the number of requests.</p></dd>
+<dt class="calibre29"><a class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6" id="callout_asynchronous_i_o_CO5-2" href="#co_asynchronous_i_o_CO5-2"><img src="Images/2.png" alt="2" class="calibre74"/></a></dt>
+<dd class="calibre75"><p class="calibre76">We return a new coroutine that will asynchronously download files and respect the locking of the semaphore.</p></dd>
+<dt class="calibre29"><a class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6" id="callout_asynchronous_i_o_CO5-3" href="#co_asynchronous_i_o_CO5-3"><img src="Images/3.png" alt="3" class="calibre74"/></a></dt>
+<dd class="calibre75"><p class="calibre76">The <code class="calibre26">http_client</code> function returns futures.  To keep track of progress, we save the futures into a list.</p></dd>
+<dt class="calibre29"><a class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6" id="callout_asynchronous_i_o_CO5-4" href="#co_asynchronous_i_o_CO5-4"><img src="Images/4.png" alt="4" class="calibre74"/></a></dt>
+<dd class="calibre75"><p class="calibre76">As with <code class="calibre26">gevent</code>, we can wait for futures to become ready and iterate over them.</p></dd>
+</dl></div>
+
+<p class="author1">One immediate reaction to this code is the number of <code class="calibre26">async with</code>, <code class="calibre26">async def</code>,
+and <code class="calibre26">await</code> calls. In the definition for <code class="calibre26">http_get</code>, we use the async context
+manager to get access to shared resources in a concurrent-friendly way. That is
+to say, by using <code class="calibre26">async with</code>, we allow other coroutines to run while waiting to
+acquire the resources we are requesting. As a result, sharing things such as
+open semaphore slots or already opened connections to our host can be done more
+efficiently than we experienced with <code class="calibre26">tornado</code>.</p>
+
+<p class="author1">In fact, the call graph in <a data-type="xref" href="#conn_asyncio_request_time" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Figure 8-6</a> shows a smooth
+transition similar to that of <code class="calibre26">gevent</code> in <a data-type="xref" href="#conn_gevent_request_time" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Figure 8-4</a>.
+Furthermore, the <code class="calibre26">asyncio</code> code runs slightly faster than the <code class="calibre26">gevent</code> code overall
+(1.10 seconds versus 1.14 seconds—see <a data-type="xref" href="#conn_runtime_comparison" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Table 8-1</a>), even though the time for
+each request is slightly longer.  This can be explained only by a faster
+resumption of coroutines paused by the semaphore or waiting for the HTTP client.</p>
+
+<figure class="calibre46"><div id="conn_asyncio_request_time" class="figure">
+<img src="Images/hpp2_0806.png" alt="Request times for AsyncIO scraper" class="calibre102"/>
+<h6 class="calibre47"><span class="publishername">Figure 8-6. </span>Chronology of HTTP requests for <a data-type="xref" href="#conn_asyncio_http" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Example 8-6</a></h6>
+</div></figure>
+
+<p class="author1">The code sample also shows a big difference between using <code class="calibre26">aiohttp</code> and using <code class="calibre26">tornado</code> in that with <code class="calibre26">aiohttp</code>, we are
+very much in control of the event loop and the various subtleties of the request
+we are making. For example, we manually acquire the client session, which is
+responsible for caching open connections, and we manually read from the
+connection. If we wanted, we could change what time of connection caching is
+happening or decide to only write to the server and never read its response.</p>
+
+<p class="author1">While this control may be a bit of overkill for such a simple example, in real-world applications we can use this to really tune the performance of our
+applications. Tasks can easily be added to the event loop without waiting for their
+response, and we can easily add time-outs to tasks so that their runtime is
+limited; we can even add functions that automatically get triggered when a task
+is completed. This allows us to create complicated runtime patterns that
+optimally utilize the time we gain by being able to run code during I/O wait. In
+particular, when we are running a web service (such as an API that may need to
+perform computational tasks for each request), this control can allow us to
+write “defensive” code that knows how to concede runtime to other tasks if a new
+request comes in. We will discuss this aspect more in <a data-type="xref" href="#full-async" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">“Full Async”</a>.</p>
+<table id="conn_runtime_comparison" class="stafflist_table">
+<caption class="calibre85"><span class="publishername">Table 8-1. </span>Comparison of total runtime for crawlers</caption>
+<thead class="calibre87">
+<tr class="calibre88">
+<th class="calibre89"/>
+<th class="calibre89">serial</th>
+<th class="calibre89">gevent</th>
+<th class="calibre89">tornado</th>
+<th class="calibre89">aiohttp</th>
+</tr>
+</thead>
+<tbody class="calibre14">
+<tr class="calibre19">
+<td class="calibre16"><p class="calibre17">Runtime (s)</p></td>
+<td class="calibre16"><p class="calibre17">102.684</p></td>
+<td class="calibre16"><p class="calibre17">1.142</p></td>
+<td class="calibre16"><p class="calibre17">1.171</p></td>
+<td class="calibre16"><p class="calibre17">1.101</p></td>
+</tr>
+</tbody>
+</table>
+</div></section>
+
+
+
+
+
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<section data-type="sect1" data-pdf-bookmark="Shared CPU–I/O Workload" class="calibre3"><div class="preface" id="idm46122411066024">
+<h1 class="calibre25">Shared CPU–I/O Workload</h1>
+
+<p class="author1">To make the preceding examples more concrete, we will create another toy problem
+in which we have a CPU-bound problem that needs to communicate frequently with a
+database to save results. The CPU workload can be anything; in this case, we are
+taking the <code class="calibre26">bcrypt</code> hash of a random string with larger and larger workload
+factors to increase the amount of CPU-bound work (see <a data-type="xref" href="#time-per-difficulty" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Table 8-2</a> to
+understand how the “difficulty” parameter affects runtime).  This problem is representative of any sort of problem in which your program has
+heavy calculations to do, and the results of those calculations must be stored
+into a database, potentially incurring a heavy I/O penalty.  The only
+restrictions we are putting on our database are as follows:</p>
+
+<ul class="printings">
+<li class="calibre21">
+<p class="calibre27">It has an HTTP API so we can use code like that in the earlier examples.<sup class="calibre44"><a data-type="noteref" id="idm46122411089528-marker" href="ch08.xhtml#idm46122411089528" class="pcalibre2 pcalibre calibre45 pcalibre3 pcalibre1">3</a></sup></p>
+</li>
+<li class="calibre21">
+<p class="calibre27">Response times are on the order of 100 milliseconds.</p>
+</li>
+<li class="calibre21">
+<p class="calibre27">The database can satisfy many requests at a time.<sup class="calibre44"><a data-type="noteref" id="idm46122411087272-marker" href="ch08.xhtml#idm46122411087272" class="pcalibre2 pcalibre calibre45 pcalibre3 pcalibre1">4</a></sup></p>
+</li>
+</ul>
+
+<p class="author1">The response time of this “database” was chosen to be higher than usual in order
+to exaggerate the turning point in the problem, where the time to do one of the
+CPU tasks is longer than one of the I/O tasks. For a database that is being used
+only to store simple values, a response time greater than 10 milliseconds should be considered
+slow!<a data-type="indexterm" data-primary="" data-startref="aio_ab" id="idm46122411275560" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="" data-startref="asyn_aio" id="idm46122411274584" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/></p>
+<table id="time-per-difficulty" class="stafflist_table">
+<caption class="calibre85"><span class="publishername">Table 8-2. </span>Time to calculate a single hash</caption>
+<thead class="calibre87">
+<tr class="calibre88">
+<th class="calibre89">Difficulty parameter</th>
+<th class="calibre89">8</th>
+<th class="calibre89">10</th>
+<th class="calibre89">11</th>
+<th class="calibre89">12</th>
+</tr>
+</thead>
+<tbody class="calibre14">
+<tr class="calibre19">
+<td class="calibre16"><p class="calibre17">Seconds per iteration</p></td>
+<td class="calibre16"><p class="calibre17">0.0156</p></td>
+<td class="calibre16"><p class="calibre17">0.0623</p></td>
+<td class="calibre16"><p class="calibre17">0.1244</p></td>
+<td class="calibre16"><p class="calibre17">0.2487</p></td>
+</tr>
+</tbody>
+</table>
+
+
+
+
+
+
+
+
+<section data-type="sect2" data-pdf-bookmark="Serial" class="calibre3"><div class="preface" id="idm46122411037672">
+<h2 class="calibre43">Serial</h2>
+
+<p class="author1"><a data-type="indexterm" data-primary="asynchronous programming" data-secondary="database examples" id="asyn_de" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="concurrency" data-secondary="database examples" id="con_de" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="database examples" id="de_abt" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="serial databases" id="sd-ab" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>We start with some simple code that calculates the <code class="calibre26">bcrypt</code> hash of a string and
+makes a request to the database’s HTTP API every time a result is calculated:</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre50"><code class="kn">import</code><code class="calibre26"> </code><code class="nn">random</code><code class="calibre26">
+</code><code class="kn">import</code><code class="calibre26"> </code><code class="nn">string</code><code class="calibre26">
+</code><code class="calibre26">
+</code><code class="kn">import</code><code class="calibre26"> </code><code class="nn">bcrypt</code><code class="calibre26">
+</code><code class="kn">import</code><code class="calibre26"> </code><code class="nn">requests</code><code class="calibre26">
+</code><code class="calibre26">
+</code><code class="kn">def</code><code class="calibre26"> </code><code class="nf">do_task</code><code class="p">(</code><code class="n">difficulty</code><code class="p">)</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="sd">"""
+    Hash a random 10 character string using bcrypt with a specified difficulty
+    rating.
+    """</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">passwd</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="p">(</code><code class="s">"</code><code class="s">"</code><code class="o">.</code><code class="n">join</code><code class="p">(</code><code class="n">random</code><code class="o">.</code><code class="n">sample</code><code class="p">(</code><code class="n">string</code><code class="o">.</code><code class="n">ascii_lowercase</code><code class="p">,</code><code class="calibre26"> </code><code class="mi">10</code><code class="p">)</code><code class="p">)</code><code class="calibre26">  </code><a class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6" id="co_asynchronous_i_o_CO6-1" href="#callout_asynchronous_i_o_CO6-1"><img src="Images/1.png" alt="1" class="calibre74"/></a><code class="calibre26">
+</code><code class="calibre26">                </code><code class="o">.</code><code class="n">encode</code><code class="p">(</code><code class="s">"</code><code class="s">utf8</code><code class="s">"</code><code class="p">)</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">salt</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="n">bcrypt</code><code class="o">.</code><code class="n">gensalt</code><code class="p">(</code><code class="n">difficulty</code><code class="p">)</code><code class="calibre26">  </code><a class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6" id="co_asynchronous_i_o_CO6-2" href="#callout_asynchronous_i_o_CO6-2"><img src="Images/2.png" alt="2" class="calibre74"/></a><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">result</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="n">bcrypt</code><code class="o">.</code><code class="n">hashpw</code><code class="p">(</code><code class="n">passwd</code><code class="p">,</code><code class="calibre26"> </code><code class="n">salt</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="kn">return</code><code class="calibre26"> </code><code class="n">result</code><code class="o">.</code><code class="n">decode</code><code class="p">(</code><code class="s">"</code><code class="s">utf8</code><code class="s">"</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">
+</code><code class="kn">def</code><code class="calibre26"> </code><code class="nf">save_result_serial</code><code class="p">(</code><code class="n">result</code><code class="p">)</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">url</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="n">f</code><code class="s">"</code><code class="s">http://127.0.0.1:8080/add</code><code class="s">"</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">response</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="n">requests</code><code class="o">.</code><code class="n">post</code><code class="p">(</code><code class="n">url</code><code class="p">,</code><code class="calibre26"> </code><code class="n">data</code><code class="o">=</code><code class="n">result</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="kn">return</code><code class="calibre26"> </code><code class="n">response</code><code class="o">.</code><code class="n">json</code><code class="p">(</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">
+</code><code class="kn">def</code><code class="calibre26"> </code><code class="nf">calculate_task_serial</code><code class="p">(</code><code class="n">num_iter</code><code class="p">,</code><code class="calibre26"> </code><code class="n">task_difficulty</code><code class="p">)</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="kn">for</code><code class="calibre26"> </code><code class="n">i</code><code class="calibre26"> </code><code class="ow">in</code><code class="calibre26"> </code><code class="nb">range</code><code class="p">(</code><code class="n">num_iter</code><code class="p">)</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">        </code><code class="n">result</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="n">do_task</code><code class="p">(</code><code class="n">task_difficulty</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">        </code><code class="n">save_number_serial</code><code class="p">(</code><code class="n">result</code><code class="p">)</code></pre>
+<dl class="calibre28">
+<dt class="calibre29"><a class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6" id="callout_asynchronous_i_o_CO6-1" href="#co_asynchronous_i_o_CO6-1"><img src="Images/1.png" alt="1" class="calibre74"/></a></dt>
+<dd class="calibre75"><p class="calibre76">We generate a random 10-character byte array.</p></dd>
+<dt class="calibre29"><a class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6" id="callout_asynchronous_i_o_CO6-2" href="#co_asynchronous_i_o_CO6-2"><img src="Images/2.png" alt="2" class="calibre74"/></a></dt>
+<dd class="calibre75"><p class="calibre76">The <code class="calibre26">difficulty</code> parameter sets how hard it is to generate the password by increasing the CPU and memory requirements of the hashing algorithm.</p></dd>
+</dl>
+
+<p class="author1">Just as in our serial example (<a data-type="xref" href="#conn_serial_http" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Example 8-3</a>), the request times for each
+database save (100 milliseconds) do not stack, and we must pay this penalty for each
+result.  As a result, iterating six hundred times with a task difficulty of 8 takes 71 seconds.
+We know, however, that because of the way our serial requests work, we are
+spending 40 seconds at minimum doing I/O! 56% of our program’s runtime is being
+spent doing I/O and, moreover, just sitting around in “I/O wait,” when it could
+be doing something else!</p>
+
+<p class="author1">Of course, as the CPU problem takes more and more time, the relative slowdown of
+doing this serial I/O decreases. This is simply because the cost of having a
+100-millisecond pause after each task pales in comparison to the long amount of time
+needed to do this computation (as we can see in <a data-type="xref" href="#serial_code_CPU" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Figure 8-7</a>). This fact highlights how important it is to understand
+your workload before considering which optimizations to make. If you have a CPU
+task that takes hours and an I/O task that takes only seconds, work done to speed up
+the I/O task will not bring the huge speedups you may be looking for!<a data-type="indexterm" data-primary="" data-startref="sd_ab" id="idm46122410923720" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/></p>
+
+<figure class="calibre46"><div id="serial_code_CPU" class="figure">
+<img src="Images/hpp2_08in01.png" alt="Comparison of the serial code to the CPU task with no I/O" class="calibre103"/>
+<h6 class="calibre47"><span class="publishername">Figure 8-7. </span>Comparison of the serial code to the CPU task with no I/O</h6>
+</div></figure>
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<section data-type="sect2" data-pdf-bookmark="Batched Results" class="calibre3"><div class="preface" id="idm46122411687336">
+<h2 class="calibre43">Batched Results</h2>
+
+<p class="author1"><a data-type="indexterm" data-primary="batched results" id="br_ab" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>Instead of immediately going to a full asynchronous solution, let’s try an
+intermediate solution. If we don’t need to know the results in our database
+right away, we can batch up the results and send them to the
+database asynchronously. To do this, we create an object, <code class="calibre26">AsyncBatcher</code>, that
+will take care of queuing results to be sent to the database in small
+asynchronous bursts. This will still pause the program and put it into I/O wait
+with no CPU tasks; however, during this time we can issue many concurrent
+requests instead of issuing them one at a time:</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre50"><code class="kn">import</code><code class="calibre26"> </code><code class="nn">asyncio</code><code class="calibre26">
+</code><code class="kn">import</code><code class="calibre26"> </code><code class="nn">aiohttp</code><code class="calibre26">
+</code><code class="calibre26">
+</code><code class="kn">class</code><code class="calibre26"> </code><code class="nc">AsyncBatcher</code><code class="p">(</code><code class="nb">object</code><code class="p">)</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="kn">def</code><code class="calibre26"> </code><code class="calibre26">__init__</code><code class="p">(</code><code class="nb">self</code><code class="p">,</code><code class="calibre26"> </code><code class="n">batch_size</code><code class="p">)</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">        </code><code class="nb">self</code><code class="o">.</code><code class="n">batch_size</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="n">batch_size</code><code class="calibre26">
+</code><code class="calibre26">        </code><code class="nb">self</code><code class="o">.</code><code class="n">batch</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="p">[</code><code class="p">]</code><code class="calibre26">
+</code><code class="calibre26">        </code><code class="nb">self</code><code class="o">.</code><code class="n">client_session</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="nb">None</code><code class="calibre26">
+</code><code class="calibre26">        </code><code class="nb">self</code><code class="o">.</code><code class="n">url</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="n">f</code><code class="s">"</code><code class="s">http://127.0.0.1:8080/add</code><code class="s">"</code><code class="calibre26">
+</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="kn">def</code><code class="calibre26"> </code><code class="calibre26">__enter__</code><code class="p">(</code><code class="nb">self</code><code class="p">)</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">        </code><code class="kn">return</code><code class="calibre26"> </code><code class="nb">self</code><code class="calibre26">
+</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="kn">def</code><code class="calibre26"> </code><code class="calibre26">__exit__</code><code class="p">(</code><code class="nb">self</code><code class="p">,</code><code class="calibre26"> </code><code class="o">*</code><code class="n">args</code><code class="p">,</code><code class="calibre26"> </code><code class="o">*</code><code class="o">*</code><code class="n">kwargs</code><code class="p">)</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">        </code><code class="nb">self</code><code class="o">.</code><code class="n">flush</code><code class="p">(</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="kn">def</code><code class="calibre26"> </code><code class="nf">save</code><code class="p">(</code><code class="nb">self</code><code class="p">,</code><code class="calibre26"> </code><code class="n">result</code><code class="p">)</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">        </code><code class="nb">self</code><code class="o">.</code><code class="n">batch</code><code class="o">.</code><code class="n">append</code><code class="p">(</code><code class="n">result</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">        </code><code class="kn">if</code><code class="calibre26"> </code><code class="nb">len</code><code class="p">(</code><code class="nb">self</code><code class="o">.</code><code class="n">batch</code><code class="p">)</code><code class="calibre26"> </code><code class="o">==</code><code class="calibre26"> </code><code class="nb">self</code><code class="o">.</code><code class="n">batch_size</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">            </code><code class="nb">self</code><code class="o">.</code><code class="n">flush</code><code class="p">(</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="kn">def</code><code class="calibre26"> </code><code class="nf">flush</code><code class="p">(</code><code class="nb">self</code><code class="p">)</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">        </code><code class="sd">"""
+        Synchronous flush function which starts an IOLoop for the purposes of
+        running our async flushing function
+        """</code><code class="calibre26">
+</code><code class="calibre26">        </code><code class="n">loop</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="n">asyncio</code><code class="o">.</code><code class="n">get_event_loop</code><code class="p">(</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">        </code><code class="n">loop</code><code class="o">.</code><code class="n">run_until_complete</code><code class="p">(</code><code class="nb">self</code><code class="o">.</code><code class="n">__aflush</code><code class="p">(</code><code class="p">)</code><code class="p">)</code><code class="calibre26">  </code><a class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6" id="co_asynchronous_i_o_CO7-1" href="#callout_asynchronous_i_o_CO7-1"><img src="Images/1.png" alt="1" class="calibre74"/></a><code class="calibre26">
+</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">async</code><code class="calibre26"> </code><code class="kn">def</code><code class="calibre26"> </code><code class="nf">__aflush</code><code class="p">(</code><code class="nb">self</code><code class="p">)</code><code class="p">:</code><code class="calibre26">  </code><a class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6" id="co_asynchronous_i_o_CO7-2" href="#callout_asynchronous_i_o_CO7-2"><img src="Images/2.png" alt="2" class="calibre74"/></a><code class="calibre26">
+</code><code class="calibre26">        </code><code class="n">async</code><code class="calibre26"> </code><code class="kn">with</code><code class="calibre26"> </code><code class="n">aiohttp</code><code class="o">.</code><code class="n">ClientSession</code><code class="p">(</code><code class="p">)</code><code class="calibre26"> </code><code class="kn">as</code><code class="calibre26"> </code><code class="n">session</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">            </code><code class="n">tasks</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="p">[</code><code class="nb">self</code><code class="o">.</code><code class="n">fetch</code><code class="p">(</code><code class="n">result</code><code class="p">,</code><code class="calibre26"> </code><code class="n">session</code><code class="p">)</code><code class="calibre26"> </code><code class="kn">for</code><code class="calibre26"> </code><code class="n">result</code><code class="calibre26"> </code><code class="ow">in</code><code class="calibre26"> </code><code class="nb">self</code><code class="o">.</code><code class="n">batch</code><code class="p">]</code><code class="calibre26">
+</code><code class="calibre26">            </code><code class="kn">for</code><code class="calibre26"> </code><code class="n">task</code><code class="calibre26"> </code><code class="ow">in</code><code class="calibre26"> </code><code class="n">asyncio</code><code class="o">.</code><code class="n">as_completed</code><code class="p">(</code><code class="n">tasks</code><code class="p">)</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">                </code><code class="n">await</code><code class="calibre26"> </code><code class="n">task</code><code class="calibre26">
+</code><code class="calibre26">        </code><code class="nb">self</code><code class="o">.</code><code class="n">batch</code><code class="o">.</code><code class="n">clear</code><code class="p">(</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">async</code><code class="calibre26"> </code><code class="kn">def</code><code class="calibre26"> </code><code class="nf">fetch</code><code class="p">(</code><code class="nb">self</code><code class="p">,</code><code class="calibre26"> </code><code class="n">result</code><code class="p">,</code><code class="calibre26"> </code><code class="n">session</code><code class="p">)</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">        </code><code class="n">async</code><code class="calibre26"> </code><code class="kn">with</code><code class="calibre26"> </code><code class="n">session</code><code class="o">.</code><code class="n">post</code><code class="p">(</code><code class="nb">self</code><code class="o">.</code><code class="n">url</code><code class="p">,</code><code class="calibre26"> </code><code class="n">data</code><code class="o">=</code><code class="n">result</code><code class="p">)</code><code class="calibre26"> </code><code class="kn">as</code><code class="calibre26"> </code><code class="n">response</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">            </code><code class="kn">return</code><code class="calibre26"> </code><code class="n">await</code><code class="calibre26"> </code><code class="n">response</code><code class="o">.</code><code class="n">json</code><code class="p">(</code><code class="p">)</code></pre>
+<dl class="calibre28">
+<dt class="calibre29"><a class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6" id="callout_asynchronous_i_o_CO7-1" href="#co_asynchronous_i_o_CO7-1"><img src="Images/1.png" alt="1" class="calibre74"/></a></dt>
+<dd class="calibre75"><p class="calibre76">We are able to start up an event loop just to run a single asynchronous function. The event loop will run until the asynchronous function is complete, and then the code will resume as normal.</p></dd>
+<dt class="calibre29"><a class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6" id="callout_asynchronous_i_o_CO7-2" href="#co_asynchronous_i_o_CO7-2"><img src="Images/2.png" alt="2" class="calibre74"/></a></dt>
+<dd class="calibre75"><p class="calibre76">This function is nearly identical to that of <a data-type="xref" href="#conn_asyncio_http" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Example 8-6</a>.</p></dd>
+</dl>
+
+<p class="author1">Now we can proceed almost in the same way as we did before.  The main
+difference is that we add our results to our <code class="calibre26">AsyncBatcher</code> and let it take care
+of when to send the requests. Note that we chose to make this object into a
+context manager so that once we are done batching, the final <code class="calibre26">flush()</code> gets
+called. If we didn’t do this, there would be a chance that we still have some
+results queued that didn’t trigger a flush:</p>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre50"><code class="kn">def</code><code class="calibre26"> </code><code class="nf">calculate_task_batch</code><code class="p">(</code><code class="n">num_iter</code><code class="p">,</code><code class="calibre26"> </code><code class="n">task_difficulty</code><code class="p">)</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="kn">with</code><code class="calibre26"> </code><code class="n">AsyncBatcher</code><code class="p">(</code><code class="mi">100</code><code class="p">)</code><code class="calibre26"> </code><code class="kn">as</code><code class="calibre26"> </code><code class="n">batcher</code><code class="p">:</code><code class="calibre26"> </code><a class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6" id="co_asynchronous_i_o_CO8-1" href="#callout_asynchronous_i_o_CO8-1"><img src="Images/1.png" alt="1" class="calibre74"/></a><code class="calibre26">
+</code><code class="calibre26">        </code><code class="kn">for</code><code class="calibre26"> </code><code class="n">i</code><code class="calibre26"> </code><code class="ow">in</code><code class="calibre26"> </code><code class="nb">range</code><code class="p">(</code><code class="n">num_iter</code><code class="p">)</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">            </code><code class="n">result</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="n">do_task</code><code class="p">(</code><code class="n">i</code><code class="p">,</code><code class="calibre26"> </code><code class="n">task_difficulty</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">            </code><code class="n">batcher</code><code class="o">.</code><code class="n">save</code><code class="p">(</code><code class="n">result</code><code class="p">)</code></pre>
+<dl class="calibre28">
+<dt class="calibre29"><a class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6" id="callout_asynchronous_i_o_CO8-1" href="#co_asynchronous_i_o_CO8-1"><img src="Images/1.png" alt="1" class="calibre74"/></a></dt>
+<dd class="calibre75"><p class="calibre76">We choose to batch at 100 requests, for reasons similar to those illustrated in <a data-type="xref" href="#conn_num_concurrent_requests" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Figure 8-3</a>.</p></dd>
+</dl>
+
+<p class="author1">With this change, we are able to bring our runtime for a difficulty of 8 down to
+10.21 seconds.  This represents a 6.95× speedup without our having to do much work. In
+a constrained environment such as a real-time data pipeline, this extra speed
+could mean the difference between a system being able to keep up with demand and that system
+falling behind (in which case a queue will be required; you’ll learn about these
+in <a data-type="xref" href="ch10.xhtml#clustering" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Chapter 10</a>).</p>
+
+<p class="author1">To understand what is happening in this timing, let’s consider the
+variables that could affect the timings of this batched method. If our database
+had infinite throughput (i.e., if we could send an infinite number of requests at the
+same time without penalty), we could take advantage of the fact that we get only
+the 100-millisecond penalty when our <code class="calibre26">AsyncBatcher</code> is full and does a flush. In
+this case, we’d get the best performance by just saving all of our
+requests to the database and doing them all at once when the calculation was
+finished.</p>
+
+<p class="author1">However, in the real world, our databases have a maximum throughput that limits
+the number of concurrent requests they can process. In this case, our server is
+limited at 100 requests a second, which means we must flush our batcher every one hundred
+results and take the 100-millisecond penalty then. This is because the batcher still
+pauses the execution of the program, just as the serial code did; however, in
+that paused time it performs many requests instead of just one.</p>
+
+<p class="author1">If we tried to save all our results to the end and then issued them all at once,
+the server would only <em class="hyperlink">process</em> one hundred at a time, and we’d have an extra penalty in
+terms of the overhead to making all those requests at the same time in addition
+to overloading our database, which can cause all sorts of unpredictable
+slowdowns.</p>
+
+<p class="author1">On the other hand, if our server had terrible throughput and could deal with only
+one request at a time, we may as well run our code in serial! Even if we kept
+our batching at one hundred results per batch, when we actually go to make the requests,
+only one would get responded to at a time, effectively invalidating any batching
+we made.</p>
+
+<p class="author1">This mechanism of batching results, also known as <a data-type="indexterm" data-primary="pipelining" id="idm46122410880328" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><em class="hyperlink">pipelining</em>, can help
+tremendously when trying to lower the burden of an I/O task (as seen in <a data-type="xref" href="#batching_results_vs_no_IO" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Figure 8-8</a>). It offers a good
+compromise between the speeds of asynchronous I/O and the ease 
+<span class="publishername">of writing</span> serial
+programs. However, a determination of how much to pipeline at a time is very
+case-dependent and requires some profiling and tuning to get the best
+
+<span class="publishername">performance</span>.<a data-type="indexterm" data-primary="" data-startref="br_ab" id="idm46122410397192" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/></p>
+
+<figure class="calibre46"><div id="batching_results_vs_no_IO" class="figure">
+<img src="Images/hpp2_08in02.png" alt="Comparison of batching requests versus not doing any I/O" class="calibre104"/>
+<h6 class="calibre47"><span class="publishername">Figure 8-8. </span>Comparison of batching requests versus not doing any I/O</h6>
+</div></figure>
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<section data-type="sect2" data-pdf-bookmark="Full Async" class="calibre3"><div class="preface" id="full-async">
+<h2 class="calibre43">Full Async</h2>
+
+<p class="author1"><a data-type="indexterm" data-primary="full async" id="fasyn_ab" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/>In some cases, we may need to implement a full asynchronous solution. This may
+happen if the CPU task is part of a larger I/O-bound program, such as an HTTP
+server. Imagine that you have an API service that, in response to some
+of its endpoints, has to perform heavy computational tasks. We still want the
+API to be able to handle concurrent requests and be performant in its tasks, but
+we also want the CPU task to run quickly.</p>
+
+<p class="author1">The implementation of this solution in <a data-type="xref" href="#async_CPU_workload" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Example 8-7</a> uses code very similar to that of
+<a data-type="xref" href="#conn_asyncio_http" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Example 8-6</a>.</p>
+<div id="async_CPU_workload" data-type="example" class="calibre56">
+<h5 class="calibre58"><span class="publishername">Example 8-7. </span>Async CPU workload</h5>
+
+<pre data-type="programlisting" data-code-language="python" class="calibre59"><code class="kn">def</code><code class="calibre26"> </code><code class="nf">save_result_aiohttp</code><code class="p">(</code><code class="n">client_session</code><code class="p">)</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">sem</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="n">asyncio</code><code class="o">.</code><code class="n">Semaphore</code><code class="p">(</code><code class="mi">100</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">async</code><code class="calibre26"> </code><code class="kn">def</code><code class="calibre26"> </code><code class="nf">saver</code><code class="p">(</code><code class="n">result</code><code class="p">)</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">        </code><code class="n">nonlocal</code><code class="calibre26"> </code><code class="n">sem</code><code class="p">,</code><code class="calibre26"> </code><code class="n">client_session</code><code class="calibre26">
+</code><code class="calibre26">        </code><code class="n">url</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="n">f</code><code class="s">"</code><code class="s">http://127.0.0.1:8080/add</code><code class="s">"</code><code class="calibre26">
+</code><code class="calibre26">        </code><code class="n">async</code><code class="calibre26"> </code><code class="kn">with</code><code class="calibre26"> </code><code class="n">sem</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">            </code><code class="n">async</code><code class="calibre26"> </code><code class="kn">with</code><code class="calibre26"> </code><code class="n">client_session</code><code class="o">.</code><code class="n">post</code><code class="p">(</code><code class="n">url</code><code class="p">,</code><code class="calibre26"> </code><code class="n">data</code><code class="o">=</code><code class="n">result</code><code class="p">)</code><code class="calibre26"> </code><code class="kn">as</code><code class="calibre26"> </code><code class="n">response</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">                </code><code class="kn">return</code><code class="calibre26"> </code><code class="n">await</code><code class="calibre26"> </code><code class="n">response</code><code class="o">.</code><code class="n">json</code><code class="p">(</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="kn">return</code><code class="calibre26"> </code><code class="n">saver</code><code class="calibre26">
+</code><code class="calibre26">
+</code><code class="n">async</code><code class="calibre26"> </code><code class="kn">def</code><code class="calibre26"> </code><code class="nf">calculate_task_aiohttp</code><code class="p">(</code><code class="n">num_iter</code><code class="p">,</code><code class="calibre26"> </code><code class="n">task_difficulty</code><code class="p">)</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">tasks</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="p">[</code><code class="p">]</code><code class="calibre26">
+</code><code class="calibre26">    </code><code class="n">async</code><code class="calibre26"> </code><code class="kn">with</code><code class="calibre26"> </code><code class="n">aiohttp</code><code class="o">.</code><code class="n">ClientSession</code><code class="p">(</code><code class="p">)</code><code class="calibre26"> </code><code class="kn">as</code><code class="calibre26"> </code><code class="n">client_session</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">        </code><code class="n">saver</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="n">save_result_aiohttp</code><code class="p">(</code><code class="n">client_session</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">        </code><code class="kn">for</code><code class="calibre26"> </code><code class="n">i</code><code class="calibre26"> </code><code class="ow">in</code><code class="calibre26"> </code><code class="nb">range</code><code class="p">(</code><code class="n">num_iter</code><code class="p">)</code><code class="p">:</code><code class="calibre26">
+</code><code class="calibre26">            </code><code class="n">result</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="n">do_task</code><code class="p">(</code><code class="n">i</code><code class="p">,</code><code class="calibre26"> </code><code class="n">task_difficulty</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">            </code><code class="n">task</code><code class="calibre26"> </code><code class="o">=</code><code class="calibre26"> </code><code class="n">asyncio</code><code class="o">.</code><code class="n">create_task</code><code class="p">(</code><code class="n">saver</code><code class="p">(</code><code class="n">result</code><code class="p">)</code><code class="p">)</code><code class="calibre26">  </code><a class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6" id="co_asynchronous_i_o_CO9-1" href="#callout_asynchronous_i_o_CO9-1"><img src="Images/1.png" alt="1" class="calibre74"/></a><code class="calibre26">
+</code><code class="calibre26">            </code><code class="n">tasks</code><code class="o">.</code><code class="n">append</code><code class="p">(</code><code class="n">task</code><code class="p">)</code><code class="calibre26">
+</code><code class="calibre26">            </code><code class="n">await</code><code class="calibre26"> </code><code class="n">asyncio</code><code class="o">.</code><code class="n">sleep</code><code class="p">(</code><code class="mi">0</code><code class="p">)</code><code class="calibre26">  </code><a class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6" id="co_asynchronous_i_o_CO9-2" href="#callout_asynchronous_i_o_CO9-2"><img src="Images/2.png" alt="2" class="calibre74"/></a><code class="calibre26">
+</code><code class="calibre26">        </code><code class="n">await</code><code class="calibre26"> </code><code class="n">asyncio</code><code class="o">.</code><code class="n">wait</code><code class="p">(</code><code class="n">tasks</code><code class="p">)</code><code class="calibre26">  </code><a class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6" id="co_asynchronous_i_o_CO9-3" href="#callout_asynchronous_i_o_CO9-3"><img src="Images/3.png" alt="3" class="calibre74"/></a></pre>
+<dl class="calibre28">
+<dt class="calibre29"><a class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6" id="callout_asynchronous_i_o_CO9-1" href="#co_asynchronous_i_o_CO9-1"><img src="Images/1.png" alt="1" class="calibre74"/></a></dt>
+<dd class="calibre75"><p class="calibre76">Instead of <code class="calibre26">await</code>ing our database save immediately, we queue it into the event loop using <code class="calibre26">asyncio.create_task</code> and keep track of it so we can ensure that the task has completed before the end of the function.</p></dd>
+<dt class="calibre29"><a class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6" id="callout_asynchronous_i_o_CO9-2" href="#co_asynchronous_i_o_CO9-2"><img src="Images/2.png" alt="2" class="calibre74"/></a></dt>
+<dd class="calibre75"><p class="calibre76">This is arguably the most important line in the function. Here, we pause the main function to allow the event loop to take care of any pending tasks. Without this, none of our queued tasks would run until the end of the function.</p></dd>
+<dt class="calibre29"><a class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6" id="callout_asynchronous_i_o_CO9-3" href="#co_asynchronous_i_o_CO9-3"><img src="Images/3.png" alt="3" class="calibre74"/></a></dt>
+<dd class="calibre75"><p class="calibre76">Here we wait for any tasks that haven’t completed yet. If we had not done the <code class="calibre26">asyncio.sleep</code> in the <code class="calibre26">for</code> loop, all the saves would happen here!</p></dd>
+</dl></div>
+
+<p class="author1">Before we go into the performance characteristics of this code, we should first
+talk about the importance of the <code class="calibre26">asyncio.sleep(0)</code> statement. It may seem
+strange to be sleeping for zero seconds, but this statement is a way to force
+the function to defer execution to the event loop and allow other tasks to
+run. In general in asynchronous code, this deferring happens every time an
+<code class="calibre26">await</code> statement is run. Since we generally don’t <code class="calibre26">await</code> in CPU-bound code,
+it’s important to force this deferment, or else no other task will run until the
+CPU-bound code is complete. In this case, if we didn’t have the sleep statement,
+all the HTTP requests would be paused until the <code class="calibre26">asyncio.wait</code> statement,
+and then all the requests would be issued at once, which is definitely not what
+we want!</p>
+
+<p class="author1">One nice thing about having this control is that we can choose the best times to
+defer back to the event loop. There are many considerations when doing
+this. Since the run state of the program changes when we defer, we don’t want to
+do it in the middle of a calculation and potentially change our CPU cache. In
+addition, deferring to the event loop has an overhead cost, so we don’t
+want to do it too frequently. However, while we are bound up doing the CPU task,
+we cannot do any I/O tasks. So if our full application is an API, no requests
+can be handled during the CPU time!</p>
+
+<p class="author1">Our general rule of thumb is to try to issue an <code class="calibre26">asyncio.sleep(0)</code> at any loop
+that we expect to iterate every 50 to 100 milliseconds or so. Some applications use
+<code class="calibre26">time.perf_counter</code> and allow the CPU task to have a specific amount of runtime
+before forcing a sleep. For a situation such as this, though, since we have
+control of the number of CPU and I/O tasks, we just need to make sure that the
+time between sleeps coincides with the time needed for pending I/O tasks to
+complete.</p>
+
+<p class="author1">One major performance benefit to the full asynchronous solution is that we can
+perform all of our I/O <em class="hyperlink">while</em> we are doing our CPU work, effectively hiding it
+from our total runtime (as we can see from the overlapping lines in <a data-type="xref" href="#graph_aiohttp_solution" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">Figure 8-9</a>). While it will never be completely hidden because of the
+overhead costs of the event loop, we can get very close. In fact, for a
+difficulty of 8 with 600 iterations, our code runs 7.3× faster than the serial
+code and performs its total I/O workload 2× faster than the batched code (and
+this benefit over the batched code would only get better as we do more
+iterations, since the batched code loses time versus the asynchronous code every
+time it has to pause the CPU task to flush a batch).</p>
+
+<figure class="calibre46"><div id="graph_aiohttp_solution" class="figure">
+<img src="Images/hpp2_08in03.png" alt="Call graph for 25 difficulty-8 CPU tasks using the aiohttp solution. The red lines represents time working on a CPU task while blue lines represent time sending a result to the server" class="calibre105"/>
+<h6 class="calibre47"><span class="publishername">Figure 8-9. </span>Call graph for 25 difficulty-8 CPU tasks using the <code class="calibre26">aiohttp</code> solution—the red lines represent time working on a CPU task, while blue lines represent time sending a result to the server</h6>
+</div></figure>
+
+<p class="author1">In the call timeline, we can really see what is going on. What we’ve done is
+to mark the beginning and end of each CPU and I/O task for a short run of 25 CPU tasks
+with difficulty 8. The first several I/O tasks are the slowest, taking a while to
+make the initial connection to our server. Because of our use of <code class="calibre26">aiohttp</code>’s
+<code class="calibre26">ClientSession</code>, these connections are cached, and all subsequent connections to
+the same server are much faster.</p>
+
+<p class="author1">After this, if we just focus on the blue lines, they seem to happen very
+regularly without much of a pause between CPU tasks. Indeed, we don’t see the
+100-millisecond delay from the HTTP request between tasks. Instead, we see the
+HTTP request being issued quickly at the end of each CPU task and later being
+marked as completed at the end of another CPU task.</p>
+
+<p class="author1">We do see, though, that each individual I/O task takes longer than the 100-millisecond
+response time from the server. This longer wait time is given by the frequency
+of our <code class="calibre26">asyncio.sleep(0)</code> statements (since each CPU task has one <code class="calibre26">await</code>, while
+each I/O task has three) and the way the event loop decides which tasks come next. For
+the I/O task, this extra wait time is OK because it doesn’t interrupt the CPU
+task at hand. In fact, at the end of the run we can see the I/O runtimes shorten
+until the final I/O task is run. This final blue line is triggered by the
+<code class="calibre26">asyncio.wait</code> statement and runs incredibly quickly since it is the only
+remaining task and never needs to switch to other tasks.</p>
+
+<p class="author1">In Figures <a href="#conn_workload_all" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">8-10</a> and <a href="#conn_workload_async" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">8-11</a>, we can see a summary of how
+these changes affect the runtime of our code for different workloads.  The
+speedup in the async code over the serial code is significant, although we are
+still a ways away from the speeds achieved in the raw CPU problem.  For this to
+be completely remedied, we would need to use modules like <code class="calibre26">multiprocessing</code> to
+have a completely separate process that can deal with the I/O burden of our
+program without slowing down the CPU portion of the problem.<a data-type="indexterm" data-primary="" data-startref="con_ab" id="idm46122410400168" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="" data-startref="asyn_de" id="idm46122410399192" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="" data-startref="con_de" id="idm46122410349000" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="" data-startref="de_abt" id="idm46122410348056" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="" data-startref="fasyn_ab" id="idm46122410347112" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/></p>
+
+<figure class="calibre46"><div id="conn_workload_all" class="figure">
+<img src="Images/hpp2_0807.png" alt="Processing time difference between serial I/O, batched async I/O, full async I/O, and a control case where I/O is completely disabled" class="calibre103"/>
+<h6 class="calibre47"><span class="publishername">Figure 8-10. </span>Processing time difference between serial I/O, batched async I/O, full async I/O, and a control case where I/O is completely disabled</h6>
+</div></figure>
+
+<figure class="calibre46"><div id="conn_workload_async" class="figure">
+<img src="Images/hpp2_0808.png" alt="Processing time difference between batched async, full async I/O, and I/O disabled" class="calibre104"/>
+<h6 class="calibre47"><span class="publishername">Figure 8-11. </span>Processing time difference between batched async, full async I/O, and I/O disabled</h6>
+</div></figure>
+</div></section>
+
+
+
+
+
+</div></section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<section data-type="sect1" data-pdf-bookmark="Wrap-Up" class="calibre3"><div class="preface" id="idm46122410393912">
+<h1 class="calibre25">Wrap-Up</h1>
+
+<p class="author1">When solving problems in real-world and production systems, it is often
+necessary to communicate with an outside source.  This outside source could be a
+database running on another server, another worker computer, or a data service
+that is providing the raw data that must be processed.  Whenever this is the
+case, your problem can quickly become I/O-bound, meaning that most of the runtime
+is dominated by dealing with input/output.</p>
+
+<p class="author1">Concurrency helps with I/O-bound problems by allowing you to interleave computation
+with potentially multiple I/O operations.  This allows you to exploit the
+fundamental difference between I/O and CPU operations in order to speed up
+overall runtime.</p>
+
+<p class="author1">As we saw, <a data-type="indexterm" data-primary="gevent" id="idm46122410339000" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="asynchronous programming" data-secondary="gevent" id="idm46122410338264" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="tornado" id="idm46122410337352" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><a data-type="indexterm" data-primary="asynchronous programming" data-secondary="tornado" id="idm46122410336680" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/><code class="calibre26">gevent</code> provides the highest-level interface for asynchronous I/O.
+On the other hand, <code class="calibre26">tornado</code> and <code class="calibre26">aiohttp</code> allow full control of an
+asynchronous I/O stack.  In addition to the various levels of abstraction, every
+library uses a different paradigm for its syntax. However, <code class="calibre26">asyncio</code> is the
+binding glue for the asynchronous solutions and provides the fundamental
+mechanisms to control them all.</p>
+
+<p class="author1">We also saw how to mesh CPU and I/O tasks together and how to consider the
+various performance characteristics of each to come up with a good solution to
+the problem. While it may be appealing to go to a full asynchronous code
+immediately, sometimes intermediate solutions work almost as well without having
+quite the engineering burden.</p>
+
+<p class="author1">In the next chapter, we will take this concept of interleaving computation from
+I/O-bound problems and apply it to CPU-bound problems.  With this new ability,
+we will be able to perform not only multiple I/O operations at once but also
+many computational operations. This capability will allow us to start to make
+fully scalable programs where we can achieve more speed by simply adding more
+computer resources that can each handle a chunk of the
+problem.<a data-type="indexterm" data-primary="" data-startref="asyn_ch" id="idm46122410332280" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"/></p>
+</div></section>
+
+
+
+
+
+
+
+<div data-type="footnotes" class="calibre52"><p data-type="footnote" id="idm46122412293032" class="calibre53"><sup class="calibre54"><a href="ch08.xhtml#idm46122412293032-marker" class="pcalibre2 pcalibre calibre45 pcalibre3 pcalibre1">1</a></sup> Which we’re sure you’re not doing!</p><p data-type="footnote" id="idm46122411776344" class="calibre53"><sup class="calibre54"><a href="ch08.xhtml#idm46122411776344-marker" class="pcalibre2 pcalibre calibre45 pcalibre3 pcalibre1">2</a></sup> For example, <a href="http://bit.ly/fuggetaboutit" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6"><code class="calibre26">fuggetaboutit</code></a> is a special type of probabilistic data structure (see <a data-type="xref" href="ch11_split_001.xhtml#less_ram_prob_ds" class="pcalibre2 pcalibre pcalibre3 pcalibre1 calibre6">“Probabilistic Data Structures”</a>) that uses the <code class="calibre26">tornado IOLoop</code> to schedule time-based tasks.</p><p data-type="footnote" id="idm46122411089528" class="calibre53"><sup class="calibre54"><a href="ch08.xhtml#idm46122411089528-marker" class="pcalibre2 pcalibre calibre45 pcalibre3 pcalibre1">3</a></sup> This is not necessary; it just serves to simplify our code.</p><p data-type="footnote" id="idm46122411087272" class="calibre53"><sup class="calibre54"><a href="ch08.xhtml#idm46122411087272-marker" class="pcalibre2 pcalibre calibre45 pcalibre3 pcalibre1">4</a></sup> This is true for all distributed databases and other popular databases, such as Postgres, MongoDB, and so on.</p></div></div></section></div>
+
+
+
+  </body></html>
