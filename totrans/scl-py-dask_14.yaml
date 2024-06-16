@@ -1,0 +1,305 @@
+- en: 'Appendix B. Scalable DataFrames: A Comparison and Some History'
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Dask’s distributed pandas-like DataFrame is, in our opinion, one of its key
+    features. Various approaches exist to provide scalable DataFrame-like functionality.
+    One of the big things that made Dask’s DataFrames stand out is the high level
+    of support of the pandas APIs, which other projects are rapidly trying to catch
+    up on. This appendix compares some of the different current and historical DataFrame
+    libraries.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To understand the differences, we will look at a few key factors, some of which
+    are similar to techniques we suggest in [Chapter 8](ch08.xhtml#ch08). The first
+    one is what the API looks like, and how much of your existing skills and code
+    using pandas can be transferred. Then we’ll look at how much work is forced to
+    happen on a single thread, on the driver/head node, and then on a single worker
+    node.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Scalable DataFrames does not have to mean distributed, although distributed
+    scaling often allows for affordable handling of larger datasets than the single-machine
+    options—and at truly massive scales, it’s the only practical option.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tools
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: One of the common dependencies you’ll see in many of the tools is that they
+    are built on top of ASF Arrow. While Arrow is a fantastic project, and we hope
+    to see its continued adoption, it has some [type differences](https://oreil.ly/VPyAL),
+    especially with respect to nullability.^([1](app02.xhtml#id1044)) These differences
+    mean that most of the systems built using Arrow share some common restrictions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Open Multi-Processing (OpenMP) and Open Message Passing Interface (OpenMPI)
+    are two other common dependencies many of these tools depend on. Despite their
+    similar acronyms, by which you’ll see them referred to most commonly, they take
+    fundamentally different approaches to parallelism. OpenMP is a single-machine
+    tool focused on shared memory (with potentially non-uniform access). OpenMPI supports
+    multiple machines and instead of shared memory uses message passing (conceptually
+    similar to Dask’s actor system) for parallelization.
+  prefs: []
+  type: TYPE_NORMAL
+- en: One Machine Only
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The one-machine scalable DataFrames focus on either parallelizing computation
+    or allowing data to not all reside in memory at the same time (e.g., some can
+    reside on disk). To a certain extent, this “data can reside on disk” approach
+    can be solved with swap files at the OS level, but in practice having the library
+    do intelligent paging in and out of elements has its benefits.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Pandas
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: It may seem silly to mention pandas in a section on scaling DataFrames, but
+    it’s useful to remember what the baseline is that we’re comparing against. Pandas
+    is, generally, single threaded and requires that all of the data fits in memory
+    on a single machine. There are various tricks that you can use to handle larger
+    datasets in pandas, such as creating huge swap files or serially processing smaller
+    chunks. It’s good to note that many of these techniques are incorporated in the
+    tools for scaling pandas, so if you need to do that, it’s probably time to start
+    exploring the options to scale. On the other hand, if everything is working fine
+    in pandas, you get 100% pandas API compatibility by using pandas itself, something
+    none of the other options are able to guarantee. Also, [pandas is a direct requirement
+    more than any of the scalable pandas tools are](https://oreil.ly/IzYDb).
+  prefs: []
+  type: TYPE_NORMAL
+- en: H2O’s DataTable
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: DataTable is a single-machine DataFrame-like attempt to scale processing up
+    to 100 GB (while the project authors describe this as “big data,” we view it as
+    more along the lines of medium-sized data). Despite being for Python, DataTable,
+    instead of copying the pandas APIs, aims to inherit much of R’s `data.table` APIs.
+    This can make it a great choice for a team coming from R, but for dedicated pandas
+    users it is likely less appealing. DataTable is also a single-company open source
+    project, residing under H2O’s GitHub rather than in a foundation or on its own.
+    At the time of this writing, it has a [relatively concentrated location of developer
+    activity](https://oreil.ly/8vgA5). It has active CI (being run on incoming PRs),
+    which we believe suggests higher-quality software. DataTable can use OpenMP to
+    parallelize computation on a single machine, but it does not require OpenMP.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Polars
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Polars is another single-machine scalable DataFrame, but it takes the approach
+    of writing its core functionality in Rust instead of C/C++ or Fortran. Like many
+    of the distributed DataFrame tools, polars uses the ASF’s Arrow project for storing
+    the DataFrames. Similarly, polars uses lazy evaluation to pipeline operations
+    and internally partition/chunk the DataFrame, so (most of the time) it needs to
+    have only a subset of the data in memory at any one time. Polars has one of the
+    [largest developer communities among all single-machine scalable DataFrames](https://oreil.ly/zxoFJ).
+    Polars links to benchmarks from its main page, showing it to be substantially
+    faster than many of the distributed tools—but this comparison makes sense only
+    when the distributed tools are constrained to a single machine, which is unlikely.
+    It achieves its parallelism by using all of the cores in a single machine. Polars
+    has [extensive documentation](https://oreil.ly/QW5s2), and it also has an explicit
+    section on what to expect when coming from regular pandas. Not only does it have
+    CI, but it has also integrated benchmark testing as part of each PR and tests
+    against multiple versions of Python and environments.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Distributed
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The majority of tools for scaling DataFrames are distributed in nature, since
+    all of the fancy tricks on a single machine can get you only so far.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ASF Spark DataFrame
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Spark started out with what it called a resilient distributed dataset (RDD)
+    and then quickly added a more DataFrame-like API called DataFrames. This caused
+    much excitement, but many folks interpreted it to mean “pandas-like,” whereas
+    Spark’s (initial) DataFrames was more akin to “SQL-like” DataFrames. Spark is
+    written primarily in Scala and Java, both of which run on the Java Virtual Machine
+    (JVM). While Spark has a Python API, it involves substantial data transfer between
+    the JVM and Python, which can be slow and can increase memory requirements. Spark
+    DataFrames was created before ASF Arrow, and so it has its own in-memory storage
+    format, but it has since added support for using Arrow for communication between
+    the JVM and Python.
+  prefs: []
+  type: TYPE_NORMAL
+- en: PySpark errors are especially difficult to debug, since when anything goes wrong
+    you get a Java exception along with a Python exception.
+  prefs: []
+  type: TYPE_NORMAL
+- en: SparklingPandas
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Since Holden co-wrote SparklingPandas, it is the one library we can confidently
+    say not to use without having to worry about people being upset.^([2](app02.xhtml#id1063))
+    SparklingPandas is built on top of ASF Spark’s RDD and DataFrame APIs to provide
+    a more Python-like API, but as the logo is a panda eating bamboo on a sticky note,
+    you can see that we didn’t get all the way. SparklingPandas did show it was possible
+    to provide a pandas-like experience by reusing parts of pandas itself.
+  prefs: []
+  type: TYPE_NORMAL
+- en: For embarrassingly parallel types of operations, adding each function from the
+    pandas API by using `map` to delegate the Python code on each DataFrame was very
+    fast. Some operations, like dtypes, were evaluated on just the first DataFrame.
+    Grouped and window operations were more complicated.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Since the initial co-authors had day jobs with other focus areas, the project
+    failed to move beyond proof-of-concept.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Spark Koalas/Spark pandas DataFrames
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: The Koalas project, which was integrated into Spark 3.2, initially came out
+    of Databricks. Koalas follows a similar approach of chunking pandas DataFrames,
+    but these DataFrames are represented as Spark DataFrames rather than Arrow DataFrames.
+    Like most of the systems, the DataFrames are lazily evaluated to allow for pipelining.
+    Arrow is used to transfer data to and from the JVM, so you still have all of the
+    type restrictions of Arrow. This project benefits from being part of a large community
+    and being interoperable with much of the traditional big data stack. This comes
+    from being a part of the JVM and Hadoop ecosystem, which also comes with some
+    downsides for performance. At present, moving data between the JVM and Python
+    increases overhead, and in general, Spark is focused on supporting heavier-weight
+    tasks.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Grouped operations on Spark Koalas/Spark pandas DataFrames do not yet support
+    partial aggregations. This means that all the data for one key must fit on one
+    node.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Cylon
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Cylon’s home page is very focused on benchmarks, but the benchmark it has chosen
+    (comparing Cylon to Spark on a single machine) is one that is easy to meet, since
+    Spark is designed for distributed usage instead of single-machine usage. Cylon
+    uses PyArrow for storage along with OpenMPI for managing its task parallelism.
+    Cylon also has a GPU backend called GCylon. PyClon’s documentation has a lot of
+    room for growth, and the link to its API documentation is currently broken.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The Cylon community seems to have ~30 messages per year, and attempting to find
+    any open source users of the DataFrame library [comes up empty](https://oreil.ly/uroxr).
+    The [contributor file](https://oreil.ly/dWC16) and LinkedIn show the majority
+    of contributors all share a common university.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The project follows several software engineering best practices, like having
+    CI enabled. That being said, the comparatively small (visibly active) community
+    and lack of clear documentation mean that, in our mind, depending on Cylon would
+    be more involved than some other options.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Ibis
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: The Ibis project [promises](https://oreil.ly/9OL2f) “the flexibility of Python
+    analytics with the scale and performance of modern SQL.” It compiles your somewhat
+    pandas-like code (as much as possible) into SQL. This is convenient, as not only
+    do many big data systems (like Hive, Spark, BigQuery, etc.) support SQL, but it
+    is also the de facto query language for the majority of databases out there. Unfortunately,
+    SQL is not uniformly implemented, so moving between backend engines may result
+    in breakages, but Ibis does a great job of [tracking which APIs work with which
+    backends](https://oreil.ly/g2E_W). Of course, this design limits you to the kinds
+    of expressions that can be expressed in SQL.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Modin
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Like Ibis, Modin is slightly different from many of the other tools in that
+    it has multiple distributed backends, including Ray, Dask, and OpenMPI. Modin
+    has the stated goal of handling from 1 MB to 1+ TB, which is a wide range to attempt
+    to cover. [Modin’s home page](https://modin.org) also makes a claim to “Scale
+    your pandas workflows by changing a single line of code,” which, while catchy,
+    in our opinion overpromises on the API compatibility and knowledge required to
+    take advantage of parallel and distributed systems.^([3](app02.xhtml#id1074))
+    In our opinion, Modin is very exciting since it seems silly for each distributed
+    computing engine to have its own re-implementation of the pandas APIs. Modin has
+    a very active developer community, with core developers from multiple companies
+    and backgrounds. On the other hand, we feel that the current documentation does
+    not do a good enough job of setting users up for success with understanding the
+    limitations of Modin. Thankfully, much of the intuition you will have developed
+    around Dask DataFrames still applies to Modin. We think Modin is ideal for individuals
+    who need to move between different computation engines.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Warning
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Unlike the other systems, Modin is eagerly evaluated, meaning it can’t take
+    advantage of automatic pipelining of your computation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Vanilla Dask DataFrame
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: We are biased here, but we think that Dask’s DataFrame library does an excellent
+    job of striking a balance between being an easy on-ramp and being clear about
+    its limitations. Dask’s DataFrames have a large number of contributors from a
+    variety of different companies. Dask DataFrames also have a relatively high level
+    of parallelism, including for grouped operations, not found in many of the other
+    systems.
+  prefs: []
+  type: TYPE_NORMAL
+- en: cuDF
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: cuDF extends Dask DataFrame to add support for GPUs. It is, however, primarily
+    a single-company project, from NVIDIA. This makes sense since NVIDIA wants to
+    sell you more GPUs, but it also does mean it is unlikely to, say, add support
+    for AMD GPUs anytime soon. This project is likely to be maintained if NVIDIA continues
+    to see a future in selling more GPUs for data analytics as best served with pandas-like
+    interfaces.
+  prefs: []
+  type: TYPE_NORMAL
+- en: cuDF not only has CI but also has a strong culture of code review with per-area
+    responsibilities.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Conclusion
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In an ideal world, there would be a clear winner, but as you can see, the different
+    scalable DataFrame libraries serve different purposes, and except those already
+    abandoned, all have potential uses. We think all of these libraries have their
+    place, depending on your exact needs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([1](app02.xhtml#id1044-marker)) Arrow allows all data types to be null. Pandas
+    does not allow integer columns to contain nulls. When reading Arrow files as pandas,
+    if an Int column does not contain nulls, it will be read as Int in the pandas
+    DataFrame, but if at runtime it encounters a null, the entire column will be read
+    as a float.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([2](app02.xhtml#id1063-marker)) Besides ourselves, and if you’re reading this
+    you’ve likely helped Holden buy a cup of coffee and that’s enough. :)
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([3](app02.xhtml#id1074-marker)) For example, see the confusion around the
+    limitation with groupBy + apply, which is not otherwise documented besides a [GitHub
+    issue](https://oreil.ly/rIeam).
+  prefs: []
+  type: TYPE_NORMAL

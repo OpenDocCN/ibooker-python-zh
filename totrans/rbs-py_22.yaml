@@ -1,0 +1,404 @@
+- en: Chapter 19\. Pluggable Python
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The greatest challenge in building a robust codebase is predicting the future.
+    You will never completely guess what a future developer will do. The best strategy
+    is not being perfectly prescient, but instead creating flexibility so that future
+    collaborators can hook into your system with minimal work. In this chapter, I
+    will focus on creating *pluggable* code. Pluggable code allows you to define behaviors
+    that are to be supplied later. You define a framework with *extension points*,
+    or parts of your system that other developers will use to extend functionality.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Think about a stand mixer sitting on a kitchen counter. You can select a variety
+    of attachments to use with your mixer: a hook for mixing bread, a whisk for beating
+    eggs and cream, and a flat beater to do general-purpose mixing. Each attachment
+    serves a specific purpose. What’s great is that you can detach and attach hooks
+    or blades as the situation calls for it. You don’t need to buy an entire new mixer
+    for each use case; you *plug in* whatever you need when you need it.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This is the goal for pluggable Python. You don’t need to rebuild entire applications
+    when new functionality is needed. You build extensions or attachments that snap
+    onto a solid foundation. You pick the functionality you need for your specific
+    use case and you plug that into your system.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In most of this book, I’ve been illustrating examples with automated food makers
+    of some sort or another. In this chapter, I will perform the mother of mergers
+    and design a system that can combine them all. I want to build a system that can
+    take any of the recipes I’ve talked about and cook them. I call it the “Ultimate
+    Kitchen Assistant” (if you think this is a terrible name, you now know why I don’t
+    work in marketing).
+  prefs: []
+  type: TYPE_NORMAL
+- en: The Ultimate Kitchen Assistant contains all the instructions and gear you will
+    need for working around the kitchen. It knows how to slice, dice, fry, sauté,
+    bake, broil, and blend any ingredient. It comes with some premade recipes, but
+    the real magic is that customers can buy off-the-shelf modules to extend its functionality
+    (such as a “Pasta-Making Module” for sating Italian cuisine cravings).
+  prefs: []
+  type: TYPE_NORMAL
+- en: The problem is, I don’t want the code to become burdensome to maintain. There
+    are a lot of different dishes to make, and I want to give the system some sort
+    of flexibility without oodles of physical dependencies turning the system into
+    spaghetti code (although your system making spaghetti itself in the kitchen is
+    highly encouraged!). Just like plugging a new attachment onto the stand mixer,
+    I want developers to affix different attachments to solve their use cases. I even
+    want other organizations to build modules for the Ultimate Kitchen Assistant.
+    I want this codebase to be extensible and composable.
+  prefs: []
+  type: TYPE_NORMAL
+- en: I’ll use this example to illustrate three separate ways of plugging into different
+    Python constructs. First, I’ll focus on how to plug in specific parts of an algorithm
+    with the Template Method Pattern. Then, I’ll talk through plugging in an entire
+    class with the Strategy Pattern. Finally, I’ll introduce you to an incredibly
+    useful library, stevedore, to do plug-ins at a much larger architectural scale.
+    All of these techniques will help you give future developers the extensibility
+    they need.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The Template Method Pattern
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The *Template Method Pattern* is a pattern for filling in the blanks of an algorithm.^([1](part0024_split_005.html#idm45644729667576))
+    The idea is that you define an algorithm as a series of steps, but you force the
+    caller to override some of those steps, as shown in [Figure 19-1](part0024_split_001.html#template_method).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![ropy 1901](../images/00035.gif)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 19-1\. The Template Method Pattern
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: First up for the Ultimate Kitchen Assistant is a pizza-making module. While
+    traditional sauce-and-cheese pizzas are great, I want the Ultimate Kitchen Assistant
+    to be more flexible. I want it to handle all sorts of pizza-like entities, from
+    a Lebanese manoush to a Korean bulgogi pizza. To make any of these pizza-like
+    dishes, I want the machinery to perform a similar set of steps, but let developers
+    tweak certain operations to make their style of pizza. [Figure 19-2](part0024_split_001.html#pizza_template)
+    describes such a pizza-making algorithm.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![ropy 1902](../images/00036.gif)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 19-2\. Pizza-making algorithm
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Each pizza will use the same basic steps, but I want to be able to tweak certain
+    steps (preparing ingredients, adding prebake toppings, and adding postbake toppings).
+    My goal in applying the Template Method Pattern is to make these steps pluggable.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In its simplest incarnation, I can pass functions into the template method:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now, if you want to create a pizza, you just pass in your own functions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This is incredibly convenient for any pizza, now or in the future. As new pizza-making
+    capabilities come online, developers need to pass their new functions into the
+    template method. These developers can plug in specific parts of the pizza-making
+    algorithm to suit their needs. They don’t need to know anything about their use
+    case at all; they are free to grow the system without being bogged down with changing
+    legacy code. Suppose they want to create the bulgogi pizza. Instead of changing
+    `create_pizza`, I simply need to pass in a new `PizzaCreationFunctions`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: The Strategy Pattern
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The Template Method Pattern is great for swapping out select parts of an algorithm,
+    but what if you want to swap out the *entire* algorithm? A very similar design
+    pattern exists for this use case: the Strategy Pattern.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The Strategy Pattern is for plugging entire algorithms into a context.^([2](part0024_split_005.html#idm45644729415976))
+    For the Ultimate Kitchen Assistant, consider a module that specializes in Tex-Mex
+    (a regional American cuisine that blends southwestern US and northern Mexican
+    cuisines). A large variety of dishes can be made from a common set of items; you
+    mix and match the different ingredients in new ways.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'For instance, you will find the following ingredients on most Tex-Mex menus:
+    tortillas (corn or flour), beans, ground beef, chicken, lettuce, tomato, guacamole,
+    salsa, and cheese. From these ingredients, you can create tacos, flautas, chimichangas,
+    enchiladas, taco salads, nachos, gorditas…the list goes on. I don’t want the system
+    to restrict all the different Tex-Mex dishes; I want different groups of developers
+    to supply *how* to make the dish.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: To do this with the Strategy Pattern, I need to define what the Ultimate Kitchen
+    Assistant does and what the strategy does. In this case, the Ultimate Kitchen
+    Assistant should provide the mechanisms for interacting with ingredients, but
+    future developers are free to keep adding new Tex-Mex concoctions with a `TexMexStrategy`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As with any code designed to be extensible, I need to make sure that the interaction
+    between my Ultimate Kitchen Assistant and the Tex-Mex module agrees on the pre-
+    and postconditions, namely what gets passed into the Tex-Mex module and what comes
+    out.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Suppose the Ultimate Kitchen Assistant has numbered bins to put ingredients
+    in. The Tex-Mex module needs to know what bins the common Tex-Mex ingredients
+    are in, so it can use the Ultimate Kitchen Assistant to actually do the prepping
+    and cooking.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: The function `prepare_tex_mex_dish` collects ingredients, then delegates to
+    the actual `tex_mex_recipe_maker` to create the dish to serve. The `tex_mex_recipe_maker`
+    is the strategy. It’s very similar to the Template Method Pattern, but you typically
+    are just passing a single function rather than a collection of functions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'A future developer just has to write a function that does the actual preparation,
+    given the ingredients. They could write:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'If they decide they want to provide support for a different dish at some point
+    in the future, they just have to write a new function:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: Developers can continue to define functions however they want, whenever they
+    want. Just like the Template Method Pattern, they can plug in new functionality
+    with minimal impact to the original code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: As with the Template Method, the implementation I’ve shown is a bit different
+    than what was originally described in the Gang of Four book. The original implementation
+    involved classes and subclasses that wrap a single method. In Python, it’s far
+    easier to just pass the single function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Plug-in Architectures
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The Strategy and Template Method Patterns are great for plugging in small bits
+    of functionality: a class here or a function there. However, the same patterns
+    apply to your architecture as well. Being able to inject classes, modules, or
+    subsystems is just as important. A Python library called [stevedore](https://oreil.ly/AybtZ)
+    is an incredibly useful tool for managing *plug-ins*.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: A plug-in is a piece of code that can be dynamically loaded at runtime. Code
+    can scan for installed plug-ins, select an appropriate one, and delegate responsibilities
+    to that plug-in. This is another example of extensibility; developers can focus
+    on specific plug-ins without touching the core codebase.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'There are a number of benefits beyond extensibility to a plug-in architecture:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: You can deploy plug-ins independently from the core, giving you more granularity
+    for rolling out updates.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Third parties can write plug-ins without modifying your codebase.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Plug-ins are able to be developed in isolation from the core codebase, reducing
+    the chances of creating tightly coupled code.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: To demonstrate how plug-ins work, say I want to support an ecosystem for the
+    Ultimate Kitchen Assistant where users can buy and install modules (such as the
+    Tex-Mex module in the last section) separately from the main kitchen assistant.
+    Each module provides a set of recipes, special equipment, and storage of ingredients
+    for the Ultimate Kitchen Assistant to do work. The real benefit is that each module
+    can be developed separately from the Ultimate Kitchen Assistant core; each module
+    is a plug-in.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The first thing to do when designing plug-ins is determine the contract between
+    the core and the various plug-ins. Ask yourself what services the core platform
+    provides and what you expect the plug-ins to provide. In the case of the Ultimate
+    Kitchen Assistant, [Figure 19-3](part0024_split_003.html#plugin_contract) demonstrates
+    the contract I will be using in the following examples.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![ropy 1903](../images/00037.gif)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 19-3\. Contract between core and plug-in
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'I want to put this contract into code, so that it is unambiguous what I expect
+    out of a plug-in:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: This serves as the definition of what the plug-in looks like. To create a plug-in
+    that satisfies my expectations, I just need to create a class that inherits from
+    my base class.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: Once you have created the plug-in, you need to register it with stevedore. stevedore
+    matches plug-ins to a *namespace*, or an identifier that groups plug-ins together.
+    It does so by using Python’s *entry points*, which allow Python to discover components
+    at runtime.^([3](part0024_split_005.html#idm45644729009512))
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'You register plug-ins with the help of `setuptools` and `setup.py`. Many Python
+    packages use `setup.py` to define packaging rules, one of which being entry points.
+    In the `setup.py` for `ultimate_kitchen_assistant`, I would register my plug-in
+    as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: If you are having trouble linking your plug-ins, check out the [`entry-point-inspector`
+    package](https://oreil.ly/kbMro) for debugging help.
+  prefs: []
+  type: TYPE_NORMAL
+- en: I am binding my `PastaMaker` class (in the `ultimate_kitchen_assis⁠tant.pasta_maker`
+    package) to a plug-in with the namespace `ultimate_⁠kitchen_assis⁠tant.recipe_maker`.
+    I’ve created another hypothetical plug-in called `TexMexModule`, as well.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Once the plug-ins are registered as entry points, you can use stevedore to
+    load them dynamically at runtime. For instance, if I wanted to collect all recipes
+    from all plug-ins, I could write the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: I use `stevedore.extension.ExtensionManager` to find and load all plug-ins in
+    the namespace `ultimate_kitchen_assistant.recipe_maker`. I can then map (or apply)
+    a function to every plug-in that gets found to get their recipes. Lastly, I use
+    `itertools` to chain them all together. It doesn’t matter how many plug-ins I
+    have set up; I can load them all with this code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s say a user wants to make something from the pasta maker, such as “Pasta
+    with Sausage.” All the calling code needs to do is ask for a plug-in named `pasta_maker`.
+    I can load the specific plug-in with a `stevedore.driver.DriverManager`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: Discussion Topic
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: What parts of your system could use a plug-in architecture? How would this benefit
+    your codebase?
+  prefs: []
+  type: TYPE_NORMAL
+- en: stevedore provides a great way to decouple code; separating the code into plug-ins
+    keeps it flexible and extensible. Remember, the goal of extensible programs is
+    to limit the number of modifications needed in the core system. Developers can
+    create plug-ins in isolation, test them, and integrate them into your core seamlessly.
+  prefs: []
+  type: TYPE_NORMAL
+- en: My favorite part about stevedore is that it actually can work *across* packages.
+    You can write plug-ins in a completely separate Python package than the core.
+    As long as the same namespace is used for the plug-in, stevedore can stitch everything
+    together. stevedore has a load of other features that are worth checking out,
+    such as event notifications, enabling plug-ins through a variety of methods, and
+    automatic plug-in documentation generation. If a plug-in architecture meets your
+    needs, I highly recommend checking out more of stevedore.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Warning
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: You can technically register any class as a plug-in, regardless of whether it
+    is substitutable for the base class or not. Because the code is separated by an
+    abstract layer with stevedore, your typechecker will not be able to detect this.
+    Consider checking the interface at runtime to catch any mismatches before using
+    the plug-in.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Closing Thoughts
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: When you create pluggable Python, you give your collaborators the ability to
+    isolate new functionality but still easily integrate it into an existing codebase.
+    Developers can plug into an existing algorithm with the Template Method Pattern,
+    an entire class or algorithm with the Strategy Pattern, or even entire subsystems
+    with stevedore. stevedore is especially useful when you want to split your plug-ins
+    across discrete Python packages.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This concludes [Part III](part0019.html#part_3), which was all about extensibility.
+    Writing extensible code is adhering to the Open-Closed Principle, where you make
+    it easy to add onto your code without requiring modifications to existing code.
+    Event-driven architectures and plug-in architectures are fantastic examples of
+    designing with extensibility in mind. All of these architectural patterns require
+    you to be aware of dependencies: physical, logical, and temporal. As you find
+    ways to minimize physical dependencies, you’ll find that your code becomes composable,
+    and can be rearranged in new compositions at will.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The first three parts of this book focused on changes that can make your code
+    more maintainable and readable and reduce the chance of errors. However, errors
+    still have a chance of showing up; they are an unavoidable part of developing
+    software. To combat this, you need to make it easy to detect errors before they
+    hit production. You’ll learn how to do just that with tools like linters and tests
+    in [Part IV, *Building a Safety Net*](part0025.html#part_4).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '^([1](part0024_split_001.html#idm45644729667576-marker)) Erich Gamma, Richard
+    Helm, Ralph E. Johnson, and John Vlissides. *Design Patterns: Elements of Reusable
+    Object-Oriented Software*. Boston, MA: Addison-Wesley Professional, 1994.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '^([2](part0024_split_002.html#idm45644729415976-marker)) Erich Gamma, Richard
+    Helm, Ralph E. Johnson, and John Vlissides. *Design Patterns: Elements of Reusable
+    Object-Oriented Software*. Boston, MA: Addison-Wesley Professional, 1994.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([3](part0024_split_003.html#idm45644729009512-marker)) Entry points can be
+    complex in how they interact with Python packaging, but that’s beyond the scope
+    of this book. You can learn more at [*https://oreil.ly/bMyJS*](https://oreil.ly/bMyJS).
+  prefs: []
+  type: TYPE_NORMAL

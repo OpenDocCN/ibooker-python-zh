@@ -1,0 +1,834 @@
+- en: Chapter 5\. Hyperparameter Optimization with Ray Tune
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In the last chapter we’ve seen how to build and run various reinforcement learning
+    experiments. Running such experiments can be expensive, both in terms of compute
+    resources and the time it takes to run them. This only gets amplified as you move
+    on to more challenging tasks, since it’s unlikely to just pick an algorithm out
+    of the box and run it to get a good result. In other words, at some point you’ll
+    need to tune the hyperparameters of your algorithms to get the best results. As
+    we’ll see in this chapter, tuning machine learning models is hard, but Ray Tune
+    is an excellent choice to help you tackle this task.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Ray Tune is an incredibly powerful tool for hyperparameter optimization. Not
+    only does it work in a distributed manner by default, such as any other library
+    built on top of Ray, it’s also one of the most feature-rich hyperparameter optimization
+    (HPO) libraries available. To top this off, Tune integrates with some of the most
+    prominent HPO libraries out there, such as HyperOpt, Optuna, and many more. This
+    is remarkable, since it makes Tune an ideal candidate for distributed HPO experiments,
+    practically no matter what other libraries you’re coming from or if you start
+    from scratch.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this chapter we’ll first revisit in a bit more depth why HPO is hard to do,
+    and how you could naively implement it yourself with Ray. We then teach you the
+    core concepts of Ray Tune and how you can use it to tune the RLlib models we’ve
+    built in the previous chapter. To wrap things up, we’ll also have a look at how
+    to use Tune for supervised learning tasks, using frameworks like PyTorch and TensorFlow.
+    Along the way, we demonstrate how Tune integrates with other HPO libraries and
+    introduce you to some of its more advanced features.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tuning Hyperparameters
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Let’s recap the basics of hyperparameter optimization briefly. If you’re familiar
+    with this topic, you can skip this section, but since we’re also discussing aspects
+    of distributed HPO, you might still benefit from following along. The [notebook
+    for this chapter](https://github.com/maxpumperla/learning_ray/blob/main/notebooks/ch_05_tune.ipynb)
+    can be found in the GitHub repository of this book.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you recall our first RL experiment introduced in [Chapter 3](ch03.xhtml#chapter_03),
+    we defined a very basic Q-learning algorithm whose internal *state-action values*
+    were updated according to an explicit update rule. After initialization, we never
+    touched these *model parameters* directly, they were learnt by the algorithm.
+    By contrast, in setting up the algorithm, we explicitly chose a `weight` and a
+    `discount_factor` parameter prior to training. I didn’t tell you how we chose
+    to set these parameters back then, we simply accepted the fact that they were
+    good enough to crack the problem at hand. In the same way, in [Chapter 4](ch04.xhtml#chapter_04)
+    we initialized an RLlib algorithm with a `config` that used a total of four rollout
+    workers for our DQN algorithm by setting `num_workers=4`. Parameters like these
+    are called *hyperparameters*, and finding good choices for them can be crucial
+    for successful experiments. The field of hyperparameter optimization entirely
+    is devoted to efficiently finding such good choices.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Building a random search example with Ray
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Hyperparameters like the `weight` or the `discount_factor` of our Q-learning
+    algorithm are *continuous* parameters, so we can’t possibly test all combinations
+    of them. What’s more, these parameter choices may not be independent of each other.
+    If we want them to be selected for us, we also need to specify a *value range*
+    for each of them (both hyperparameters need to be chosen between 0 and 1 in this
+    case). So, how do we determine good or even optimal hyperparameters?
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s take a look at a quick example that implements a naive, yet effective
+    approach to tuning hyperparameters. This example will also allow us to introduce
+    some terminology that we’ll use later on. The core idea is that we can attempt
+    to *randomly sample* hyperparameters, run the algorithm for each sample, and then
+    select the best run based on the results we got. But to do the theme of this book
+    justice, we don’t just want to run this in a sequential loop, we want to compute
+    our runs in parallel using Ray.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To keep things simple we’ll revisit our simple Q-learning algorithm from [Chapter 3](ch03.xhtml#chapter_03)
+    again. If you don’t recall the signature of the main training function, we defined
+    it as `train_policy(env, num_episodes=10000, weight=0.1, discount_factor=0.9)`.
+    That means we can tune the `weight` and `discount_factor` parameters of our algorithm
+    by passing in different values to the `train_policy` function and see how the
+    algorithm performs. To do that, let’s define a so-called *search space* for our
+    hyperparameters. For both parameters in question we simply uniformly sample values
+    between 0 and 1, for a total of 10 choices. Here’s what that looks like:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-1\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: Next, we define an *objective function*, or simply *objective*. The role of
+    an objective function is to evaluate the performance of a given set of hyperparameters
+    for the task we’re interested in. In our case, we want to train our RL algorithm
+    and evaluate the trained policy. Recall that in [Chapter 3](ch03.xhtml#chapter_03)>
+    we also defined an `evaluate_policy` function for precisely this purpose. The
+    `evaluate_policy` function was defined to return the average number of steps it
+    took for an agent to reach the goal in the underlying maze environment. In other
+    words, we want to find a set of hyperparameters that minimizes the result of our
+    objective function. To parallelize the objective function, we’ll use the `ray.remote`
+    decorator to make our `objective` a Ray task.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-2\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_hyperparameter_optimization_with_ray_tune_CO1-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We pass in a dictionary with a hyperparameter sample into our objective.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_hyperparameter_optimization_with_ray_tune_CO1-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Then we train our RL policy using the chosen hyperparameters.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_hyperparameter_optimization_with_ray_tune_CO1-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Afterwards we can evaluate the policy to retrieve the score we want to minimize.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](assets/4.png)](#co_hyperparameter_optimization_with_ray_tune_CO1-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We return both score and hyperparameter choice together for later analysis.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Finally, we can run the objective function in parallel using Ray, by iterating
+    over the search space and collecting the results:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-3\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: The actual results of this hyperparameter run are not very interesting, as the
+    problem is so easy to solve (most runs will return the optimum of 8 steps, regardless
+    of the hyperparameters chosen). But in case I haven’t sold you on Ray’s capabilities
+    yet, what’s more interesting here is how easy it is to parallelize the objective
+    function with Ray. In fact, I’d like to encourage you to rewrite the above example
+    to simply loop through the search space and call the objective function for each
+    sample, just to confirm how painfully slow such a serial loop can be.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Conceptually, the three steps we took to run the above example are representative
+    of how hyperparameter tuning works in general. First, you define a search space,
+    then you define an objective function, and finally you run an analysis to find
+    the best hyperparameters. In HPO it is common to speak of one evaluation of the
+    objective function per hyperparameter sample as a *trial*, and all trials form
+    the basis for your analysis. How exactly parameters are sampled from the search
+    space (in our case, randomly) is up to a *search algorithm* to decide. In practice,
+    finding good hyperparameters is easier said than done, so let’s have a closer
+    look at why this problem is so hard.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Why is HPO hard?
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'If you zoom out from the above example just enough, you can see that there
+    are several intricacies in making the process of hyperparameter tuning work well.
+    Here’s a quick overview of the most important ones:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Your search space can be composed of a large number of hyperparameters. These
+    parameters might have different data types and ranges. Some parameters might be
+    correlated, or even depend on others. Sampling good candidates from complex, high-dimensional
+    spaces is a difficult task.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Picking parameters at random can work surprisingly well, but it’s not always
+    the best option. In general, you need to test more complex search algorithms to
+    find the best parameters.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: In particular, even if you parallelize your hyperparameter search like we just
+    did, a single run of your objective function can take a long time to complete.
+    That means you can’t afford to run too many searches overall. For instance, training
+    neural networks can take hours to complete, so your hyperparameter search better
+    be efficient.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: When distributing search, you need to make sure to have enough compute resources
+    available to run searches over the objective function effectively. For instance,
+    you might need a GPU to compute your objective function fast enough, so all your
+    search runs need to have access to a GPU. Allocating the necessary resources for
+    each trial is critical to speeding up your search.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: You want to have convenient tooling for your HPO experiments, like stopping
+    bad runs early, saving intermediate results, restarting from previous trials,
+    or pausing and resuming runs, etc.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: As a mature, distributed HPO framework, Ray Tune takes addresses all these topics
+    and provides you with a simple interface for running hyperparameter tuning experiments.
+    Before we look into how Tune works, let’s rewrite our above example to use Tune.
+  prefs: []
+  type: TYPE_NORMAL
+- en: An introduction to Tune
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'To get your first taste of Tune, porting over our naive Ray Core implementation
+    of random search to Tune is straightforward and follows the same three steps as
+    before. First, we define a search space, but this time using `tune.uniform`, instead
+    of the `random` library:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-4\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: Next, we can define an objective function that almost looks the same as before.
+    We designed it like that. The only differences are that this time we return the
+    score as a dictionary, and that we don’t need a `ray.remote` decorator, as Tune
+    will take care of distributing this objective function for us internally.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-5\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'With this `tune_objective` function defined, we can pass is into a `tune.run`
+    call, together with the search space we defined. By default, Tune will run random
+    search for you, but you can also specify other search algorithms, as you will
+    see soon. Calling `tune.run` generates random search trials for your objective
+    and returns an `analysis` object that contains information about the hyperparameter
+    search. We can get the best hyperparameters found by calling `get_best_config`
+    and specifying the `metric` and `mode` arguments (we want to minimize our score):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-6\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: This quick example covers the very basics of Tune, but there’s a lot more to
+    unpack. The `tune.run` function is quite powerful and takes a lot of arguments
+    for you to configure your runs. To understand these different configuration options,
+    we first need to introduce you to the key concepts of Tune.
+  prefs: []
+  type: TYPE_NORMAL
+- en: How does Tune work?
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'To effectively work with Tune, you have to understand a total of six key concepts,
+    four of which you have already used in the last example. Here’s an informal overview
+    of Ray Tune’s components and how you should think about them:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Search spaces*: These spaces determine which parameters to select. Search
+    spaces define the range of values for each parameter, and how they should be sampled.
+    They are defined as dictionaries and use Tune’s sampling functions to specify
+    valid hyperparameter values. You have already seen `tune.uniform`, but [there
+    are many more options to choose from](https://docs.ray.io/en/latest/tune/api_docs/search_space.xhtml#tune-sample-docs).'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Trainables*: A `Trainable` is Tune’s formal representation of an objective
+    you want to “tune”. Tune has class-based API as well, but we will only use the
+    function-based API in this book. For us, a `Trainable` is a function with a single
+    argument, a search space, which reports scores to Tune. The easiest way to do
+    so is by returning a dictionary with the score you’re interested in.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Trials*: By triggering `tune.run(...)`, Tune will make sure to set up trials
+    and schedule them for execution on your cluster. A trial contains all necessary
+    information about a single run of your objective, given a set of hyperparameters.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Analyses*: Completing a `tune.run` call returns an `ExperimentAnalysis` object,
+    with the results of all trials. You can use this object to drill down into the
+    results of your trials.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Search Algorithms*: Tune supports a large variety of search algorithms, which
+    are at the core of how to tune your hyperparameters. So far you’ve only implicitly
+    encountered Tune’s default search algorithm, which randomly selects hyperparameters
+    from the search space.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Schedulers*: The last, crucial component of a Tune experiment is that of a
+    *scheduler*. Schedulers plan and execute what the search algorithm selects. By
+    default, Tune schedules trials selected by your search algorithm on a first-in-first-out
+    (FIFO) basis. In practice, you can think of schedulers as a way to speed up your
+    experiments, for instance by stopping unsuccessful trials early.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Figure [Figure 5-1](#fig_tune) sums up these major components of Tune, and
+    their relationship in one diagram:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Tune](assets/tune_flow.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5-1\. The core components of Ray Tune.
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Note that internally Tune runs are started on the driver process of your Ray
+    cluster, which spawns several worker processes (using Ray actors) that execute
+    individual trials of your HPO experiment. Your trainables, defined on the driver,
+    have to be sent to the workers, and trial results need to be communicated to the
+    driver running `tune.run(...)`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Search spaces, Trainables, trials, and analyses don’t need much additional explanation,
+    and we’ll see more examples of each of those components in the rest of this chapter.
+    But search algorithms, or simply *searchers* for short, and schedulers need a
+    bit more elaboration.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Search Algorithms
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: All advanced search algorithms provided by Tune, and the many third-party HPO
+    libraries it integrates with, fall under the umbrella of *Bayesian Optimization*.
+    Unfortunately, going into the details of specific Bayesian search algorithms is
+    far beyond the scope of this book. The basic idea is that you update your beliefs
+    about which hyperparameter ranges are worth exploring based on the results of
+    your previous trials. Techniques using this principle make more informed decisions
+    and hence tend to be more efficient than independently sampling parameters (e.g.
+    at random).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Apart from the basic random search we’ve seen already, and *grid search*, which
+    picks hyperparameters from a predefined “grid” of choices, Tune offers a wide
+    range of Bayesian optimization searchers. For instance, Tune integrates with the
+    popular HyperOpt and Optuna libraries, and you can use the popular TPE (Tree-structured
+    Parzen Estimator) searcher with Tune through both of these libraries. Not only
+    that, Tune also integrates with tools such as Ax, BlendSearch, FLAML, Dragonfly,
+    Scikit-Optimize, BayesianOptimization, HpBandSter, Nevergrad, ZOOpt, SigOpt, and
+    HEBO. If you need to run HPO experiments with any of these tools on a cluster,
+    or want to easily switch between them, Tune is the way to go.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To make things more concrete, let’s rewrite our basic random search Tune example
+    from earlier to use the `bayesian-optimization` library. To do so, make sure you
+    install this library in your Python environment first, e.g. with `pip install
+    bayesian-optimization`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-7\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note that we “warm start” our Bayesian optimization with four random steps at
+    the beginning, and we explicitly `stop` the trial runs after 10 training iterations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note that since we’re not just randomly selecting parameters with `BayesOptSearch`,
+    the `search_alg` we use in our Tune run needs to know which `metric` to optimize
+    for and whether to minimize or optimize this metric. As we’ve argued before, we
+    want to achieve a `"min"` `"score"`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Schedulers
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Let’s next discuss how to use *trial schedulers* in Tune to make your runs more
+    efficient. We also use this section to introduce a slightly different way to report
+    your metrics to Tune within an objective function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: So, let’s say that instead of computing a score straight-up, like we did in
+    all examples in this chapter so far, we compute an *intermediate score* in a loop.
+    This is a situation that often occurs in supervised machine learning scenarios,
+    when training a model for several iterations (we’ll see concrete applications
+    of this later in this chapter). With good hyperparameter choices selected, this
+    immediate score might stagnate way before the loop in which it is computed. In
+    other words, if we don’t see enough incremental changes anymore, why not stop
+    the trial early? This is exactly one of the cases Tune’s schedulers are built
+    for.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Here’s a quick example of such an objective function. This is a toy example,
+    but it will help us reason about the optimal hyperparameters we want Tune to find
+    much better than if we were discussing a black-box scenario.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-8\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_hyperparameter_optimization_with_ray_tune_CO2-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Often you may want to compute intermediate scores, e.g. in a “training loop”.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_hyperparameter_optimization_with_ray_tune_CO2-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: You can use `tune.report` to let Tune know about these intermediate scores.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The score we want to minimize here is the square root of a positive number times
+    a `weight`, plus adding a `bias` term. It’s clear that both of these hyperparameters
+    need to be as small as possible to minimize the `score` for any positive `x`.
+    Given that the square root function “flattens out”, we might not have to compute
+    all `30` passes through the loop to find sufficiently good values for our two
+    hyperparameters. If you imagine that each `score` computation took an hour, stopping
+    early can be a huge boost to make your experiments run quicker.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s illustrate this idea by using the popular Hyperband algorithm as our
+    trial scheduler. This scheduler needs to be passed a metric and mode (again, we
+    `min`-imize our `score`). We also make sure to run for 10 samples so as not to
+    stop too prematurely:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-9\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note that in this case we did not specify a search algorithm, which means that
+    Hyperband will run on parameters selected by random search. We could also have
+    *combined* this scheduler with another search algorithm instead. This would have
+    allowed us to pick better trial hyperparameters and stop bad trials early. However,
+    note that not every scheduler can be combined with search algorithms. You’re advised
+    to check [Tune’s scheduler compatibility matrix](https://docs.ray.io/en/latest/tune/key-concepts.xhtml#schedulers)
+    for more information.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To wrap this discussion up, apart from Hyperband Tune includes distributed implementations
+    of early stopping algorithms such as the Median Stopping Rule, ASHA, Population
+    Based Training (PBT) and Population Based Bandits (PB2).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Configuring and running Tune
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Before looking into more concrete machine learning examples using Ray Tune,
+    let’s dive into some useful topics that help you get more out of your Tune experiments,
+    such as properly utilizing resources, stopping and resuming trials, adding callbacks
+    to your Tune runs, or defining custom and conditional search spaces.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Specifying resources
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: By default, each Tune trial will run on one CPU and leverage as many CPUs as
+    available for concurrent trials. For instance, if you run Tune on a laptop with
+    8 CPUs, any of the experiments we computed so far in this chapter will spawn 8
+    concurrent trials and allocate one CPU each for each trial. Changing this behaviour
+    can be controlled using the `resources_per_trial` argument of a Tune run.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'What’s interesting is that this does not stop with CPUs, you can also determine
+    the number of GPUs used per trial. Plus, Tune allows you to use *fractional resources*,
+    i.e., you can share resources between trials. So, let’s say that you have a machine
+    with 12 CPUs and two GPUs and you request the following resources for your `objective`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: That means Tune can schedule and execute up to four concurrent trials on your
+    machine, as this would max out GPU utilization on this machine (while you’d still
+    have 4 idle CPUs for other tasks). If you want, you can also specify the amount
+    of `"memory"` used by a trial by passing the number of bytes into `resources_per_trial`.
+    Also note that should you have the need to explicitly *restrict* the number of
+    concurrent trials, you can do so by passing in the `max_concurrent_trials` parameter
+    to your `tune.run(...)`. In the above example, let’s say you want to always keep
+    one GPU available for other tasks, you can limit the number of concurrent trials
+    to two by setting `max_concurrent_trials = 2`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note that everything we just exemplified for resources on a single machine naturally
+    extends to any Ray cluster and its available resources. In any case, Ray will
+    always try to schedule the next trials, but will wait and ensure enough resources
+    are available before executing them.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Callbacks and Metrics
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: If you’ve spent some time investigating the outputs of the Tune runs we’ve started
+    in this chapter so far, you’ll have noticed that each trial comes equipped with
+    a lot of information by default, such as the trial ID, its execution date, and
+    much more. What’s interesting is that Tune not only allows you to customize the
+    metrics you want to report, you can also hook into a `tune.run` by providing *callbacks*.
+    Let’s compute a quick, representative example that does both.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Slightly modifying a previous example, let’s say we want to log a specific
+    message whenever a trial returns a result. To do so, all you need to do is implement
+    the `on_trial_result` method on a `Callback` object from the `ray.tune` package.
+    Here’s how that would look like for an objective function that reports a `score`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-10\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Note that, apart from the score, we also report `step` and `more_metrics` to
+    Tune. In fact, you could expose any other metric you’d like to track there, and
+    Tune would add it to its trial metrics. Here’s how you’d run a Tune experiment
+    with our custom callback, and print the custom metrics we just defined:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-11\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Running this code will result in the following outputs (additional to what
+    you’ll see in any other Tune run). Note that we need to specify `mode` and `metric`
+    explicitly here, so that Tune knows what we mean by `best_result`. First, you
+    should see the output of our callback, while the trials are running:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: Then, at the very end of the program, we print the metrics of the best available
+    trial, which includes the three custom metrics we defined. The following output
+    omits some default metrics to make it more readable. We recommend that you run
+    an example like this on your own, in particular to get used to reading the outputs
+    of Tune trials (which can be a bit overwhelming due to their concurrent nature).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note that we used `on_trial_result` as an example of a method to implement a
+    custom Tune `Callback`, but you have many other useful options that are all relatively
+    self-explanatory. It’s not very helpful to list them all here, but some callback
+    methods I find particularly useful are `on_trial_start`, `on_trial_error`, `on_experiment_end`
+    and `on_checkpoint`. The latter hints at an important aspect of Tune runs that
+    we’ll discuss next.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Checkpoints, Stopping, and Resuming
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: The more Tune trials you kick off and the longer they each run individually,
+    especially in a distributed setting, the more you need a mechanism to protect
+    you against failures, to stop a run, or pick a run up again from previous results.
+    Tune makes this possible by periodically creating *checkpoints* for you. The checkpoint
+    cadence is dynamically adjusted by Tune to ensure at least 95% of the time is
+    spent on running trials, and not too many resources are devoted to storing checkpoints.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In the example we just computed, the checkpoint directory, or `logdir`, used
+    was `/Users/maxpumperla/ray_results/objective_2022-05-23_15-52-01`. If you ran
+    this example on your machine, by default its structure would be `~/ray_results/<your-objective>_<date>_<time>`.
+    If you know this `name` of your experiment, you can easily `resume` it like so:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-12\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Similarly, you can *stop* your trials by defining stopping conditions and explicitly
+    passing them to your `tune.run`. The easiest option to do that, and we’ve already
+    seen this option before, is by providing a dictionary with a stopping condition.
+    Here’s how you stop running our `objective` analysis after reaching a `training_iteration`
+    count of 10, a built-in metric of all Tune runs:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-13\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: One of the drawbacks of this way of specifying a stopping condition is that
+    it assumes the metric in question is *increasing*. For instance, the `score` we
+    compute starts high and is something we want to minimize. To formulate a flexible
+    stopping condition for our `score`, the best way is to provide a stopping function
+    as follows.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-14\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: In situations that require a stopping condition with more context or explicit
+    state, you can also define a custom `Stopper` class to pass into the `stop` argument
+    of your Tune run, but we won’t cover this case here.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Custom and conditional search spaces
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: The last more advanced topic we’re going to cover here is that of complex search
+    spaces. So far, we’ve only looked at hyperparameters that were independent of
+    each other, but in practice it happens quite often that some depend on others.
+    Also, while Tune’s built-in search spaces have quite a lot to offer, sometimes
+    you might want to sample parameters from a more exotic distribution or your own
+    modules.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here’s how you can handle both situations in Tune. Continuing with our simple
+    `objective` example, let’s say that instead of Tune’s `tune.uniform` you want
+    to use the `random.uniform` sampler from the `numpy` package for your `weight`
+    parameter. And then your `bias` parameter should be `weight` times a standard
+    normal variable. Using `tune.sample_from` you can tackle this situation (or more
+    complex and nested ones) as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-15\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: There are many more interesting features to explore in Ray Tune, but let’s switch
+    gears here and look into some machine learning applications using Tune.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Machine Learning with Tune
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: As we’ve seen, Tune is versatile and allows you to tune hyperparameters for
+    any objective you give it. In particular, you can use it with any machine learning
+    framework you’re interested in. In this section we’re going to give you two examples
+    to illustrate this.
+  prefs: []
+  type: TYPE_NORMAL
+- en: First, we’re going to use Tune to optimize parameters of an RLlib reinforcement
+    learning experiment, and then we’re tuning a Keras model using Optuna through
+    Tune.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using RLlib with Tune
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'RLlib and Tune have been designed to work together, so you can quite easily
+    set up an HPO experiment for your existing RLlib code. In fact, RLlib Trainers
+    can be passed into the first argument of `tune.run`, as `Trainable`. You can choose
+    between the actual Trainer class, like `DQNTrainer`, or its string representation,
+    like `"DQN"`. As Tune `metric` you can pass any metric tracked by your RLlib experiment,
+    for instance `"episode_reward_mean"`. And the `config` argument to `tune.run`
+    is just your RLlib Trainer configuration, but you can use the full power of Tune’s
+    search space API to sample hyperparameters like the learning rate or training
+    batch size^([1](ch05.xhtml#idm44990024561792)). Here’s a full example of what
+    we just described, running a tuned RLlib experiment on the `CartPole-v0` gym environment:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-16\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: Tuning Keras Models
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: To wrap up this chapter, let’s look at a slightly more involved example. As
+    we mentioned before, this is not primarily a machine learning book, but rather
+    an introduction to Ray and its libraries. That means that we can neither introduce
+    you to the basics of ML, nor can we spend much time on introducing ML frameworks
+    in detail. So, in this section we assume familiarity with Keras and its API, and
+    some basic knowledge about supervised learning. If you do not have these prerequisites,
+    you should still be able to follow along and focus on the Ray Tune specific parts.
+    You can view the following example as a more realistic scenario of applying Tune
+    to machine learning workloads.
+  prefs: []
+  type: TYPE_NORMAL
+- en: From a bird’s eye view, we’re going to load a common data set, prepare it for
+    an ML task, define a Tune objective by creating a deep learning model with Keras
+    that reports an accuracy metric to Tune, and use Tune’s HyperOpt integration to
+    define a search algorithm that tunes a set of hyperparameters of our Keras model.
+    The workflow remains the same - we define an objective, a search space, and then
+    use `tune.run` with the configuration we want.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To define a data set to train on, let’s write a simple `load_data` utility
+    function that loads the famous MNIST data that ships with Keras. MNIST consists
+    of 28 times 28 pixel images of handwritten digits. We normalize the pixel values
+    to be between 0 and 1, and make the labels for those ten digits *categorical variables*.
+    Here’s how you can do this purely with Keras’ built-in functionality (make sure
+    to `pip install tensorflow` before running this):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-17\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: Next, we define a Tune `objective` function, or Trainable, by loading the data
+    we just defined, setting up a sequential Keras model with hyperparameters selected
+    from the `config` we pass into our `objective`, and then compile and fit the model.
+    To define our deep learning model, we first flatten the MNIST input images to
+    vectors and then add two fully-connected layers (called `Dense` in Keras) and
+    a `Dropout` layer in between. The hyperparameters we want to tune are the activation
+    function of the first `Dense` layer, the `Dropout` rate, and the number of “hidden”
+    output units of the first layer. We could tune any other hyperparameter of this
+    model the same way, this selection is just an example.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We could manually report a metric of interest in the same way we did in other
+    examples in this chapter (e.g. by returning a dictionary in our `objective` or
+    using `tune.report(...)`). But since Tune comes with a proper Keras integration,
+    we can use the so-called `TuneReportCallback` as a custom Keras callback that
+    we pass into our model’s `fit` method. This is what our Keras `objective` function
+    looks like:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-18\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: Next, let’s use a custom search algorithm to tune this objective. Specifically,
+    we’re using the `HyperOptSearch` algorithm, which gives us access to HyperOpt’s
+    TPE algorithm through Tune. To use this integration, make sure to install HyperOpt
+    on your machine (for instance with `pip install hyperopt==0.2.5`). `HyperOptSearch`
+    allows us to define a list of promising, initial hyperparameter choices to investigate.
+    This is entirely optional, but sometimes you might have good guesses to start
+    from. In our case, we go with a dropout `"rate"` of 0.2, 128 `"hidden"` units,
+    and a rectified linear unit (ReLU) `"activation"` function initially. Other than
+    that, we can define a search space with `tune` utility just as we did before.
+    Finally, we can get an `analysis` object to determine the best hyperparameters
+    found by passing everything into a `tune.run` call.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-19\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note that we’re leveraging the full power of HyperOpt here, without having to
+    learn any specifics of it. We use Tune as a distributed front-end to another HPO
+    tool, plus leveraging its native integration with Keras.
+  prefs: []
+  type: TYPE_NORMAL
+- en: While we chose a combination of Keras and HyperOpt as example of using Tune
+    with an advanced ML framework and a third-party HPO library, as indicated earlier
+    we could have chosen literally any other machine learning library and practically
+    any other HPO library in popular use today. If you’re interested in diving deeper
+    into any of the many other integrations Tune has to offer, check out the [Ray
+    Tune documentation examples](https://docs.ray.io/en/latest/tune/examples/index.xhtml).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Tune is arguably one of the most versatile HPO tools you can choose today. It’s
+    very feature-rich, offering many search algorithms, advanced schedulers, complex
+    search spaces, custom stoppers and many other features that we couldn’t cover
+    in this chapter. Also, it seamlessly integrates with most notable HPO tools, such
+    as Optuna or HyperOpt, making it easy to either migrate from these tools, or simply
+    leverage their features through Tune. Since Tune, as part of the Ray ecosystem,
+    is distributed by default, it has an edge over many of its competitors. You can
+    view Ray Tune as a flexible, distributed HPO framework that *extends* others that
+    might only work on single machines. Seen that way, and given that you have a need
+    to scale out your HPO experiments, there’s very little speaking against adopting
+    Tune.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([1](ch05.xhtml#idm44990024561792-marker)) In case you were wondering why the
+    “config” argument in `tune.run` was not called `search_space`, the historical
+    reason lies in this interoperability with RLlib `config` objects.
+  prefs: []
+  type: TYPE_NORMAL

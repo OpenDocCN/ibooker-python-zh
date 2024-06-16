@@ -1,0 +1,2612 @@
+- en: Chapter 2\. How to Work with Dask DataFrames
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In the previous chapter, we explained the architecture of Dask DataFrames and
+    how they’re built on pandas DataFrames. We saw how pandas cannot scale to larger-than-memory
+    datasets and how Dask overcomes this scaling limitation. Now it’s time to dive
+    into the specific tactics we’ll need to master when working with Dask DataFrames.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this chapter, we will apply the lessons we’ve learned to process large tabular
+    datasets with Dask. We will walk through hands-on code examples to read, inspect,
+    process, and write large datasets using Dask DataFrames. By working through these
+    examples we will learn the Dask DataFrame API in depth and build understanding
+    that will enable us to implement best practices when using Dask in real-world
+    projects. It’s a sort of ‘behind the scenes’ deep-dive into the end-to-end example
+    Dask DataFrame we worked through in Chapter 2.
+  prefs: []
+  type: TYPE_NORMAL
+- en: An important lesson to carry with us from the previous chapter is that pandas
+    only uses one core to process computations while Dask can speed up query execution
+    time with parallel processing on multiple cores. Using Dask therefore means entering
+    the world of *parallel computing*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This means that even though much of the Dask DataFrame API syntax may appear
+    familiar to pandas users, there are important underlying architectural differences
+    to be aware of. The previous chapter explains those differences at a conceptual
+    level. This chapter proceeds from there to dive into the hands-on application
+    of the Dask API. It will explain how to leverage the power of parallel computing
+    in practice.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As we proceed through this chapter, remember that:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Dask DataFrames consist of **multiple partitions**, each of which is a pandas
+    DataFrame.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: These partitions are **processed in parallel** by multiple cores at once.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Dask uses **lazy evaluation** to optimize large-scale computations for parallel
+    computation.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: These fundamental concepts will be important to understand how to optimally
+    leverage the Dask DataFrame API functions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Reading Data into a Dask DataFrame
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Imagine that you’re working for a company that processes large-scale time series
+    datasets for its customers. You are working on the Data Analysis team and have
+    just received a copy of the file `0000.csv` from your colleague Azeem with the
+    request to analyze patterns in the data. This sample file contains 1 week worth
+    of data and is only 90 MB large, which means you can use pandas to analyze this
+    subset just fine:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Once the file has been loaded into a DataFrame, you can use pandas to analyze
+    the data it contains. For example, use the head() method to see the first few
+    rows of data in the DataFrame:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Or calculate the number of records with positive values for a certain column:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: Now that you’ve confirmed you can run analyses on the data, Azeem asks you to
+    crunch the data for the first 6 months of the year. He has downloaded the data
+    from the server as a single CSV which is about 2.4GB in size. You may still be
+    able to process this with pandas, but it’s pushing your machine to its limits
+    and your analyses are running slow. This is a problem because Azeem has a deadline
+    coming up and needs the results fast.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Fortunately, Dask can chop this single large 2.4GB file into smaller chunks
+    and process these chunks in parallel. While pandas would have to process all the
+    data on a single core, Dask can spread the computation out over all the cores
+    in your machine. This will be much faster.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Read a single file into a Dask DataFrame
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'You can read a single CSV file like Azeem’s 2.4GB `6M.csv` into a Dask DataFrame
+    using the following syntax:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: '[NOTE] Note: we use `ddf` to refer to **D**ask **D**ata**F**rames and the conventional
+    `df` to refer to pandas DataFrames.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Dask will read the data in this large single CSV file into a Dask DataFrame.
+    A Dask DataFrame is always subdivided into appropriately sized ‘chunks’ called
+    **partitions**. By cutting up the data into these conveniently smaller chunks,
+    Dask DataFrame can distribute computations over multiple cores. This is what allows
+    Dask to scale to much larger datasets than pandas. See the Working with Partitioned
+    Data section for more details.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Fig 4 1\. Dask reads a CSV file into a partitioned DataFrame.](Images/how_to_work_with_dask_dataframes_343327_01.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 2-1\. Dask reads a CSV file into a partitioned DataFrame.
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Once your 2.4GB CSV file is loaded in, you can use Dask DataFrame to analyze
+    the data it contains. This will look and feel much the same as it did with pandas,
+    except you are no longer limited by the memory capacities of your machine and
+    are able to run analyses on millions rather than thousands of rows. And perhaps
+    most importantly, you are able to do so *before* Azeem’s important deadline.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Read multiple files into a Dask DataFrame
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: After seeing you crunch the `6M.csv` file with the data for Q1 and Q2 successfully,
+    Azeem is starting to see the power of Dask. He’s now asked you to take a look
+    at ***all the data*** he has available. That’s twenty years’ worth of time series
+    data, totalling almost 60GB, scattered across 1,095 separate CSV files. This would
+    have been an impossible task with pandas, but Dask has opened up a whole new world
+    of possibilities for you here.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'You ask Azeem to point you to the directory that contains the rest of the data,
+    which looks like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Dask DataFrame let’s you use * as a glob string to read all of these separate
+    CSV files into a Dask DataFrame at once:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: '![Fig 4 2\. Dask reads multiple CSV files into a partitioned DataFrame.](Images/how_to_work_with_dask_dataframes_343327_02.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 2-2\. Dask reads multiple CSV files into a partitioned DataFrame.
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Just like we saw above with the single CSV file, Dask will read the data across
+    all of these separate CSV files into a single Dask DataFrame. The DataFrame will
+    be divided into appropriately sized ‘chunks’ called **partitions**. Let’s look
+    more closely at how to work with Dask partitions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Working with partitioned data
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Dask intentionally and automatically splits up the data so operations can be
+    performed on partitions of the data in parallel. This is done regardless of the
+    original file format. It’s important to understand how you can influence the partitioning
+    of your data in order to choose a partitioning strategy that will deliver optimal
+    performance for your dataset.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You can run `ddf.partitions` to see how many partitions the data is divided
+    amongst.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: Setting Partition Size
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: By default, Dask will split the data into a certain number of partitions by
+    calculating the optimal `blocksize`, which is based on the available memory and
+    number of cores on the machine. This means the number of partitions for the same
+    dataset may vary when working on different machines. Dask will ensure that the
+    partitions are small enough to be processed quickly but not so small as to create
+    unnecessary overhead. The maximum `blocksize` that Dask will calculate by default
+    is 64 MB.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Dask splits up the data from the CSV files into one partition per file.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Fig 4 2\. Dask reads a single large CSV file into multiple partitions.](Images/how_to_work_with_dask_dataframes_343327_03.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 2-3\. Dask reads a single large CSV file into multiple partitions.
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: You can manually set the number of partitions that the DataFrame contains using
+    the `blocksize` parameter. You can tweak the partition size for optimal performance.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: This dataset will be read into a Dask DataFrame with 2190 partitions when the
+    blocksize is set to 16 MB. The number of partitions goes up when the blocksize
+    decreases.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Fig 4 3\. The number of partitions increases as the partitions become smaller.](Images/how_to_work_with_dask_dataframes_343327_04.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 2-4\. The number of partitions increases as the partitions become smaller.
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: '[TIP] As a rule of thumb, we recommend working with partition sizes of 100MB
+    or less. This will ensure that the partitions are small enough to avoid bottlenecks
+    but not so small that they start to incur unnecessary overhead.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Inspecting Data Types
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: After successfully reading the 1,095 CSV files into a single Dask DataFrame,
+    you’re now curious to know if the data for the single `0000.csv` file that was
+    analyzed with pandas contains the same data types as the other 1,094 files in
+    the folder. Remember that `df` is a pandas DataFrame containing the 93MB sample
+    data and `ddf` is a Dask DataFrame containing 58 GB of data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'You can inspect the data types with pandas using the `dtypes` method:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: pandas scans all the data to get the data types. This is fine for a 93MB file
+    that easily fits into local memory. However, when working with Dask DataFrames
+    we want to avoid reading all the data into memory. Loading all the CSV files into
+    memory to get the data types will cause a `MemoryError`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Instead, Dask *infers* the column data types (provided they are not explicitly
+    set by the user). It does so by reading the first *n* rows of the DataFrame into
+    memory and using the contents to infer the data types for the rest of the rows.
+    *n* here is determined by the value of either the `sample` or `sample_rows` arguments
+    to `read_csv``.` `sample` defines the number of bytes to read, `sample_rows` defines
+    the number of rows to read.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s inspect the data types of our Dask DataFrame:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: '[CAUTION] You should be aware that inferring data types based on a sample of
+    the rows is error-prone. Dask may incorrectly infer data types based on a sample
+    of the rows which will cause downstream computations to error out.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: For example, the first 1000 rows of a column `id` may contain only integers
+    and the 1001th row a string. If Dask is reading only the first 1000 rows, the
+    dtype for `id` will be inferred as `int64`. This will lead to errors downstream
+    when trying to run operations meant for integers on the column, since it contains
+    at least one string. The correct dtype for this column should be `object`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You can avoid data type inference by explicitly specifying dtypes when reading
+    CSV files.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s manually set the name column to be a string, which is more efficient
+    than object type columns:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: Dask will infer the data types for the columns that you don’t manually specify.
+    If you specify the data types for all the columns, then Dask won’t do any data
+    type inference.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Reading Remote Data from the Cloud
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: After showcasing the power of Dask to your Team Lead using the entire CSV dataset,
+    you’ve now been tasked with running analyses on all the data in production. Now
+    it turns out that Azeem had actually downloaded the CSV files from the company’s
+    S3 bucket. That won’t fly when running these crucial analyses in production and
+    also happens to be against the company’s data management best practices. You’ve
+    been tasked with redoing the analysis without downloading the data locally.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Dask readers make it easy to read data that’s stored in remote object data stores,
+    like AWS S3.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here’s how to read a CSV file that’s stored in a public S3 bucket to your local
+    machine:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: '[TIP] Dask DataFrame readers expose a `storage_options` keyword that allows
+    you to pass additional configurations to the remote data store, such as credentials
+    for reading from private buckets or whether to use a SSL-encrypted connection.
+    This can be helpful when working with private buckets or when your IT department
+    has particular security policies in place.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Because of Dask’s lazy evaluation, running the command above will complete quickly.
+    But for subsequent operations, remember that the data will actually need to be
+    downloaded from the remote cloud storage to your local machine where the computations
+    are running. This is called ‘moving data to compute’ and is generally inefficient.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Because of this, it’s usually best to run computations on remote data using
+    cloud computing.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Here’s how to spin up a Dask cluster with Coiled and run these computations
+    in the cloud. You will need a Coiled account to spin up these resources. If you’ve
+    purchased this book, you get XXX free Coiled credits. Go to LINK to sign up for
+    your personal Coiled account.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We’ll import Dask and Coiled:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'And then launch a Dask cluster with 5 workers:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Finally, we’ll connect our local Dask client to the remote cluster:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: All subsequent Dask computations will now be executed in the cloud, instead
+    of on your local machine.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Processing Data with Dask DataFrames
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In the previous section we saw how to load data from various sources and file
+    formats into a Dask DataFrame and highlighted considerations regarding partitioning
+    and data type inference. You’ve now got your CSV data loaded into your Dask DataFrame
+    and are ready to dig into the data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Dask is intentionally designed to seamlessly scale existing popular PyData libraries
+    like NumPy, scikit-learn and pandas. This means that processing data with Dask
+    DataFrames will look and feel much like it would in pandas.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'For example, the code below demonstrates how you can use Dask DataFrames to
+    filter rows, compute reductions and perform groupby aggregations:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: However, there are a few cases where Dask operations require additional considerations,
+    mainly because we are now operating in a parallel computing environment. The following
+    section digs into those particular cases.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Converting to Parquet files
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Azeem heard that Parquet files are faster and more efficient to query than
+    CSV files. He’s not sure about the performance benefits offered quite yet, but
+    figures out how to make the conversion relatively easily with the help of a coworker:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: See the Benefits of Parquet section for more details.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s take a look at the various ways Azeem can query and manipulate the data
+    in the 20-years Parquet dataset.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Materializing results in memory with compute
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: You can convert a Dask DataFrame to a pandas DataFrame with `compute()`. When
+    the dataset is small, it’s fine to convert to a pandas DataFrame. In general,
+    you don’t want to convert Dask DataFrames to pandas DataFrames because then you
+    lose all the parallelism and lazy execution benefits of Dask.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We saw earlier in the Chapter that Dask DataFrames are composed of a collection
+    of underlying pandas DataFrames (partitions). Calling `compute()` concatenates
+    all the Dask DataFrame partitions into a single Pandas DataFrame.
+  prefs: []
+  type: TYPE_NORMAL
+- en: When the Dask DataFrame contains data that’s split across multiple nodes in
+    a cluster, then `compute()` may run slowly. It can also cause out of memory errors
+    if the data isn’t small enough to fit in the memory of a single machine.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Dask was created to solve the memory issues of using pandas on a single machine.
+    When you run `compute()`, you’ll face all the normal memory limitations of pandas.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s look at some examples and see when it’s best to use compute() in your
+    analyses.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Small DataFrame example
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: '`compute()` converts a Dask DataFrame to a pandas DataFrame. Let’s demonstrate
+    with a small example.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Create a two column Dask DataFrame and then convert it to a pandas DataFrame:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Verify that `compute()` returns a pandas DataFrame:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: Dask DataFrames are composed of many underlying pandas DataFrames, each of which
+    is called a partition. It’s no problem calling `compute()` when the data is small
+    enough to get collected in a single pandas DataFrame, but this will break down
+    whenever the data is too big to fit in the memory of a single machine.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s run `compute()` on a large DataFrame in a cloud cluster environment and
+    take a look at the error message.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Large DataFrame example
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'Create a 5 node Dask cluster and read in a 662 million row dataset into a Dask
+    DataFrame:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Perform a filtering operation on the Dask DataFrame and then collect the result
+    into a single pandas DataFrame with `compute()`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: This works because `res` only has 1,103 rows of data. It’s easy to collect such
+    a small dataset into a single pandas DataFrame.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`ddf.compute()` will error out if we try to collect the entire 663 million
+    row dataset into a pandas DataFrame.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Azeem’s dataset has 58 GB of data, which is too large for a single machine.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Compute intuition
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Here’s a diagram that visually demonstrates how compute() works, to give you
+    some additional intuition.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Suppose you have a 3-node cluster with 4 partitions. You run a compute() operation
+    to collect all of the data in a single Pandas DataFrame.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Fig 4 4\. Calling compute   may create memory errors.](Images/how_to_work_with_dask_dataframes_343327_05.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 2-5\. Calling compute() may create memory errors.
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: This diagram clearly illustrates why the compute() operation can cause out of
+    memory exceptions. Data that fits when it’s split across multiple machines in
+    a cluster won’t necessarily fit in a single pandas DataFrame on only one machine.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Minimizing compute() calls
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: compute() can be an expensive operation, so you want to minimize compute() calls
+    whenever possible.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The following code snippet runs compute() twice and takes 63 seconds to run
+    on a 5 node Dask cluster.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: We can refactor this code to only run compute() once and it’ll run in 33 seconds.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE22]'
+  prefs: []
+  type: TYPE_PRE
+- en: Fewer compute() calls will always run faster than more compute() invocations
+    because Dask can optimize computations with shared tasks.
+  prefs: []
+  type: TYPE_NORMAL
+- en: When to call compute()
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: You can call compute() if you’ve performed a large filtering operation or another
+    operation that decreases the size of the overall dataset. If your data comfortably
+    fits in memory, you don’t need to use Dask. Just stick with pandas if your data
+    is small enough.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You will also call compute() when you’d like to force Dask to execute the computations
+    and return a result. Dask executes computations lazily by default. It’ll avoid
+    running expensive computations until you run a method like compute() that forces
+    computations to be executed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Materializing results in memory with persist()
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Instead of calling compute(), you can store Dask DataFrames in memory with persist().
+    This will store the contents of the Dask DataFrame in cluster memory which will
+    make downstream queries that depend on the persisted data faster. This is great
+    when you perform some expensive computations and want to save the results in memory
+    so they’re not rerun multiple times.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: '[CAUTION] Be careful with using persist() when working locally. Calling persist()
+    will load the results of a computation into memory, since you are not operating
+    with a cluster to give you additional resources, this may mean that persist()
+    creates memory errors. Using persist() is most beneficial when working with a
+    remote cluster.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: '[NOTE] Note that persist() commands do not block. This means that you can continue
+    running other commands immediately afterwards and the persist() computation will
+    run in the background.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Many Dask users erroneously assume that Dask DataFrames are persisted in memory
+    by default, which isn’t true. Dask runs computations in memory. It doesn’t store
+    data in memory unless you explicitly call `persist()`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s start with examples of persist() on small DataFrames and then move to
+    examples on larger DataFrames so you can see some realistic performance benchmarks.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Simple example
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'Let’s create a small Dask DataFrame to demonstrate how persist() works:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE23]'
+  prefs: []
+  type: TYPE_PRE
+- en: The persisted_ddf is saved in memory when `persist()` is called. Subsequent
+    queries that run off of `persisted_ddf` will execute more quickly than if you
+    hadn’t called persist().
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s run `persist()` on a larger DataFrame to see some real computation runtimes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example on big dataset
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Let’s run some queries on a dataset that’s not persisted to get some baseline
+    query runtimes. Then let’s persist the dataset, run the same queries, and quantify
+    the performance gains from persisting the dataset.
+  prefs: []
+  type: TYPE_NORMAL
+- en: These queries are run on Azeem’s 20 year Parquet timeseries dataset.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Here’s the code that creates a computation cluster, reads in a DataFrame, and
+    then creates a filtered DataFrame.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE24]'
+  prefs: []
+  type: TYPE_PRE
+- en: Let’s time a couple of analytical queries.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE25]'
+  prefs: []
+  type: TYPE_PRE
+- en: Let’s persist the dataset to cluster memory and then run the same queries to
+    see how long they take to execute.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE26]'
+  prefs: []
+  type: TYPE_PRE
+- en: The queries took over a minute to run before the data was persisted, but only
+    takes 2 seconds to run on the persisted dataset.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Of course it takes some time to persist the data. Let’s look at why this particular
+    example gave us great results when persisting.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: '[NOTE] Great opportunity to persist'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Persisting helps sometimes and causes problems other times. Let’s look at high
+    level patterns when it’ll usually help and when it’ll usually cause problems.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Our example uses the following pattern:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Start with a large dataset
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Filter it down to a much smaller datasets (that’s much smaller than the memory
+    of the cluster)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Run analytical queries on the filtered dataset
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: You can expect good results from persist() with this set of circumstances.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Here’s a different pattern that won’t usually give such a good result.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Read in a large dataset that’s bigger than memory
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Persist the entire dataset
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Run a single analytical operation
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: In this case, the cost of running the persist operation will be greater than
+    the benefits of having a single query run a little bit faster. Persisting doesn’t
+    always help.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Writing to disk vs persisting in memory
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: We can also “persist” results by writing to disk rather than saving the data
+    in memory.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s persist the filtered dataset in S3 and run the analytical queries to quantify
+    time savings.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE27]'
+  prefs: []
+  type: TYPE_PRE
+- en: The filtered dataset that was written to disk can be queried with subsecond
+    response times.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Writing temporary files to disk isn’t always ideal because then you have stale
+    files sitting around that need to get cleaned up later.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Repartitioning and persisting
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: We can also repartition before persisting, which will make our analytical queries
+    in this example run even faster.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE28]'
+  prefs: []
+  type: TYPE_PRE
+- en: The filtered dataset is tiny and doesn’t need a lot of partitions. That’s why
+    repartitioning drops query times from around 2 seconds to 0.3 seconds in this
+    example.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Persist summary
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Persist is a powerful optimization technique to have in your Dask toolkit.
+  prefs: []
+  type: TYPE_NORMAL
+- en: It’s especially useful when you’ve performed some expensive operations that
+    reduce the dataset size and subsequent operations benefit from having the computations
+    stored.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Some new Dask programmers can misuse persist() and slow down analyses by persisting
+    too often or trying to persist massive datasets. It helps sometimes, but it can
+    cause analyses to run slower when used incorrectly.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Persisting will generally speed up analyses when one or more items in this
+    set of facts are true:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: You’ve performed expensive computations that have reduced the dataset size
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The reduced dataset comfortably fits in memory
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: You want to run multiple queries on the reduced dataset
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Repartitioning Dask DataFrames
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: This section explains how to redistribute data among partitions in a Dask DataFrame
+    with repartitioning. Analyses run slower when data is unevenly distributed across
+    partitions, and repartitioning can smooth out the data and provide significant
+    performance boost.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Dask DataFrames consist of partitions, each of which is a pandas DataFrame.
+    Dask performance will suffer if there are lots of partitions that are too small
+    or some partitions that are too big. Repartitioning a Dask DataFrame solves the
+    issue of “partition imbalance”.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s start with some simple examples to get you familiar with the repartition()
+    syntax.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Simple examples
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'Let’s create a Dask DataFrame with six rows of data organized in three partitions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE29]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Print the content of each DataFrame partition:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE30]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Repartition the DataFrame into two partitions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE31]'
+  prefs: []
+  type: TYPE_PRE
+- en: repartition(2) causes Dask to combine partition 1 and partition 2 into a single
+    partition. Dask’s repartition algorithm is smart to coalesce existing partitions
+    and avoid full data shuffles.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'You can also increase the number of partitions with repartition. Repartition
+    the DataFrame into 5 partitions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE32]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'In practice, it’s easier to repartition by specifying a target size for each
+    partition (e.g. 100 MB per partition). You want Dask to do the hard work of figuring
+    out the optimal number of partitions for your dataset. Here’s the syntax for repartitioning
+    into 100MB partitions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE33]'
+  prefs: []
+  type: TYPE_PRE
+- en: When to repartition
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Of course, repartitioning isn’t free and takes time. The cost of performing
+    a full data shuffle can outweigh the benefits of subsequent query performance.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You shouldn’t always repartition whenever a dataset is imbalanced. Repartitioning
+    should be approached on a case-by-case basis and only performed when the benefits
+    outweigh the costs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Common causes of partition imbalance
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Filtering is a common cause of DataFrame partition imbalance.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Suppose you have a DataFrame with a first_name column and the following data:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Partition 0: Everyone has a first_name “Allie”'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Partition 1: Everyone has first_name “Matt”'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Partition 2: Everyone has first_name “Sam”'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: If you filter for all the rows with first_name equal to “Allie”, then Partition
+    1 and Partition 2 will be empty. Empty partitions cause inefficient Dask execution.
+    It’s often wise to repartition after filtering.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Filtering Dask DataFrames
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: This section explains how to filter Dask DataFrames based on the DataFrame index
+    and on column values using loc().
+  prefs: []
+  type: TYPE_NORMAL
+- en: Filtering Dask DataFrames can cause data to be unbalanced across partitions
+    which isn’t desirable from a performance perspective. This section illustrates
+    how filtering can cause the “empty partition problem” and how to eliminate empty
+    partitions with the repartitioning techniques we learned in the previous section.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Index filtering
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Dask DataFrames consist of multiple partitions, each of which is a pandas DataFrame.
+    Each pandas DataFrame has an index. Dask allows you to filter multiple pandas
+    DataFrames on their index in parallel, which is quite fast.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s create a Dask DataFrame with 6 rows of data organized in two partitions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE34]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Let’s visualize the data in each partition:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE35]'
+  prefs: []
+  type: TYPE_PRE
+- en: Dask automatically added an integer index column to our data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Grab rows 2 and 5 from the DataFrame:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE36]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Grab rows 3, 4, and 5 from the DataFrame:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE37]'
+  prefs: []
+  type: TYPE_PRE
+- en: Let’s learn more about how Dask tracks information about divisions in sorted
+    DataFrames to perform `loc` filtering efficiently.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Divisions refresher
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: We’ve already discussed Dask DataFrame divisions in the architecture chapter,
+    but we’re going to do a full refresher here because they’re so critical when working
+    with the Dask DataFrames index.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Dask is aware of the starting and ending index value for each partition in the
+    DataFrame and stores this division’s metadata to perform quick filtering.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You can verify that Dask is aware of the divisions for this particular DataFrame
+    by running `ddf.known_divisions` and seeing it returns `True`. Dask isn’t always
+    aware of the DataFrame divisions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Print all the divisions of the DataFrame:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE38]'
+  prefs: []
+  type: TYPE_PRE
+- en: Take a look at the values in each partition of the DataFrame to better understand
+    this divisions output.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE39]'
+  prefs: []
+  type: TYPE_PRE
+- en: The first division is from 0-3, and the second division is from 3-5\. This means
+    the first division contains rows 0 to 2, and the last division contains rows 3
+    to 5.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Dask’s division awareness in this example lets it know exactly what partitions
+    it needs to fetch from when filtering.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Column value filtering
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: You won’t always be able to filter based on index values. Sometimes you need
+    to filter based on actual column values.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Fetch all rows in the DataFrame where `nums` is even:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE40]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Find all rows where `nums` is even, and `letters` contains either `b` or `f`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE41]'
+  prefs: []
+  type: TYPE_PRE
+- en: Dask makes it easy to apply multiple logic conditions when filtering.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Empty partition problem
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Let’s read Azeem’s 662 million rows Parquet dataset into a Dask DataFrame and
+    perform a filtering operation to illustrate the empty partition problem.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Read in the data and create the Dask DataFrame:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE42]'
+  prefs: []
+  type: TYPE_PRE
+- en: '`ddf.npartitions` shows that the DataFrame has 1,095 partitions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE43]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Here’s how to filter the DataFrame to only include rows with an id greater
+    than 1150:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE44]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Run `len(res)` to see that the DataFrame only has 1,103 rows after this filtering
+    operation:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE45]'
+  prefs: []
+  type: TYPE_PRE
+- en: This was a big filter, and only a small fraction of the original 662 million
+    rows remain.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We can run `res.npartitions` to see that the DataFrame still has 1,095 partitions.
+    The filtering operation didn’t change the number of partitions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE46]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Run `res.map_partitions(len).compute()` to visually inspect how many rows of
+    data are in each partition:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE47]'
+  prefs: []
+  type: TYPE_PRE
+- en: A lot of the partitions are empty and others only have a few rows of data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Dask often works best with partition sizes of at least 100MB. Let’s repartition
+    our data to two partitions and persist it in memory:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE48]'
+  prefs: []
+  type: TYPE_PRE
+- en: Subsequent operations on res2 will be really fast because the data is stored
+    in memory. `len(res)` takes 57 seconds whereas `len(res2)` only takes 0.3 seconds.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The filtered dataset is so small in this example that you could even convert
+    it to a pandas DataFrame with `res3 = res.compute()`. It only takes 0.000011 seconds
+    to execute `len(res3)`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: '[TIP] You don’t have to filter datasets at the computation engine level. You
+    can also filter at the database level and only send a fraction of the data to
+    the computation engine.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Query pushdown
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Query pushdown is when you perform data operations before sending the data to
+    the Dask cluster. Part of the work is “pushed down” to the database level.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here’s the high level process for filtering with a Dask cluster:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Read all the data from disk into the cluster
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Perform the filtering operation
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Repartition the filtered DataFrame
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Possibly write the result to disk (ETL style workflow) or persist in memory
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Organizations often need to optimize data storage and leverage query pushdown
+    in a manner that’s optimized for their query patterns and latency needs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Best practices
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Dask makes it easy to filter DataFrames, but you need to be cognizant of the
+    implications of big filters.
+  prefs: []
+  type: TYPE_NORMAL
+- en: After filtering a lot of data, you should consider repartitioning and persisting
+    the data in memory.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You should also consider filtering at the database level and bypassing cluster
+    filtering altogether. Lots of Dask analyses run slower than they should because
+    a large filtering operation was performed, and the analyst is running operations
+    on a DataFrame with tons of empty partitions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Setting the Index
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Indexes are used by normal pandas DataFrames, Dask DataFrames, and many databases
+    in general. Indexes let you efficiently find rows that have a certain value, without
+    having to scan each row.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In plain pandas, it means that after a `set_index("col")`, `df.loc["foo"]` is
+    faster than `df`[`df.col` `== "foo"`] was before. The loc() uses an efficient
+    data structure that only has to check a couple rows to figure out where “foo”
+    is. Whereas `df[df.col == "foo"]` has to scan every single row to see which ones
+    match.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The thing is, computers are very, very fast at scanning memory, so when you’re
+    running pandas computations on one machine, index optimizations aren’t as important.
+    But scanning memory across many distributed machines is not fast. So index optimizations
+    that you don’t notice much with pandas makes an enormous difference with Dask.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Dask DataFrames Divisions
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Remember that a Dask DataFrame is composed of many pandas DataFrames, potentially
+    living on different machines, each one of which we call a partition. Each of these
+    partitions is a pandas DataFrame that has its own index.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Fig 4 5\. Figure title needed.](Images/how_to_work_with_dask_dataframes_343327_06.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 2-6\. Figure title needed.
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Dask DataFrame has its own version of an index for the distributed DataFrame
+    as a whole, called `divisions`. The `divisions` are like an index for the indexes—it
+    tracks the index bounds for each partition, so you can easily tell which partition
+    contains a given value (just like pandas’s index tracks which row will contain
+    a given value).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Fig 4 6\. Figure title needed.](Images/how_to_work_with_dask_dataframes_343327_07.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 2-7\. Figure title needed.
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: When there are millions of rows spread across hundreds of machines, it’s too
+    much to track every single row. We just want to get in the right ballpark—which
+    machine will hold this value?—and then tell that machine to go find the row itself.
+  prefs: []
+  type: TYPE_NORMAL
+- en: So `divisions` is just a simple list giving the lower and upper bounds of values
+    that each partition contains. Using this, Dask does a quick binary search locally
+    to figure out which partition contains a given value.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Just like with a pandas index, having known divisions lets us change a search
+    that would scan every row (`df``[df.col == "foo"]`) to one that quickly goes straight
+    to the right place (`df.loc``["foo"]`).
+  prefs: []
+  type: TYPE_NORMAL
+- en: How to Set the Index
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'You can set the index of a Dask DataFrame using the `set_index()` method:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE49]'
+  prefs: []
+  type: TYPE_PRE
+- en: Notice that `ddf.set_index("id")` does not specify divisions, so Dask needs
+    to go figure them out. To do this, it has to load and compute all of `ddf` immediately
+    to look at the distribution of its values. Then, when you later call `.compute``()`,
+    it’ll load and compute `ddf` a second time. This is slow in general, and particularly
+    bad if the DataFrame already has lots of operations applied to it—all those operations
+    also have to run twice.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Instead, when divisions are passed, Dask doesn’t need to compute the whole DataFrame
+    to figure them out, which is obviously a lot faster. To pick good divisions, you
+    must use your knowledge of the dataset. What range of values is there for the
+    column? What sort of general distribution do they follow—a normal bell curve,
+    a continuous distribution? Are there known outliers?
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Another strategy is to let Dask compute the divisions once, then copy-paste
+    them to reuse later:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE50]'
+  prefs: []
+  type: TYPE_PRE
+- en: This is especially helpful if you’ll be rerunning a script or notebook on the
+    same (or similar) data many times. However, you shouldn’t set divisions if the
+    data you’re processing is very unpredictable. In that case, it’s better to spend
+    the extra time and let Dask re-compute good divisions each time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: When to Set the Index
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Since `set_index()` is an expensive operation, you should only run the computation
+    when it’ll help subsequent computations run faster.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here are the main operations that’ll run faster when an index is set:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Filtering on the index
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Joining on the index
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Groupby on the index
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Sophisticated custom code in map_partitions (advanced use case)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: By all means, set indexes whenever it’ll make your analysis faster. Just don’t
+    run these expensive computations unnecessarily.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'For example, you shouldn’t always `set_index()` before you `.``loc`. If you
+    just need to pull a value out once, it’s not worth the cost of a whole shuffle.
+    But if you need to pull lots of values out, then it is. Same with a merge: if
+    you’re just merging a DataFrame to another, don’t `set_index()` first (the merge
+    will do this internally anyway). But if you’re merging the same DataFrame multiple
+    times, then the `set_index()` is worth it.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: As a rule of thumb, you should `set_index()` if you’ll do a merge, `groupby(df.index)`,
+    or `.loc` on the re-indexed DataFrame more than once. You may also want to re-index
+    your data before writing it to storage in a partitioned format like Parquet. That
+    way, when you read the data later, it’s already partitioned the way you want,
+    and you don’t have to re-index it every time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Joining Dask DataFrames
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: In this section we’ll look at how to merge Dask DataFrames and discuss important
+    considerations when making large joins. We’ll learn how to join a large Dask DataFrame
+    to a small pandas DataFrame, how to join two large Dask DataFrames and how to
+    structure our joins for optimal performance.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Join a Dask DataFrame to a pandas DataFrame
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: We can join a Dask DataFrame to a small pandas DataFrame by using the
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`dask.dataframe.merge()`method, similar to the pandas api. Below we execute
+    a left join on our Dask DataFrame `ddf` with a small pandas DataFrame `df` that
+    contains a boolean value for every name in the dataset:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE51]'
+  prefs: []
+  type: TYPE_PRE
+- en: '![Fig 4 7\. Figure title needed.](Images/how_to_work_with_dask_dataframes_343327_08.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 2-8\. Figure title needed.
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: If you’re working with a small Dask DataFrame instead of a pandas DataFrame,
+    you have two options. You can convert it into a pandas DataFrame using compute().
+    This will load the DataFrame into memory. Alternatively, if you can’t or don’t
+    want to load it into your single machine memory, you can turn the small Dask DataFrame
+    into a single partition by using the repartition() method instead. These two operations
+    are programmatically equivalent which means there’s no meaningful difference in
+    performance between them. See the Compute and Repartitioning sections respectively
+    for more details.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Fig 4 8\. Figure title needed.](Images/how_to_work_with_dask_dataframes_343327_09.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 2-9\. Figure title needed.
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Joining two Dask DataFrames
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'To join two large Dask DataFrames, you can use the exact same syntax. In this
+    case we are specifying the `left_index` and `right_index` keywords to tell Dask
+    to use the indices of the two DataFrames as the columns to join on. This will
+    join the data based on the timestamp column:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE52]'
+  prefs: []
+  type: TYPE_PRE
+- en: '![Fig 4 9\. Figure title needed.](Images/how_to_work_with_dask_dataframes_343327_10.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 2-10\. Figure title needed.
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: However, merging two large Dask DataFrames requires careful consideration of
+    your data structure and the final result you’re interested in. Joins are expensive
+    operations, especially in a distributed computing context. Understanding both
+    your data and your desired end result can help you set up your computations efficiently
+    to optimize performance. The most important consideration is whether and how to
+    set your DataFrame’s index before executing the join.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Considerations when joining Dask DataFrames
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'Joining two DataFrames can be either very expensive or very cheap depending
+    on the situation. It is cheap in the following cases:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Joining a Dask DataFrame with a Pandas DataFrame
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Joining a Dask DataFrame with another Dask DataFrame of a single partition
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Joining Dask DataFrames along their indexes
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: As explained earlier in the book, Dask DataFrames are divided into partitions,
+    where each single partition is a pandas DataFrame. Dask can track how the data
+    is partitioned (i.e. where one partition starts and the next begins) using a DataFrame’s
+    divisions. If a Dask DataFrame’s divisions are known, then Dask knows the minimum
+    value of every partition’s index and the maximum value of the last partition’s
+    index. This enables Dask to take efficient shortcuts when looking up specific
+    values. Instead of searching the entire dataset, it can find out which partition
+    the value is in by looking at the divisions and then limit its search to only
+    that specific partition. This is called a sorted join.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If divisions are not known, then Dask will need to move all of your data around
+    so that rows with matching values in the joining columns end up in the same partition.
+    This is called an unsorted join and it’s an extremely memory-intensive process,
+    especially if your machine runs out of memory and Dask will have to read and write
+    data to disk instead. This is a situation you want to avoid.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you are planning to run repeated joins against a large Dask DataFrame, it’s
+    best to sort the Dask DataFrame using the `set_index()` method first to improve
+    performance. See Section 2.5 above for more on the `set_index()`method and `divisions`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: It’s good practice to write sorted DataFrames to the Apache Parquet file format
+    in order to preserve the index. See the Working with Parquet Section for more
+    on the benefits of working with this data format.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Mapping Custom Functions
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: This section provides a quick refresher of how we can run custom functions on
+    pandas DataFrames and then demonstrates how we can parallelize these operations
+    on Dask DataFrames. Dask makes it easy to apply custom functions on each of the
+    underlying pandas DataFrames it contains.
+  prefs: []
+  type: TYPE_NORMAL
+- en: pandas apply refresher
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: pandas apply lets you apply a function to each row in a pandas DataFrame. Let’s
+    create a function that’ll look at all the columns, find the max value, find the
+    min value, and compute the difference for each row in the pandas DataFrame.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Start by creating a pandas DataFrame with three columns and three rows of data:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE53]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Here are the contents of the DataFrame:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE54]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Define a `minmax` function that will take the difference between the max value
+    and the min value and then use the pandas `apply()` method to run this function
+    on each row in the DataFrame:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE55]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Here’s the result:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE56]'
+  prefs: []
+  type: TYPE_PRE
+- en: The pandas apply() function returns the result as a Series object.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE57]'
+  prefs: []
+  type: TYPE_PRE
+- en: Let’s look at how to parallelize this function with Dask.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Parallelizing pandas apply with map_partitions
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'Convert the pandas DataFrame to a Dask DataFrame with two partitions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE58]'
+  prefs: []
+  type: TYPE_PRE
+- en: Create a minmax2 function that wraps the original minmax function and use map_partitions()
+    to run it on each partition in a Dask DataFrame.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE59]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Map the function across all partitions in the Dask DataFrame:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE60]'
+  prefs: []
+  type: TYPE_PRE
+- en: map_partitions() runs the pandas apply() operation on all the partitions in
+    parallel, so map_partitions() is a great way to parallelize a pandas apply() operation
+    and make it run faster.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: '[CAUTION] In the toy examples, the Dask version may not run faster than the
+    pandas version because the data is so small and the Dask scheduler incurs minimal
+    overhead. Remember that Dask is meant for large datasets where the benefits of
+    parallel computing (processing speed) outweigh the costs (overhead of)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Calculating memory usage of a DataFrame with map_partitions
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'Let’s look at two approaches for calculating the memory for each partition
+    of a 662 million row dataset. You don’t need to actually use this approach to
+    compute the memory usage of a DataFrame because Dask has a built-in memory_usage()
+    method that’s more convenient. Nonetheless, this example is a good way to demonstrate
+    the power of the map_partitions() method:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE61]'
+  prefs: []
+  type: TYPE_PRE
+- en: This computation takes 124 seconds on a 5-node cluster.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Dask has a `sizeof()` function that estimates the size of each partition and
+    runs faster.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE62]'
+  prefs: []
+  type: TYPE_PRE
+- en: This takes 92 seconds to run, which is 21% faster than `memory_usage()` on the
+    same dataset.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `sizeof()` results are an approximation, but they’re pretty close as you
+    can see.
+  prefs: []
+  type: TYPE_NORMAL
+- en: groupby aggregations
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: This section explains how to perform groupby() aggregations with Dask DataFrames.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You’ll learn how to perform groupby() operations with one and many columns.
+    You’ll also learn how to compute aggregations like sum, mean, and count.
+  prefs: []
+  type: TYPE_NORMAL
+- en: After you learn the basic syntax, we’ll discuss the best practices when performing
+    groupby() operations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Dask DataFrame groupby sum
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Let’s read a sample dataset from S3 into a Dask DataFrame to perform some sample
+    groupby computations. We will use Coiled to launch a Dask computation cluster
+    with 5 nodes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE63]'
+  prefs: []
+  type: TYPE_PRE
+- en: Let’s groupby the values in the `id` column and then sum the values in the x
+    column.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE64]'
+  prefs: []
+  type: TYPE_PRE
+- en: You can also use an alternative syntax and get the same result.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE65]'
+  prefs: []
+  type: TYPE_PRE
+- en: agg takes a more complex code path in Dask, so you should generally stick with
+    the simple syntax unless you need to perform multiple aggregations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Dask DataFrame groupby for a single column is pretty straightforward. Let’s
+    look at how to groupby with multiple columns.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Dask DataFrame groupby multiple columns
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'Here’s how to group by the `id` and `name` columns and then sum the values
+    in x:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE66]'
+  prefs: []
+  type: TYPE_PRE
+- en: You can pass a list to the Dask groupby method to group by multiple columns.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now let’s look at how to perform multiple aggregations after grouping.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Dask groupby multiple aggregations
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'Here’s how to group by `id` and compute the sum of x and the mean of `y`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE67]'
+  prefs: []
+  type: TYPE_PRE
+- en: '![Fig 4 10\. Figure title needed.](Images/how_to_work_with_dask_dataframes_343327_11.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 2-11\. Figure title needed.
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: You can pass a dictionary to the `agg` method to perform different types of
+    aggregations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s turn our attention to how Dask implements groupby computations. Specifically,
+    let’s look at how Dask changes the number of partitions in the DataFrame when
+    a groupby operation is performed. This is important because you need to manually
+    set the number of partitions properly when the aggregated DataFrame is large.
+  prefs: []
+  type: TYPE_NORMAL
+- en: How Dask groupby impacts npartitions
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Dask doesn’t know the contents of your DataFrame ahead of time. So it can’t
+    know how many groups the groupby operation will produce. By default, it assumes
+    you’ll have relatively few groups, so the number of rows is reduced so significantly
+    that the result will fit comfortably in a single partition.
+  prefs: []
+  type: TYPE_NORMAL
+- en: However, when your data has many groups, you’ll need to tell Dask to split the
+    results into multiple partitions in order to not overwhelm one unlucky worker.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Dask DataFrame groupby will return a DataFrame with a single partition by default.
+    Let’s look at a DataFrame, confirm it has multiple partitions, run a groupby operation,
+    and then observe how the resulting DataFrame only has a single partition.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The DataFrame that we’ve been querying has 1,095 partitions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE68]'
+  prefs: []
+  type: TYPE_PRE
+- en: Now let’s run a groupby operation on the DataFrame and see how many partitions
+    are in the result.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE69]'
+  prefs: []
+  type: TYPE_PRE
+- en: Dask will output groupby results to a single partition Dask DataFrame by default.
+    A single partition DataFrame is all that’s needed in most cases. `groupby` operations
+    usually reduce the number of rows in a DataFrame significantly so they can be
+    held in a single partition DataFrame.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'You can set the `split_out` argument to return a DataFrame with multiple partitions
+    if the result of the groupby operation is too large for a single partition Dask
+    DataFrame:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE70]'
+  prefs: []
+  type: TYPE_PRE
+- en: In this example, `split_out` was set to two, so the groupby operation results
+    in a DataFrame with two partitions. **The onus is on you to properly set the**
+    **`split_out`** **size when the resulting** **DataFrame** **is large.**
+  prefs: []
+  type: TYPE_NORMAL
+- en: Performance considerations
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Dask DataFrames are divided into many partitions, each of which is a pandas
+    DataFrame. Dask performs groupby operations by running groupby on each of the
+    individual pandas DataFrames and then aggregating all the results. The Dask DataFrame
+    parallel execution of groupby on multiple subsets of the data makes it more scalable
+    than pandas and often quicker too.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Memory usage
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: This section shows you how to compute the memory usage of a Dask DataFrame and
+    how to develop a partitioning strategy based on the distribution of your data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Dask DataFrames distribute data in partitions, so computations can be run in
+    parallel. Each partition in a Dask DataFrame is a pandas DataFrame. This section
+    explains how to measure the amount of data in each Dask partition. Intelligently
+    distributing the data across partitions is important for performance.
+  prefs: []
+  type: TYPE_NORMAL
+- en: There aren’t hard-and-fast rules on optimal partition sizes. It depends on the
+    computing power of the nodes in your cluster and the analysis you’re running.
+  prefs: []
+  type: TYPE_NORMAL
+- en: A general rule of thumb is to target 100 MB of data per memory partition in
+    a cluster. This section shows you how to measure the distribution of data in your
+    cluster so you know when and if you need to repartition.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here’s what you’ll learn in this section:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Calculation memory usage of a small Dask DataFrame
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Memory usage of a large Dask DataFrame
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Filtering can cause partition imbalances
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Assessing when a Dask DataFrame’s memory usage is unevenly distributed
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Fixing imbalances with repartitioning
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Other ways to compute memory usage by partition
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Memory usage of small Dask DataFrames
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'Create a small Dask DataFrame with two partitions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE71]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Print the data in each of the partitions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE72]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Use the pandas `memory_usage` method to print the bytes of memory used in each
+    column of the first partition:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE73]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Print the total memory used by each partition in the DataFrame with the Dask
+    `memory_usage_per_partition` method:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE74]'
+  prefs: []
+  type: TYPE_PRE
+- en: Both of these partitions are tiny because the entire DataFrame only contains
+    six rows of data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If deep is set to False then the memory usage of the object columns is not
+    counted:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE75]'
+  prefs: []
+  type: TYPE_PRE
+- en: Calculating the memory usage of object columns is slow, so you can set `deep`
+    to `False` and make the computation run faster. We care about how much memory
+    all the columns are using, so our examples use `deep=True`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Memory usage of large Dask DataFrame
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Let’s calculate the memory for each partition of the dataset.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE76]'
+  prefs: []
+  type: TYPE_PRE
+- en: The DataFrame has 1,095 partitions and each partition has 57 MB of data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The data is evenly balanced across each partition in the DataFrame. There aren’t
+    lots of tiny, empty, or huge partitions. You probably don’t need to repartition
+    this DataFrame because all the memory partitions are reasonably sized and the
+    data is evenly distributed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tips on managing memory
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Let’s see how Azeem can reduce the memory usage of the large Parquet DataFrame,
+    so his analysis doesn’t consume as many resources and runs more efficiently.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Azeem can limit the amount of memory his analysis takes by sending less data
+    to the cluster or by using data types that are more memory efficient.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s take a look at how much memory Azeem’s Parquet dataset uses in memory:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE77]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The dataset takes 58 GB in memory. Let’s see how much memory it takes, by column:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE78]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The name column is by far the most memory-greedy, requiring more memory than
+    all the other columns combined. Let’s take a look at the data types for this DataFrame
+    to see why `name` is taking so much memory:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE79]'
+  prefs: []
+  type: TYPE_PRE
+- en: '`name` is an object column, which isn’t surprising because object columns are
+    notoriously memory hungry. Let’s change the `name` column to a different type
+    and see if that helps.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: String types
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'Let’s change the name column to be a string and see how that impacts memory
+    usage of the DataFrame:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE80]'
+  prefs: []
+  type: TYPE_PRE
+- en: The name column only takes 5.76 GiB in memory now. It used to take 38.45 GiB.
+    That’s a significant 6.7x memory reduction. Avoid object columns whenever possible
+    as they are very memory inefficient.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Smaller numeric types
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: You can also use smaller numeric types for columns that don’t require 64 bits.
+    Let’s look at the values in the id column and see if it really needs to be typed
+    as an int64.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here’s how to compute the min and max values in the id column:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE81]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We don’t need int64s for holding such small values. Let’s switch to int16 and
+    quantify memory savings:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE82]'
+  prefs: []
+  type: TYPE_PRE
+- en: The id column used to take 4.93 GiB and now only takes 1.23 GiB. That’s 4 times
+    smaller, which isn’t surprising because 16 bit numbers are four times smaller
+    than 64 bit numbers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We’ve seen how column types can reduce the memory requirements of a DataFrame.
+    Now let’s look at how loading less data to the cluster also can reduce memory
+    requirements.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Column pruning
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Suppose you need to run a query that only requires the x column and won’t use
+    the data in the other columns.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'You don’t need to read all the data into the cluster, you can just read the
+    x column with column pruning:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE83]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This DataFrame only contains the x column and the index:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE84]'
+  prefs: []
+  type: TYPE_PRE
+- en: Only storing a fraction of the columns obviously makes the overall memory footprint
+    much lower.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Predicate pushdown filters
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Parquet files also let you skip entire row groups for some queries which also
+    limits the amount of data that’s sent to the computation cluster.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here’s how to read the data and only include row groups that contain at least
+    one value with an id greater than 1170:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE85]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'There isn’t much data with an id greater than 1170 for this dataset, so this
+    predicate pushdown filter greatly reduces the size of the data in memory:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE86]'
+  prefs: []
+  type: TYPE_PRE
+- en: The more row groups that are excluded by the predicate pushdown filters, the
+    smaller the DataFrame in memory.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Converting to number columns with to_numeric
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: This section explains how to convert Dask DataFrame object columns to floating
+    point columns with `to_numeric()` and why it’s more flexible than `astype()` in
+    certain situations. This design pattern is especially useful when you’re working
+    with data in text based file formats like CSV. You’ll often have to read in numeric
+    columns stored in CSV files as object columns because of messy data and then convert
+    the numeric columns to floating point values to null out the bad data. You can’t
+    perform numerical operations on columns that are typed as objects. You can use
+    the tactics outlined in this section for data munging in an extract, transform,
+    & load (ETL) pipeline.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Cleaning data is often the first step of a data project. Luckily Dask has great
+    helper methods like `to_numeric` that make it easy to clean the data and properly
+    type the columns in your DataFrames.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Converting object column with to_numeric
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'Let’s look at a simple example with a DataFrame that contains an invalid string
+    value in a column that should only contain numbers. Let’s start by creating a
+    DataFrame with `nums` and `letters` columns:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE87]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now let’s print the contents of the DataFrame so it’s easy to visualize:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE88]'
+  prefs: []
+  type: TYPE_PRE
+- en: Notice that row 4 in the nums column has the value “hi”. That’s a string value
+    that Python cannot convert into a numerical value.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s look at the data types of the columns and see that Dask is treating both
+    `nums` and `letters` as object type columns:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE89]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Let’s convert the `nums` column to be a number column with `to_numeric`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE90]'
+  prefs: []
+  type: TYPE_PRE
+- en: Dask has conveniently nulled out the “hi” value in row 4 to be NaN. Nulling
+    out values that cannot be easily converted to numerical values is often what you’ll
+    want. Alternatively, you can set `errors=“raise”` to raise an error when a value
+    can’t be cast to numeric dtype.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Limitations of astype
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Many beginning Dask users tend to use the `astype` method to convert object
+    columns to numeric columns. This has important limitations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s create another DataFrame to see when `astype` can be used to convert
+    from object columns to numeric columns and when it falls short:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE91]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'You can run `ddf2.dtypes` to see that both `n1` and `n2` are object columns:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE92]'
+  prefs: []
+  type: TYPE_PRE
+- en: '`n2` is an object type column because it contains string and float values.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s convert `n2` to be a `float64` column using `astype`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE93]'
+  prefs: []
+  type: TYPE_PRE
+- en: '`astype` can convert `n2` to be a float column without issue.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Now let’s try to convert `n1` to be a float column with `astype`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE94]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This errors out with the following error message:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE95]'
+  prefs: []
+  type: TYPE_PRE
+- en: '`astype` raises errors when columns contain string values that cannot be converted
+    to numbers. It doesn’t coerce string values to `NaN`.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`to_numeric` also has the same default behavior and this code will error out
+    as well:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE96]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'You need to set errors="coerce” to successfully invoke `to_numeric`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE97]'
+  prefs: []
+  type: TYPE_PRE
+- en: Best practices for numeric columns
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Dask makes it easy to convert object columns into number columns with `to_numeric`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`to_numeric` is customizable with different error behavior when values cannot
+    be converted to numbers. You can coerce these values to `NaN`, raise an error,
+    or ignore these values. Choose the behavior that works best for your application.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: It’s good practice to make sure all your numeric columns are properly typed
+    before performing your analysis, so you don’t get weird downstream bugs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Vertically union Dask DataFrames
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: This section teaches you how to union Dask DataFrames vertically with `concat`
+    and the important related technical details. Vertical concatenation combines DataFrames
+    like the SQL UNION operator combines tables which is common when joining datasets
+    for reporting and machine learning. It’s useful whenever you have two tables with
+    identical schemas that you’d like to combine into a single DataFrame.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The tactics outlined in this section will help you combine two DataFrame with
+    the same, or similar, schemas into a single DataFrame. It’s a useful design pattern
+    to have in your toolkit.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here’s how this section on vertical concatenations is organized:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Concatenating DataFrames with identical schemas / dtypes
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Interleaving partitions to maintain divisions integrity
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Concatenating DataFrames with different schemas
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Concatenating large DataFrames
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Concatenate DataFrames with identical schemas
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'Create two Dask DataFrames with identical schemas:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE98]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now concatenate both the DataFrames into a single DataFrame:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE99]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Print the contents of `ddf3` to verify it contains all the rows from `ddf1`
+    and `ddf2`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE100]'
+  prefs: []
+  type: TYPE_PRE
+- en: '`ddf1` has two partitions and `ddf2` has one partition. `ddf1` and `ddf2` are
+    combined to `ddf3`, which has three total partitions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE101]'
+  prefs: []
+  type: TYPE_PRE
+- en: Dask can use information on divisions to speed up certain queries. The creation
+    of `ddf3` above wiped out information about DataFrame divisions. Let’s see how
+    we can interleave partitions when concatenating DataFrames to avoid losing divisions
+    data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Interleaving partitions
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Let’s revisit our example with a focus on DataFrame divisions to illustrate
+    how `concat` wipes out the DataFrame divisions by default.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Recreate the `ddf1` DataFrame and look at its divisions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE102]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Here’s how to interpret this divisions output:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The first partition has index values between 0 and 2
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The second partitions has index values between 3 and 5
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Let’s print every partition of the DataFrame to visualize the actual data and
+    reason about the division’s values:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE103]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Let’s recreate `ddf2` and view its divisions too:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE104]'
+  prefs: []
+  type: TYPE_PRE
+- en: '`ddf2` has a single partition with index values between zero and one:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE105]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Let’s concatenate the DataFrames and see what happens with the divisions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE106]'
+  prefs: []
+  type: TYPE_PRE
+- en: Dask has lost all information about divisions for `ddf3` and won’t be able to
+    use divisions related optimizations for subsequent computations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'You can set `interleave_partitions` to `True` when concatenating DataFrames
+    to avoid losing information about divisions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE107]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Take a look at how the data is distributed across partitions in `ddf3_interleave`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE108]'
+  prefs: []
+  type: TYPE_PRE
+- en: Dask can optimize certain computations when divisions exist. Set `interleave_partitions`
+    to `True` if you’d like to take advantage of these optimizations after concatenating
+    DataFrames.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Concatenating DataFrames with different schemas
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: You can also concatenate DataFrames with different schemas. Let’s create two
+    DataFrames with different schemas, concatenate them, and see how Dask behaves.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Start by creating the two DataFrames:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE109]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Concatenate the DataFrames and print the result:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE110]'
+  prefs: []
+  type: TYPE_PRE
+- en: Dask fills in the missing values with `NaN` to make the concatenation possible.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Concatenating large DataFrames
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Lets create a Dask cluster and concatenate the 20-year DataFrame with a DataFrame
+    that contains 311 million row of timeseries data from January 1, 1990 till December
+    31, 1999\. This section demonstrates that `concat` can scale to multi-node workflows.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Create a 5-node Coiled cluster and read in a Parquet dataset into a DataFrame:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE111]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Run `ddf1990s.head()` to visually inspect the contents of the DataFrame:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE112]'
+  prefs: []
+  type: TYPE_PRE
+- en: '![Fig 4 11\. Figure title needed.](Images/how_to_work_with_dask_dataframes_343327_12.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 2-12\. Figure title needed.
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'Let’s run some analytical queries on `ddf1990s` to better understand the data
+    it contains:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE113]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now let’s look at our original Parquet dataset with data from January 1, 2000
+    till December 31, 2020:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE114]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Concatenate the two DataFrames and inspect the contents of the resulting DataFrame:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE115]'
+  prefs: []
+  type: TYPE_PRE
+- en: These DataFrames were concatenated without `interleave_partitions=True` and
+    the divisions metadata was not lost like we saw earlier.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The DataFrames in this example don’t have any overlapping divisions, so you
+    don’t need to set `interleave_partitions=True`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Writing Data with Dask DataFrames
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: You’ve completed all your analyses and want to store the results sitting in
+    your Dask DataFrames.You can write the contents of Dask DataFrames to CSV files,
+    Parquet files, HDF files, SQL tables and convert them into other Dask collections
+    like Dask Bags, Dask Arrays and Dask Delayed. In this chapter we will cover the
+    first 2 options (CSV and Parquet). See the Dask documentation for more information
+    on the other options.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: '[NOTE] Depending on the analysis you are running, your results may at this
+    point be small enough to fit into local memory. For example if you’ve run groupby
+    aggregations on your dataset. In this case, you should stop using Dask and switch
+    back to normal pandas by calling `results.compute()`.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'There are a lot of different keyword arguments to the `to_csv` and `to_parquet`
+    functions, more than we’re going to cover here. However there are a few essential
+    kwargs you should know about and we’re going to cover them below: options for
+    file compression, writing to multiple vs single files, and partitioning on specific
+    columns.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s start with the basics.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'You can write a Dask DataFrame out to a CSV or Parquet file using the `to_csv`
+    and `to_parquet` method, respectively:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE116]'
+  prefs: []
+  type: TYPE_PRE
+- en: Dask DataFrames can be written to a variety of different sources and file formats.
+    We’ll talk about working with different file formats in more detail in Chapter
+    7.
+  prefs: []
+  type: TYPE_NORMAL
+- en: File Compression
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Both the to_csv and to_parquet writers have multiple options for file compression.
+    The to_csv writer allows the following compression options: gzip, bz2 and xz.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The to_parquer writer defaults to ‘snappy’. It also accepts other Parquet compression
+    options like gzip, and blosc. You can also pass a dictionary to this keyword argument
+    to map columns to compressors, for example: `{"name": "gzip", "values": "snappy"}`.
+    We recommend using the default “snappy” compressor.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'to_csv: single_file'
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Dask DataFrames consist of multiple partitions. By default, writing a Dask DataFrame
+    to CSV will write each partition to a separate CSV file.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s illustrate. We’ll start by creating a partitioned Dask DataFrame:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE117]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Let’s inspect the contents of the first partition:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE118]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now let’s write the whole Dask DataFrame out to CSV with default settings:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE119]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now switch to a terminal, `cd` into the data.csv folder and `ls` the contents:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE120]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We clearly see two partial CSV files here. To confirm, let’s load in just the
+    0.part file and inspect the contents:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE121]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'As expected, the content matches that of the first partition of our original
+    Dask DataFrame ddf **except** for the fact that Dask seems to have duplicated
+    the Index column. This happens because, just like in pandas, to_csv writes the
+    index as a separate column by default. You can change this setting by setting
+    the index keyword to False, just like you would in pandas:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE122]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: '[NOTE] The dask.dataframe.to_csv writer, just like the dask.dataframe.read_csv
+    reader, accepts many of the same keyword arguments as their pandas equivalents.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Fortunately, Dask makes it easy for you to read multiple CSV files located
+    in a single directory into a Dask DataFrame, using the * character as a glob string:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE123]'
+  prefs: []
+  type: TYPE_PRE
+- en: Having your data scattered over multiple CSV files may seem impractical at first,
+    especially if you’re used to working with CSV files in pandas. But remember that
+    you’re likely using Dask because either your dataset is too large to fit into
+    memory or you want to enjoy the benefits of parallelism – or both! Having the
+    CSV file split up into smaller parts means Dask can process the file in parallel
+    and maximize performance.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If, however, you want to write your data out to a single CSV file, you can change
+    the default setting by setting `single_file` to `True``:`
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE124]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: '[CAUTION] The to_csv writer clobbers existing files in the event of a name
+    conflict. Be careful whenever you’re writing to a folder with existing data, especially
+    if you’re using the default file names.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'to_parquet: engine'
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The engine keyword can be used to choose which Parquet library to use for writing
+    Dask DataFrames to Parquet. We strongly recommend using the pyarrow engine, which
+    will be the default starting from
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'to_parquet: partition_on'
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Dask DataFrame’s to_parquet writer allows you to partition the resulting Parquet
+    files according to the values of a particular column.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s illustrate with an example. We’ll Create a Dask DataFrame with letter
+    and number columns and write it out to disk, partitioning on the letter column:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE125]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Here are the files that are written to disk:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE126]'
+  prefs: []
+  type: TYPE_PRE
+- en: Organizing the data in this directory structure lets you easily skip files for
+    certain read operations. For example, if you only want the data where the letter
+    equals a, then you can look in the tmp/partition/1/letter=a directory and skip
+    the other Parquet files.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The letter column is referred to as the partition key in this example.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here’s how to read the data in the letter=a disk partition:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE127]'
+  prefs: []
+  type: TYPE_PRE
+- en: Dask is smart enough to apply the partition filtering based on the filters argument.
+    Dask only reads the data from output/partition_on/letters=a into the DataFrame
+    and skips all the files in other partitions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: '[CAUTION] Disk partitioning improves performance for queries that filter on
+    the partition key. It usually hurts query performance for queries that don’t filter
+    on the partition key.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Example query that runs faster on disk partitioned lake:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE128]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Example query that runs slower on disk partitioned lake:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE129]'
+  prefs: []
+  type: TYPE_PRE
+- en: The performance drag from querying a partitioned lake without filtering on the
+    partition key depends on the underlying filesystem. Unix-like filesystems are
+    good at performing file listing operations on nested directories. So you might
+    not notice much of a performance drag on your local machine.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Cloud-based object stores, like AWS S3, are not Unix-like filesystems. They
+    store data as key value pairs and are slow when listing nested files with a wildcard
+    character (a.k.a. globbing).
+  prefs: []
+  type: TYPE_NORMAL
+- en: You need to carefully consider your organization’s query patterns when evaluating
+    the costs/benefits of disk partitioning. If you are always filtering on the partition
+    key, then a partitioned lake is typically best. Disk partitioning might not be
+    worth it if you only filter on the partitioned key sometimes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Other Keywords
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: You are now familiar with the most important keyword arguments to the to_csv
+    and to_parquer writers. These tools will help you write your Dask DataFrames to
+    the two most popular tabular file formats effectively and with maximum performance.
+  prefs: []
+  type: TYPE_NORMAL
+- en: See the Dask documentation for more information on the other keyword arguments.
+    See Chapter 7 for more details on working with other file formats.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: This chapter concludes the Dask DataFrame section of this book. To recap, in
+    Chapter 2 we worked through a real-world end-to-end example to illustrate how
+    Dask DataFrames help you process massive amounts of tabular data to gain valuable
+    insights. Chapter 3 took a step back to explain the architecture of Dask DataFrame
+    and how it transcends the scalability limitations of pandas. Finally, this chapter
+    has given you in-depth tools and a collection of best practices for processing
+    tabular data with Dask. You could think of this final chapter as the definitive
+    guide for working with Dask DataFrames, presented to you by the team that has
+    spent years building, maintaining and optimizing Dask. Taken together, these three
+    chapters contain everything you need to take the Dask DataFrame car off the beaten
+    track and forge your own trails forward.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In this chapter, you learned:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: How to read data into Dask DataFrames from various sources and file formats
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: How to execute common data-processing operations with Dask DataFrames, including
+    groupby aggregations, joins, converting data types, and mapping custom Python
+    functions over your data.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: How to optimize your data structure for maximum performance by setting the index,
+    repartitioning, and managing memory usage.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: How to write your processed data out to CSV and Parquet.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The next two chapters will cover working with array data using Dask Array. Chapter
+    5 will work through a real-world end-to-end example, and Chapter 6 will combine
+    an explanation of the Dask Array architecture with our definitive collection of
+    best practices.
+  prefs: []
+  type: TYPE_NORMAL

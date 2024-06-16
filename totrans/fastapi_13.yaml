@@ -1,0 +1,763 @@
+- en: Chapter 10\. Data Layer
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: If I’m not mistaken, I think Data was the comic relief on the show.
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: ''
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: 'Brent Spiner, *Star Trek: The Next Generation*'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: Preview
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: This chapter finally creates a persistent home for our site’s data, at last
+    connecting the three layers. It uses the relational database SQLite and introduces
+    Python’s database API, aptly named DB-API. [Chapter 14](ch14.html#ch14) goes into
+    much more detail on databases, including the SQLAlchemy package and nonrelational
+    databases.
+  prefs: []
+  type: TYPE_NORMAL
+- en: DB-API
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'For over 20 years, Python has included a basic definition for a relational
+    database interface called DB-API: [PEP 249](https://oreil.ly/4Gp9T). Anyone who
+    writes a Python driver for a relational database is expected to at least include
+    support for DB-API, although other features may be included.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'These are the main DB-API functions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Create a connection `conn` to the database with `connect()`.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Create a cursor `curs` with `conn.cursor()`.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Execute a SQL string `stmt` with `curs.execute(stmt)`.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'The `execute...()` functions run a SQL statement `*stmt*` string with optional
+    parameters, listed here:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`execute(*stmt*)` if there are no parameters'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`execute(*stmt*, *params*)`, with parameters `*params*` in a single sequence
+    (list or tuple) or dict'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`executemany(*stmt*, *params_seq*)`, with multiple parameter groups in the
+    sequence `*params_seq*`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: There are five ways of specifying parameters, and not all are supported by all
+    database drivers. If we have a statement `*stmt*` that begins with `"select *
+    from creature where"`, and we want to specify string parameters for the creature’s
+    `name` *or* `country`, the rest of the `*stmt*` string and its parameters would
+    look like those in [Table 10-1](#table-10-1).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Table 10-1\. Specifying the statement and parameters
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| Type | Statement part | Parameters part |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| qmark | `name=? or country=?` | `(*name*, *country*)` |'
+  prefs: []
+  type: TYPE_TB
+- en: '| numeric | `name=:0 or country=:1` | `(*name*, *country*)` |'
+  prefs: []
+  type: TYPE_TB
+- en: '| format | `name=%s or country=%s` | `(*name*, *country*)` |'
+  prefs: []
+  type: TYPE_TB
+- en: '| named | `name=:name or country=:country` | `{"name": *name*, "country": *​coun⁠try*}`
+    |'
+  prefs: []
+  type: TYPE_TB
+- en: '| pyformat | `name=%(name)s or country=%(country)s` | `{"name": *name*, "country":
+    *​coun⁠try*}` |'
+  prefs: []
+  type: TYPE_TB
+- en: The first three take a tuple argument, where the parameter order matches the
+    `?`, `:N`, or `%s` in the statement. The last two take a dictionary, where the
+    keys match the names in the statement.
+  prefs: []
+  type: TYPE_NORMAL
+- en: So, the full call for the *named* style would look like [Example 10-1](#ex-10-1).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 10-1\. Using named-style parameters.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'For SQL `INSERT`, `DELETE`, and `UPDATE` statements, the returned value from
+    `execute()` tells you how it worked. For `SELECT`, you iterate over returned data
+    row(s), as Python tuples, with a `fetch` method:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`fetchone()` returns one tuple, or `None`.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`fetchall()` returns a sequence of tuples.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`fetchmany(*num*)` returns up to `*num*` tuples.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: SQLite
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Python includes support for one database ([SQLite](https://www.sqlite.org))
+    with the module [sqlite3](https://oreil.ly/CcYtJ) in its standard packages.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'SQLite is unusual: it has no separate database server. All the code is in a
+    library, and storage is in a single file. Other databases run separate servers,
+    and clients communicate with them over TCP/IP, using specific protocols. Let’s
+    use SQLite as the first physical data store for this website. [Chapter 14](ch14.html#ch14)
+    will include other databases, relational and not, as well as more advanced packages
+    like SQLAlchemy and techniques like ORMs.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'First, we need to define how the data structures we’ve been using in the website
+    (*models*) can be represented in the database. So far, our only models have been
+    simple and similar, but not identical: `Creature` and `Explorer`. They will change
+    as we think of more things to do with them and let the data evolve without massive
+    code changes.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Example 10-2](#ex-10-2) shows the bare DB-API code and SQL to create and work
+    with the first tables. It uses *named* argument strings (values are represented
+    like `*name*`), which are supported by the sqlite3 package.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 10-2\. Create the file data/creature.py using sqlite3
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: Near the top, the `init()` function makes the connection to sqlite3 and the
+    database fake *cryptid.db*. It stores this in the variable `conn`; this is global
+    within the *data/creature.py* module. Next, the `curs` variable is a *cursor*
+    for iterating over data returned by executing a SQL `SELECT` statement; it’s also
+    global to the module.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Two utility functions translate between Pydantic models and DB-API:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`row_to_model()` converts a tuple returned by a *fetch* function to a model
+    object.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`model_to_dict()` translates a Pydantic model to a dictionary, suitable for
+    use as a *named* query parameter.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The fake CRUD functions that have been present so far in each layer down (Web
+    → Service → Data) will now be replaced. They use only plain SQL and the DB-API
+    methods in sqlite3.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Layout
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'So far, (fake) data has been modified in steps:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In [Chapter 8](ch08.html#ch08), we made the fake `*creatures*` list in *web/creature.py*.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: In [Chapter 8](ch08.html#ch08), we made the fake `*explorers*` list in *web/explorer.py*.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: In [Chapter 9](ch09.html#ch09), we moved fake `*creatures*` to *service/creature.py*.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: In [Chapter 9](ch09.html#ch09), we moved fake `*explorers*` to *service/explorer.py*.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'Now the data has moved for the last time, down to *data/creature.py*. But it’s
+    not fake anymore: it’s real live data, persisting in the SQLite database file
+    *cryptids.db*. Creature data, again by lack of imagination, is stored in the SQL
+    table `creature` in this database.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Once you save this new file, Uvicorn should restart from your top *main.py*,
+    which calls *web/creature.py*, which calls *service/creature.py*, and finally
+    down to this new *data/creature.py*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Making It Work
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'We have one small problem: this module never calls its `init()` function, so
+    there’s no SQLite `conn` or `curs` for the other functions to use. This a configuration
+    issue: how do we provide the database information at startup time? Possibilities
+    include the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Hardwiring the database info in the code, as in [Example 10-2](#ex-10-2).
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Passing the info down through the layers. But this would violate the separation
+    of layers; the Web and Service layers should not know the internals of the Data
+    layer.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Passing the info from a different external source, such as
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: A config file
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: An environment variable
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The environment variable is simple and is endorsed by recommendations like the
+    [Twelve-Factor App](https://12factor.net/config). The code can include a default
+    value if the environment variable isn’t specified. This approach can also be used
+    in testing, to provide a separate test database from the production one.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In [Example 10-3](#ex-10-3), let’s define an environment variable called `CRYPTID_SQLITE_DB`,
+    with the default value `cryptid.db`. Make a new file called *data/init.py* for
+    the new database initialization code so it can also be reused for the explorer
+    code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 10-3\. New data initialization module data/init.py
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: A Python module is a *singleton*, called only once despite multiple imports.
+    So, the initialization code in *init.py* is run only once, when the first import
+    of it occurs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Last, modify *data/creature.py* in [Example 10-4](#ex-10-4) to use this new
+    module instead:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Mainly, drop lines 4 through 8.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Oh, and create the `creature` table in the first place!
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The table fields are all SQL `text` strings. This is the default column type
+    in SQLite (unlike most SQL databases), so you didn’t need to include `text` earlier,
+    but being explicit doesn’t hurt.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The `if not exists` avoids clobbering the table after it’s been created.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The `name` field is the explicit `primary key` for this table. If this table
+    ever houses lots of explorer data, that key will be necessary for fast lookups.
+    The alternative is the dreaded *table scan*, where the database code needs to
+    look at every row until it finds a match for `name`.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Example 10-4\. Add database configuration to data/creature.py
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: By importing `conn` and `curs` from *init.py*, it’s no longer necessary for
+    *data/creature.py* to import sqlite3 itself—unless someday it’s necessary to call
+    another sqlite3 method that isn’t a method of the `conn` or `curs` objects.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Again, these changes should goose Uvicorn into reloading everything. From now
+    on, testing with any of the methods that you’ve seen so far (HTTPie and friends,
+    or the automated */docs* forms) will show data that persists. If you add a creature,
+    it will be there the next time you get all of them.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s do the same for explorers in [Example 10-5](#ex-10-5).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 10-5\. Add database configuration to data/explorer.py
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: Test!
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: That’s a lot of code with no tests. Does everything work? I’d be surprised if
+    it all did. So let’s set up some tests.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Make these subdirectories under the *test* directory:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: unit
+  prefs: []
+  type: TYPE_NORMAL
+- en: Within a layer
+  prefs: []
+  type: TYPE_NORMAL
+- en: full
+  prefs: []
+  type: TYPE_NORMAL
+- en: Across all layers
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Which type should you write and run first? Most people write automated unit
+    tests first; they’re smaller, and all the other layer pieces may not exist yet.
+    In this book, development has been top-down, and we’re now completing the last
+    layer. Also, we did manual tests (with HTTPie and friends) in Chapters [8](ch08.html#ch08)
+    and [9](ch09.html#ch09). Those helped to expose bugs and omissions quickly; automated
+    tests ensure that you don’t keep making the same errors later. So, I recommend
+    the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Some manual tests as you’re first writing the code
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Unit tests after you’ve fixed Python syntax errors
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Full tests after you have a full data flow across all layers
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Full Tests
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: These call the web endpoints, which take the code elevator down through Service
+    to Data, and back up again. Sometimes these are called *end-to-end* or *contract*
+    tests.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Get all explorers
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Dipping a toe in the test waters, not yet knowing if they’re infested with piranhas,
+    is brave volunteer [Example 10-6](#ex-10-6).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 10-6\. The Get All Explorers test
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: Eek! What happened?
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Oh. The test asked for `/explorer`, not `/explorer/`, and there’s no `GET`-method
+    path function for the URL */explorer* (with no final slash). In *web/explorer.py*,
+    the path decorator for the `get_all()` path function is this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: That, plus the earlier code
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: means this `get_all()` path function serves a URL containing */explorer/*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Example 10-7](#ex-10-7) happily shows that you can have more than one path
+    decorator per path function.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 10-7\. Add a nonslash path decorator for the `get_all()` path function
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: Test with both URLs in Examples [10-8](#ex-10-8) and [10-9](#ex-10-9).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 10-8\. Test the nonslash endpoint
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: Example 10-9\. Test the slash endpoint
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: Now that both of these work, create an explorer, and retry the Get All test
+    after. [Example 10-10](#ex-10-10) attempts this, but with a plot twist.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 10-10\. Test explorer creation, with an input error
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'I misspelled `country`, although my speling is usually impeckable. Pydantic
+    caught this in the Web layer, returning a `422` HTTP status code and a description
+    of the problem. Generally, if FastAPI returns a `422`, the odds are that Pydantic
+    fingered the perpetrator. The `"loc"` part says where the error occurred: the
+    field `"country"` is missing, because I’m such an inept typist.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Fix the spelling and retest in [Example 10-11](#ex-10-11).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 10-11\. Create an explorer with the corrected value
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: This time the call returns a `201` status code, which is traditional when a
+    resource is created (all `2*xx*` status codes are considered to indicate success,
+    with plain `200` being the most generic). The response also contains the JSON
+    version of the `Explorer` object that was just created.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Now back to the initial test: will Beau turn up in the Get All Explorers test?
+    [Example 10-12](#ex-10-12) answers this burning question.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 10-12\. Did the latest `create()` work?
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: Yay.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Get one explorer
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Now, what happens if you try to look up Beau with the Get One endpoint ([Example 10-13](#ex-10-13))?
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 10-13\. Test the Get One endpoint
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: I used the quotes to preserve that space between the first and last names. In
+    URLs, you could also use `Beau%20Buffette`; the `%20` is the hex code for the
+    space character in ASCII.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Missing and duplicate data
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'I’ve ignored two main error classes so far:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Missing data
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you try to get, modify, or delete an explorer by a name that isn’t in the
+    database.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Duplicate data
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you try to create an explorer with the same name more than once.
+  prefs: []
+  type: TYPE_NORMAL
+- en: So, what if you ask for a nonexistent or duplicate explorer? So far, the code
+    has been too optimistic, and exceptions will bubble up from the abyss.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Our friend Beau was just added to the database. Imagine his evil clone (who
+    shares his name) plots to replace him some dark night, using [Example 10-14](#ex-10-14).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Example 10-14\. Duplicate error: try to create an explorer more than once'
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'I omitted most of the lines in that error trace (and replaced some parts with
+    ellipses), because it contained mostly internal calls made by FastAPI and the
+    underlying Starlette. But that last line: a SQLite exception in the Web layer!
+    Where is the fainting couch?'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Right on the heels of this, yet another horror in [Example 10-15](#ex-10-15):
+    a missing explorer.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 10-15\. Get a nonexistent explorer
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'What’s a good way to catch these at the bottom (Data) layer, and communicate
+    the details to the top (Web)? Possibilities include the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let SQLite cough up a hairball (exception) and deal with it in the Web layer.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'But: this mixes the layers, which is *Bad*. The Web layer should not know anything
+    about specific databases.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Make every function in the Service and Data layers return `Explorer | None`
+    where they used to return `Explorer`. Then a `None` indicates failure. (You can
+    shorten this by defining `OptExplorer = Explorer | None` in *model/explorer.py*.)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'But: the function may have failed for more than one reason, and you might want
+    details. And this requires lots of code editing.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Define exceptions for `Missing` and `Duplicate` data, including details of the
+    problem. These will flow up through the layers with no code changes until the
+    Web path functions catch them. They’re also application specific rather than database
+    specific, preserving the sanctity of the layers.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'But: actually, I like this one, so it goes in [Example 10-16](#ex-10-16).'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Example 10-16\. Define a new top-level errors.py
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: Each of these exceptions has a `msg` string attribute that can inform the higher-level
+    code of what happened.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To implement this, in [Example 10-17](#ex-10-17), have *data/init.py* import
+    the DB-API exception that SQLite would raise for a duplicate.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 10-17\. Add a SQLite exception import into data/init.py
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: Import and catch this error in [Example 10-18](#ex-10-18).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 10-18\. Modify data/explorer.py to catch and raise these exceptions
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: This drops the need to declare that any functions return `Explorer | None` or
+    `Optional[Explorer]`. You indicate type hints only for normal return types, not
+    exceptions. Because exceptions flow upward independent of the call stack until
+    someone catches them, for once you don’t have to change anything in the Service
+    layer. But here’s the new *web/explorer.py* in [Example 10-19](#ex-10-19), with
+    exception handlers and appropriate HTTP status code returns.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 10-19\. Handle `Missing` and `Duplicate` exceptions in web/explorer.py
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: Test these changes in [Example 10-20](#ex-10-20).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 10-20\. Test Get One nonexisting explorer again, with new `Missing`
+    exception
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: Good. Now, try the evil clone attempt again in [Example 10-21](#ex-10-21).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 10-21\. Test duplicate fix
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE22]'
+  prefs: []
+  type: TYPE_PRE
+- en: The missing checks would also apply to the Modify and Delete endpoints. You
+    can try writing similar tests for them.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Unit Tests
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Unit tests deal only with the Data layer, checking the database calls and SQL
+    syntax. I’ve put this section after the full tests because I wanted to have the
+    `Missing` and `Duplicate` exceptions already defined, explained, and coded into
+    *data/creature.py*. [Example 10-22](#ex-10-22) lists the test script *test/unit/data/test_creature.py*.
+    Here are some points to note:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: You set the environment variable `CRYPTID_SQLITE_DATABASE` to `":memory:"` *before*
+    importing `init` or `creature` from `data`. This value makes SQLite work completely
+    in memory, not stomping any existing database file, or even creating a file on
+    disk. It’s checked in *data/init.py* when that module is first imported.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The *fixture* named `sample` is passed to the functions that need a `Creature`
+    object.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'The tests run in order. In this case, the same database stays up the whole
+    time, instead of being reset between functions. The reason is to allow changes
+    from previous functions to persist. With pytest, a fixture can have on the following:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Function scope (the default)
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: It’s called anew before every test function.
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: Session scope
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: It’s called only once, at the start.
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: Some tests force the `Missing` or `Duplicate` exceptions, and verify that they
+    caught them.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: So, each of the tests in [Example 10-22](#ex-10-22) gets a brand-new, unchanged
+    `Creature` object named `sample`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 10-22\. Unit tests for data/creature.py
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE23]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Hint: you can make your own version of *test/unit/data/test_explorer.py*.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Review
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: This chapter presented a simple data-handling layer, with a few trips up and
+    down the layer stack as needed. [Chapter 12](ch12.html#ch12) contains unit tests
+    for each layer, as well as cross-layer integration and full end-to-end tests.
+    [Chapter 14](ch14.html#ch14) goes into more database depth and detailed examples.
+  prefs: []
+  type: TYPE_NORMAL

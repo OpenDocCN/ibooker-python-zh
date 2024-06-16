@@ -1,0 +1,810 @@
+- en: Chapter 6\. Testing with pytest
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'If you think back to when you wrote your first programs, you may recall a common
+    experience: You had an idea for how a program could help with a real-life task,
+    and spent a sizable amount of time coding it from top to bottom, only to be confronted
+    with screens full of disheartening error messages when you finally ran it. Or,
+    worse, it gave you results that were subtly wrong.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: There are a few lessons we’ve all learned from experiences like this. One is
+    to start simple and keep it simple as you iterate on the program. Another lesson
+    is to test early and repeatedly. Initially, this may just mean to run the program
+    manually and validate that it does what it should. Later on, if you break the
+    program into smaller parts, you can test those parts in isolation and automatically.
+    As a side effect, the program gets easier to read and work on, too.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this chapter, I’ll talk about how testing can help you produce value early
+    and consistently. Good tests amount to an executable specification of the code
+    you own. They set you free from institutional knowledge in a team or company,
+    and they speed up your development by giving you immediate feedback on changes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The third-party testing framework [pytest](https://docs.pytest.org/) has become
+    somewhat of a de-facto standard in the Python world. Tests written with pytest
+    are simple and readable: you write most tests as if there was no framework, using
+    basic language primitives like functions and assertions. Despite its simplicity,
+    the framework is powerful and expressive, notably through its concepts of test
+    fixtures and parameterized tests. Pytest is extensible and comes with a rich ecosystem
+    of plugins.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Pytest originated in the PyPy project, a Python interpreter written in Python.
+    Early on, the PyPy developers worked on a separate standard library called `std`,
+    later renamed to `py`. Its testing module `py.test` became an independent project
+    under the name `pytest`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Writing a Test
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: '[Example 6-1](#example_testing_wikipedia) revisits the Wikipedia example from
+    [Chapter 3](ch03.html#chapter_packages). The program is as simple as it gets—​yet
+    it’s far from obvious how you’d write tests for it. The `main` function has no
+    inputs and no outputs—​only side effects, such as writing to the standard output
+    stream. How would you test a function like this?'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-1\. The `main` function from `random-wikipedia-article`
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: Let’s write an *end-to-end test* that runs the program in a subprocess and checks
+    that it completes with non-empty output. End-to-end tests run the entire program
+    the way an end user would ([Example 6-2](#example_testing_end_to_end)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-2\. A test for `random-wikipedia-article`
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Tests written using pytest are functions whose names start with `test`. Use
+    the built-in `assert` statement to check for expected behavior. Pytest rewrites
+    the language construct to provide rich error reporting in case of a test failure.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Place the contents of [Example 6-2](#example_testing_end_to_end) in the file
+    *test_main.py* in a *tests* directory. Include an empty *__init__.py* file to
+    turn the test suite into an import package. This lets you mirror the layout of
+    the package you’re testing,^([1](ch06.html#id290)) and it gives you the option
+    to import modules with test utilities.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'At this point, your project should be structured in the following way:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: Managing Test Dependencies
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Tests must be able to import your project and its dependencies, so you need
+    to install pytest in your project environment. For example, add a `tests` extra
+    to your project:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'You can now install pytest in the project environment:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Alternatively, compile a requirements file and synchronize your environment:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'If you use Poetry, add pytest to your project using `poetry add` instead:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: Please refer to these steps when I ask you to add test dependencies later in
+    this chapter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Finally, let’s run the test suite. If you’re on Windows, activate the environment
+    before you run the following command.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Use `py -m pytest` even in Poetry projects. It’s both shorter and safer than
+    `poetry run pytest`. If you forget to install pytest into the environment, Poetry
+    falls back to your global environment. (The safe variant would be `poetry run
+    python -m pytest`.)
+  prefs: []
+  type: TYPE_NORMAL
+- en: Designing for Testability
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Writing finer-grained tests for the program is much harder. The API endpoint
+    returns a random article, so *which* title and summary should the tests expect?
+    Every invocation sends an HTTP request to the real Wikipedia API. Those network
+    roundtrips will make the test suite excruciatingly slow—​and you can only run
+    tests when your machine is connected to the internet.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Python programmers have an arsenal of tools at their disposal for situations
+    like this. Most of these involve some form of *monkey patching*, which replaces
+    functions or objects at runtime to make the code easier to test. For example,
+    you can capture program output by replacing `sys.stdout` with a file-like object
+    that writes to an internal buffer for later inspection. You can replace `urlopen`
+    with a function that returns canned HTTP responses of your liking. Libraries like
+    `responses`, `respx`, or `vcr.py` provide high-level interfaces that monkey patch
+    the HTTP machinery behind the scenes. More generic approaches use the standard
+    `unittest.mock` module or pytest’s `monkeypatch` fixture.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: The term *monkey patch* for replacing code at runtime originated at Zope Corporation.
+    Initially, people at Zope called the technique “guerilla patching”, since it didn’t
+    abide by the usual rules of patch submission. People heard that as “gorilla patch”—and
+    soon the more carefully crafted ones came to be known as “monkey patches”.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'While these tools serve their purpose, I’d encourage you to focus on the root
+    of the problem: [Example 6-1](#example_testing_wikipedia) has no separation of
+    concerns. A single function serves as the application entry point, communicates
+    with an external API, and presents the results on the console. This makes it hard
+    to test its features in isolation.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The program also lacks abstraction, in two ways. First, it doesn’t encapsulate
+    implementation details when interfacing with other systems, like interacting with
+    the Wikipedia API or writing to the terminal. Second, its central concept—​the
+    Wikipedia article—​only appears as an amorphous JSON object: the program doesn’t
+    abstract its domain model in any way, such as by defining an `Article` class.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Example 6-3](#example_testing_refactored) shows a refactoring that makes the
+    code more testable. While this version of the program is longer, it expresses
+    its logic more clearly and is more amenable to change. Good tests don’t just catch
+    bugs: they improve the design of your code.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-3\. Refactoring for testability
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_testing_with_pytest_CO1-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: For brevity, examples in this chapter only show imports on first use.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The refactoring extracts `fetch` and `show` functions from `main`. It also defines
+    an `Article` class as the common denominator of these functions. Let’s see how
+    these changes let you test the parts of the program in isolation and in a repeatable
+    way.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `show` function accepts any file-like object. While `main` passes `sys.stdout`,
+    tests can pass an `io.StringIO` instance to store the output in memory. [Example 6-4](#example_testing_show)
+    uses this technique to check that the output ends with a newline. The final newline
+    ensures the output doesn’t run into the next shell prompt.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-4\. Testing the `show` function
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'There’s another benefit to the refactoring: The functions hide the implementation
+    behind an interface that only involves your problem domain—​URLs, articles, files.
+    This means your tests are less likely to break when you swap out your implementation.
+    Go ahead and change the `show` function to use Rich, as shown in [Example 6-5](#example_testing_rich).^([2](ch06.html#id291))
+    You won’t need to adapt your tests!'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-5\. Swapping out the implementation of `show`
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'In fact, the whole point of tests is to give you confidence that your program
+    still works after making changes like this. Mocks and monkey patches, on the other
+    hand, are brittle: They tie your test suite to implementation details, making
+    it increasingly hard to change your program down the road.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Fixtures and Parameterization
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Here are some other properties of the `show` function that you might check
+    for:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: It should include all the words of the title and summary.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: There should be a blank line after the title.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The summary should not exceed a line length of 72 characters.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Every test for the `show` function starts by setting up an output buffer. You
+    can use a fixture to remove this code duplication. *Fixtures* are functions declared
+    with the `pytest.fixture` decorator:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Tests (and fixtures) can use a fixture by including a function parameter with
+    the same name. When pytest invokes the test function, it passes the return value
+    of the fixture function. Let’s rewrite [Example 6-4](#example_testing_show) to
+    use the fixture:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: Warning
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'If you forget to add the parameter `file` to the test function, you get a confusing
+    error: `''function'' object has no attribute ''write''`. This happens because
+    the name `file` now refers to the fixture function in the same module.^([3](ch06.html#id292))'
+  prefs: []
+  type: TYPE_NORMAL
+- en: If every test used the same article, you’d likely miss some edge cases. For
+    example, you don’t want your program to crash if an article comes with an empty
+    title. [Example 6-6](#example_testing_parametrize) runs the test for a number
+    of articles with the `@pytest.mark.parametrize` decorator.^([4](ch06.html#id293))
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-6\. Running tests against multiple articles
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: If you parameterize many tests in the same way, you can create a *parameterized
+    fixture*, a fixture with multiple values ([Example 6-7](#example_testing_parametrized_fixture)).
+    As before, pytest runs the test once for each article in `articles`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-7\. Parameterized fixture for running tests against multiple articles
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'So what did you gain here? For one thing, you don’t need to decorate each test
+    with `@pytest.mark.parametrize`. There’s another advantage if your tests aren’t
+    all in the same module: You can place fixtures in a file named *conftest.py* and
+    use them across your entire test suite without imports.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The syntax for parameterized fixtures is somewhat arcane. To keep things simple,
+    I like to define a small helper:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Use the helper to simplify the fixture from [Example 6-7](#example_testing_parametrized_fixture).
+    You can also inline the `articles` variable from [Example 6-6](#example_testing_parametrize):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: If you have a test suite written with `unittest`, there’s no need to rewrite
+    it to start using pytest—​pytest “speaks” `unittest`, too. Use pytest as a test
+    runner right away and you can rewrite your test suite incrementally later.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Advanced Techniques for Fixtures
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'For the `fetch` function, tests can set up a local HTTP server and perform
+    a *roundtrip* check. This is shown in [Example 6-8](#example_testing_fetch): You
+    serve an `Article` instance via HTTP, fetch the article from the server, and check
+    that the served and fetched instances are equal.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-8\. Testing the `fetch` function (version 1)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The `serve` helper function takes an article and returns a URL for fetching
+    the article. More precisely, it wraps the URL in a *context manager*, an object
+    for use in a `with` block. This allows `serve` to clean up after itself when you
+    exit the `with` block—​by shutting down the server:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: You can implement the `serve` function using the `http.server` module from the
+    standard library ([Example 6-9](#example_testing_serve)). Don’t worry too much
+    about the details, though. Later in this chapter, I’ll introduce the `pytest-httpserver`
+    plugin, which will bear the brunt of the work.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-9\. The `serve` function
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_testing_with_pytest_CO2-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The request handler responds to every GET request with a UTF-8 encoded JSON
+    representation of the article.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_testing_with_pytest_CO2-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The server only accepts local connections. The operating system randomly assigns
+    the port number.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_testing_with_pytest_CO2-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The server runs in a background thread. This allows control to return to the
+    tests.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Firing up and shutting down a web server for every test is expensive. Would
+    it help to turn the server into a fixture? At first glance, not much—​every test
+    gets its own instance of a fixture. However, you can instruct pytest to create
+    a fixture only once during the entire test session, using a *session-scoped fixture*:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: That looks more promising, but how do you shut down the server when the tests
+    are done with it? Up to now, your fixtures have only prepared a test object and
+    returned it. You can’t run code after a `return` statement. However, you *can*
+    run code after a `yield` statement—​so pytest allows you to define a fixture as
+    a generator.
+  prefs: []
+  type: TYPE_NORMAL
+- en: A *generator fixture* prepares a test object, yields it, and cleans up resources
+    at the end—​similar to a context manager. You use it in the same way as an ordinary
+    fixture that returns its test object. Pytest handles the setup and teardown phases
+    behind the scenes and calls your test function with the yielded value.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Example 6-10](#example_testing_httpserver_fixture) defines the `httpserver`
+    fixture using the generator technique.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-10\. The `httpserver` fixture
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_testing_with_pytest_CO3-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Unlike in [Example 6-9](#example_testing_serve), there’s no `article` in scope.
+    Instead, the request handler accesses it from the `article` attribute on the server
+    (see below).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'There’s still a missing piece: You need to define the `serve` function. The
+    function now depends on the `httpserver` fixture to do its work, so you can’t
+    just define it at the module level. Let’s move it into the test function for now
+    ([Example 6-11](#example_testing_fetch_v2)).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-11\. Testing the `fetch` function (version 2)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE22]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_testing_with_pytest_CO4-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Store the article in the server, so the request handler can access it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `serve` function no longer returns a context manager, just a plain URL—​the
+    `httpserver` fixture handles all of the setting up and tearing down. But you can
+    still do better. The nested function clutters the test—​and every other test for
+    the `fetch` function. Instead, let’s define `serve` inside its own fixture—​after
+    all, fixtures can return any object, including functions ([Example 6-12](#example_testing_serve_fixture)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-12\. The `serve` fixture
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE23]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_testing_with_pytest_CO5-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The outer function defines a `serve` fixture, which depends on `httpserver`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_testing_with_pytest_CO5-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The inner function is the `serve` function you call in your tests.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Thanks to the `serve` fixture, the test function becomes a one-liner ([Example 6-13](#example_testing_fetch_fixture)).
+    It’s also much faster, because you only start and stop the server once per session.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-13\. Testing the `fetch` function (version 3)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE24]'
+  prefs: []
+  type: TYPE_PRE
+- en: Your test isn’t tied to any particular HTTP client library. [Example 6-14](#example_testing_httpx)
+    swaps out the implementation of the `fetch` function to use HTTPX.^([5](ch06.html#id294))
+    This would have broken any test that used monkey patching—​but your test will
+    still pass!
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-14\. Swapping out the implementation of `fetch`
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE25]'
+  prefs: []
+  type: TYPE_PRE
+- en: Extending pytest with Plugins
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: As you’ve seen in [“Entry Points”](ch03.html#section_packages_entrypoints),
+    pytest’s extensible design lets anybody contribute pytest plugins and publish
+    them to PyPI,^([6](ch06.html#id295)) so a rich ecosystem of plugins has evolved.
+    You’ve already seen the `pytest-sugar` plugin, which enhances pytest’s output,
+    including adding a progress bar. In this section, you’ll look at a few more.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The pytest-httpserver Plugin
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The [`pytest-httpserver`](https://pytest-httpserver.readthedocs.io/) plugin
+    provides an `httpserver` fixture that’s more versatile and battle-tested than
+    [Example 6-10](#example_testing_httpserver_fixture). Let’s use this plugin.
+  prefs: []
+  type: TYPE_NORMAL
+- en: First, add `pytest-httpserver` to your test dependencies. Next, remove the existing
+    `httpserver` fixture from your test module. Finally, update the `serve` fixture
+    to use the plugin ([Example 6-15](#example_testing_serve_fixture_plugin)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-15\. The `serve` fixture using `pytest-httpserver`
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE26]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[Example 6-15](#example_testing_serve_fixture_plugin) configures the server
+    to respond to requests to `"/"` with the JSON representation of the article. The
+    plugin offers much flexibility beyond this use case—​for example, you can add
+    custom request handlers or communicate over HTTPS.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The pytest-xdist Plugin
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'As your test suite grows, you’ll be looking for ways to speed up test runs.
+    Here’s an easy way: utilize all your CPU cores. The [`pytest-xdist`](https://pytest-xdist.readthedocs.io/)
+    plugin spawns a worker process on each processor and distributes tests randomly
+    across the workers. The randomization also helps detect hidden dependencies between
+    your tests.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Add `pytest-xdist` to your test dependencies and update your environment. Use
+    the option `--numprocesses` or `-n` to specify the number of worker processes.
+    Specify `auto` to use all physical cores on your system:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE27]'
+  prefs: []
+  type: TYPE_PRE
+- en: The factory-boy and faker Libraries
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: In [“Fixtures and Parameterization”](#section_testing_fixtures), you hardcoded
+    the articles your tests run against. Let’s avoid this boilerplate—​it makes your
+    tests hard to maintain.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Instead, the [`factory-boy`](https://factoryboy.readthedocs.io/) library lets
+    you create factories for test objects. You can generate batches of objects with
+    predictable attributes, such as by using a sequence number. Alternatively, you
+    can populate attributes randomly using the [`faker`](https://faker.readthedocs.io/)
+    library.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Add `factory-boy` to your test dependencies and update your environment. [Example 6-16](#example_testing_factoryboy)
+    defines a factory for randomized articles and creates a batch of ten articles
+    for the `article` fixture. (If you want to see `pytest-xdist` in action, increase
+    the number of articles and run pytest with `-n auto`.)
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-16\. Creating a batch of articles with `factory-boy` and `faker`
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE28]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_testing_with_pytest_CO6-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Specify the class of the test objects with `Meta.model`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_testing_with_pytest_CO6-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Use a random sentence for the title and a random paragraph for the summary.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_testing_with_pytest_CO6-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Generate a batch of articles using the `build_batch` method.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This simplified factory doesn’t cover edge cases particularly well. For a real-world
+    application, you should include empty and extremely large strings, as well as
+    unusual characters such as control characters. Another great testing library that
+    lets you explore the search space of possible inputs is [`hypothesis`](https://hypothesis.readthedocs.io/).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Other Plugins
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Pytest plugins perform a variety of functions ([Table 6-1](#table_testing_pytest_plugins)).
+    These include executing tests in parallel or in random order, presenting or reporting
+    test results in custom ways, and integrating with frameworks and other tools.
+    Many plugins provide useful fixtures—​such as for interacting with external systems
+    or creating test doubles.^([7](ch06.html#id296))
+  prefs: []
+  type: TYPE_NORMAL
+- en: Table 6-1\. A selection of pytest plugins
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| Plugin | Category | Description | Option |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- | --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `pytest-xdist` | Execution | Distribute tests across multiple CPUs | `--numprocesses`
+    |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `pytest-sugar` | Presentation | Enhance output with a progress bar |  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `pytest-icdiff` | Presentation | Show colorized diffs on test failures |  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `anyio` | Frameworks | Use asynchronous tests with asyncio and trio |  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `pytest-httpserver` | Fake servers | Spawn an HTTP server with canned responses
+    |  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `pytest-factoryboy` | Fake data | Turn factories into fixtures |  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `pytest-datadir` | Storage | Access static data in your test suite |  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `pytest-cov` | Coverage | Produce coverage reports with Coverage.py | `--cov`
+    |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `xdoctest` | Documentation | Run code examples from docstrings | `--xdoctest`
+    |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `typeguard` | Type checking | Type-check your code at runtime | `--typeguard-packages`
+    |'
+  prefs: []
+  type: TYPE_TB
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Find each project on PyPI at `https://pypi.org/project/<name>`. The project
+    homepage is available under *Project links* in the navigation bar.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'In this chapter, you’ve learned how to test your Python projects with pytest:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tests are functions that exercise your code and check for expected behavior
+    using the `assert` built-in. Prefix their names—​and the names of the containing
+    modules—​with `test_`, and pytest will discover them automatically.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Fixtures are functions or generators that set up and tear down test objects;
+    declare them with the `@pytest.fixture` decorator. You can use a fixture in a
+    test by including a parameter named like the fixture.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Plugins for pytest can provide useful fixtures, as well as modify test execution,
+    enhance reporting, and much more.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'One of the prime characteristics of good software is that it’s easy to change,
+    since any piece of code used in the real world must adapt to evolving requirements
+    and an ever-changing environment. Tests make change easier in several ways:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'They drive software design towards loosely coupled building blocks that you
+    can test in isolation: fewer interdependencies mean fewer barriers to change.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: They document and enforce expected behavior. That gives you the freedom and
+    confidence to continuously refactor your codebase—​keeping it maintainable as
+    it grows and transforms.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: They reduce the cost of change by detecting defects early. The earlier you catch
+    an issue, the cheaper it is to work out the root cause and develop a fix.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: End-to-end tests give you high confidence that a feature works as designed—​but
+    they’re slow, flaky, and bad at isolating the causes of failures. Let most of
+    your tests be unit tests. Avoid monkey patching to break the dependencies of your
+    code for testability. Instead, decouple the core of your application from I/O,
+    external systems, and third-party frameworks. Good software design and a solid
+    testing strategy will keep your test suite blazingly fast and resilient to change.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This chapter focuses on the tooling side of things, but there’s so much more
+    to good testing practices. Luckily, other people have written fantastic texts
+    about this topic. Here are three of my all-time favorites:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Kent Beck, *Test-Driven Development: By Example* (London: Pearson, 2002).'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Michael Feathers, *Working Effectively with Legacy Code* (London: Pearson,
+    2004).'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Harry Percival and Bob Gregory, [*Architecture Patterns in Python*](https://learning.oreilly.com/library/view/architecture-patterns-with/9781492052197/)
+    (Sebastopol: O’Reilly, 2020).'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'If you want to know all about how to test with pytest, read Brian’s book:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Brian Okken, *Python Testing with pytest: Simple, Rapid, Effective, and Scalable*,
+    Second Edition (Raleigh: The Pragmatic Bookshelf, 2022).'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: ^([1](ch06.html#id290-marker)) Large packages can have modules with the same
+    name—​say, `gizmo.foo.registry` and `gizmo.bar.registry`. Under pytest’s default
+    [import mode](https://docs.pytest.org/en/7.1.x/explanation/pythonpath.html#import-modes),
+    test modules must have unique fully-qualified names—​so you must place the `test_registry`
+    modules in separate `tests.foo` and `tests.bar` packages.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([2](ch06.html#id291-marker)) Remember to add Rich to your project as described
+    in [“Specifying Dependencies for a Project”](ch04.html#section_dependencies_specifications).
+    If you use Poetry, refer to [“Managing Dependencies”](ch05.html#section_poetry_dependencies).
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([3](ch06.html#id292-marker)) My reviewer Hynek recommends a technique to avoid
+    this pitfall and get an idiomatic `NameError` instead. The trick is to name the
+    fixture explicitly with `@pytest.fixture(name="file")`. This lets you use a private
+    name for the function, such as `_file`, that doesn’t collide with the parameter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([4](ch06.html#id293-marker)) Note the somewhat uncommon spelling variant *parametrize*
+    instead of *parameterize*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([5](ch06.html#id294-marker)) Remember to add a dependency on `httpx[http2]`
+    to your project.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([6](ch06.html#id295-marker)) The [cookiecutter-pytest-plugin](https://github.com/pytest-dev/cookiecutter-pytest-plugin)
+    template gives you a solid project structure for writing your own plugin.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([7](ch06.html#id296-marker)) *Test double* is the umbrella term for the various
+    kinds of objects tests use in lieu of the real objects used in production code.
+    A good overview is [“Mocks Aren’t Stubs”](https://martinfowler.com/articles/mocksArentStubs.html)
+    by Martin Fowler, January 2, 2007.
+  prefs: []
+  type: TYPE_NORMAL

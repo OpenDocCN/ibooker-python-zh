@@ -1,0 +1,2158 @@
+- en: Chapter 6\. Matrix and Vector Computation
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Regardless of what problem you are trying to solve on a computer, you will encounter
+    vector computation at some point. Vector calculations are integral to how a computer
+    works and how it tries to speed up runtimes of programs down at the silicon level—the
+    only thing the computer knows how to do is operate on numbers, and knowing how
+    to do several of those calculations at once will speed up your program.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this chapter we try to unwrap some of the complexities of this problem by
+    focusing on a relatively simple mathematical problem, solving the diffusion equation,
+    and understanding what is happening at the CPU level. By understanding how different
+    Python code affects the CPU and how to effectively probe these things, we can
+    learn how to understand other problems as well.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We will start by introducing the problem and coming up with a quick solution
+    using pure Python. After identifying some memory issues and trying to fix them
+    using pure Python, we will introduce `numpy` and identify how and why it speeds
+    up our code. Then we will start doing some algorithmic changes and specialize
+    our code to solve the problem at hand. By removing some of the generality of the
+    libraries we are using, we will yet again be able to gain more speed. Next, we
+    introduce some extra modules that will help facilitate this sort of process out
+    in the field, and also explore a cautionary tale about optimizing before profiling.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Finally, we’ll take a look at the Pandas library, which builds upon `numpy`
+    by taking columns of homogeneous data and storing them in a table of heterogeneous
+    types. Pandas has grown beyond using pure `numpy` types and now can mix its own
+    missing-data-aware types with `numpy` datatypes. While Pandas is incredibly popular
+    with scientific developers and data scientists, there’s a lot of misinformation
+    about ways to make it run quickly; we address some of these issues and give you
+    tips for writing performant and supportable analysis code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Introduction to the Problem
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: To explore matrix and vector computation in this chapter, we will repeatedly
+    use the example of diffusion in fluids. Diffusion is one of the mechanisms that
+    moves fluids and tries to make them uniformly mixed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: This section is meant to give a deeper understanding of the equations we will
+    be solving throughout the chapter. It is not strictly necessary that you understand
+    this section in order to approach the rest of the chapter. If you wish to skip
+    this section, make sure to at least look at the algorithm in Examples [6-1](ch06_split_000.xhtml#matrix_algo1)
+    and [6-2](ch06_split_000.xhtml#matrix_algo2) to understand the code we will be
+    optimizing.
+  prefs: []
+  type: TYPE_NORMAL
+- en: On the other hand, if you read this section and want even more explanation,
+    read Chapter 17 of [*Numerical Recipes*](https://oreil.ly/sSz8s), 3rd Edition,
+    by William Press et al. (Cambridge University Press).
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this section we will explore the mathematics behind the diffusion equation.
+    This may seem complicated, but don’t worry! We will quickly simplify this to make
+    it more understandable. Also, it is important to note that while having a basic
+    understanding of the final equation we are solving will be useful while reading
+    this chapter, it is not completely necessary; the subsequent chapters will focus
+    mainly on various formulations of the code, not the equation. However, having
+    an understanding of the equations will help you gain intuition about ways of optimizing
+    your code. This is true in general—understanding the motivation behind your code
+    and the intricacies of the algorithm will give you deeper insight about possible
+    methods of optimization.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'One simple example of diffusion is dye in water: if you put several drops of
+    dye into water at room temperature, the dye will slowly move out until it fully
+    mixes with the water. Since we are not stirring the water, nor is it warm enough
+    to create convection currents, diffusion will be the main process mixing the two
+    liquids. When solving these equations numerically, we pick what we want the initial
+    condition to look like and are able to evolve the initial condition forward in
+    time to see what it will look like at a later time (see [Figure 6-2](ch06_split_000.xhtml#matrix_diffusion_image)).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'All this being said, the most important thing to know about diffusion for our
+    purposes is its formulation. Stated as a partial differential equation in one
+    dimension (1D), the diffusion equation is written as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math display="block"><mrow><mfrac><mi>∂</mi> <mrow><mi>∂</mi><mi>t</mi></mrow></mfrac>
+    <mi>u</mi> <mrow><mo>(</mo> <mi>x</mi> <mo>,</mo> <mi>t</mi> <mo>)</mo></mrow>
+    <mo>=</mo> <mi>D</mi> <mo>·</mo> <mfrac><msup><mi>∂</mi> <mn>2</mn></msup> <mrow><mi>∂</mi><msup><mi>x</mi>
+    <mn>2</mn></msup></mrow></mfrac> <mi>u</mi> <mrow><mo>(</mo> <mi>x</mi> <mo>,</mo>
+    <mi>t</mi> <mo>)</mo></mrow></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this formulation, `u` is the vector representing the quantities we are diffusing.
+    For example, we could have a vector with values of `0` where there is only water,
+    and of `1` where there is only dye (and values in between where there is mixing).
+    In general, this will be a 2D or 3D matrix representing an actual area or volume
+    of fluid. In this way, we could have `u` be a 3D matrix representing the fluid
+    in a glass, and instead of simply doing the second derivative along the `x` direction,
+    we’d have to take it over all axes. In addition, `D` is a physical value that
+    represents properties of the fluid we are simulating. A large value of `D` represents
+    a fluid that can diffuse very easily. For simplicity, we will set `D = 1` for
+    our code but still include it in the calculations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: The diffusion equation is also called the *heat equation*. In this case, `u`
+    represents the temperature of a region, and `D` describes how well the material
+    conducts heat. Solving the equation tells us how the heat is being transferred.
+    So instead of solving for how a couple of drops of dye diffuse through water,
+    we might be solving for how the heat generated by a CPU diffuses into a heat sink.
+  prefs: []
+  type: TYPE_NORMAL
+- en: What we will do is take the diffusion equation, which is continuous in space
+    and time, and approximate it using discrete volumes and discrete times. We will
+    do so using Euler’s method. *Euler’s method* simply takes the derivative and writes
+    it as a difference, such that
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math display="block"><mrow><mfrac><mi>∂</mi> <mrow><mi>∂</mi><mi>t</mi></mrow></mfrac>
+    <mi>u</mi> <mrow><mo>(</mo> <mi>x</mi> <mo>,</mo> <mi>t</mi> <mo>)</mo></mrow>
+    <mo>≈</mo> <mfrac><mrow><mi>u</mi><mo>(</mo><mi>x</mi><mo>,</mo><mi>t</mi><mo>+</mo><mi>d</mi><mi>t</mi><mo>)</mo><mo>–</mo><mi>u</mi><mo>(</mo><mi>x</mi><mo>,</mo><mi>t</mi><mo>)</mo></mrow>
+    <mrow><mi>d</mi><mi>t</mi></mrow></mfrac></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'where `dt` is now a fixed number. This fixed number represents the time step,
+    or the resolution in time for which we wish to solve this equation. It can be
+    thought of as the frame rate of the movie we are trying to make. As the frame
+    rate goes up (or `dt` goes down), we get a clearer picture of what happens. In
+    fact, as `dt` approaches zero, Euler’s approximation becomes exact (note, however,
+    that this exactness can be achieved only theoretically, since there is only finite
+    precision on a computer and numerical errors will quickly dominate any results).
+    We can thus rewrite this equation to figure out what `u(x, t + dt)` is, given
+    `u(x,t)`. What this means for us is that we can start with some initial state
+    (`u(x,0)`, representing the glass of water just as we add a drop of dye into it)
+    and churn through the mechanisms we’ve outlined to “evolve” that initial state
+    and see what it will look like at future times (`u(x,dt)`). This type of problem
+    is called an *initial value problem* or *Cauchy problem*. Doing a similar trick
+    for the derivative in `x` using the finite differences approximation, we arrive
+    at the final equation:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math display="block"><mrow><mi>u</mi> <mrow><mo>(</mo> <mi>x</mi> <mo>,</mo>
+    <mi>t</mi> <mo>+</mo> <mi>d</mi> <mi>t</mi> <mo>)</mo></mrow> <mo>=</mo> <mi>u</mi>
+    <mrow><mo>(</mo> <mi>x</mi> <mo>,</mo> <mi>t</mi> <mo>)</mo></mrow> <mo>+</mo>
+    <mi>d</mi> <mi>t</mi> <mo>*</mo> <mi>D</mi> <mo>*</mo> <mfrac><mrow><mi>u</mi><mo>(</mo><mi>x</mi><mo>+</mo><mi>d</mi><mi>x</mi><mo>,</mo><mi>t</mi><mo>)</mo><mo>+</mo><mi>u</mi><mo>(</mo><mi>x</mi><mo>–</mo><mi>d</mi><mi>x</mi><mo>,</mo><mi>t</mi><mo>)</mo><mo>–</mo><mn>2</mn><mo>·</mo><mi>u</mi><mo>(</mo><mi>x</mi><mo>,</mo><mi>t</mi><mo>)</mo></mrow>
+    <mrow><mi>d</mi><msup><mi>x</mi> <mn>2</mn></msup></mrow></mfrac></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: Here, similar to how `dt` represents the frame rate, `dx` represents the resolution
+    of the images—the smaller `dx` is, the smaller a region every cell in our matrix
+    represents. For simplicity, we will set `D = 1` and `dx = 1`. These two values
+    become very important when doing proper physical simulations; however, since we
+    are solving the diffusion equation for illustrative purposes, they are not important
+    to us.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using this equation, we can solve almost any diffusion problem. However, there
+    are some considerations regarding this equation. First, we said before that the
+    spatial index in `u` (i.e., the `x` parameter) will be represented as the indices
+    into a matrix. What happens when we try to find the value at `x – dx` when `x`
+    is at the beginning of the matrix? This problem is called the *boundary condition*.
+    You can have fixed boundary conditions that say “any value out of the bounds of
+    my matrix will be set to *0*” (or any other value). Alternatively, you can have
+    periodic boundary conditions that say that the values will wrap around. (That
+    is, if one of the dimensions of your matrix has length `N`, the value in that
+    dimension at index `-1` is the same as at `N – 1`, and the value at `N` is the
+    same as at index `0`. In other words, if you are trying to access the value at
+    index `i`, you will get the value at index `(i%N)`.)
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Another consideration is how we are going to store the multiple time components
+    of `u`. We could have one matrix for every time value we do our calculation for.
+    At minimum, it seems that we will need two matrices: one for the current state
+    of the fluid and one for the next state of the fluid. As we’ll see, there are
+    very drastic performance considerations for this particular question.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: So what does it look like to solve this problem in practice? [Example 6-1](ch06_split_000.xhtml#matrix_algo1)
+    contains some pseudocode to illustrate the way we can use our equation to solve
+    the problem.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-1\. Pseudocode for 1D diffusion
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: This code will take an initial condition of the dye in water and tell us what
+    the system looks like at every 0.0001-second interval in the future. The results
+    can be seen in [Figure 6-1](ch06_split_000.xhtml#matrix_diffusion_1d_image), where
+    we evolve our very concentrated drop of dye (represented by the top-hat function)
+    into the future. We can see how, far into the future, the dye becomes well mixed,
+    to the point where everywhere has a similar concentration of the dye.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Example of 1D diffusion](Images/hpp2_0601.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6-1\. Example of 1D diffusion
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'For the purposes of this chapter, we will be solving the 2D version of the
+    preceding equation. All this means is that instead of operating over a vector
+    (or in other words, a matrix with one index), we will be operating over a 2D matrix.
+    The only change to the equation (and thus to the subsequent code) is that we must
+    now also take the second derivative in the `y` direction. This simply means that
+    the original equation we were working with becomes the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math display="block"><mrow><mfrac><mi>∂</mi> <mrow><mi>∂</mi><mi>t</mi></mrow></mfrac>
+    <mi>u</mi> <mrow><mo>(</mo> <mi>x</mi> <mo>,</mo> <mi>y</mi> <mo>,</mo> <mi>t</mi>
+    <mo>)</mo></mrow> <mo>=</mo> <mi>D</mi> <mo>·</mo> <mfenced separators="" open="("
+    close=")"><mfrac><msup><mi>∂</mi> <mn>2</mn></msup> <mrow><mi>∂</mi><msup><mi>x</mi>
+    <mn>2</mn></msup></mrow></mfrac> <mi>u</mi> <mrow><mo>(</mo> <mi>x</mi> <mo>,</mo>
+    <mi>y</mi> <mo>,</mo> <mi>t</mi> <mo>)</mo></mrow> <mo>+</mo> <mfrac><msup><mi>∂</mi>
+    <mn>2</mn></msup> <mrow><mi>∂</mi><msup><mi>y</mi> <mn>2</mn></msup></mrow></mfrac>
+    <mi>u</mi> <mrow><mo>(</mo> <mi>x</mi> <mo>,</mo> <mi>y</mi> <mo>,</mo> <mi>t</mi>
+    <mo>)</mo></mrow></mfenced></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: This numerical diffusion equation in 2D translates to the pseudocode in [Example 6-2](ch06_split_000.xhtml#matrix_algo2),
+    using the same methods we used before.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-2\. Algorithm for calculating 2D diffusion
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: We can now put all of this together and write the full Python 2D diffusion code
+    that we will use as the basis for our benchmarks for the rest of this chapter.
+    While the code looks more complicated, the results are similar to that of the
+    1D diffusion (as can be seen in [Figure 6-2](ch06_split_000.xhtml#matrix_diffusion_image)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you’d like to do some additional reading on the topics in this section, check
+    out the [Wikipedia page on the diffusion equation](http://bit.ly/diffusion_eq)
+    and [Chapter 7](http://bit.ly/Gurevich) of *Numerical Methods for Complex Systems*
+    by S. V. Gurevich.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Example of 2D diffusion for two sets of initial conditions](Images/hpp2_0602.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6-2\. Example of 2D diffusion for two sets of initial conditions
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Aren’t Python Lists Good Enough?
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Let’s take our pseudocode from [Example 6-1](ch06_split_000.xhtml#matrix_algo1)
+    and formalize it so we can better analyze its runtime performance. The first step
+    is to write out the evolution function that takes in the matrix and returns its
+    evolved state. This is shown in [Example 6-3](ch06_split_000.xhtml#matrix_pure_python).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-3\. Pure Python 2D diffusion
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Instead of preallocating the `new_grid` list, we could have built it up in the
+    `for` loop by using `append`s. While this would have been noticeably faster than
+    what we have written, the conclusions we draw are still applicable. We chose this
+    method because it is more illustrative.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The global variable `grid_shape` designates how big a region we will simulate;
+    and, as explained in [“Introduction to the Problem”](ch06_split_000.xhtml#matrix_intro),
+    we are using periodic boundary conditions (which is why we use modulo for the
+    indices). To actually use this code, we must initialize a grid and call `evolve`
+    on it. The code in [Example 6-4](ch06_split_000.xhtml#matrix_pure_python_run)
+    is a very generic initialization procedure that will be reused throughout the
+    chapter (its performance characteristics will not be analyzed since it must run
+    only once, as opposed to the `evolve` function, which is called repeatedly).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-4\. Pure Python 2D diffusion initialization
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](Images/1.png)](ch06_split_000.xhtml#co_matrix_and_vector_computation_CO1-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The initial conditions used here are the same as in the square example in [Figure 6-2](ch06_split_000.xhtml#matrix_diffusion_image).
+  prefs: []
+  type: TYPE_NORMAL
+- en: The values for `dt` and grid elements have been chosen to be sufficiently small
+    that the algorithm is stable. See [*Numerical Recipes*](https://oreil.ly/O8Seo)
+    for a more in-depth treatment of this algorithm’s convergence characteristics.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Problems with Allocating Too Much
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: By using `line_profiler` on the pure Python evolution function, we can start
+    to unravel what is contributing to a possibly slow runtime. Looking at the profiler
+    output in [Example 6-5](ch06_split_000.xhtml#matrix_pure_python_lineprof), we
+    see that most of the time in the function is spent doing the derivative calculation
+    and updating the grid.^([1](ch06_split_001.xhtml#idm46122422174440)) This is what
+    we want, since this is a purely CPU-bound problem—any time not spent on solving
+    the CPU-bound problem is an obvious place for optimization.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-5\. Pure Python 2D diffusion profiling
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](Images/1.png)](ch06_split_000.xhtml#co_matrix_and_vector_computation_CO2-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This statement takes such a long time per hit because `grid_shape` must be retrieved
+    from the local namespace (see [“Dictionaries and Namespaces”](ch04.xhtml#dict_namespace)
+    for more information).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](Images/2.png)](ch06_split_000.xhtml#co_matrix_and_vector_computation_CO2-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This line has 320,500 hits associated with it, because the grid we operated
+    over had `xmax = 640` and the we ran the function 500 times. The calculation is
+    `(640 + 1) * 500`, where the extra one evaluation is from the termination of the
+    loop.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](Images/3.png)](ch06_split_000.xhtml#co_matrix_and_vector_computation_CO2-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This line has 500 hits associated with it, which informs us that the function
+    was profiled over 500 runs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: It’s interesting to see the big difference in the `Per Hit` and `% Time` fields
+    for line 15, where we allocate the new grid. This difference occurs because, while
+    the line itself is quite slow (the `Per Hit` field shows that each run takes 0.0495
+    seconds, much slower than all other lines), it isn’t called as often as other
+    lines inside the loop. If we were to reduce the size of the grid and do more iterations
+    (i.e., reduce the number of iterations of the loop but increase the number of
+    times we call the function), we would see the `% Time` of this line increase and
+    quickly dominate the runtime.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This is a waste, because the properties of `new_grid` do not change—no matter
+    what values we send to `evolve`, the `new_grid` list will always be the same shape
+    and size and contain the same values. A simple optimization would be to allocate
+    this list once and simply reuse it. This way, we need to run this code only once,
+    no matter the size of the grid or the number of iterations. This sort of optimization
+    is similar to moving repetitive code outside a fast loop:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](Images/1.png)](ch06_split_000.xhtml#co_matrix_and_vector_computation_CO3-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The value of `sin(num_iterations)` doesn’t change throughout the loop, so there
+    is no use recalculating it every time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We can do a similar transformation to our diffusion code, as illustrated in
+    [Example 6-6](ch06_split_000.xhtml#matrix_pure_python_memory). In this case, we
+    would want to instantiate `new_grid` in [Example 6-4](ch06_split_000.xhtml#matrix_pure_python_run)
+    and send it in to our `evolve` function. That function will do the same as it
+    did before: read the `grid` list and write to the `new_grid` list. Then we can
+    simply swap `new_grid` with `grid` and continue again.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-6\. Pure Python 2D diffusion after reducing memory allocations
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We can see from the line profile of the modified version of the code in [Example 6-7](ch06_split_000.xhtml#matrix_pure_python_mem_lineprof)
+    that this small change has given us a 31.25% speedup.^([2](ch06_split_001.xhtml#idm46122422123864))
+    This leads us to a conclusion similar to the one made during our discussion of
+    `append` operations on lists (see [“Lists as Dynamic Arrays”](ch03.xhtml#list_as_dynamic_arrays)):
+    memory allocations are not cheap. Every time we request memory to store a variable
+    or a list, Python must take its time to talk to the operating system in order
+    to allocate the new space, and then we must iterate over the newly allocated space
+    to initialize it to some value.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Whenever possible, reusing space that has already been allocated will give performance
+    speedups. However, be careful when implementing these changes. While the speedups
+    can be substantial, as always you should profile to make sure you are achieving
+    the results you want and are not simply polluting your code base.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-7\. Line profiling Python diffusion after reducing allocations
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: Memory Fragmentation
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The Python code we wrote in [Example 6-6](ch06_split_000.xhtml#matrix_pure_python_memory)
+    still has a problem that is at the heart of using Python for these sorts of vectorized
+    operations: Python doesn’t natively support vectorization. There are two reasons
+    for this: Python lists store pointers to the actual data, and Python bytecode
+    is not optimized for vectorization, so `for` loops cannot predict when using vectorization
+    would be beneficial.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The fact that Python lists store *pointers* means that, instead of actually
+    holding the data we care about, lists store locations where that data can be found.
+    For most uses, this is good because it allows us to store whatever type of data
+    we like inside a list. However, when it comes to vector and matrix operations,
+    this is a source of a lot of performance degradation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The degradation occurs because every time we want to fetch an element from the
+    `grid` matrix, we must do multiple lookups. For example, doing `grid[5][2]` requires
+    us to first do a list lookup for index `5` on the list `grid`. This will return
+    a pointer to where the data at that location is stored. Then we need to do another
+    list lookup on this returned object, for the element at index `2`. Once we have
+    this reference, we have the location where the actual data is stored.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Rather than creating a grid as a list-of-lists (`grid[x][y]`), how would you
+    create a grid indexed by a tuple (`grid[(x, y)]`)? How would this affect the performance
+    of the code?
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The overhead for one such lookup is not big and can be, in most cases, disregarded.
+    However, if the data we wanted was located in one contiguous block in memory,
+    we could move *all* of the data in one operation instead of needing two operations
+    for each element. This is one of the major points with data fragmentation: when
+    your data is fragmented, you must move each piece over individually instead of
+    moving the entire block over. This means you are invoking more memory transfer
+    overhead, and you are forcing the CPU to wait while data is being transferred.
+    We will see with `perf` just how important this is when looking at the `cache-misses`.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This problem of getting the right data to the CPU when it is needed is related
+    to the *von Neumann bottleneck*. This refers to the limited bandwidth that exists
+    between the memory and the CPU as a result of the tiered memory architecture that
+    modern computers use. If we could move data infinitely fast, we would not need
+    any cache, since the CPU could retrieve any data it needed instantly. This would
+    be a state in which the bottleneck is nonexistent.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Since we can’t move data infinitely fast, we must prefetch data from RAM and
+    store it in smaller but faster CPU caches so that, hopefully, when the CPU needs
+    a piece of data, it will be in a location that can be read from quickly. While
+    this is a severely idealized way of looking at the architecture, we can still
+    see some of the problems with it—how do we know what data will be needed in the
+    future? The CPU does a good job with mechanisms called *branch prediction* and
+    *pipelining*, which try to predict the next instruction and load the relevant
+    portions of memory into the cache while still working on the current instruction.
+    However, the best way to minimize the effects of the bottleneck is to be smart
+    about how we allocate our memory and how we do our calculations over our data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Probing how well memory is being moved to the CPU can be quite hard; however,
+    in Linux the `perf` tool can be used to get amazing amounts of insight into how
+    the CPU is dealing with the program being run.^([3](ch06_split_001.xhtml#idm46122420832696))
+    For example, we can run `perf` on the pure Python code from [Example 6-6](ch06_split_000.xhtml#matrix_pure_python_memory)
+    and see just how efficiently the CPU is running our code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The results are shown in [Example 6-8](ch06_split_000.xhtml#matrix_perf_python_memory).
+    Note that the output in this example and the following `perf` examples has been
+    truncated to fit within the margins of the page. The removed data included variances
+    for each measurement, indicating how much the values changed throughout multiple
+    benchmarks. This is useful for seeing how much a measured value is dependent on
+    the actual performance characteristics of the program versus other system properties,
+    such as other running programs using system resources.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Example 6-8\. Performance counters for pure Python 2D diffusion with reduced
+    memory allocations (grid size: 640 × 640, 500 iterations)'
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: Understanding perf
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Let’s take a second to understand the various performance metrics that `perf`
+    is giving us and their connection to our code. The `task-clock` metric tells us
+    how many clock cycles our task took. This is different from the total runtime,
+    because if our program took one second to run but used two CPUs, then the task-clock
+    would be `2000` (`task-clock` is generally in milliseconds). Conveniently, `perf`
+    does the calculation for us and tells us, next to this metric, how many CPUs were
+    utilized (where it says “XXXX CPUs utilized”). This number wouldn’t be exactly
+    `2` even when two CPUs are being used, though, because the process sometimes relied
+    on other subsystems to do instructions for it (for example, when memory was allocated).
+  prefs: []
+  type: TYPE_NORMAL
+- en: On the other hand, `instructions` tells us how many CPU instructions our code
+    issued, and `cycles` tells us how many CPU cycles it took to run all of these
+    instructions. The difference between these two numbers gives us an indication
+    of how well our code is vectorizing and pipelining. With pipelining, the CPU is
+    able to run the current operation while fetching and preparing the next one.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`cs` (representing “context switches”) and `CPU-migrations` tell us about how
+    the program is halted in order to wait for a kernel operation to finish (such
+    as I/O), to let other applications run, or to move execution to another CPU core.
+    When a `context-switch` happens, the program’s execution is halted and another
+    program is allowed to run instead. This is a *very* time-intensive task and is
+    something we would like to minimize as much as possible, but we don’t have too
+    much control over when this happens. The kernel delegates when programs are allowed
+    to be switched out; however, we can do things to disincentivize the kernel from
+    moving *our* program. In general, the kernel suspends a program when it is doing
+    I/O (such as reading from memory, disk, or the network). As you’ll see in later
+    chapters, we can use asynchronous routines to make sure that our program still
+    uses the CPU even when waiting for I/O, which will let us keep running without
+    being context-switched. In addition, we could set the `nice` value of our program
+    to give our program priority and stop the kernel from context-switching it.^([4](ch06_split_001.xhtml#idm46122421125416))
+    Similarly, `CPU-migrations` happen when the program is halted and resumed on a
+    different CPU than the one it was on before, in order to have all CPUs have the
+    same level of utilization. This can be seen as an especially bad context switch,
+    as not only is our program being temporarily halted, but we also lose whatever
+    data we had in the L1 cache (recall that each CPU has its own L1 cache).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'A `page-fault` (or just `fault`) is part of the modern Unix memory allocation
+    scheme. When memory is allocated, the kernel doesn’t do much except give the program
+    a reference to memory. Later, however, when the memory is first used, the operating
+    system throws a minor page fault interrupt, which pauses the program that is being
+    run and properly allocates the memory. This is called a *lazy allocation system*.
+    While this method is an optimization over previous memory allocation systems,
+    minor page faults are quite an expensive operation since most of the operations
+    are done outside the scope of the program you are running. There is also a major
+    page fault, which happens when the program requests data from a device (disk,
+    network, etc.) that hasn’t been read yet. These are even more expensive operations:
+    not only do they interrupt your program, but they also involve reading from whichever
+    device the data lives on. This sort of page fault does not generally affect CPU-bound
+    work; however, it will be a source of pain for any program that does disk or network
+    reads/writes.^([5](ch06_split_001.xhtml#idm46122421117832))'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Once we have data in memory and we reference it, the data makes its way through
+    the various tiers of memory (L1/L2/L3 memory—see [“Communications Layers”](ch01_split_000.xhtml#understanding_pp_communication)
+    for a discussion of this). Whenever we reference data that is in our cache, the
+    `cache-references` metric increases. If we do not already have this data in the
+    cache and need to fetch it from RAM, this counts as a `cache-miss`. We won’t get
+    a cache miss if we are reading data we have read recently (that data will still
+    be in the cache) or data that is located *near* data we have recently read (data
+    is sent from RAM into the cache in chunks). Cache misses can be a source of slowdowns
+    when it comes to CPU-bound work, since we need to wait to fetch the data from
+    RAM *and* we interrupt the flow of our execution pipeline (more on this in a second).
+    As a result, reading through an array in order will give many `cache-references`
+    but not many `cache-misses` since if we read element `i`, element `i + 1` will
+    already be in cache. If, however, we read randomly through an array or otherwise
+    don’t lay out our data in memory well, every read will require access to data
+    that couldn’t possibly already be in cache. Later in this chapter we will discuss
+    how to reduce this effect by optimizing the layout of data in memory.
+  prefs: []
+  type: TYPE_NORMAL
+- en: A `branch` is a time in the code where the execution flow changes. Think of
+    an `if...then` statement—depending on the result of the conditional, we will be
+    executing either one section of code or another. This is essentially a branch
+    in the execution of the code—the next instruction in the program could be one
+    of two things. To optimize this, especially with regard to the pipeline, the CPU
+    tries to guess which direction the branch will take and preload the relevant instructions.
+    When this prediction is incorrect, we will get a `branch-miss`. Branch misses
+    can be quite confusing and can result in many strange effects (for example, some
+    loops will run substantially faster on sorted lists than on unsorted lists simply
+    because there will be fewer branch misses).^([6](ch06_split_001.xhtml#idm46122421106008))
+  prefs: []
+  type: TYPE_NORMAL
+- en: There are a lot more metrics that `perf` can keep track of, many of which are
+    very specific to the CPU you are running the code on. You can run `perf list`
+    to get the list of currently supported metrics on your system. For example, in
+    the previous edition of this book, we ran on a machine that also supported `stalled-cycles-frontend`
+    and `stalled-cycles-backend`, which tell us how many cycles our program was waiting
+    for the frontend or backend of the pipeline to be filled. This can happen because
+    of a cache miss, a mispredicted branch, or a resource conflict. The frontend of
+    the pipeline is responsible for fetching the next instruction from memory and
+    decoding it into a valid operation, while the backend is responsible for actually
+    running the operation. These sorts of metrics can help tune the performance of
+    a code to the optimizations and architecture choices of a particular CPU; however,
+    unless you are always running on the same chip-set, it may be excessive to worry
+    too much about them.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: If you would like a more thorough explanation of what is going on at the CPU
+    level with the various performance metrics, check out Gurpur M. Prabhu’s fantastic
+    [“Computer Architecture Tutorial.”](http://bit.ly/ca_tutorial) It deals with the
+    problems at a very low level, which will give you a good understanding of what
+    is going on under the hood when you run your code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Making Decisions with perf’s Output
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: With all this in mind, the performance metrics in [Example 6-8](ch06_split_000.xhtml#matrix_perf_python_memory)
+    are telling us that while running our code, the CPU had to reference the L1/L2
+    cache 656,345,027 times. Of those references, 349,562,390 (or 53.3%) were requests
+    for data that wasn’t in memory at the time and had to be retrieved. In addition,
+    we can see that in each CPU cycle we are able to perform an average of 2.91 instructions,
+    which tells us the total speed boost from pipelining, out-of-order execution,
+    and hyperthreading (or any other CPU feature that lets you run more than one instruction
+    per clock cycle).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Fragmentation increases the number of memory transfers to the CPU. Additionally,
+    since you don’t have multiple pieces of data ready in the CPU cache when a calculation
+    is requested, you cannot vectorize the calculations. As explained in [“Communications
+    Layers”](ch01_split_000.xhtml#understanding_pp_communication), vectorization of
+    computations (or having the CPU do multiple computations at a time) can occur
+    only if we can fill the CPU cache with all the relevant data. Since the bus can
+    only move contiguous chunks of memory, this is possible only if the grid data
+    is stored sequentially in RAM. Since a list stores pointers to data instead of
+    the actual data, the actual values in the grid are scattered throughout memory
+    and cannot be copied all at once.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We can alleviate this problem by using the `array` module instead of lists.
+    These objects store data sequentially in memory, so that a slice of the `array`
+    actually represents a continuous range in memory. However, this doesn’t completely
+    fix the problem—now we have data that is stored sequentially in memory, but Python
+    still does not know how to vectorize our loops. What we would like is for any
+    loop that does arithmetic on our array one element at a time to work on chunks
+    of data, but as mentioned previously, there is no such bytecode optimization in
+    Python (partly because of the extremely dynamic nature of the language).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Why doesn’t having the data we want stored sequentially in memory automatically
+    give us vectorization? If we look at the raw machine code that the CPU is running,
+    vectorized operations (such as multiplying two arrays) use a different part of
+    the CPU and different instructions than nonvectorized operations. For Python to
+    use these special instructions, we must have a module that was created to use
+    them. We will soon see how `numpy` gives us access to these specialized instructions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Furthermore, because of implementation details, using the `array` type when
+    creating lists of data that must be iterated on is actually *slower* than simply
+    creating a `list`. This is because the `array` object stores a very low-level
+    representation of the numbers it stores, and this must be converted into a Python-compatible
+    version before being returned to the user. This extra overhead happens every time
+    you index an `array` type. That implementation decision has made the `array` object
+    less suitable for math and more suitable for storing fixed-type data more efficiently
+    in memory.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Enter numpy
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'To deal with the fragmentation we found using `perf`, we must find a package
+    that can efficiently vectorize operations. Luckily, `numpy` has all of the features
+    we need—it stores data in contiguous chunks of memory and supports vectorized
+    operations on its data. As a result, any arithmetic we do on `numpy` arrays happens
+    in chunks without us having to explicitly loop over each element.^([7](ch06_split_001.xhtml#idm46122421072568))
+    Not only is it much easier to do matrix arithmetic this way, but it is also faster.
+    Let’s look at an example:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](Images/1.png)](ch06_split_000.xhtml#co_matrix_and_vector_computation_CO4-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This creates two implied loops over `vector`, one to do the multiplication and
+    one to do the sum. These loops are similar to the loops from `norm_square_list_comprehension`,
+    but they are executed using `numpy`’s optimized numerical code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](Images/2.png)](ch06_split_000.xhtml#co_matrix_and_vector_computation_CO4-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This is the preferred way of doing vector norms in `numpy` by using the vectorized
+    `numpy.dot` operation. The less efficient `norm_square_numpy` code is provided
+    for illustration.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The simpler `numpy` code runs 89× faster than `norm_square_list` and 83.65×
+    faster than the “optimized” Python list comprehension. The difference in speed
+    between the pure Python looping method and the list comprehension method shows
+    the benefit of doing more calculation behind the scenes rather than explicitly
+    in your Python code. By performing calculations using Python’s already-built machinery,
+    we get the speed of the native C code that Python is built on. This is also partly
+    the same reasoning behind why we have such a drastic speedup in the `numpy` code:
+    instead of using the generalized list structure, we have a finely tuned and specially
+    built object for dealing with arrays of numbers.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In addition to more lightweight and specialized machinery, the `numpy` object
+    gives us memory locality and vectorized operations, which are incredibly important
+    when dealing with numerical computations. The CPU is exceedingly fast, and most
+    of the time simply getting it the data it needs faster is the best way to optimize
+    code quickly. Running each function using the `perf` tool we looked at earlier
+    shows that the `array` and pure Python functions take about 10^(12) instructions,
+    while the `numpy` version takes about 10⁹ instructions. In addition, the `array`
+    and pure Python versions have around 53% cache misses, while `numpy` has around
+    20%.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In our `norm_square_numpy` code, when doing `vector * vector`, there is an
+    *implied* loop that `numpy` will take care of. The implied loop is the same loop
+    we have explicitly written out in the other examples: loop over all items in `vector`,
+    multiplying each item by itself. However, since we tell `numpy` to do this instead
+    of explicitly writing it out in Python code, `numpy` can take advantage of all
+    the optimizations it wants. In the background, `numpy` has very optimized C code
+    that has been made specifically to take advantage of any vectorization the CPU
+    has enabled. In addition, `numpy` arrays are represented sequentially in memory
+    as low-level numerical types, which gives them the same space requirements as
+    `array` objects (from the `array` module).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: As an added bonus, we can reformulate the problem as a dot product, which `numpy`
+    supports. This gives us a single operation to calculate the value we want, as
+    opposed to first taking the product of the two vectors and then summing them.
+    As you can see in [Figure 6-3](ch06_split_000.xhtml#matrix_norm_squared_figure),
+    this operation, `norm_numpy_dot`, outperforms all the others by quite a substantial
+    margin—this is thanks to the specialization of the function, and because we don’t
+    need to store the intermediate value of `vector * vector` as we did in `norm_numpy`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Runtimes for the various norm-square routines with vectors of different lenghts](Images/hpp2_0603.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6-3\. Runtimes for the various norm squared routines with vectors of
+    different length
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Applying numpy to the Diffusion Problem
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Using what we’ve learned about `numpy`, we can easily adapt our pure Python
+    code to be vectorized. The only new functionality we must introduce is `numpy`’s
+    `roll` function. This function does the same thing as our modulo-index trick,
+    but it does so for an entire `numpy` array. In essence, it vectorizes this reindexing:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: The `roll` function creates a new `numpy` array, which can be thought of as
+    both good and bad. The downside is that we are taking time to allocate new space,
+    which then needs to be filled with the appropriate data. On the other hand, once
+    we have created this new rolled array, we will be able to vectorize operations
+    on it quite quickly without suffering from cache misses from the CPU cache. This
+    can substantially affect the speed of the actual calculation we must do on the
+    grid. Later in this chapter we will rewrite this so that we get the same benefit
+    without having to constantly allocate more memory.
+  prefs: []
+  type: TYPE_NORMAL
+- en: With this additional function we can rewrite the Python diffusion code from
+    [Example 6-6](ch06_split_000.xhtml#matrix_pure_python_memory) using simpler, and
+    vectorized, `numpy` arrays. [Example 6-9](ch06_split_000.xhtml#matrix_numpy_naive)
+    shows our initial `numpy` diffusion code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-9\. Initial `numpy` diffusion
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Immediately we see that this code is much shorter. This is sometimes a good
+    indication of performance: we are doing a lot of the heavy lifting outside the
+    Python interpreter, and hopefully inside a module specially built for performance
+    and for solving a particular problem (however, this should always be tested!).
+    One of the assumptions here is that `numpy` is using better memory management
+    to give the CPU the data it needs more quickly. However, since whether this happens
+    or not relies on the actual implementation of `numpy`, let’s profile our code
+    to see whether our hypothesis is correct. [Example 6-10](ch06_split_000.xhtml#matrix_perf_numpy)
+    shows the results.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Example 6-10\. Performance counters for `numpy` 2D diffusion (grid size: 640
+    × 640, 500 iterations)'
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: This shows that the simple change to `numpy` has given us a 63.3× speedup over
+    the pure Python implementation with reduced memory allocations ([Example 6-8](ch06_split_000.xhtml#matrix_perf_python_memory)).
+    How was this achieved?
+  prefs: []
+  type: TYPE_NORMAL
+- en: First of all, we can thank the vectorization that `numpy` gives. Although the
+    `numpy` version seems to be running fewer instructions per cycle, each instruction
+    does much more work. That is to say, one vectorized instruction can multiply four
+    (or more) numbers in an array together instead of requiring four independent multiplication
+    instructions. Overall, this results in fewer total instructions being necessary
+    to solve the same problem.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Several other factors contribute to the `numpy` version requiring a lower absolute
+    number of instructions to solve the diffusion problem. One of them has to do with
+    the full Python API being available when running the pure Python version, but
+    not necessarily for the `numpy` version—for example, the pure Python grids can
+    be appended to in pure Python but not in `numpy`. Even though we aren’t explicitly
+    using this (or other) functionality, there is overhead in providing a system where
+    it *could* be available. Since `numpy` can make the assumption that the data being
+    stored is always going to be numbers, everything regarding the arrays can be optimized
+    for operations over numbers. We will continue on the track of removing necessary
+    functionality in favor of performance when we talk about Cython (see [“Cython”](ch07.xhtml#compiling-cython)),
+    where it is even possible to remove list bounds checking to speed up list lookups.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Normally, the number of instructions doesn’t necessarily correlate with performance—the
+    program with fewer instructions may not issue them efficiently, or they may be
+    slow instructions. However, we see that in addition to reducing the number of
+    instructions, the `numpy` version has also reduced a large inefficiency: cache
+    misses (20.8% cache misses instead of 53.3%). As explained in [“Memory Fragmentation”](ch06_split_000.xhtml#matrix_memory_fragmentation),
+    cache misses slow down computations because the CPU must wait for data to be retrieved
+    from slower memory instead of having the data immediately available in its cache.
+    In fact, memory fragmentation is such a dominant factor in performance that if
+    we disable vectorization in `numpy` but keep everything else the same,^([8](ch06_split_001.xhtml#idm46122420993032))
+    we still see a sizable speed increase compared to the pure Python version ([Example 6-11](ch06_split_000.xhtml#matrix_perf_numpy_novec)).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Example 6-11\. Performance counters for `numpy` 2D diffusion without vectorization
+    (grid size: 640 × 640, 500 iterations)'
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: This shows us that the dominant factor in our 63.3× speedup when introducing
+    `numpy` is not the vectorized instruction set but rather the memory locality and
+    reduced memory fragmentation. In fact, we can see from the preceding experiment
+    that vectorization accounts for only about 13% of that 63.3× speedup.^([9](ch06_split_001.xhtml#idm46122420742936))
+  prefs: []
+  type: TYPE_NORMAL
+- en: This realization that memory issues are the dominant factor in slowing down
+    our code doesn’t come as too much of a shock. Computers are very well designed
+    to do exactly the calculations we are requesting them to do with this problem—multiplying
+    and adding numbers together. The bottleneck is in getting those numbers to the
+    CPU fast enough to see it do the calculations as fast as it can.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Memory Allocations and In-Place Operations
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: To optimize the memory-dominated effects, let’s try using the same method we
+    used in [Example 6-6](ch06_split_000.xhtml#matrix_pure_python_memory) to reduce
+    the number of allocations we make in our `numpy` code. Allocations are quite a
+    bit worse than the cache misses we discussed previously. Instead of simply having
+    to find the right data in RAM when it is not found in the cache, an allocation
+    also must make a request to the operating system for an available chunk of data
+    and then reserve it. The request to the operating system generates quite a lot
+    more overhead than simply filling a cache—while filling a cache miss is a hardware
+    routine that is optimized on the motherboard, allocating memory requires talking
+    to another process, the kernel, in order to complete.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To remove the allocations in [Example 6-9](ch06_split_000.xhtml#matrix_numpy_naive),
+    we will preallocate some scratch space at the beginning of the code and then use
+    only in-place operations. In-place operations (such as `+=`, `*=`, etc.) reuse
+    one of the inputs as their output. This means that we don’t need to allocate space
+    to store the result of the calculation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To show this explicitly, we will look at how the `id` of a `numpy` array changes
+    as we perform operations on it ([Example 6-12](ch06_split_000.xhtml#matrix_numpy_inplace_example1)).
+    The `id` is a good way of tracking this for `numpy` arrays, since the `id` indicates
+    which section of memory is being referenced. If two `numpy` arrays have the same
+    `id`, they are referencing the same section of memory.^([10](ch06_split_001.xhtml#idm46122420722136))
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-12\. In-place operations reducing memory allocations
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](Images/1.png)](ch06_split_000.xhtml#CO9-1a), [![2](Images/2.png)](ch06_split_000.xhtml#CO9-2a)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: These two `id`s are the same, since we are doing an in-place operation. This
+    means that the memory address of `array1` does not change; we are simply changing
+    the data contained within it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](Images/3.png)](ch06_split_000.xhtml#CO9-3a)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Here, the memory address has changed. When doing `array1 + array2`, a new memory
+    address is allocated and filled with the result of the computation. This does
+    have benefits, however, for when the original data needs to be preserved (i.e.,
+    `array3 = array1 + array2` allows you to keep using `array1` and `array2`, while
+    in-place operations destroy some of the original data).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Furthermore, we can see an expected slowdown from the non-in-place operation.
+    In [Example 6-13](ch06_split_000.xhtml#matrix_numpy_inplace_benchmark), we see
+    that using in-place operations gives us a 27% speedup for an array of 100 × 100
+    elements. This margin will become larger as the arrays grow, since the memory
+    allocations become more strenuous. However, it is important to note that this
+    effect happens only when the array sizes are bigger than the CPU cache! When the
+    arrays are smaller and the two inputs and the output can all fit into cache, the
+    out-of-place operation is faster because it can benefit from vectorization.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-13\. Runtime differences between in-place and out-of-place operations
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](Images/1.png)](ch06_split_000.xhtml#co_matrix_and_vector_computation_CO5-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: These arrays are too big to fit into the CPU cache, and the in-place operation
+    is faster because of fewer allocations and cache misses.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](Images/2.png)](ch06_split_000.xhtml#co_matrix_and_vector_computation_CO5-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: These arrays easily fit into cache, and we see the out-of-place operations as
+    faster.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](Images/3.png)](ch06_split_000.xhtml#co_matrix_and_vector_computation_CO5-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note that we use `%%timeit` instead of `%timeit`, which allows us to specify
+    code to set up the experiment that doesn’t get timed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The downside is that while rewriting our code from [Example 6-9](ch06_split_000.xhtml#matrix_numpy_naive)
+    to use in-place operations is not very complicated, it does make the resulting
+    code a bit harder to read. In [Example 6-14](ch06_split_000.xhtml#matrix_numpy_memory1),
+    we can see the results of this refactoring. We instantiate `grid` and `next_grid`
+    vectors, and we constantly swap them with each other. `grid` is the current information
+    we know about the system, and after running `evolve`, `next_grid` contains the
+    updated information.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-14\. Making most `numpy` operations in-place
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](Images/1.png)](ch06_split_000.xhtml#co_matrix_and_vector_computation_CO6-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Since the output of `evolve` gets stored in the output vector `next_grid`, we
+    must swap these two variables so that, for the next iteration of the loop, `grid`
+    has the most up-to-date information. This swap operation is quite cheap because
+    only the references to the data are changed, not the data itself.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Warning
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: It is important to remember that since we want each operation to be in-place,
+    whenever we do a vector operation, we must put it on its own line. This can make
+    something as simple as `A = A * B + C` become quite convoluted. Since Python has
+    a heavy emphasis on readability, we should make sure that the changes we have
+    made give us sufficient speedups to be justified.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Comparing the performance metrics from Examples [6-15](ch06_split_001.xhtml#matrix_numpy_memory1_perf)
+    and [6-10](ch06_split_000.xhtml#matrix_perf_numpy), we see that removing the spurious
+    allocations sped up our code by 30.9%. This speedup comes partly from a reduction
+    in the number of cache misses but mostly from a reduction in minor faults. This
+    comes from reducing the number of memory allocations necessary in the code by
+    reusing already allocated space.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Minor faults are caused when a program accesses newly allocated space in memory.
+    Since memory addresses are lazily allocated by the kernel, when you first access
+    newly allocated data, the kernel pauses your execution while it makes sure that
+    the required space exists and creates references to it for the program to use.
+    This added machinery is quite expensive to run and can slow a program down substantially.
+    On top of those additional operations that need to be run, we also lose any state
+    that we had in cache and any possibility of doing instruction pipelining. In essence,
+    we have to drop everything we’re doing, including all associated optimizations,
+    in order to go out and allocate some memory.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Example 6-15\. Performance metrics for `numpy` with in-place memory operations
+    (grid size: 640 × 640, 500 iterations)'
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Selective Optimizations: Finding What Needs to Be Fixed'
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Looking at the code from [Example 6-14](ch06_split_000.xhtml#matrix_numpy_memory1),
+    it seems like we have addressed most of the issues at hand: we have reduced the
+    CPU burden by using `numpy`, and we have reduced the number of allocations necessary
+    to solve the problem. However, there is always more investigation to be done.
+    If we do a line profile on that code ([Example 6-16](ch06_split_001.xhtml#matrix_numpy_memory_lineprof)),
+    we see that the majority of our work is done within the `laplacian` function.
+    In fact, 84% of the time that `evolve` takes to run is spent in `laplacian`.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-16\. Line profiling shows that `laplacian` is taking too much time
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: There could be many reasons `laplacian` is so slow. However, there are two main
+    high-level issues to consider. First, it looks like the calls to `np.roll` are
+    allocating new vectors (we can verify this by looking at the documentation for
+    the function). This means that even though we removed seven memory allocations
+    in our previous refactoring, four outstanding allocations remain. Furthermore,
+    `np.roll` is a very generalized function that has a lot of code to deal with special
+    cases. Since we know exactly what we want to do (move just the first column of
+    data to be the last in every dimension), we can rewrite this function to eliminate
+    most of the spurious code. We could even merge the `np.roll` logic with the add
+    operation that happens with the rolled data to make a very specialized `roll_add`
+    function that does exactly what we want with the fewest number of allocations
+    and the least extra logic.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Example 6-17](ch06_split_001.xhtml#matrix_numpy_memory2) shows what this refactoring
+    would look like. All we need to do is create our new `roll_add` function and have
+    `laplacian` use it. Since `numpy` supports fancy indexing, implementing such a
+    function is just a matter of not jumbling up the indices. However, as stated earlier,
+    while this code may be more performant, it is much less readable.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Warning
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Notice the extra work that has gone into having an informative docstring for
+    the function, in addition to full tests. When you are taking a route similar to
+    this one, it is important to maintain the readability of the code, and these steps
+    go a long way toward making sure that your code is always doing what it was intended
+    to do and that future programmers can modify your code and know what things do
+    and when things are not working.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-17\. Creating our own `roll` function
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: If we look at the performance counters in [Example 6-18](ch06_split_001.xhtml#matrix_numpy_memory2_perf)
+    for this rewrite, we see that while it is 22% faster than [Example 6-14](ch06_split_000.xhtml#matrix_numpy_memory1),
+    most of the counters are about the same. The major difference again is `cache-misses`,
+    which is down 7×. This change also seems to have affected the throughput of instructions
+    to the CPU, increasing the instructions per cycle from 0.85 to 0.99 (a 14% gain).
+    Similarly, the faults went down 12.85%. This seems to be a result of first doing
+    the rolls in place as well as reducing the amount of `numpy` machinery that needs
+    to be in-place to do all of our desired computation. Instead of first rolling
+    our array, doing other computation required by `numpy` in order to do bounds checking
+    and error handling, and then adding the result, we are doing it all in one shot
+    and not requiring the computer to refill the cache every time. This theme of trimming
+    out unnecessary machinery in both `numpy` and Python in general will continue
+    in [“Cython”](ch07.xhtml#compiling-cython).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Example 6-18\. Performance metrics for `numpy` with in-place memory operations
+    and custom `laplacian` function (grid size: 640 × 640, 500 iterations)'
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'numexpr: Making In-Place Operations Faster and Easier'
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: One downfall of `numpy`’s optimization of vector operations is that it occurs
+    on only one operation at a time. That is to say, when we are doing the operation
+    `A * B + C` with `numpy` vectors, first the entire `A * B` operation completes,
+    and the data is stored in a temporary vector; then this new vector is added with
+    `C`. The in-place version of the diffusion code in [Example 6-14](ch06_split_000.xhtml#matrix_numpy_memory1)
+    shows this quite explicitly.
+  prefs: []
+  type: TYPE_NORMAL
+- en: However, many modules can help with this. `numexpr` is a module that can take
+    an entire vector expression and compile it into very efficient code that is optimized
+    to minimize cache misses and temporary space used. In addition, the expressions
+    can utilize multiple CPU cores (see [Chapter 9](ch09_split_000.xhtml#multiprocessing)
+    for more information) and take advantage of the specialized instructions your
+    CPU may support in order to get even greater speedups. It even supports OpenMP,
+    which parallels out operations across multiple cores on your machine.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'It is very easy to change code to use `numexpr`: all that’s required is to
+    rewrite the expressions as strings with references to local variables. The expressions
+    are compiled behind the scenes (and cached so that calls to the same expression
+    don’t incur the same cost of compilation) and run using optimized code. [Example 6-19](ch06_split_001.xhtml#matrix_numpy_numexpr)
+    shows the simplicity of changing the `evolve` function to use `numexpr`. In this
+    case, we chose to use the `out` parameter of the `evaluate` function so that `numexpr`
+    doesn’t allocate a new vector to which to return the result of the calculation.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-19\. Using `numexpr` to further optimize large matrix operations
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: An important feature of `numexpr` is its consideration of CPU caches. It specifically
+    moves data around so that the various CPU caches have the correct data in order
+    to minimize cache misses. When we run `perf` on the updated code ([Example 6-20](ch06_split_001.xhtml#matrix_numpy_numexpr_perf)),
+    we see a speedup. However, if we look at the performance on a smaller, 256 × 256
+    grid, we see a decrease in speed (see [Table 6-2](ch06_split_001.xhtml#matrix_table_speedup_perf)).
+    Why is this?
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Example 6-20\. Performance metrics for `numpy` with in-place memory operations,
+    custom `laplacian` function, and `numexpr` (grid size: 640 × 640, 500 iterations)'
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE22]'
+  prefs: []
+  type: TYPE_PRE
+- en: Much of the extra machinery we are bringing into our program with `numexpr`
+    deals with cache considerations. When our grid size is small and all the data
+    we need for our calculations fits in the cache, this extra machinery simply adds
+    more instructions that don’t help performance. In addition, compiling the vector
+    operation that we encoded as a string adds a large overhead. When the total runtime
+    of the program is small, this overhead can be quite noticeable. However, as we
+    increase the grid size, we should expect to see `numexpr` utilize our cache better
+    than native `numpy` does. In addition, `numexpr` utilizes multiple cores to do
+    its calculation and tries to saturate each of the cores’ caches. When the size
+    of the grid is small, the extra overhead of managing the multiple cores overwhelms
+    any possible increase in speed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The particular computer we are running the code on has a 8,192 KB cache (Intel
+    Core i7-7820HQ). Since we are operating on two arrays, one for input and one for
+    output, we can easily do the calculation for the size of the grid that will fill
+    up our cache. The number of grid elements we can store in total is 8,192 KB /
+    64 bit = 1,024,000\. Since we have two grids, this number is split between two
+    objects (so each one can be at most 1,024,000 / 2 = 512,000 elements). Finally,
+    taking the square root of this number gives us the size of the grid that uses
+    that many grid elements. All in all, this means that approximately two 2D arrays
+    of size 715 × 715 would fill up the cache ( <math alttext="StartRoot 8192 upper
+    K upper B slash 64 b i t slash 2 EndRoot equals 715.5"><mrow><msqrt><mrow><mn>8192</mn>
+    <mi>K</mi> <mi>B</mi> <mo>/</mo> <mn>64</mn> <mi>b</mi> <mi>i</mi> <mi>t</mi>
+    <mo>/</mo> <mn>2</mn></mrow></msqrt> <mo>=</mo> <mn>715</mn> <mo>.</mo> <mn>5</mn></mrow></math>
+    ). In practice, however, we do not get to fill up the cache ourselves (other programs
+    will fill up parts of the cache), so realistically we can probably fit two 640
+    × 640 arrays. Looking at Tables [6-1](ch06_split_001.xhtml#matrix_table_runtime_perf)
+    and [6-2](ch06_split_001.xhtml#matrix_table_speedup_perf), we see that when the
+    grid size jumps from 512 × 512 to 1,024 × 1,024, the `numexpr` code starts to
+    outperform pure `numpy`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'A Cautionary Tale: Verify “Optimizations” (scipy)'
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'An important thing to take away from this chapter is the approach we took to
+    every optimization: profile the code to get a sense of what is going on, come
+    up with a possible solution to fix slow parts, and then profile to make sure the
+    fix actually worked. Although this sounds straightforward, things can get complicated
+    quickly, as we saw in how the performance of `numexpr` depended greatly on the
+    size of the grid we were considering.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Of course, our proposed solutions don’t always work as expected. While writing
+    the code for this chapter, we saw that the `laplacian` function was the slowest
+    routine and hypothesized that the `scipy` routine would be considerably faster.
+    This thinking came from the fact that Laplacians are a common operation in image
+    analysis and probably have a very optimized library to speed up the calls. `scipy`
+    has an image submodule, so we must be in luck!
+  prefs: []
+  type: TYPE_NORMAL
+- en: The implementation was quite simple ([Example 6-21](ch06_split_001.xhtml#matrix_numpy_scipy))
+    and required little thought about the intricacies of implementing the periodic
+    boundary conditions (or “wrap” condition, as `scipy` calls it).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-21\. Using `scipy`’s `laplace` filter
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE23]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Ease of implementation is quite important and definitely won this method some
+    points before we considered performance. However, once we benchmarked the `scipy`
+    code ([Example 6-22](ch06_split_001.xhtml#matrix_numpy_scipy_perf)), we had a
+    revelation: this method offers no substantial speedup compared to the code it
+    is based on ([Example 6-14](ch06_split_000.xhtml#matrix_numpy_memory1)). In fact,
+    as we increase the grid size, this method starts performing worse (see [Figure 6-4](ch06_split_001.xhtml#matrix_figure_all_perf)
+    at the end of the chapter).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Example 6-22\. Performance metrics for diffusion with `scipy`’s `laplace` function
+    (grid size: 640 × 640, 500 iterations)'
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE24]'
+  prefs: []
+  type: TYPE_PRE
+- en: Comparing the performance metrics of the `scipy` version of the code with those
+    of our custom `laplacian` function ([Example 6-18](ch06_split_001.xhtml#matrix_numpy_memory2_perf)),
+    we can start to get some indication as to why we aren’t getting the speedup we
+    were expecting from this rewrite.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The metric that stands out the most is `instructions`. This shows us that the
+    `scipy` code is requesting that the CPU do more than double the amount of work
+    as our custom `laplacian` code. Even though these instructions are more numerically
+    optimized (as we can see with the higher `insn per cycle` count, which says how
+    many instructions the CPU can do in one clock cycle), the extra optimization doesn’t
+    win out over the sheer number of added instructions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This could be in part because the `scipy` code is written very generally so
+    that it can process all sorts of inputs with different boundary conditions (which
+    requires extra code and thus more instructions). We can see this, in fact, by
+    the high number of `branches` that the `scipy` code requires. When code has many
+    branches, it means that we run commands based on a condition (like having code
+    inside an `if` statement). The problem is that we don’t know whether we can evaluate
+    an expression until we check the conditional, so vectorizing or pipelining isn’t
+    possible. The machinery of branch prediction helps with this, but it isn’t perfect.
+    This speaks more to the point of the speed of specialized code: if you don’t need
+    to constantly check what you need to do and instead know the specific problem
+    at hand, you can solve it much more efficiently.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Lessons from Matrix Optimizations
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Looking back on our optimizations, we seem to have taken two main routes: reducing
+    the time taken to get data to the CPU and reducing the amount of work that the
+    CPU had to do. Tables [6-1](ch06_split_001.xhtml#matrix_table_runtime_perf) and
+    [6-2](ch06_split_001.xhtml#matrix_table_speedup_perf) compare of the results achieved
+    by our various optimization efforts, for various dataset sizes, in relation to
+    the original pure Python implementation.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Figure 6-4](ch06_split_001.xhtml#matrix_figure_all_perf) shows graphically
+    how all these methods compared to one another. We can see three bands of performance
+    that correspond to these two methods: the band along the bottom shows the small
+    improvement made in relation to our pure Python implementation by our first effort
+    at reducing memory allocations; the middle band shows what happened when we used
+    `numpy` and further reduced allocations; and the upper band illustrates the results
+    achieved by reducing the work done by our process.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Table 6-1\. Total runtime of all schemes for various grid sizes and 500 iterations
+    of the `evolve` function
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| Method | 256 x 256 | 512 x 512 | 1024 x 1024 | 2048 x 2048 | 4096 x 4096
+    |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- | --- | --- | --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| [Python](ch06_split_000.xhtml#matrix_pure_python_run) | 2.40s | 10.43s |
+    41.75s | 168.82s | 679.16s |'
+  prefs: []
+  type: TYPE_TB
+- en: '| [Python + memory](ch06_split_000.xhtml#matrix_pure_python_memory) | 2.26s
+    | 9.76s | 38.85s | 157.25s | 632.76s |'
+  prefs: []
+  type: TYPE_TB
+- en: '| [numpy](ch06_split_000.xhtml#matrix_numpy_naive) | 0.01s | 0.09s | 0.69s
+    | 3.77s | 14.83s |'
+  prefs: []
+  type: TYPE_TB
+- en: '| [numpy + memory](ch06_split_000.xhtml#matrix_numpy_memory1) | 0.01s | 0.07s
+    | 0.60s | 3.80s | 14.97s |'
+  prefs: []
+  type: TYPE_TB
+- en: '| [numpy + memory + laplacian](ch06_split_001.xhtml#matrix_numpy_memory2) |
+    0.01s | 0.05s | 0.48s | 1.86s | 7.50s |'
+  prefs: []
+  type: TYPE_TB
+- en: '| [numpy + memory + laplacian + numexpr](ch06_split_001.xhtml#matrix_numpy_numexpr)
+    | 0.02s | 0.06s | 0.41s | 1.60s | 6.45s |'
+  prefs: []
+  type: TYPE_TB
+- en: '| [numpy + memory + scipy](ch06_split_001.xhtml#matrix_numpy_scipy) | 0.05s
+    | 0.25s | 1.15s | 6.83s | 91.43s |'
+  prefs: []
+  type: TYPE_TB
+- en: Table 6-2\. Speedup compared to naive Python ([Example 6-3](ch06_split_000.xhtml#matrix_pure_python))
+    for all schemes and various grid sizes over 500 iterations of the `evolve` function
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| Method | 256 x 256 | 512 x 512 | 1024 x 1024 | 2048 x 2048 | 4096 x 4096
+    |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- | --- | --- | --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| [Python](ch06_split_000.xhtml#matrix_pure_python_run) | 1.00x | 1.00x | 1.00x
+    | 1.00x | 1.00x |'
+  prefs: []
+  type: TYPE_TB
+- en: '| [Python + memory](ch06_split_000.xhtml#matrix_pure_python_memory) | 1.06x
+    | 1.07x | 1.07x | 1.07x | 1.07x |'
+  prefs: []
+  type: TYPE_TB
+- en: '| [numpy](ch06_split_000.xhtml#matrix_numpy_naive) | 170.59x | 116.16x | 60.49x
+    | 44.80x | 45.80x |'
+  prefs: []
+  type: TYPE_TB
+- en: '| [numpy + memory](ch06_split_000.xhtml#matrix_numpy_memory1) | 185.97x | 140.10x
+    | 69.67x | 44.43x | 45.36x |'
+  prefs: []
+  type: TYPE_TB
+- en: '| [numpy + memory + laplacian](ch06_split_001.xhtml#matrix_numpy_memory2) |
+    203.66x | 208.15x | 86.41x | 90.91x | 90.53x |'
+  prefs: []
+  type: TYPE_TB
+- en: '| [numpy + memory + laplacian + numexpr](ch06_split_001.xhtml#matrix_numpy_numexpr)
+    | 97.41x | 167.49x | 102.38x | 105.69x | 105.25x |'
+  prefs: []
+  type: TYPE_TB
+- en: '| [numpy + memory + scipy](ch06_split_001.xhtml#matrix_numpy_scipy) | 52.27x
+    | 42.00x | 36.44x | 24.70x | 7.43x |'
+  prefs: []
+  type: TYPE_TB
+- en: One important lesson to take away from this is that you should always take care
+    of any administrative things the code must do during initialization. This may
+    include allocating memory, or reading configuration from a file, or even precomputing
+    values that will be needed throughout the lifetime of the program. This is important
+    for two reasons. First, you are reducing the total number of times these tasks
+    must be done by doing them once up front, and you know that you will be able to
+    use those resources without too much penalty in the future. Second, you are not
+    disrupting the flow of the program; this allows it to pipeline more efficiently
+    and keep the caches filled with more pertinent data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You also learned more about the importance of data locality and how important
+    simply getting data to the CPU is. CPU caches can be quite complicated, and often
+    it is best to allow the various mechanisms designed to optimize them take care
+    of the issue. However, understanding what is happening and doing all that is possible
+    to optimize the way memory is handled can make all the difference. For example,
+    by understanding how caches work, we are able to understand that the decrease
+    in performance that leads to a saturated speedup no matter the grid size in [Figure 6-4](ch06_split_001.xhtml#matrix_figure_all_perf)
+    can probably be attributed to the L3 cache being filled up by our grid. When this
+    happens, we stop benefiting from the tiered memory approach to solving the von
+    Neumann bottleneck.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Summary of speedups from the methods attempted in this chapter](Images/hpp2_0604.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6-4\. Summary of speedups from the methods attempted in this chapter
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Another important lesson concerns the use of external libraries. Python is fantastic
+    for its ease of use and readability, which allow you to write and debug code fast.
+    However, tuning performance down to the external libraries is essential. These
+    external libraries can be extremely fast, because they can be written in lower-level
+    languages—but since they interface with Python, you can also still write code
+    that uses them quickly.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Finally, we learned the importance of benchmarking everything and forming hypotheses
+    about performance before running the experiment. By forming a hypothesis before
+    running the benchmark, we are able to form conditions to tell us whether our optimization
+    actually worked. Was this change able to speed up runtime? Did it reduce the number
+    of allocations? Is the number of cache misses lower? Optimization can be an art
+    at times because of the vast complexity of computer systems, and having a quantitative
+    probe into what is actually happening can help enormously.
+  prefs: []
+  type: TYPE_NORMAL
+- en: One last point about optimization is that a lot of care must be taken to make
+    sure that the optimizations you make generalize to different computers (the assumptions
+    you make and the results of benchmarks you do may be dependent on the architecture
+    of the computer you are running on, how the modules you are using were compiled,
+    etc.). In addition, when making these optimizations, it is incredibly important
+    to consider other developers and how the changes will affect the readability of
+    your code. For example, we realized that the solution we implemented in [Example 6-17](ch06_split_001.xhtml#matrix_numpy_memory2)
+    was potentially vague, so care was taken to make sure that the code was fully
+    documented and tested to help not only us but also other people on the team.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Sometimes, however, your numerical algorithms also require quite a lot of data
+    wrangling and manipulation that aren’t just clear-cut mathematical operations.
+    In these cases, Pandas is a very popular solution, and it has its own performance
+    characteristics. We’ll now do a deep dive into Pandas and understand how to better
+    use it to write performant numerical code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Pandas
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: '*Pandas* is the de facto data manipulation tool in the scientific Python ecosystem
+    for tabular data. It enables easy manipulation with Excel-like tables of heterogeneous
+    datatypes, known as DataFrames, and has strong support for time-series operations.
+    Both the public interface and the internal machinery have evolved a lot since
+    2008, and there’s a lot of conflicting information in public forums on “fast ways
+    to solve problems.” In this section, we’ll fix some misconceptions about common
+    use cases of Pandas.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We’ll review the internal model for Pandas, find out how to apply a function
+    efficiently across a DataFrame, see why concatenating to a DataFrame repeatedly
+    is a poor way to build up a result, and look at faster ways of handling strings.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Pandas’s Internal Model
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Pandas uses an in-memory, 2D, table-like data structure—if you have in mind
+    an Excel sheet, you have a good initial mental model. Originally, Pandas focused
+    on NumPy’s `dtype` objects such as signed and unsigned numbers for each column.
+    As the library evolved, it expanded beyond NumPy types and can now handle both
+    Python strings and extension types (including nullable `Int64` objects—note the
+    capital “I”—and IP addresses).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Operations on a DataFrame apply to all cells in a column (or all cells in a
+    row if the `axis=1` parameter is used), all operations are executed eagerly, and
+    there’s no support for query planning. Operations on columns often generate temporary
+    intermediate arrays, which consume RAM. The general advice is to expect a temporary
+    memory usage envelope of up to three to five times your current usage when you’re
+    manipulating your DataFrames. Typically, Pandas works well for datasets under
+    10 GB in size, assuming you have sufficient RAM for temporary results.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Operations can be single-threaded and may be limited by Python’s global interpreter
+    lock (GIL). Increasingly, improved internal implementations are allowing the GIL
+    to be disabled automatically, enabling parallelized operations. We’ll explore
+    an approach to parallelization with Dask in [“Parallel Pandas with Dask”](ch10.xhtml#clustering-dask).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Behind the scenes, columns of the same `dtype` are grouped together by a `BlockManager`.
+    This piece of hidden machinery works to make row-wise operations on columns of
+    the same datatype faster. It is one of the many hidden technical details that
+    make the Pandas code base complex but make the high-level user-facing operations
+    faster.^([11](ch06_split_001.xhtml#idm46122419857272))
+  prefs: []
+  type: TYPE_NORMAL
+- en: Performing operations on a subset of data from a single common block typically
+    generates a view, while taking a slice of rows that cross blocks of different
+    `dtypes` can cause a copy, which may be slower. One consequence is that while
+    numeric columns directly reference their NumPy data, string columns reference
+    a list of Python strings, and these individual strings are scattered in memory—this
+    can lead to unexpected speed differences for numeric and string operations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Behind the scenes, Pandas uses a mix of NumPy datatypes and its own extension
+    datatypes. Examples from NumPy include `int8` (1 byte), `int64` (8 bytes—and note
+    the lowercase “i”), `float16` (2 bytes), `float64` (8 bytes), and `bool` (1 byte).
+    Additional types provided by Pandas include `categorical` and `datetimetz`. Externally,
+    they appear to work similarly, but behind the scenes in the Pandas code base they
+    cause a lot of type-specific Pandas code and duplication.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Whilst Pandas originally used only `numpy` datatypes, it has evolved its own
+    set of additional Pandas datatypes that understand missing data (NaN) behavior
+    with three-valued logic. You must distinguish the `numpy` `int64`, which is not
+    NaN-aware, from the Pandas `Int64`, which uses two columns of data behind the
+    scenes for the integers and for the NaN bit mask. Note that the `numpy` `float64`
+    is naturally NaN-aware.
+  prefs: []
+  type: TYPE_NORMAL
+- en: One side effect of using NumPy’s datatypes has been that, while a `float` has
+    a NaN (missing value) state, the same is not true for `int` and `bool` objects.
+    If you introduce a NaN value into an `int` or `bool` Series in Pandas, your Series
+    will be promoted to a `float`. Promoting `int` types to a `float` may reduce the
+    numeric accuracy that can be represented in the same bits, and the smallest `float`
+    is `float16`, which takes twice as many bytes as a `bool`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The nullable `Int64` (note the capitalized “I”) was introduced in version 0.24
+    as an extension type in Pandas. Internally, it uses a NumPy `int64` and a second
+    Boolean array as a NaN-mask. Equivalents exist for `Int32` and `Int8`. As of Pandas
+    version 1.0, there is also an equivalent nullable Boolean (with `dtype` `boolean`
+    as opposed to the `numpy` `bool`, which isn’t NaN-aware). A `StringDType` has
+    been introduced that may in the future offer higher performance and less memory
+    usage than the standard Python `str`, which is stored in a column of `object`
+    `dtype`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Applying a Function to Many Rows of Data
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: It is very common to apply functions to rows of data in Pandas. There’s a selection
+    of approaches, and the idiomatic Python approaches using loops are generally the
+    slowest. We’ll work through an example based on a real-world challenge, showing
+    different ways of solving this problem and ending with a reflection on the trade-off
+    between speed and maintainability.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Ordinary Least Squares* (OLS) is a bread-and-butter method in data science
+    for fitting a line to data. It solves for the slope and intercept in the `m *
+    x + c` equation, given some data. This can be incredibly useful when trying to
+    understand the trend of the data: is it generally increasing, or is it decreasing?'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'An example of its use from our work is a research project for a telecommunications
+    company where we want to analyze a set of potential user-behavior signals (e.g.,
+    marketing campaigns, demographics, and geographic behavior). The company has the
+    number of hours a person spends on their cell phone every day, and its question
+    is: is this person increasing or decreasing their usage, and how does this change
+    over time?'
+  prefs: []
+  type: TYPE_NORMAL
+- en: One way to approach this problem is to take the company’s large dataset of millions
+    of users over years of data and break it into smaller windows of data (each window,
+    for example, representing 14 days out of the years of data). For each window,
+    we model the users’ use through OLS and record whether they are increasing or
+    decreasing their usage.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the end, we have a sequence for each user showing whether, for a given 14-day
+    period, their use was generally increasing or decreasing. However, to get there,
+    we have to run OLS a massive number of times!
+  prefs: []
+  type: TYPE_NORMAL
+- en: For one million users and two years of data, we might have 730 windows,^([12](ch06_split_001.xhtml#idm46122419819656))
+    and thus 730,000,000 calls to OLS! To solve this problem practically, our OLS
+    implementation should be fairly well tuned.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In order to understand the performance of various OLS implementations, we will
+    generate some smaller but representative synthetic data to give us good indications
+    of what to expect on the larger dataset. We’ll generate data for 100,000 rows,
+    each representing a synthetic user, and each containing 14 columns representing
+    “hours used per day” for 14 days, as a continuous variable.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We’ll draw from a Poisson distribution (with `lambda==60` as minutes) and divide
+    by 60 to give us simulated hours of usage as continuous values. The true nature
+    of the random data doesn’t matter for this experiment; it is convenient to use
+    a distribution that has a minimum value of 0 as this represents the real-world
+    minimum. You can see a sample in [Example 6-23](ch06_split_001.xhtml#pandas_ols_data_snippet).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-23\. A snippet of our data
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE25]'
+  prefs: []
+  type: TYPE_PRE
+- en: In [Figure 6-5](ch06_split_001.xhtml#pandas_random_hours_mobile_phone_usage_3_people),
+    we see three rows of 14 days of synthetic data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Pandas memory grouped into dtype-specific blocks](Images/hpp2_0605.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6-5\. Synthetic data for the first three simulated users showing 14 days
+    of cell phone usage
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: A bonus of generating 100,000 rows of data is that some rows will, by random
+    variation alone, exhibit “increasing counts,” and some will exhibit “decreasing
+    counts.” Note that there is no signal behind this in our synthetic data since
+    the points are drawn independently; simply because we generate many rows of data,
+    we’re going to see a variance in the ultimate slopes of the lines we calculate.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This is convenient, as we can identify the “most growing” and “most declining”
+    lines and draw them as a validation that we’re identifying the sort of signal
+    we hope to export on the real-world problem. [Figure 6-6](ch06_split_001.xhtml#pandas_random_hours_mobile_min_max_slopes)
+    shows two of our random traces with maximal and minimal slopes (`m`).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Pandas memory grouped into dtype-specific blocks](Images/hpp2_0606.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6-6\. The “most increasing” and “most decreasing” usage in our randomly
+    generated dataset
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: We’ll start with scikit-learn’s `LinearRegression` estimator to calculate each
+    `m`. While this method is correct, we’ll see in the following section that it
+    incurs a surprising overhead against another approach.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Which OLS implementation should we use?
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: '[Example 6-24](ch06_split_001.xhtml#pandas_ols_functions) shows three implementations
+    that we’d like to try. We’ll evaluate the scikit-learn implementation against
+    the direct linear algebra implementation using NumPy. Both methods ultimately
+    perform the same job and calculate the slopes (`m`) and intercept (`c`) of the
+    target data from each Pandas row given an increasing `x` range (with values [0,
+    1, …, 13]).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: scikit-learn will be a default choice for many machine learning practitioners,
+    while a linear algebra solution may be preferred by those coming from other disciplines.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-24\. Solving Ordinary Least Squares with NumPy and scikit-learn
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE26]'
+  prefs: []
+  type: TYPE_PRE
+- en: Surprisingly, if we call `ols_sklearn` 10,000 times with the `timeit` module,
+    we find that it takes at least 0.483 microseconds to execute, while `ols_lstsq`
+    on the same data takes 0.182 microseconds. The popular scikit-learn solution takes
+    more than twice as long as the terse NumPy variant!
+  prefs: []
+  type: TYPE_NORMAL
+- en: Building on the profiling from [“Using line_profiler for Line-by-Line Measurements”](ch02.xhtml#profiling-line-profiler),
+    we can use the object interface (rather than the command line or Jupyter magic
+    interfaces) to learn *why* the scikit-learn implementation is slower. In [Example 6-25](ch06_split_001.xhtml#pandas_profiling_sklearn_ols),
+    we tell LineProfiler to profile `est.fit` (that’s the scikit-learn `fit` method
+    on our `LinearRegression` estimator) and then call `run` with arguments based
+    on the DataFrame we used before.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We see a couple of surprises. The very last line of `fit` calls the same `linalg.lstsq`
+    that we’ve called in `ols_lstsq`—so what else is going on to cause our slowdown?
+    `LineProfiler` reveals that scikit-learn is calling two other expensive methods,
+    namely `check_X_y` and `_preprocess_data`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Both of these are designed to help us avoid making mistakes—indeed, your author
+    Ian has been saved repeatedly from passing in inappropriate data such as a wrongly
+    shaped array or one containing NaNs to scikit-learn estimators. A consequence
+    of this checking is that it takes more time—more safety makes things run slower!
+    We’re trading developer time (and sanity) against execution time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-25\. Digging into scikit-learn’s `LinearRegression.fit` call
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE27]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Behind the scenes, these two methods are performing various checks, including
+    these:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Checking for appropriate sparse NumPy arrays (even though we’re using dense
+    arrays in this example)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Offsetting the input array to a mean of 0 to improve numerical stability on
+    wider data ranges than we’re using
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Checking that we’re providing a 2D X array
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Checking that we’re not providing NaN or Inf values
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Checking that we’re providing non-empty arrays of data
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Generally, we prefer to have all of these checks enabled—they’re here to help
+    us avoid painful debugging sessions, which kill developer productivity. If we
+    know that our data is of the correct form for our chosen algorithm, these checks
+    will add a penalty. It is up to you to decide when the safety of these methods
+    is hurting your overall productivity.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As a general rule—stay with the safer implementations (scikit-learn, in this
+    case) *unless* you’re confident that your data is in the right form and you’re
+    optimizing for performance. We’re after increased performance, so we’ll continue
+    with the `ols_lstsq` approach.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Applying lstsq to our rows of data
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: We’ll start with an approach that many Python developers who come from other
+    programming languages may try. This is *not* idiomatic Python, nor is it common
+    or even efficient for Pandas. It does have the advantage of being very easy to
+    understand. In [Example 6-26](ch06_split_001.xhtml#pandas_calc_ols_iloc), we’ll
+    iterate over the index of the DataFrame from row 0 to row 99,999; on each iteration
+    we’ll use `iloc` to retrieve a row, and then we’ll calculate OLS on that row.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The calculation is common to each of the following methods—what’s different
+    is how we iterate over the rows. This method takes 18.6 seconds; it is by far
+    the slowest approach (by a factor of 3) among the options we’re evaluating.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Behind the scenes, each dereference is expensive—`iloc` does a lot of work to
+    get to the row using a fresh `row_idx`, which is then converted into a new Series
+    object, which is returned and assigned to `row`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-26\. Our worst implementation—counting and fetching rows one at a
+    time with `iloc`
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE28]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Next, we’ll take a more idiomatic Python approach: in [Example 6-27](ch06_split_001.xhtml#pandas_cals_ols_iterrows),
+    we iterate over the rows using `iterrows`, which looks similar to how we might
+    iterate over a Python iterable (e.g., a `list` or `set`) with a `for` loop. This
+    method looks sensible and is a little faster—it takes 12.4 seconds.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This is more efficient, as we don’t have to do so many lookups—`iterrows` can
+    walk along the rows without doing lots of sequential lookups. `row` is still created
+    as a fresh Series on each iteration of the loop.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-27\. `iterrows` for more efficient and “Python-like” row operations
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE29]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[Example 6-28](ch06_split_001.xhtml#pandas_calc_ols_apply) skips a lot of the
+    Pandas machinery, so a lot of overhead is avoided. `apply` passes the function
+    `ols_lstsq` a new row of data directly (again, a fresh Series is constructed behind
+    the scenes for each row) without creating Python intermediate references. This
+    costs 6.8 seconds—this is a significant improvement, and the code is more compact
+    and readable!'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-28\. `apply` for idiomatic Pandas function application
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE30]'
+  prefs: []
+  type: TYPE_PRE
+- en: Our final variant in [Example 6-29](ch06_split_001.xhtml#pandas_calc_ols_apply_raw)
+    uses the same `apply` call with an additional `raw=True` argument. Using `raw=True`
+    stops the creation of an intermediate Series object. As we don’t have a Series
+    object, we have to use our third OLS function, `ols_lstsq_raw`; this variant has
+    direct access to the underlying NumPy array.
+  prefs: []
+  type: TYPE_NORMAL
+- en: By avoiding the creation and dereferencing of an intermediate Series object,
+    we shave our execution time a little more, down to 5.3 seconds.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-29\. Avoiding intermediate Series creation using `raw=True`
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE31]'
+  prefs: []
+  type: TYPE_PRE
+- en: The use of `raw=True` gives us the option to compile with Numba ([“Numba to
+    Compile NumPy for Pandas”](ch07.xhtml#compiling-numba-for-pandas)) or with Cython
+    as it removes the complication of compiling Pandas layers that currently aren’t
+    supported.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We’ll summarize the execution times in [Table 6-3](ch06_split_001.xhtml#pandas_table_iteration_costs)
+    for 100,000 rows of data on a single window of 14 columns of simulated data. New
+    Pandas users often use `iloc` and `iterrows` (or the similar `itertuples`) when
+    `apply` would be preferred.
+  prefs: []
+  type: TYPE_NORMAL
+- en: By performing our analysis and considering our potential need to perform OLS
+    on 1,000,000 rows by up to 730 windows of data, we can see that a first naive
+    approach combining `iloc` with `ols_sklearn` might cost 10 (our larger dataset
+    factor) * 730 * 18 seconds * 2 (our slowdown factor against `ols_lstsq`) == 73
+    hours.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If we used `ols_lstsq_raw` and our fastest approach, the same calculations might
+    take 10 * 730 * 5.3 seconds == 10 hours. This is a significant saving for a task
+    that represents what might be a suite of similar operations. We’ll see even faster
+    solutions if we compile and run on multiple cores.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Table 6-3\. Cost for using `lstsq` with various Pandas row-wise approaches
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| Method | Time in seconds |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| iloc | 18.6 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| iterrows | 12.4 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| apply | 6.8 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| apply raw=True | 5.3 |'
+  prefs: []
+  type: TYPE_TB
+- en: Earlier we discovered that the scikit-learn approach adds significant overhead
+    to our execution time by covering our data with a safety net of checks. We can
+    remove this safety net but with a potential cost on developer debugging time.
+    Your authors strongly urge you to consider adding unit-tests to your code that
+    would verify that a well-known and well-debugged method is used to test any optimized
+    method you settle on. If you added a unit test to compare the scikit-learn `LinearRegression`
+    approach against `ols_lstsq`, you’d be giving yourself and other colleagues a
+    future hint about why you developed a less obvious solution to what appeared to
+    be a standard problem.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Having experimented, you may also conclude that the heavily tested scikit-learn
+    approach is more than fast enough for your application and that you’re more comfortable
+    using a library that is well known by other developers. This could be a very sane
+    conclusion.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Later in [“Parallel Pandas with Dask”](ch10.xhtml#clustering-dask), we’ll look
+    at running Pandas operations across multiple cores by dividing data into groups
+    of rows using Dask and Swifter. In [“Numba to Compile NumPy for Pandas”](ch07.xhtml#compiling-numba-for-pandas),
+    we look at compiling the `raw=True` variant of `apply` to achieve an order of
+    magnitude speedup. Compilation and parallelization can be combined for a really
+    significant final speedup, dropping our expected runtime from around 10 hours
+    to just 30 minutes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Building DataFrames and Series from Partial Results Rather than Concatenating
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: You may have wondered in [Example 6-26](ch06_split_001.xhtml#pandas_calc_ols_iloc)
+    why we built up a list of partial results that we then turned into a Series, rather
+    than incrementally building up the Series as we went. Our earlier approach required
+    building up a list (which has a memory overhead) and then building a *second*
+    structure for the Series, giving us two objects in memory. This brings us to another
+    common mistake when using Pandas and NumPy.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As a general rule, you should avoid repeated calls to `concat` in Pandas (and
+    to the equivalent `concatenate` in NumPy). In [Example 6-30](ch06_split_001.xhtml#pandas_calc_ols_many_concatenates),
+    we see a similar solution to the preceding one but without the intermediate `ms`
+    list. This solution takes 56 seconds, as opposed to the solution using a list
+    at 18.6 seconds!
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-30\. Concatenating each result incurs a significant overhead—avoid
+    this!
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE32]'
+  prefs: []
+  type: TYPE_PRE
+- en: Each concatenation creates an entirely *new* Series object in a new section
+    of memory that is one row longer than the previous item. In addition, we have
+    to make a temporary Series object for each new `m` on each iteration. We strongly
+    recommend building up lists of intermediate results and then constructing a Series
+    or DataFrame from this list, rather than concatenating to an existing object.
+  prefs: []
+  type: TYPE_NORMAL
+- en: There’s More Than One (and Possibly a Faster) Way to Do a Job
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Because of the evolution of Pandas, there are typically a couple of approaches
+    to solving the same task, some of which incur more overhead than others. Let’s
+    take the OLS DataFrame and convert one column into a string; we’ll then time some
+    string operations. With string-based columns containing names, product identifiers,
+    or codes, it is common to have to preprocess the data to turn it into something
+    we can analyze.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s say that we need to find the location, if it exists, of the number 9 in
+    the digits from one of the columns. While this operation serves no real purpose,
+    it is very similar to checking for the presence of a code-bearing symbol in an
+    identifier’s sequence or checking for an honorific in a name. Typically for these
+    operations, we’d use `strip` to remove extraneous whitespace, `lower` and `replace`
+    to normalize the string, and `find` to locate something of interest.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In [Example 6-31](ch06_split_001.xhtml#pandas_calc_ols_str_operations), we first
+    build a new Series named `0_as_str`, which is the zeroth Series of random numbers
+    converted into a printable string form. We’ll then run two variants of string
+    manipulation code—both will remove the leading digit and decimal point and then
+    use Python’s `find` to locate the first `9` if it exists, returning –1 otherwise.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-31\. `str` Series operations versus `apply` for string processing
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE33]'
+  prefs: []
+  type: TYPE_PRE
+- en: The one-line approach uses Pandas’s `str` operations to access Python’s string
+    methods for a Series. For `split`, we expand the returned result into two columns
+    (the first column contains the leading digit, and the second contains everything
+    after the decimal place), and we select column 1\. We then apply `find` to locate
+    the digit 9\. The second approach uses `apply` and the function `find_9`, which
+    reads like a regular Python string-processing function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We can use `%timeit` to check the runtime—this shows us that there’s a 3.5×
+    speed difference between the two methods, even though they both produce the same
+    result! In the former one-line case, Pandas has to make several new intermediate
+    Series objects, which adds overhead; in the `find_9` case, all of the string-processing
+    work occurs one line at a time without creating new intermediate Pandas objects.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Further benefits of the `apply` approach are that we could parallelize this
+    operation (see [“Parallel Pandas with Dask”](ch10.xhtml#clustering-dask) for an
+    example with Dask and Swifter), and we can write a unit test that succinctly confirms
+    the operations performed by `find_9`, which will aid in readability and maintenance.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Advice for Effective Pandas Development
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Install the optional dependencies `numexpr` and `bottleneck` for additional
+    performance improvements. These don’t get installed by default, and you won’t
+    be told if they’re missing. `bottleneck` is rarely used in the code base; `numexpr`,
+    however, will give significant speedups in some situations when you use `exec`.
+    You can test for the presence of both in your environment with `import bottleneck`
+    and `import numexpr`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Don’t write your code too tersely; remember to make your code easy to read and
+    debug to help your future self. While the “method chaining” style is supported,
+    your authors would caution against chaining too many rows of Pandas operations
+    in sequence. It typically becomes difficult to figure out which line has problems
+    when debugging, and then you have to split up the lines—you’re better off chaining
+    only a couple of operations together at most to simplify your maintenance.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Avoid doing more work than necessary: it is preferable to filter your data
+    before calculating on the remaining rows rather than filtering after calculating,
+    if possible. For high performance in general, we want to ask the machine to do
+    as little computation as possible; if you can filter out or mask away portions
+    of your data, you’re probably winning. If you’re consuming from a SQL source and
+    later joining or filtering in Pandas, you might want to try to filter first at
+    the SQL level, to avoid pulling more data than necessary into Pandas. You may
+    *not* want to do this at first if you’re investigating data quality, as having
+    a simplified view on the variety of datatypes you have might be more beneficial.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Check the schema of your DataFrames as they evolve; with a tool like `bulwark`,
+    you guarantee at runtime that your schema is being met, and you can visually confirm
+    when you’re reviewing code that your expectations are being met. Keep renaming
+    your columns as you generate new results so that your DataFrame’s contents make
+    sense to you; sometimes `groupby` and other operations give you silly default
+    names, which can later be confusing. Drop columns that you no longer need with
+    `.drop()` to reduce bloat and memory usage.
+  prefs: []
+  type: TYPE_NORMAL
+- en: For large Series containing strings with low cardinality (“yes” and “no,” for
+    example, or “type_a,” “type_b,” and “type_c”), try converting the Series to a
+    Category `dtype` with `df['series_of_strings'].astype('category')`; you may find
+    that operations like `value_counts` and `groupby` run faster, and the Series is
+    likely to consume less RAM.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Similarly, you may want to convert 8-byte `float64` and `int64` columns to smaller
+    datatypes—perhaps the 2-byte `float16` or 1-byte `int8` if you need a smaller
+    range to further save RAM.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As you evolve DataFrames and generate new copies, remember that you can use
+    the `del` keyword to delete earlier references and clear them from memory, if
+    they’re large and wasting space. You can also use the Pandas `drop` method to
+    delete unused columns.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you’re manipulating large DataFrames while you prepare your data for processing,
+    it may make sense to do these operations once in a function or a separate script
+    and then persist the prepared version to disk by using `to_pickle`. You can subsequently
+    work on the prepared DataFrame without having to process it each time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Avoid the `inplace=True` operator—in-place operations are scheduled to be removed
+    from the library over time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Finally, always add unit tests to any processing code, as it will quickly become
+    more complex and harder to debug. Developing your tests up front guarantees that
+    your code meets your expectations and helps you to avoid silly mistakes creeping
+    in later that cost developer time to debug.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Existing tools for making Pandas go faster include [Modin](https://pypi.org/project/modin)
+    and the GPU-focused [cuDF](https://pypi.org/project/cudf). Modin and cuDF take
+    different approaches to parallelizing common data operations on a Pandas DataFrame–like
+    object.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We’d like to also give an honorable mention to the new [Vaex library](https://github.com/vaexio/vaex).
+    Vaex is designed to work on very large datasets that exceed RAM by using lazy
+    evaluation while retaining a similar interface to that of Pandas. In addition,
+    Vaex offers a slew of built-in visualization functions. One design goal is to
+    use as many CPUs as possible, offering parallelism for free where possible.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Vaex specializes in both larger datasets and string-heavy operations; the authors
+    have rewritten many of the string operations to avoid the standard Python functions
+    and instead use faster Vaex implementations in `C++`. Note that Vaex is not guaranteed
+    to work in the same way as Pandas, so it is possible that you’ll find edge cases
+    with different behavior—as ever, back your code with unit tests to gain confidence
+    if you’re trying both Pandas and Vaex to process the same data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Wrap-Up
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In the next chapter, we will talk about how to create your own external modules
+    that can be finely tuned to solve specific problems with much greater efficiencies.
+    This allows us to follow the rapid prototyping method of making our programs—first
+    solve the problem with slow code, then identify the elements that are slow, and
+    finally, find ways to make those elements faster. By profiling often and trying
+    to optimize only the sections of code we *know* are slow, we can save ourselves
+    time while still making our programs run as fast as possible.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([1](ch06_split_000.xhtml#idm46122422174440-marker)) This is the code from
+    [Example 6-3](ch06_split_000.xhtml#matrix_pure_python), truncated to fit within
+    the page margins. Recall that `kernprof` requires functions to be decorated with
+    `@profile` in order to be profiled (see [“Using line_profiler for Line-by-Line
+    Measurements”](ch02.xhtml#profiling-line-profiler)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([2](ch06_split_000.xhtml#idm46122422123864-marker)) The code profiled in [Example 6-7](ch06_split_000.xhtml#matrix_pure_python_mem_lineprof)
+    is the code from [Example 6-6](ch06_split_000.xhtml#matrix_pure_python_memory);
+    it has been truncated to fit within the page margins.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([3](ch06_split_000.xhtml#idm46122420832696-marker)) On macOS you can get similar
+    metrics by using Google’s [`gperftools`](https://oreil.ly/MCCVv) and the provided
+    `Instruments` app. For Windows, we are told Visual Studio Profiler works well;
+    however, we don’t have experience with it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([4](ch06_split_000.xhtml#idm46122421125416-marker)) This can be done by running
+    the Python process through the `nice` utility (`nice -n –20 python` `program.py`).
+    A nice value of -20 will make sure it yields execution as little as possible.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([5](ch06_split_000.xhtml#idm46122421117832-marker)) A good survey of the various
+    faults can be found at [*https://oreil.ly/12Beq*](https://oreil.ly/12Beq).
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([6](ch06_split_000.xhtml#idm46122421106008-marker)) This effect is beautifully
+    explained in this [Stack Overflow response](https://stackoverflow.com/a/11227902).
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([7](ch06_split_000.xhtml#idm46122421072568-marker)) For an in-depth look at
+    `numpy` over a variety of problems, check out [*From Python to Numpy*](https://oreil.ly/KHdg_)
+    by Nicolas P. Rougier.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '^([8](ch06_split_000.xhtml#idm46122420993032-marker)) We do this by compiling
+    `numpy` with the `-fno-tree-vectorize` flag. For this experiment, we built `numpy`
+    1.17.3 with the following command: `$ OPT=''-fno-tree-vectorize'' FOPT=''-fno-tree-vectorize''
+    BLAS=None LAPACK=None ATLAS=None python setup.py build`.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([9](ch06_split_000.xhtml#idm46122420742936-marker)) This is contingent on
+    what CPU is being used.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([10](ch06_split_000.xhtml#idm46122420722136-marker)) This is not strictly
+    true, since two `numpy` arrays can reference the same section of memory but use
+    different striding information to represent the same data in different ways. These
+    two `numpy` arrays will have different `id`s. There are many subtleties to the
+    `id` structure of `numpy` arrays that are outside the scope of this discussion.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '^([11](ch06_split_001.xhtml#idm46122419857272-marker)) See the DataQuest blog
+    post [“Tutorial: Using Pandas with Large Data Sets in Python”](https://oreil.ly/frZrr)
+    for more details.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([12](ch06_split_001.xhtml#idm46122419819656-marker)) If we’re going to use
+    a sliding window, it might be possible to apply rolling window optimized functions
+    such as `RollingOLS` from `statsmodels`.
+  prefs: []
+  type: TYPE_NORMAL

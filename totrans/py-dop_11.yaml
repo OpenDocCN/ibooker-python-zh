@@ -1,0 +1,955 @@
+- en: 'Chapter 11\. Container Technologies: Docker and Docker Compose'
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Virtualization technologies have been around since the days of the IBM mainframes.
+    Most people have not had a chance to work on a mainframe, but we are sure some
+    readers of this book remember the days when they had to set up or use a bare-metal
+    server from a manufacturer such as HP or Dell. These manufacturers are still around
+    today, and you can still use bare-metal servers hosted in a colocation facility,
+    like in the good old days of the dot-com era.
+  prefs: []
+  type: TYPE_NORMAL
+- en: When most people think of virtualization, however, they do not automatically
+    have a mainframe in mind. Instead, they most likely imagine a virtual machine
+    (VM) running a guest operating system (OS) such as Fedora or Ubuntu on top of
+    a hypervisor such as VMware ESX or Citrix/Xen. The big advantage of VMs over regular
+    bare-metal servers is that by using VMs, you can optimize the server’s resources
+    (CPU, memory, disk) by splitting them across several virtual machines. You can
+    also run several operating systems, each in its own VM, on top of one shared bare-metal
+    server, instead of buying a dedicated server per targeted OS. Cloud computing
+    services such as Amazon EC2 would not have been possible without hypervisors and
+    virtual machines. This type of virtualization can be called kernel-level because
+    each virtual machine runs its own OS kernel.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the never-ending quest for more bang for their buck, people realized that
+    virtual machines were still wasteful in terms of resources. The next logical step
+    was to isolate an individual application into its own virtual environment. This
+    was achieved by running containers within the same OS kernel. In this case, they
+    were isolated at the file-system level. Linux containers (LXC) and Sun Solaris
+    zones were early examples of such technologies. Their disadvantage was that they
+    were hard to use and were tightly coupled to the OS they were running on. The
+    big breakthrough in container usage came when Docker started to offer an easy
+    way to manage and run filesystem-level containers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: What Is a Docker Container?
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: A Docker container encapsulates an application together with other software
+    packages and libraries it requires to run. People sometimes use the terms Docker
+    container and Docker image interchangeably, but there is a difference. The filesystem-level
+    object that encapsulates the application is called a Docker image. When you run
+    the image, it becomes a Docker container.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You can run many Docker containers, all using the same OS kernel. The only requirement
+    is that you must install a server-side component called the Docker engine or the
+    Docker daemon on the host where you want to run the containers. In this way, the
+    host resources can be split and utilized in a more granular way across the containers,
+    giving you more bang for your buck.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Docker containers provide more isolation and resource control than regular Linux
+    processes, but provide less than full-fledged virtual machines would. To achieve
+    these properties of isolation and resource control, the Docker engine makes use
+    of Linux kernel features such as namespaces, control groups (or cgroups), and
+    Union File Systems (UnionFS).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The main advantage of Docker containers is portability. Once you create a Docker
+    image, you can run it as a Docker container on any host OS where the Docker server-side
+    daemon is available. These days, all the major operating systems run the Docker
+    daemon: Linux, Windows, and macOS.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: All this can sound too theoretical, so it is time for some concrete examples.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Creating, Building, Running, and Removing Docker Images and Containers
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Since this is a book on Python and DevOps, we will take the canonical Flask
+    “Hello World” as the first example of an application that runs in a Docker container.
+    The examples shown in this section use the Docker for Mac package. Subsequent
+    sections will show how to install Docker on Linux.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here is the main file of the Flask application:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We also need a requirements file that specifies the version of the Flask package
+    to be installed with `pip`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Trying to run the *app.py* file directly with Python on a macOS laptop without
+    first installing the requirements results in an error:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: One obvious way to get past this issue is to install the requirements with `pip`
+    on your local machine. This would make everything specific to the operating system
+    you are running locally. What if the application needs to be deployed on a server
+    running a different OS? The well-known issue of “works on my machine” could arise,
+    where everything works beautifully on a macOS laptop, but for some mysterious
+    reason, usually related to OS-specific versions of Python libraries, everything
+    breaks on the staging or production servers running other operating systems, such
+    as Ubuntu or Red Hat Linux.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Docker offers an elegant solution to this conundrum. We can still do our development
+    locally, using our beloved editors and toolchains, but we package our application’s
+    dependencies inside a portable Docker container.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here is the Dockerfile describing the Docker image that is going to be built:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'A few notes about this Dockerfile:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Use a prebuilt Docker image for Python 3.7.3 based on the Alpine distribution
+    that produces slimmer Docker images; this Docker image already contains executables
+    such as `python` and `pip`.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Install the required packages with `pip`.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Specify an ENTRYPOINT and a CMD. The difference between the two is that when
+    the Docker container runs the image built from this Dockerfile, the program it
+    runs is the ENTRYPOINT, followed by any arguments specified in CMD; in this case,
+    it will run `python app.py`.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'If you do not specify an ENTRYPOINT in your Dockerfile, the following default
+    will be used: `/bin/sh -c`.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To create the Docker image for this application, run `docker build`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'To verify that the Docker image was saved locally, run `docker images` followed
+    by the name of the image:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'To run the Docker image as a Docker container, use the `docker run` command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'A few notes about the `docker run` command arguments:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `--rm` argument tells the Docker server to remove this container once it
+    stops running. This is useful to prevent old containers from clogging the local
+    filesystem.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The `-d` argument tells the Docker server to run this container in the background.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The `-v` argument specifies that the current directory (*pwd*) is mapped to
+    the */app* directory inside the Docker container. This is essential for the local
+    development workflow we want to achieve because it enables us to edit the application
+    files locally and have them be auto-reloaded by the Flask development server running
+    inside the container.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The `-p 5000:5000` argument maps the first port (5000) locally to the second
+    port (5000) inside the container.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'To list running containers, run `docker ps` and note the container ID because
+    it will be used in other `docker` commands:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'To inspect the logs for a given container, run `docker logs` and specify the
+    container name or ID:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: Hit the endpoint URL with `curl` to verify that the application works. Because
+    port 5000 of the application running inside the Docker container was mapped to
+    port 5000 on the local machine with the `-p` command-line flag, you can use the
+    local IP address 127.0.0.1 with port 5000 as the endpoint for the application.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now modify the code in *app.py* with your favorite editor. Change the greeting
+    text to *Hello, World! (from a Docker container with modified code)*. Save *app.py*
+    and notice lines similar to these in the Docker container logs:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: This shows that the Flask development server running inside the container has
+    detected the change in *app.py* and has reloaded the application.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Hitting the application endpoint with `curl` will show the modified greeting:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'To stop a running container, run `docker stop` or `docker kill` and specify
+    the container ID as the argument:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'To delete a Docker image from local disk, run `docker rmi`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: This output shows the different filesystem layers comprising a Docker image.
+    When the image is removed, the layers are deleted as well. Consult the [Docker
+    storage drivers](https://oreil.ly/wqNve) documentation for more details on how
+    Docker uses filesystem layers to build its images.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Publishing Docker Images to a Docker Registry
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Once you have a Docker image built locally, you can publish it to what is called
+    a Docker registry. There are several public registries to choose from, and for
+    this example we will use Docker Hub. The purpose of these registries is to allow
+    people and organizations to share pre-built Docker images that can be reused across
+    different machines and operating systems.
+  prefs: []
+  type: TYPE_NORMAL
+- en: First, create a free account on [Docker Hub](https://hub.docker.com) and then
+    create a repository, either public or private. We created a private repository
+    called `flask-hello-world` under our `griggheo` Docker Hub account.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Then, at the command line, run `docker login` and specify the email and password
+    for your account. At this point, you can interact with Docker Hub via the `docker`
+    client.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'Before showing you how to publish your locally built Docker image to Docker
+    Hub, we want to point out that best practice is to tag your image with a unique
+    tag. If you don’t tag it specifically, the image will be tagged as `latest` by
+    default. Pushing a new image version with no tag will move the `latest` tag to
+    the newest image version. When using a Docker image, if you do not specify the
+    exact tag you need, you will get the `latest` version of the image, which might
+    contain modifications and updates that might break your dependencies. As always,
+    the principle of least surprise should apply: you should use tags both when pushing
+    images to a registry, and when referring to images in a Dockerfile. That being
+    said, you can also tag your desired version of the image as `latest` so that people
+    who are interested in the latest and greatest can use it without specifying a
+    tag.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'When building the Docker image in the previous section, it was automatically
+    tagged as `latest`, and the repository was set to the name of the image, signifying
+    that the image is local:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'To tag a Docker image, run `docker tag`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now you can see both tags for the `hello-world-docker` image:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Before you can publish the `hello-world-docker` image to Docker Hub, you also
+    need to tag it with the Docker Hub repository name, which contains your username
+    or your organization name. In our case, this repository is `griggheo/hello-world-docker`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Publish both image tags to Docker Hub with `docker push`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: If you followed along, you should now be able to see your Docker image published
+    with both tags to the Docker Hub repository you created under your account.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Running a Docker Container with the Same Image on a Different Host
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Now that the Docker image is published to Docker Hub, we are ready to show off
+    the portability of Docker by running a container based on the published image
+    on a different host. The scenario considered here is that of collaborating with
+    a colleague who doesn’t have macOS but likes to develop on a laptop running Fedora.
+    The scenario includes checking out the application code and modifying it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Launch an EC2 instance in AWS based on the Linux 2 AMI, which is based on RedHat/CentOS/Fedora,
+    and then install the Docker engine. Add the default user on the EC2 Linux AMI,
+    called `ec2-user`, to the `docker` group so it can run `docker` client commands:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: Make sure to check out the application code on the remote EC2 instance. In this
+    case, the code consists only of *app.py* file.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Next, run the Docker container based on the image published to Docker Hub. The
+    only difference is that the image used as an argument to the `docker run` command
+    was `griggheo/hello-world-docker:v1` instead of simply `hello-world-docker`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Run `docker login`, then:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note that the Docker engine on the EC2 instance recognizes that it does not
+    have the Docker image locally, so it downloads it from Docker Hub, then runs a
+    container based on the newly downloaded image.
+  prefs: []
+  type: TYPE_NORMAL
+- en: At this point, access to port 5000 was granted by adding a rule to the security
+    group associated with the EC2 instance. Visit http://54.187.189.51:5000^([1](ch11.html#idm46691322287592))
+    (with 54.187.189.51 being the external IP of the EC2 instance) and see the greeting
+    *Hello, World! (from a Docker container with modified code)*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'When modifying the application code on the remote EC2 instance, the Flask server
+    running inside the Docker container will auto-reload the modified code. Change
+    the greeting to *Hello, World! (from a Docker container on an EC2 Linux 2 AMI
+    instance)* and notice that the Flask server reloaded the application by inspecting
+    the logs of the Docker container:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: Hitting http://54.187.189.51:5000^([2](ch11.html#idm46691322283160)) now shows
+    the new greeting *Hello, World! (from a Docker container on an EC2 Linux 2 AMI
+    instance)*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: It is worth noting that we did not have to install anything related to Python
+    or Flask to get our application to run. By simply running our application inside
+    a container, we were able to take advantage of the portability of Docker. It is
+    not for nothing that Docker chose the name “container” to popularize its technology—one
+    inspiration was how the shipping container revolutionized the global transportation
+    industry.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Read [“Production-ready Docker images”](https://pythonspeed.com/docker) by Itamar
+    Turner-Trauring for an extensive collection of articles on Docker container packaging
+    for Python applications.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Running Multiple Docker Containers with Docker Compose
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this section we will use the [“Flask By Example”](https://oreil.ly/prNg7)
+    tutorial that describes how to build a Flask application that calculates word-frequency
+    pairs based on the text from a given URL.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Start by cloning the [Flask By Example GitHub repository](https://oreil.ly/M-pvc):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE22]'
+  prefs: []
+  type: TYPE_PRE
+- en: We will use `compose` to run multiple Docker containers representing the different
+    parts of the example application. With Compose, you use a YAML file to define
+    and configure the services comprising an application, then you use the `docker-compose`
+    command-line utility to create, start, and stop these services that will run as
+    Docker containers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The first dependency to consider for the example application is PostgreSQL,
+    as described in [Part 2 of the tutorial](https://oreil.ly/iobKp).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here is how to run PostgreSQL in a Docker container inside a *docker-compose.yaml*
+    file:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE23]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'A few things to note about this file:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Define a service called `db` based on the `postgres:11` image published on Docker
+    Hub.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Specify a port mapping from local port 5432 to the container port 5432.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Specify a Docker volume for the directory where PostgreSQL stores its data,
+    which is */var/lib/postgresql/data*. This is so that the data stored in PostgreSQL
+    will persist across restarts of the container.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The `docker-compose` utility is not part of the Docker engine, so it needs to
+    be installed separately. See the [official documentation](https://docs.docker.com/compose/install)
+    for instructions on installing it on various operating systems.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To bring up the `db` service defined in *docker-compose.yaml*, run the `docker-compose
+    up -d db` command, which will launch the Docker container for the `db` service
+    in the background (the `-d` flag):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE24]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Inspect the logs for the `db` service with the `docker-compose logs db` command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE25]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Running `docker ps` shows the container running the PostgreSQL database:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE26]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Running `docker volume ls` shows the `dbdata` Docker volume mounted for the
+    PostgreSQL */var/lib/postgresql/data* directory:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE27]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'To connect to the PostgreSQL database running in the Docker container associated
+    with the `db` service, run the command `docker-compose exec db` and pass it the
+    command line `psql -U postgres`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE28]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Following [“Flask by Example, Part 2”](https://oreil.ly/iobKp), create a database
+    called `wordcount`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE29]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE30]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Connect to the `wordcount` database and create a role called `wordcount_dbadmin`
+    that will be used by the Flask application:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE31]'
+  prefs: []
+  type: TYPE_PRE
+- en: The next step is to create a Dockerfile for installing all the prerequisites
+    for the Flask application.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Make the following modifications to the *requirements.txt* file:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Modify the version of the `psycopg2` package from `2.6.1` to `2.7` so that it
+    supports PostgreSQL 11
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Modify the version of the `redis` package from `2.10.5` to `3.2.1` for better
+    Python 3.7 support
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Modify the version of the `rq` package from `0.5.6` to `1.0` for better Python
+    3.7 support
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Here is the Dockerfile:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE32]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: There is an important difference between this Dockerfile and the version used
+    in the first *hello-world-docker* example. Here the contents of the current directory,
+    which includes the application files, are copied into the Docker image. This is
+    done to illustrate a scenario different from the development workflow shown earlier.
+    In this case, we are more interested in running the application in the most portable
+    way, for example, in a staging or production environment, where we do not want
+    to modify application files via mounted volumes as was done in the development
+    scenario. It is possible and even common to use `docker-compose` with locally
+    mounted volumes for development purposes, but the focus in this section is on
+    the portability of Docker containers across environments, such as development,
+    staging, and production.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Run `docker build -t flask-by-example:v1 .` to build a local Docker image. The
+    output of this command is not shown because it is quite lengthy.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The next step in the “Flask By Example” tutorial is to run the Flask migrations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In the *docker-compose.yaml* file, define a new service called `migrations`
+    and specify its `image`, its `command`, its `environment` variables, and the fact
+    that it depends on the `db` service being up and running:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE33]'
+  prefs: []
+  type: TYPE_PRE
+- en: The `DATABASE_URL` variable uses the name `db` for the PostgreSQL database host.
+    This is because the name `db` is defined as a service name in the *docker-compose.yaml*
+    file, and `docker-compose` knows how to link one service to another by creating
+    an overlay network where all services defined in the *docker-compose.yaml* file
+    can interact with each other by their names. See the [docker-compose networking
+    reference](https://oreil.ly/Io80N) for more details.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `DATABASE_URL` variable definition refers to another variable called `DBPASS`,
+    instead of hardcoding the password for the `wordcount_dbadmin` user. The *docker-compose.yaml*
+    file is usually checked into source control, and best practices are not to commit
+    secrets such as database credentials to GitHub. Instead, use an encryption tool
+    such as [`sops`](https://github.com/mozilla/sops) to manage a secrets file.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Here is an example of how to create an encrypted file using `sops` with PGP
+    encryption.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'First, install `gpg` on macOS via `brew install gpg`, then generate a new PGP
+    key with an empty passphrase:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE34]'
+  prefs: []
+  type: TYPE_PRE
+- en: Next, download `sops` from its [release page](https://github.com/mozilla/sops/releases).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To create a new encrypted file called, for example, *environment.secrets*,
+    run `sops` with the `-pgp` flag and give it the fingerprint of the key generated
+    above:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE35]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This will open the default editor and allow for the input of the plain-text
+    secrets. In this example, the contents of the *environment.secrets* file are:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE36]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'After saving the *environment.secrets* file, inspect the file to see that it
+    is encrypted, which makes it safe to add to source control:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE37]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'To decrypt the file, run:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE38]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'There is an issue with `sops` interacting with `gpg` on a Macintosh. You will
+    need to run the following commands before being able to decrypt the file with
+    `sops`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE39]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The goal here is to run the `migrations` service defined previously in the
+    `docker-compose.yaml_ file. To tie the +sops` secret management method into `docker-compose`,
+    decrypt the *environments.secrets* file with `sops -d`, source its contents into
+    the current shell, then invoke `docker-compose up -d migrations` using one command
+    line that will not expose the secret to the shell history:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE40]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Verify that the migrations were successfully run by inspecting the database
+    and verifying that two tables were created: `alembic_version` and `results`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE41]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE42]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[Part 4](https://oreil.ly/UY2yw) in the “Flask By Example” tutorial is to deploy
+    a Python worker process based on Python RQ that talks to an instance of Redis.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'First, Redis needs to run. Add it as a service called `redis` into the *docker_compose.yaml*
+    file, and make sure that its internal port 6379 is mapped to port 6379 on the
+    local OS:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE43]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Start the `redis` service on its own by specifying it as an argument to `docker-compose
+    up -d`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE44]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Run `docker ps` to see a new Docker container running based on the `redis:alpine`
+    image:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE45]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Use the `docker-compose logs` command to inspect the logs of the `redis` service:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE46]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The next step is to create a service called `worker` for the Python RQ worker
+    process in *docker-compose.yaml*:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE47]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Run the worker service just like the `redis` service, with `docker-compose
+    up -d`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE48]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Running `docker ps` will show the worker container:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE49]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Look at the worker container logs with `docker-compose logs`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE50]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now launch the main Flask application in its own container. Create a new service
+    called `app` in *docker-compose.yaml*:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE51]'
+  prefs: []
+  type: TYPE_PRE
+- en: Map port 5000 from the application container (the default port for a Flask application)
+    to port 5000 on the local machine. Pass the command `manage.py runserver --host=0.0.0.0`
+    to the application container to ensure that port 5000 is exposed correctly by
+    the Flask application inside the container.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Start up the `app` service with `docker compose up -d`, while also running
+    `sops -d` on the encrypted file containing `DBPASS`, then sourcing the decrypted
+    file before calling `docker-compose`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE52]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Notice the new Docker container running the application in the list returned
+    by `docker ps`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE53]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Inspect the logs of the application container with `docker-compose logs`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE54]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Running `docker-compose logs` with no other arguments allows us to inspect
+    the logs of all the services defined in the *docker-compose.yaml* file:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE55]'
+  prefs: []
+  type: TYPE_PRE
+- en: The final step is to test the application. Visit http://127.0.0.1:5000 and enter
+    `python.org` in the URL field. At that point, the application sends a job to the
+    worker process, asking it to execute the function `count_and_save_words` against
+    the home page of `python.org`. The application periodically polls the job for
+    the results, and upon completion, it displays the word frequencies on the home
+    page.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To make the *docker-compose.yaml* file more portable, push the `flask-by-example`
+    Docker image to Docker Hub, and reference the Docker Hub image in the container
+    section for the `app` and `worker` services.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Tag the existing local Docker image `flask-by-example:v1` with a name prefixed
+    by a Docker Hub username, then push the newly tagged image to Docker Hub:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE56]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Change *docker-compose.yaml* to reference the new Docker Hub image. Here is
+    the final version of *docker-compose.yaml*:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE57]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'To restart the local Docker containers, run `docker-compose down` followed
+    by `docker-compose up -d`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE58]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note how easy it is to bring up and down a set of Docker containers with `docker-compose`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Even if you want to run a single Docker container, it is still a good idea to
+    include it in a *docker-compose.yaml* file and launch it with the `docker-compose
+    up -d` command. It will make your life easier when you want to add a second container
+    into the mix, and it will also serve as a mini Infrastructure as Code example,
+    with the *docker-compose.yaml* file reflecting the state of your local Docker
+    setup for your application.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Porting the docker-compose Services to a New Host and Operating System
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: We will now show how to take the `docker-compose` setup from the preceding section
+    and port it to a server running Ubuntu 18.04.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Launch an Amazon EC2 instance running Ubuntu 18.04 and install `docker-engine`
+    and `docker-compose`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE59]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Copy the *docker-compose.yaml* file to the remote EC2 instance and start the
+    `db` service first, so that the database used by the application can be created:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE60]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Use `docker exec` to run the `psql -U postgres` command inside the running
+    Docker container for the PostgreSQL database. At the PostgreSQL prompt, create
+    the `wordcount` database and `wordcount_dbadmin` role:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE61]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Before launching the containers for the services defined in *docker-compose.yaml*,
+    two things are necessary:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Run `docker login` to be able to pull the Docker image pushed previously to
+    Docker Hub:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE62]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'Set the `DBPASS` environment variable to the correct value in the current shell.
+    The `sops` method described in the local macOS setup can be used, but for this
+    example, set it directly in the shell:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE63]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'Now launch all the services necessary for the application by running `docker-compose
+    up -d`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE64]'
+  prefs: []
+  type: TYPE_PRE
+- en: At this point, after allowing access to port 5000 in the AWS security group
+    associated with our Ubuntu EC2 instance, you can hit the external IP of the instance
+    on port 5000 and use the application.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'It’s worth emphasizing one more time how much Docker simplifies the deployment
+    of applications. The portability of Docker containers and images means that you
+    can run your application on any operating system where the Docker engine runs.
+    In the example shown here, none of the prerequisites needed to be installed on
+    the Ubuntu server: not Flask, not PostgreSQL, and not Redis. It was also not necessary
+    to copy the application code over from the local development machine to the Ubuntu
+    server. The only file needed on the Ubuntu server was *docker-compose.yaml*. Then,
+    the whole set of services comprising the application was launched with just one
+    command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`$ docker-compose up -d`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Beware of downloading and using Docker images from public Docker repositories,
+    because many of them include serious security vulnerabilities, the most serious
+    of which can allow an attacker to break through the isolation of a Docker container
+    and take over the host operating system. A good practice here is to start with
+    a trusted, pre-built image, or build your own image from scratch. Stay abreast
+    of the latest security patches and software updates, and rebuild your image whenever
+    any of these patches or updates are available. Another good practice is to scan
+    all of your Docker images with one of the many Docker scanning tools available,
+    among them [Clair](https://oreil.ly/OBkkx), [Anchore](https://oreil.ly/uRI_1),
+    and [Falco](https://oreil.ly/QXRg6). Such scanning can be performed as part of
+    a continuous integration/continuous deployment pipeline, when the Docker images
+    usually get built.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Although `docker-compose` makes it easy to run several containerized services
+    as part of the same application, it is only meant to be run on a single machine,
+    which limits its usefulness in production scenarios. You can really only consider
+    an application deployed with `docker-compose` to be “production ready” if you
+    are not worried about downtime and you are willing to run everything on a single
+    machine (this being said, Grig has seen hosting providers running Dockerized applications
+    in production with `docker-compose`). For true “production ready” scenarios, you
+    need a container orchestration engine such as Kubernetes, which will be discussed
+    in the next chapter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Exercises
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Familiarize yourself with the [Dockerfile reference](https://oreil.ly/kA8ZF).
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Familiarize yourself with the [Docker Compose configuration reference](https://oreil.ly/ENMsQ).
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Create an AWS KMS key and use it with `sops` instead of a local `PGP` key. This
+    allows you to apply AWS IAM permissions to the key, and restrict access to the
+    key to only the developers who need it.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Write a shell script that uses `docker exec` or `docker-compose exec` to run
+    the PostgreSQL commands necessary for creating a database and a role.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Experiment with other container technologies, such as [Podman](https://podman.io).
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: ^([1](ch11.html#idm46691322287592-marker)) This is an example URL address—your
+    IP address will be different.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([2](ch11.html#idm46691322283160-marker)) Again, your IP address will be different.
+  prefs: []
+  type: TYPE_NORMAL

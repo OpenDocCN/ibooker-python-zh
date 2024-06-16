@@ -1,0 +1,463 @@
+- en: Chapter 13\. Protocols
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: I have a confession to make. I’ve been skirting around something in the Python
+    type system that, upon first glance, is contradictory. It has to do with a key
+    difference in philosophy between the Python runtime type system and the static
+    type hints.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Back in [Chapter 2](part0005_split_000.html#types), I described how Python supports
+    duck typing. Recall that this means you can use objects in a context as long as
+    that object supports a specific set of behaviors. You don’t need any sort of parent
+    class or predefined inheritance structure to use duck typing.
+  prefs: []
+  type: TYPE_NORMAL
+- en: However, the typechecker has no clue how to handle duck typing without any assistance.
+    The typechecker knows how to handle types known at static analysis time, but how
+    does it handle duck-typed decisions made at runtime?
+  prefs: []
+  type: TYPE_NORMAL
+- en: To remedy this, I’m going to introduce protocols, a feature introduced in Python
+    3.8\. Protocols solve the contradiction listed above; they annotate duck-typed
+    variables during typechecking. I’ll cover why you need protocols, how to define
+    your own, and how to use them in advanced scenarios. But before you start, you
+    need to understand the disconnect between Python’s duck typing and static typecheckers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tension Between Typing Systems
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'In this chapter, you are going to build an automated lunch shop’s digital menu
+    system. This restaurant has a variety of entries that are “splittable,” meaning
+    you can get a half order. Deli sandwiches, wraps, and soups can be split, but
+    entries like drinks and hamburgers cannot be split. In the interest of deduplication,
+    I want one method that does all the splitting. Here are some entries as an example:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now, the split method might look something like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'What should the parameter `order` be typed as? Remember, a type is a set of
+    behaviors, not necessarily a concrete Python type. I may not have a name for this
+    set of behaviors, but I do want to make sure that I uphold them. In this example,
+    the type must have these behaviors:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The type must have a function called `split_in_half`. This must return an iterable
+    collection of two objects.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Each object returned from `split_in_half` must have an attribute called `cost`.
+    This `cost` must be able to have the ceiling applied to it and to be integer-divided
+    by two. This `cost` must be mutable.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Each object returned from `split_in_half` must have an attribute called `name`.
+    This `name` must be allowed to set the text `"½ "` prefixed before it. This `name`
+    must be mutable.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'A `Chili` or a `BLTSandwich` object will work just fine as a subtype, but `BaconCheeseburger`
+    will not. `BaconCheeseburger` does not have the structure that the code is looking
+    for. If you did try to pass in `BaconCheeseburger`, you’d get an `AttributeEr⁠ror`
+    specifying that `BaconCheeseburger` has no method called `split_in_half()`. In
+    other words, `BaconCheeseburger` does not match the structure of the expected
+    type. In fact, this is where duck typing earns its other name: *structural subtyping*,
+    or subtyping based on structure.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In contrast, most of the type hinting that you’ve been exploring throughout
+    this part of the book is known as *nominal subtyping*. This means that types that
+    have different names are separate from one another. Do you see the problem? These
+    two types of subtyping are opposed to each other. One is based on names of types
+    and the other is based on structure. In order to catch errors during typechecking,
+    you will need to come up with a named type:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: So, to ask again, what should the parameter be typed as? I’ve listed some options
+    below.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Leave the Type Blank or Use Any
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: I cannot condone this, certainly not in a book all about robustness. This conveys
+    no intent to future developers, and typecheckers will not detect common errors.
+    Moving on.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Use a Union
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: Ah, this is a bit better than leaving it blank. An order can be either a `BLTSandwich`
+    or `Chili`. And for this limited example, it does work. However, this should feel
+    slightly off to you. I need to figure out how to reconcile structural subtyping
+    and nominal subtyping, and all I’ve done is hardcode a few classes into the type
+    signature.
+  prefs: []
+  type: TYPE_NORMAL
+- en: What’s worse about this is that it’s fragile. Every time somebody needs to add
+    a class that can be splittable, they have to remember to update this function.
+    You can only hope that this function is somewhat near where classes are defined
+    so that future maintainers might stumble upon it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: There’s another hidden danger here. What if this automated lunch maker is a
+    library, meant to be used in automated kiosks by different vendors? Presumably,
+    they would pull in this lunch-making library, make their own classes, and call
+    `split_dish` on those classes. With the definition of `split_dish` in library
+    code, there are very few reasonable ways that a consumer can get their code to
+    typecheck.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Use Inheritance
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Some of you who are experienced in an object-oriented language such as C++ or
+    Java may be yelling that an interface class is appropriate here. It’d be simple
+    to have both of these classes inherit from some base class that defined the methods
+    you want.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: This type hierarchy is modeled in [Figure 13-1](part0017_split_004.html#splittable_type_hierarchy).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Type hierarchy for splittable](../images/00017.gif)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 13-1\. Type hierarchy for splittable
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'And this does work:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'In fact, you can even annotate the return type:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: But what if there is a more complicated class hierarchy at play? What if your
+    class hierarchy looks like [Figure 13-2](part0017_split_004.html#complicated_splittable)?
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![A more complicated type hierarchy](../images/00018.gif)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 13-2\. A more complicated type hierarchy
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Now, you have a tough decision in front of you. Where do you put the `Splittable`
+    class in the type hierarchy? You can’t put it in the parent of the tree; not every
+    dish should be splittable. You could make the `Splittable` class into a `SplittableLunch`
+    class and jam it right between `Lunch` and whichever class that can be splittable,
+    like in [Figure 13-3](part0017_split_004.html#more_complex_splittable).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![ropy 1303](../images/00019.gif)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 13-3\. A more complicated type hierarchy with `Splittable` injected in
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: This will fall apart as your codebase grows. For one, if you want to use `Splittable`
+    anywhere else (say for dinner, or checks, or anything else), you’ll have to duplicate
+    that code; nobody wants a billing system that inherits from `SplittableLunch`.
+    Also, `Splittable` might not be the only parent class you want to introduce. You
+    may have other attributes, such as being able to share an entree, having it available
+    for curbside pickup, specifying that it allows substitutions, and so on. The number
+    of classes you have to write explodes with each option you introduce.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Use Mixins
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Now, some languages solve this through the mixins, which I introduced in [Chapter 11](part0015_split_000.html#api).
+    Mixins shift the burden to each class at the bottom of the class hierarchy without
+    polluting any classes above. If I want my `BLTSandwich` to be `Shareable`, `PickUppable`,
+    `Substitutable`, and `Splittable`, then I don’t have to modify anything else besides
+    `BLTSandwich`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: Only the classes that need the functionality need to change. You reduce the
+    need to coordinate across large codebases. Still, this is not perfect; users still
+    need to add multiple inheritance to their classes to address this problem, and
+    it would be great if you could minimize the changes needed to typecheck. It also
+    introduces a physical dependency when you import the parent class, which may not
+    be ideal.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In fact, none of the options above feels right. You’re changing existing classes
+    just for the sake of typechecking, which feels very *unpythonic* to me. Many developers
+    fell in love with Python because it doesn’t require such verbosity. Fortunately,
+    there is a better solution in the form of *protocols*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Protocols
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Protocols provide a way of closing the gap between type hinting and the runtime
+    type system. They allow you to provide structural subtyping during typechecking.
+    As a matter of fact, you probably are familiar with a protocol without even knowing
+    it: the iterator protocol.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The iterator protocol is a defined set of behaviors that objects may implement.
+    If an object implements these behaviors, you can loop over the object. Consider:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Notice how I didn’t have to subclass `Iterator` in order for the typing to
+    work. This is because the `ShuffleIterator` has the two methods needed for iterators
+    to work: an `__iter__` method for looping over iterators, and a `__next__` method
+    for getting the next item in the sequence.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This is exactly the sort of pattern I want to achieve with the `Splittable`
+    examples. I want to be able to have typing work based on the structure of the
+    code. To do this, you can define your own protocol.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Defining a Protocol
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Defining a protocol is extremely simple. If you want something to be splittable,
+    you define `Splittable` in terms of a protocol:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: This looks pretty close to the example for subclassing earlier in this chapter,
+    but you use it a tad differently.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To have the `BLTSandwich` be splittable, you don’t have to indicate anything
+    different in the class. There is no subclassing needed:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: There is no explicit parent class for `BLTSandwich`. If you’d like to be explicit,
+    you can still subclass from `Splittable`, but it’s not a requirement.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The `split_dish` function can now expect to use anything that supports the
+    new `Splittable` protocol:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: Discussion Topic
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Where can you use protocols in your codebase? Discuss areas where you use duck
+    typing heavily or write generic code. Discuss how it would be easy to misuse these
+    areas of code without using a protocol.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The typechecker will detect that a `BLTSandwich` is `Splittable` just by virtue
+    of the fields and method it has defined. This simplifies class hierarchies immensely.
+    You don’t need a complicated tree structure, even as you add more protocols. You
+    can simply define a different protocol for each set of required behaviors, including
+    `Shareable`, `Substitutable`, or `PickUppable`. Functions that depend on those
+    behaviors can then rely on those protocols instead of any sort of base class.
+    The original classes don’t need to change in any form, as long as they implement
+    the needed functionality.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Advanced Usage
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: I’ve covered the primary use case for protocols so far, but there’s a little
+    more I’d like to show you. You won’t be reaching for these features as often,
+    but they fill out a critical niche for protocols.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Composite Protocols
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: I talked in the last section about how a class might satisfy multiple protocols.
+    For instance, a single lunch item may be `Splittable`, `Shareable`, `Substitutable`,
+    and `PickUppable`. While you can mix in these protocols quite easily, what if
+    you found out that over half the lunch entries fall into this category? You could
+    designate these lunch entries as a `StandardLunchEntry`, allowing you to refer
+    to all four protocols as a single type.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Your first attempt might just be to write a type alias to cover your bases:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'However, this will match anything that satisfies at least one protocol, not
+    all four. To match all four protocols, you need to use a composite protocol:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: Then, you can use `StandardLunchEntry` anywhere an item should support all four
+    protocols. This allows you to group protocols together, without having to duplicate
+    the same combinations again and again throughout your codebase.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: '`StandardLunchEntry` also subclasses from `Protocol`. This is required; if
+    it is left out, `StandardLunchEntry` would not be a protocol, even though it subclasses
+    from other protocols. Put more generally: classes subclassed from a protocol do
+    not automatically become a protocol.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Runtime Checkable Protocols
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Throughout all of this protocol discussion, I’ve stayed in the realm of static
+    typechecking. Sometimes, you just need to check a type at runtime, though. Unfortunately,
+    protocols out of the box do not support any sort of `isinstance()` or `issubclass()`
+    check. It’s easy to add, though:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: As long as you throw the `runtime_checkable` decorator in there, you can do
+    an `isinstance()` check to see if an object satisfies a protocol. When you do,
+    `isinstance()` is essentially calling a `__hasattr__` method on each of the expected
+    variables and functions of the protocol.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: '`issubclass()` will only work if your protocol is a nondata protocol, which
+    is one that does not have any protocol variables. This has to deal with edge cases
+    concerning setting variables in constructors.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: You will typically mark protocols as `runtime_checkable` when you are using
+    a `Union` of protocols. Functions may expect either one protocol or a different
+    protocol, and those functions might need some way to differentiate the two inside
+    the body of a function at runtime.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Modules Satisfying Protocols
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: While I’ve so far only talked about objects satisfying protocols, there’s a
+    narrower use case that is worth mentioning. It turns out that modules can satisfy
+    protocols, too. After all, a module is still an object.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Suppose I want to define a protocol around a restaurant and each restaurant
+    is defined in a separate file. Here’s one such file:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Then, I need some code that will define the `Restaurant` protocol and be able
+    to load a restaurant:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now, I can pass imported modules to my `load_restaurant` function:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: In `main.py`, the call to `load_restaurant` will typecheck just fine. The restaurant
+    module satisfies the `Restaurant` protocol I’ve defined. Protocols are even smart
+    enough to ignore the `self` argument in `render_menu` when a module is passed
+    in. Using a protocol to define a module isn’t an everyday Python sort of thing,
+    but you’ll see it crop up if you have Python configuration files or plug-in architectures
+    that need to enforce a contract.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Warning
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Not every typechecker may support using a module as a protocol just yet; double-check
+    the bugs and documentation of your favorite typechecker for support.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Closing Thoughts
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Protocols were just introduced in Python 3.8, so they are still relatively new.
+    However, they patch a huge hole in what you can do with Python’s static typechecking.
+    Remember, while the runtime is structurally subtyped, most of the static typechecking
+    is nominally subtyped. Protocols fill that gap and let you do structural subtyping
+    during typechecking. You’ll most commonly use them whenever you’re writing library
+    code and want to provide a solid API that users can depend on, without relying
+    on a specific type. Using protocols reduces physical dependencies of code, which
+    helps with maintainability, but you still can catch errors early.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In the next chapter, you’ll learn about one more way to enhance your types:
+    modeled types. Modeling a type allows you to create a rich set of constraints
+    that are checked at typecheck and runtime, and can eliminate a whole class of
+    errors without having to manually write validation for every field. Even better,
+    by modeling your types, you provide built-in documentation for what is and what
+    is not allowed in your codebase. Throughout the next chapter, you’ll see how to
+    do all of this using the popular library pydantic.'
+  prefs: []
+  type: TYPE_NORMAL

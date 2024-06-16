@@ -1,0 +1,533 @@
+- en: Chapter 7\. Measuring Coverage with Coverage.py
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: How confident in a code change are you when your tests pass?
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you look at tests as a way to detect bugs, you can describe their sensitivity
+    and specificity.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The *sensitivity* of your test suite is the probability of a test failure when
+    there’s a defect in the code. If large parts of the code are untested, or if the
+    tests don’t check for expected behavior, you have low sensitivity.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The *specificity* of your tests is the probability that they will pass if the
+    code is free of defects. If your tests are *flaky* (they fail intermittently)
+    or *brittle* (they fail when you change implementation details), then you have
+    low specificity. Invariably, people stop paying attention to failing tests. This
+    chapter isn’t about specificity, though.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'There’s a great way to boost the sensitivity of your tests: when you add or
+    change behavior, write a failing test before the code that makes it pass. If you
+    do this, your test suite will capture your expectations for the code.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Another effective strategy is to test your software with the various inputs
+    and environmental constraints that you expect it to encounter in the real world.
+    Cover the edge cases of a function, like empty lists or negative numbers. Test
+    common error scenarios, not just the “happy path”.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Code coverage* is a measure of the extent by which the test suite exercises
+    your code. Full coverage doesn’t guarantee high sensitivity: If your tests cover
+    every line in your code, you can still have bugs. It’s an upper bound, though.
+    If your code coverage is 80%, then 20% of your code will *never* trigger a test
+    failure, no matter how many bugs creep in. It’s also a quantitative measure amenable
+    to automated tools. These two properties make coverage a useful proxy for sensitivity.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In short, coverage tools record each line in your code when you run it. After
+    completion, they report the overall percentage of executed lines with respect
+    to the entire codebase.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Coverage tools aren’t limited to measuring test coverage. For example, code
+    coverage lets you find which modules an API endpoint in a large codebase uses.
+    Or you could use it to determine the extent to which code examples document your
+    project.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this chapter, I’ll explain how to measure code coverage with Coverage.py,
+    a coverage tool for Python. In the main sections of this chapter, you’ll learn
+    how to install, configure, and run Coverage.py, and how to identify missing lines
+    of source code and missing branches in the control flow. I’ll explain how to measure
+    code coverage across multiple environments and processes. Finally, I’ll talk about
+    what code coverage you should aim for and how to reach your coverage target.
+  prefs: []
+  type: TYPE_NORMAL
+- en: How does coverage measurement work in Python? The interpreter lets you register
+    a callback—​a *trace function*—using the function `sys.settrace`. From that point
+    onwards, the interpreter invokes the callback whenever it executes a line of code—​as
+    well as in some other situations, like entering or returning from functions or
+    raising exceptions. Coverage tools register a trace function that records each
+    executed line of source code in a local database.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using Coverage.py
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: '[Coverage.py](https://coverage.readthedocs.io/) is a mature and widely used
+    code coverage tool for Python. Created over two decades ago—​predating PyPI and
+    setuptools—​and actively maintained ever since, it has measured coverage on every
+    interpreter since Python 2.1.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Add `coverage[toml]` to your test dependencies (see [“Managing Test Dependencies”](ch06.html#section_testing_dependencies)).
+    The `toml` extra allows Coverage.py to read its configuration from *pyproject.toml*
+    on older interpreters. Since Python 3.11, the standard library includes the `tomllib`
+    module for parsing TOML files.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Measuring coverage is a two-step process. First, you gather coverage data during
+    a test run with `coverage run`. Second, you compile an aggregated report from
+    the data with `coverage report`. Each command has a table in *pyproject.toml*
+    under `tool.coverage`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Start by configuring which packages you want to measure—​it lets Coverage.py
+    report modules that never showed up during execution, like the `__main__` module
+    earlier. (Even without the setting, it won’t drown you in reports about the standard
+    library.) Specify your top-level import package, as well as the test suite:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Measuring code coverage for your test suite may seem strange—​but you should
+    always do it. It alerts you when tests don’t run and helps you identify unreachable
+    code within them. Treat your tests the same way you would treat any other code.^([1](ch07.html#id298))
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'You can invoke `coverage run` with a Python script, followed by its command-line
+    arguments. Alternatively, you can use its `-m` option with an importable module.
+    Use the second method—​it ensures that you run pytest from the current environment:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: After running this command, you’ll find a file named *.coverage* in the current
+    directory. Coverage.py uses it to store the coverage data it gathered during the
+    test run.^([2](ch07.html#id299))
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Coverage reports display the overall percentage of code coverage, as well as
+    a breakdown per source file. Use the `show_missing` setting to also include line
+    numbers for statements missing from coverage:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Run `coverage report` to show the coverage report in the terminal:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: Overall, your project has a coverage of 93%—4 statements never showed up during
+    the tests. The test suite itself has full coverage, as you would expect.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s take a closer look at those missing statements. The `Missing` column
+    in the coverage report lists them by line number. You can use your code editor
+    to display the source code with line numbers, or the standard `cat -n` command
+    on Linux and macOS. Again, the entire `__main__` module is missing from coverage:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The missing lines in *__init__.py* correspond to the body of the `main` function:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This is surprising—​the end-to-end test from [Example 6-2](ch06.html#example_testing_end_to_end)
+    runs the entire program, so all of those lines are definitely being tested. For
+    now, disable coverage measurements for the `__main__` module:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'You can exclude the `main` function using a special comment:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: If this feels like cheating, bear with me until [“Measuring in Subprocesses”](#section_coverage_subprocess),
+    where you’ll re-enable coverage measurements for these lines.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If you run both steps again, Coverage.py will report full code coverage. Let’s
+    make sure you’ll notice any lines that aren’t exercised by your tests. Configure
+    Coverage.py to fail if the percentage drops below 100% again:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: Branch Coverage
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: If an article has an empty summary, `random-wikipedia-article` prints a trailing
+    blank line (yikes). Those empty summaries are rare, but they exist, and this should
+    be a quick fix. [Example 7-1](#example_coverage_show) modifies `show` to print
+    only non-empty summaries.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-1\. Printing only non-empty summaries in `show`
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: Curiously, the coverage stays at 100%—even though you didn’t write a test first.
+  prefs: []
+  type: TYPE_NORMAL
+- en: By default, Coverage.py measures *statement coverage*—the percentage of statements
+    in your modules that the interpreter executed during the tests. If the summary
+    isn’t empty, every statement in the function gets executed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'On the other hand, the tests only exercised one of two code paths through the
+    function—​they never skipped the `if` body. Coverage.py also supports *branch
+    coverage*, which looks at all the transitions between statements in your code
+    and measures the percentage of those traversed during the tests. You should always
+    enable it, as it’s more precise than statement coverage:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Re-run the tests, and you’ll see Coverage.py flag the missing transition from
+    the `if` statement on line 34 to the exit of the function:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[Example 7-2](#example_coverage_branch) brings coverage back to 100%. It includes
+    an article with an empty summary and adds the missing test for trailing blank
+    lines.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-2\. Testing articles with empty summaries
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: Run the tests again—​and they fail! Can you spot the bug in [Example 7-1](#example_coverage_show)?
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Empty summaries produce two blank lines: one to separate the title and the
+    summary, and one from printing the empty summary. You’ve only removed the second
+    one. [Example 7-3](#example_coverage_show_fixed) removes the first one as well.
+    Thanks, Coverage.py!'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-3\. Avoiding both trailing blank lines in `show`
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: Testing in Multiple Environments
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: You will often need to support a variety of Python versions. Python releases
+    come out every year, while long term support (LTS) distros can reach back a decade
+    into Python’s history. End-of-life Python versions can have a surprising afterlife—​distributors
+    may provide security patches years after the core Python team ends support.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s update `random-wikipedia-article` to support Python 3.7, which reached
+    its end of life in June 2023\. I’m assuming your project requires Python 3.10,
+    with lower bounds on all dependencies. First, relax the Python requirement in
+    *pyproject.toml*:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Next, check if your dependencies are compatible with the Python version. Use
+    `uv` to compile a separate requirements file for a Python 3.7 environment:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: The error indicates that your preferred version of HTTPX has already dropped
+    Python 3.7\. Remove your lower version bound and try again. After a few similar
+    errors and removing the lower bounds of other packages, dependency resolution
+    finally succeeds. Restore the lower bounds using the older versions of these packages.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'You’ll also need the backport `importlib-metadata` (see [“Environment Markers”](ch04.html#section_dependencies_environment_markers)).
+    Add the following entry to the `project.dependencies` field:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Update the *__init__.py* module to fall back to the backport:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Compile the requirements one more time. Finally, update your project environment:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: Parallel Coverage
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'If you now re-run Coverage.py under Python 3.7, it reports the first branch
+    of the `if` statement as missing. This makes sense: your code executes the `else`
+    branch and imports the backport instead of the standard library.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: It may be tempting to exclude this line from coverage measurements—​but don’t.
+    Third-party dependencies like the backport can break your code, too. Instead,
+    collect coverage data from both environments.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'First, switch the environment back to Python 3.12 using your original requirements:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'By default, `coverage run` overwrites any existing coverage data—​but you can
+    tell it to append the data instead. Re-run Coverage.py with the `--append` option
+    and confirm you have full test coverage:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'With a single file for coverage data, it’s easy to erase data accidentally.
+    If you forget to pass the `--append` option, you’ll have to run the tests again.
+    You could configure Coverage.py to append by default, but that’s error-prone,
+    too: If you forget to run `coverage erase` periodically, you’ll end up with stale
+    data in your report.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: There’s a better way to gather coverage across multiple environments. Coverage.py
+    lets you record coverage data in separate files on each run. Enable this behavior
+    with the `parallel` setting:^([3](ch07.html#id300))
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Coverage reports are always based on a single data file, even in parallel mode.
+    You merge the data files using the command `coverage combine`. That turns the
+    two-step process from earlier into a three-step one: `coverage run` — `coverage
+    combine` — `coverage report`.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s put all of this together. For each Python version, set up the environment
+    and run the tests, as shown here for Python 3.7:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE22]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'At this point, you’ll have multiple *.coverage.** files in your project. Aggregate
+    them into a single *.coverage* file using the command `coverage combine`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE23]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Finally, produce the coverage report with `coverage report`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE24]'
+  prefs: []
+  type: TYPE_PRE
+- en: Does it sound *incredibly* tedious to gather coverage like this? In [Chapter 8](ch08.html#chapter_nox),
+    you’ll learn how to automate testing across multiple Python environments. You’ll
+    run this entire process using a single three-letter command.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Measuring in Subprocesses
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: At the end of [“Using Coverage.py”](#section_coverage_coverage), you had to
+    disable coverage for the `main` function and the `__main__` module. But the end-to-end
+    test certainly exercises this code. Let’s remove the `# pragma` comment and the
+    `omit` setting and figure this out.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Think about how Coverage.py registers a trace function that records executed
+    lines. Maybe you can already guess what’s going on here: The end-to-end test runs
+    your program in a separate process. Coverage.py never registered its trace function
+    on the interpreter in that process. None of those executed lines were recorded
+    anywhere.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Coverage.py provides a public API to enable tracing in the current process:
+    the `coverage.process_startup` function. You could call the function when your
+    application starts up. But there must be a better way—​you shouldn’t have to modify
+    your code to support code coverage.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'It turns out you don’t need to. You can place a *.pth* file in the environment
+    that calls the function during interpreter startup. This leverages a little-known
+    Python feature (see [“Site Packages”](ch02.html#section_environments_site_packages)):
+    The interpreter executes lines in a *.pth* file if they start with an `import`
+    statement.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Install a *_coverage.pth* file into the *site-packages* directory of your environment,
+    with the following contents:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE25]'
+  prefs: []
+  type: TYPE_PRE
+- en: You can find the *site-packages* directory under *lib/python3.x* on Linux and
+    macOS, and under *Lib* on Windows.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Additionally, you need to set the environment variable `COVERAGE_PROCESS_START`.
+    On Linux and macOS, use this syntax:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE26]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'On Windows, use the following syntax instead:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE27]'
+  prefs: []
+  type: TYPE_PRE
+- en: Re-run the test suite, combine the data files, and display the coverage report.
+    Thanks to measuring coverage in the subprocess, the program should have full coverage
+    again.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Measuring coverage in subprocesses only works in parallel mode. Without parallel
+    mode, the main process overwrites the coverage data from the subprocess, because
+    both use the same data file.
+  prefs: []
+  type: TYPE_NORMAL
+- en: What Coverage to Aim For
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Any coverage percentage below 100% means your tests won’t detect bugs in some
+    parts of your codebase. If you’re working on a new project, there isn’t any other
+    meaningful coverage target.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'That doesn’t imply you should test every single line of code. Consider a log
+    statement for debugging a rare situation. The statement may be difficult to exercise
+    from a test. At the same time, it’s probably low-risk, trivial code. Writing that
+    test won’t increase your confidence in the code significantly. Exclude the line
+    from coverage using a *pragma* comment:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE28]'
+  prefs: []
+  type: TYPE_PRE
+- en: Don’t exclude code from coverage just because it’s cumbersome to test. When
+    you start working with a new library or interfacing with a new system, it usually
+    takes some time to figure out how to test your code. But often those tests end
+    up detecting bugs that would have gone unnoticed and caused problems in production.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Legacy projects often consist of a large codebase with minimal test coverage.
+    As a general rule, coverage in such projects should increase *monotonically*—no
+    individual change should lead to a drop in coverage.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'You’ll often find yourself in a dilemma here: To test, you need to refactor
+    the code, but refactoring is too risky without tests. Find the minimal safe refactoring
+    to increase testability. Often, this consists of breaking a dependency of the
+    code under test.^([4](ch07.html#id302))'
+  prefs: []
+  type: TYPE_NORMAL
+- en: For example, you may be testing a large function that, among other things, also
+    connects to the production database. Add an optional parameter that lets you pass
+    the connection from the outside. Tests can then pass a connection to an in-memory
+    database instead.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Example 7-4](#example_coverage_config) recaps the Coverage.py settings you’ve
+    used in this chapter.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-4\. Configuring Coverage.py in *pyproject.toml*
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE29]'
+  prefs: []
+  type: TYPE_PRE
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: You can measure the extent to which the test suite exercises your project using
+    Coverage.py. Coverage reports are useful for discovering untested lines. Branch
+    coverage captures the control flow of your program, instead of isolated lines
+    of source code. Parallel coverage lets you measure coverage across multiple environments.
+    You need to combine the data files before reporting. Measuring coverage in subprocesses
+    requires setting up a *.pth* file and an environment variable.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Measuring test coverage effectively for a project requires some amount of configuration
+    (), as well as the right tool incantations. In the next chapter, you’ll see how
+    you can automate these steps with Nox. You’ll set up checks that give you confidence
+    in your changes, while staying out of your way.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '^([1](ch07.html#id298-marker)) Ned Batchelder: [“You should include your tests
+    in coverage,”](https://nedbatchelder.com/blog/202008/you_should_include_your_tests_in_coverage.html)
+    August 11, 2020.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([2](ch07.html#id299-marker)) Under the hood, the *.coverage* file is just
+    a SQLite database. Feel free to poke around if you have the `sqlite3` command-line
+    utility ready on your system.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([3](ch07.html#id300-marker)) The name `parallel` is somewhat misleading; the
+    setting has nothing to do with parallel execution.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '^([4](ch07.html#id302-marker)) Martin Fowler: [“Legacy Seam,”](https://www.martinfowler.com/bliki/LegacySeam.html)
+    January 4, 2024.'
+  prefs: []
+  type: TYPE_NORMAL

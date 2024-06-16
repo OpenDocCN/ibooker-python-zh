@@ -1,0 +1,466 @@
+- en: Chapter 23\. Property-Based Testing
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: It is impossible to test absolutely everything in your codebase. The best you
+    can do is be smart in how you target specific use cases. You look for boundary
+    cases, paths through the code, and any other interesting attributes of the code.
+    Your main hope is that you haven’t left any big holes in your safety net. However,
+    you can do better than hope. You can fill in those gaps with property-based testing.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this chapter, you will learn how to do property-based testing with a Python
+    library called [`Hypothesis`](https://oreil.ly/OejR4). You’ll use `Hypothesis`
+    to generate test cases for you, often in ways you could never expect. You’ll learn
+    how to track failing test cases, craft input data in new ways, and even have `Hypothesis`
+    create combinations of algorithms to test your software. `Hypothesis` will guard
+    your codebase against a whole new combination of errors.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Property-Based Testing with Hypothesis
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Property-based testing is a form of *generative testing*, where tools generate
+    test cases for you. Instead of writing test cases based on specific input/output
+    combinations, you define *properties* for your system. *Properties* in this context
+    is another name for the invariants (discussed in [Chapter 10](part0014_split_000.html#classes))
+    that hold true for your system.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Consider a menu recommendation system that selects dishes based on customer-provided
+    constraints, such as total calories, price, and cuisine. For this specific example,
+    I want customers to be able to order a full meal that falls below a specific calorie
+    target. Here are the invariants I define for this function:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The customer will receive three dishes: an appetizer, a salad, and a main dish.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: When all the dishes’ calories are added together, the sum is less than their
+    intended target.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'If I were to write this as a `pytest` test that focuses on testing these properties,
+    it would look like the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Contrast this with testing for a very specific result:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: The second method is testing for a very specific set of meals; this test is
+    more specific, but also more *fragile*. It is more likely to break when the production
+    code changes, such as when introducing new menu items or changing the recommendation
+    algorithm. The ideal test is one that only breaks when there is a legitimate bug.
+    Remember that tests are not free. You want to reduce maintenance cost, and reducing
+    the time it takes to tweak tests is a great way of doing so.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In both cases, I am testing with a specific input: 900 calories. In order to
+    build a more comprehensive safety net, it’s a good idea to expand your input domain
+    to test for more cases. In traditional test cases, you pick which tests to write
+    by performing *boundary value analysis*. Boundary value analysis is when you analyze
+    the code under test, looking for how different inputs influence control flow,
+    or the different execution paths in your code.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'For example, say `get_recommended_meal` raised an error if the calorie limit
+    were below 650\. The boundary value in this case is 650; this splits the input
+    domain into two *equivalence classes*, or sets of values that have the same property.
+    One equivalence class is all the numbers underneath 650, and another equivalence
+    class is the values 650 and above. With boundary value analysis, there should
+    be three tests: one with calories under 650 calories, one test exactly at the
+    boundary of 650 calories, and one test with a value higher than 650 calories.
+    In practice, this verifies that no developer has messed up relational operators
+    (such as writing `<=` instead of `<`) or has made off-by-one errors.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: However, boundary value analysis is only useful if you can easily segment your
+    input domain. If it is difficult to ascertain where you should split the domain,
+    picking boundary values will not be easy. This is where the generative nature
+    of `Hypothesis` comes in; `Hypothesis` generates input for test cases. It will
+    find boundary values for you.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'You can install `Hypothesis` through `pip`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: I’ll modify my original property test to let `Hypothesis` do the heavy lifting
+    of generating input data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'With just a simple decorator, I can tell `Hypothesis` to pick the inputs for
+    me. In this case, I am asking `Hypothesis` to generate different values of `integers`.
+    `Hypothesis` will run this test multiple times, trying to find a value that violates
+    the expected properties. If I run this test with `pytest`, I see the following
+    output:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: '`Hypothesis` found an error early on with my production code: the code doesn’t
+    handle a calorie limit of zero. Now, for this case, I want to specify that I should
+    only be testing with a certain number of calories or above:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now, when I run the command with `pytest`, I want to show some more information
+    about `Hypothesis`. I will run:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This produces the following output:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: '`Hypothesis` checked 100 different values for me, without me needing to provide
+    any specific input. Even better, `Hypothesis` will check new values every time
+    you run this test. Rather than restricting yourself to the same test cases time
+    and time again, you get a much broader blast radius in what you test. Consider
+    all the different developers and continuous integration pipeline systems performing
+    tests, and you’ll realize how quickly you can catch corner cases.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: You can also specify constraints on your domain by using `hypothesis.assume`.
+    You can write assumptions into your tests, such as `assume(calories > 850)`, to
+    tell `Hypothesis` to skip any test cases that violate these assumptions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If I introduce an error (say something goes wrong between 5,000 and 5,200 calories
+    for some reason), `Hypothesis` catches the error within four test runs (the number
+    of test runs may vary for you):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'When you find an error, `Hypothesis` records the failing error so that it can
+    specifically check that value in the future. You also can make sure that `Hypothesis`
+    always tests specific cases using the `hypothesis.example` decorator:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: The Magic of Hypothesis
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: '`Hypothesis` is very good at generating test cases that will find errors. It
+    seems like magic, but it’s actually quite clever. In the previous example, you
+    may have noticed that `Hypothesis` errored out on the value 5001\. If you were
+    to run the same code and introduce an error for values greater than 5000, you’ll
+    find that the test errors out at 5001 as well. If `Hypothesis` is testing different
+    values, shouldn’t we all see slightly different results?'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`Hypothesis` does something really nice for you when it finds a failure: it
+    *shrinks* the test case. Shrinking is when `Hypothesis` tries to find the minimal
+    input that still fails the test. For `integers()`, `Hypothesis` will try successively
+    smaller numbers (or bigger numbers when dealing with negatives) until the input
+    value reaches zero. `Hypothesis` tries to zero in (no pun intended) on the smallest
+    value that still fails the test.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: To learn more about how `Hypothesis` generates and shrinks values, it’s worth
+    reading the original [QuickCheck paper](https://oreil.ly/htavw). QuickCheck was
+    one of the first property-based tools, and even though it deals with the Haskell
+    programming language, it is quite informative. Most property-based testing tools
+    like `Hypothesis` are descendents from the ideas put forth by QuickCheck.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Contrast with Traditional Tests
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Property-based testing can greatly simplify the test-writing process. There
+    are entire classes of problems that you do not need to worry about:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Easier testing of nondeterminism
+  prefs: []
+  type: TYPE_NORMAL
+- en: Nondeterminism is the bane of most traditional tests. Random behavior, creating
+    temporary directories, or retrieving different records from a database can make
+    it incredibly hard to write tests. You have to create a specific set of output
+    values in your test, and to do that, you need to be deterministic; otherwise,
+    your test will keep failing. You often try to control the nondeterminism by forcing
+    specific behaviors, such as forcing the same folder to always be created or seeding
+    a random number generator.
+  prefs: []
+  type: TYPE_NORMAL
+- en: With property-based testing, nondeterminism is part of the package. `Hypothesis`
+    will give you different inputs for each test run. You don’t have to worry about
+    testing for specific values anymore; define properties and embrace the nondeterminism.
+    Your codebase will be better because of it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Less fragility
+  prefs: []
+  type: TYPE_NORMAL
+- en: When testing for specific input/output combinations, you are at the mercy of
+    a slew of hard-coded assumptions. You assume that lists will always be in the
+    same order, that dictionaries won’t get any key-value pairs added to them, and
+    that your dependencies will never change their behavior. Any one of these seemingly
+    unrelated changes can break one of your tests.
+  prefs: []
+  type: TYPE_NORMAL
+- en: When tests break for reasons unrelated to the functionality under test, it’s
+    frustrating. The tests get a bad reputation for being flaky, and either they get
+    ignored (masking true failures), or developers live with the constant nagging
+    of needing to fix tests. Use property-based testing to add resilience to your
+    testing.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Better chance at finding bugs
+  prefs: []
+  type: TYPE_NORMAL
+- en: Property-based testing isn’t just about reducing the cost of test creation and
+    maintenance. It will increase your chances of finding bugs. Even if you write
+    your tests covering every path through your code today, there’s still a chance
+    that you haven’t caught everything. If your functions change in a backward-incompatible
+    way (say, by now erroring out on a value that you previously thought was fine),
+    your luck depends on if you have a test case for that specific value. Property-based
+    testing, by the nature of generating new test cases, will have a better chance
+    of finding that bug over multiple runs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Discussion Topic
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Examine your current test cases and pick tests that are complicated to read.
+    Search for tests that require a large amount of inputs and outputs to adequately
+    test functionality. Discuss how property-based testing can replace these tests
+    and simplify your test suite.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Getting the Most Out of Hypothesis
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: I’ve just scratched the surface of `Hypothesis` so far. Once you really dive
+    into property-based testing, you start opening up tons of doors for yourself.
+    `Hypothesis` ships with some pretty cool features out of the box that can improve
+    your testing experience.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Hypothesis Strategies
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: In the previous section, I introduced you to the `integers()` strategy. A `Hypothesis`
+    strategy defines how test cases are generated, as well as how the data gets shrunk
+    when a test case fails. `Hypothesis` ships with a ton of strategies right out
+    of the box. Similar to passing `integers()` into your test case, you can pass
+    things like `floats()`, `text()`, or `times()` to generate values for floating-point
+    numbers, strings, or `datetime.time` objects, respectively.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`Hypothesis` also provides strategies that can compose other strategies together,
+    such as building lists, tuples, or dictionaries of strategies (this is a fantastic
+    example of composability, as described in [Chapter 17](part0022_split_000.html#composability)).
+    For instance, let’s say I want to create a strategy that maps dish names (text)
+    to calories (a number between 100 and 2,000):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: For even more complicated data, you can use `Hypothesis` to define your own
+    strategies. You are allowed to `map` and `filter` strategies, which are similar
+    in concept to the built-in `map` and `filter` functions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'You can also use the `hypothesis.composite` strategy decorator to define your
+    own strategies. I want to create a strategy that creates three-course meals for
+    me, consisting of an appetizer, main dish, and dessert. Each dish contains a name
+    and a calorie count:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: This example works by defining a new composite strategy called `three_course_meals`.
+    I create three integer strategies; each type of dish gets its own strategy with
+    its own min/max values. From there, I create a new dish that has a name and a
+    *drawn* value from the strategy. `draw` is a function that gets passed into your
+    composite strategy and that you use to select values from the strategy.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Once you’ve defined your own strategies, you can reuse them across multiple
+    tests, making it easy to generate new data for your system. To learn more about
+    `Hypothesis` strategies, I encourage you to read the [`Hypothesis` documentation](https://oreil.ly/QhhnM).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Generating Algorithms
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: In previous examples, I focused on generating input data to create your tests.
+    However, `Hypothesis` can go a step further and generate combinations of operations
+    as well. `Hypothesis` calls this *stateful testing*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Consider our meal recommendation system. I showed you how to filter by calories,
+    but now I also want to filter by price, number of courses, proximity to user,
+    and so on. Here are some properties I want to assert about the system:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The meal recommendation system always returns three meal options; it may be
+    possible that not all recommended options fit all of the user’s criteria.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: All three meal options are unique.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The meal options are ordered based on the most recent filter applied. In the
+    case of ties, the next most recent filter is used.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: New filters replace old filters of the same type. For example, if you set the
+    price filter to <$20, and then change it to <$15, only the <$15 filter is applied.
+    Setting something like a calorie filter, such as <1800 calories, does not affect
+    the price filter.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Rather than writing a slew of test cases, I will represent my tests using a
+    `hypothesis.stateful.RuleBasedStateMachine`. This will let me test entire algorithms
+    using `Hypothesis`, while checking for invariants along the way. It’s a bit complicated,
+    so I’ll show the entire code first, and then break it down afterward piece by
+    piece.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: That’s quite a lot of code, but it’s really cool how it all works. So let’s
+    break it down.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'First, I will create a subclass of a `hypothesis.stateful.RuleBasedStateMachine`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This class will be responsible for defining the discrete steps that I want
+    to test in combination. In the constructor, I set up `self.recommender` as a `MealRecommendationEngine`,
+    which is what I’m testing in this scenario. I also will keep track of a list of
+    filters that are applied as part of this class. Next, I will set up `hypothesis.stateful.rule`
+    functions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: Each rule acts as a step of the algorithm that you want to test. `Hypothesis`
+    will generate tests using these rules as opposed to generating test data. In this
+    case, each of these rules applies a filter to the recommendation engine. I also
+    save the filters locally so that I can check results later.
+  prefs: []
+  type: TYPE_NORMAL
+- en: I then use `hypothesis.stateful.invariant` decorators to define assertions that
+    should be checked after every rule change.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'I’ve written two invariants: one stating that the recommender always returns
+    three unique meals and one that the meals are in the correct order based on the
+    filters chosen.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Finally, I save off the `TestCase` from the `RecommendationChecker` into a variable
+    that is prefixed with `Test`. This is so `pytest` can discover the stateful `Hypothesis`
+    test.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: Once it’s all put together, `Hypothesis` will start generating test cases with
+    different combinations of rules. For instance, with one `Hypothesis` test run
+    (with an intentionally introduced error), `Hypothesis` generated the following
+    test.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: When I introduced a different error, `Hypothesis` shows me a different test
+    case that catches the fault.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: This is handy for testing complex algorithms or objects with very specific invariants.
+    `Hypothesis` will mix and match different steps, constantly searching for some
+    ordering of steps that will produce an error.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Discussion Topic
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: What areas of your codebase contain hard-to-test, highly interrelated functions?
+    Write a few stateful `Hypothesis` tests as a proof of concept and discuss how
+    these sorts of tests can build confidence in your testing suite.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Closing Thoughts
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Property-based testing does not exist to replace traditional testing; it exists
+    to supplement it. When your code has well-defined inputs and outputs, testing
+    with hard-coded preconditions and expected assertions is sufficient. However,
+    as your code gets more complex, your tests become more complex, and you find yourself
+    spending more time than you want parsing and understanding tests.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Property-based testing is simple to use with `Hypothesis` in Python. It repairs
+    holes in your safety net by generating new tests throughout the lifetime of your
+    codebase.You use `hypothesis.strategies` to control exactly how your test data
+    gets generated. You can even test algorithms by combining different steps with
+    `hypothesis.stateful` testing. `Hypothesis` will let you focus on the properties
+    and invariants of your code and express your tests more naturally.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the next chapter, I will wrap up the book with mutation testing. Mutation
+    testing is another method of filling gaps in your safety net. Instead of finding
+    new ways of testing your code, mutation code focuses on measuring the efficacy
+    of your tests. It is another tool in your arsenal for more robust testing.
+  prefs: []
+  type: TYPE_NORMAL

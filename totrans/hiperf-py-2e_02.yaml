@@ -1,0 +1,1649 @@
+- en: Chapter 2\. Profiling to Find Bottlenecks
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: '*Profiling* lets us find bottlenecks so we can do the least amount of work
+    to get the biggest practical performance gain. While we’d like to get huge gains
+    in speed and reductions in resource usage with little work, practically you’ll
+    aim for your code to run “fast enough” and “lean enough” to fit your needs. Profiling
+    will let you make the most pragmatic decisions for the least overall effort.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Any measurable resource can be profiled (not just the CPU!). In this chapter
+    we look at both CPU time and memory usage. You could apply similar techniques
+    to measure network bandwidth and disk I/O too.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If a program is running too slowly or using too much RAM, you’ll want to fix
+    whichever parts of your code are responsible. You could, of course, skip profiling
+    and fix what you *believe* might be the problem—but be wary, as you’ll often end
+    up “fixing” the wrong thing. Rather than using your intuition, it is far more
+    sensible to first profile, having defined a hypothesis, before making changes
+    to the structure of your code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Sometimes it’s good to be lazy. By profiling first, you can quickly identify
+    the bottlenecks that need to be solved, and then you can solve just enough of
+    these to achieve the performance you need. If you avoid profiling and jump to
+    optimization, you’ll quite likely do more work in the long run. Always be driven
+    by the results of profiling.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Profiling Efficiently
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The first aim of profiling is to test a representative system to identify what’s
+    slow (or using too much RAM, or causing too much disk I/O or network I/O). Profiling
+    typically adds an overhead (10× to 100× slowdowns can be typical), and you still
+    want your code to be used in as similar to a real-world situation as possible.
+    Extract a test case and isolate the piece of the system that you need to test.
+    Preferably, it’ll have been written to be in its own set of modules already.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The basic techniques that are introduced first in this chapter include the `%timeit`
+    magic in IPython, `time.time()`, and a timing decorator. You can use these techniques
+    to understand the behavior of statements and functions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Then we will cover `cProfile` ([“Using the cProfile Module”](#profiling-cprofile)),
+    showing you how to use this built-in tool to understand which functions in your
+    code take the longest to run. This will give you a high-level view of the problem
+    so you can direct your attention to the critical functions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Next, we’ll look at `line_profiler` ([“Using line_profiler for Line-by-Line
+    Measurements”](#profiling-line-profiler)), which will profile your chosen functions
+    on a line-by-line basis. The result will include a count of the number of times
+    each line is called and the percentage of time spent on each line. This is exactly
+    the information you need to understand what’s running slowly and why.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Armed with the results of `line_profiler`, you’ll have the information you need
+    to move on to using a compiler ([Chapter 7](ch07.xhtml#chapter-compiling)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: In [Chapter 6](ch06_split_000.xhtml#matrix_computation), you’ll learn how to
+    use `perf stat` to understand the number of instructions that are ultimately executed
+    on a CPU and how efficiently the CPU’s caches are utilized. This allows for advanced-level
+    tuning of matrix operations. You should take a look at [Example 6-8](ch06_split_000.xhtml#matrix_perf_python_memory)
+    when you’re done with this chapter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: After `line_profiler`, if you’re working with long-running systems, then you’ll
+    be interested in `py-spy` to peek into already-running Python processes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To help you understand why your RAM usage is high, we’ll show you `memory_profiler`
+    ([“Using memory_profiler to Diagnose Memory Usage”](#memory_profiler)). It is
+    particularly useful for tracking RAM usage over time on a labeled chart, so you
+    can explain to colleagues why certain functions use more RAM than expected.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Warning
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Whatever approach you take to profiling your code, you must remember to have
+    adequate unit test coverage in your code. Unit tests help you to avoid silly mistakes
+    and to keep your results reproducible. Avoid them at your peril.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Always* profile your code before compiling or rewriting your algorithms. You
+    need evidence to determine the most efficient ways to make your code run faster.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Next, we’ll give you an introduction to the Python bytecode inside CPython ([“Using
+    the dis Module to Examine CPython Bytecode”](#profiling-dis)), so you can understand
+    what’s happening “under the hood.” In particular, having an understanding of how
+    Python’s stack-based virtual machine operates will help you understand why certain
+    coding styles run more slowly than others.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Before the end of the chapter, we’ll review how to integrate unit tests while
+    profiling ([“Unit Testing During Optimization to Maintain Correctness”](#profiling-unit-testing))
+    to preserve the correctness of your code while you make it run more efficiently.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We’ll finish with a discussion of profiling strategies ([“Strategies to Profile
+    Your Code Successfully”](#profiling-strategies)) so you can reliably profile your
+    code and gather the correct data to test your hypotheses. Here you’ll learn how
+    dynamic CPU frequency scaling and features like Turbo Boost can skew your profiling
+    results, and you’ll learn how they can be disabled.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To walk through all of these steps, we need an easy-to-analyze function. The
+    next section introduces the Julia set. It is a CPU-bound function that’s a little
+    hungry for RAM; it also exhibits nonlinear behavior (so we can’t easily predict
+    the outcomes), which means we need to profile it at runtime rather than analyzing
+    it offline.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Introducing the Julia Set
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The [Julia set](https://oreil.ly/zJ1oB) is an interesting CPU-bound problem
+    for us to begin with. It is a fractal sequence that generates a complex output
+    image, named after Gaston Julia.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The code that follows is a little longer than a version you might write yourself.
+    It has a CPU-bound component and a very explicit set of inputs. This configuration
+    allows us to profile both the CPU usage and the RAM usage so we can understand
+    which parts of our code are consuming two of our scarce computing resources. This
+    implementation is *deliberately* suboptimal, so we can identify memory-consuming
+    operations and slow statements. Later in this chapter we’ll fix a slow logic statement
+    and a memory-consuming statement, and in [Chapter 7](ch07.xhtml#chapter-compiling)
+    we’ll significantly speed up the overall execution time of this function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We will analyze a block of code that produces both a false grayscale plot ([Figure 2-1](#FIG-julia-example))
+    and a pure grayscale variant of the Julia set ([Figure 2-3](#FIG-julia-example-greyscale)),
+    at the complex point `c=-0.62772-0.42193j`. A Julia set is produced by calculating
+    each pixel in isolation; this is an “embarrassingly parallel problem,” as no data
+    is shared between points.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Julia set at -0.62772-0.42193i](Images/hpp2_0201.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 2-1\. Julia set plot with a false gray scale to highlight detail
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: If we chose a different `c`, we’d get a different image. The location we have
+    chosen has regions that are quick to calculate and others that are slow to calculate;
+    this is useful for our analysis.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The problem is interesting because we calculate each pixel by applying a loop
+    that could be applied an indeterminate number of times. On each iteration we test
+    to see if this coordinate’s value escapes toward infinity, or if it seems to be
+    held by an attractor. Coordinates that cause few iterations are colored darkly
+    in [Figure 2-1](#FIG-julia-example), and those that cause a high number of iterations
+    are colored white. White regions are more complex to calculate and so take longer
+    to generate.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We define a set of *z* coordinates that we’ll test. The function that we calculate
+    squares the complex number `z` and adds `c`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math display="block" alttext="f left-parenthesis z right-parenthesis equals
+    z squared plus c"><mrow><mi>f</mi> <mrow><mo>(</mo> <mi>z</mi> <mo>)</mo></mrow>
+    <mo>=</mo> <msup><mi>z</mi> <mn>2</mn></msup> <mo>+</mo> <mi>c</mi></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: We iterate on this function while testing to see if the escape condition holds
+    using `abs`. If the escape function is `False`, we break out of the loop and record
+    the number of iterations we performed at this coordinate. If the escape function
+    is never `False`, we stop after `maxiter` iterations. We will later turn this
+    `z`’s result into a colored pixel representing this complex location.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In pseudocode, it might look like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: To explain this function, let’s try two coordinates.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We’ll use the coordinate that we draw in the top-left corner of the plot at
+    `-1.8-1.8j`. We must test `abs(z) < 2` before we can try the update rule:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: We can see that for the top-left coordinate, the `abs(z)` test will be `False`
+    on the zeroth iteration as `2.54 >= 2.0`, so we do not perform the update rule.
+    The `output` value for this coordinate is `0`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Now let’s jump to the center of the plot at `z = 0 + 0j` and try a few iterations:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: We can see that each update to `z` for these first iterations leaves it with
+    a value where `abs(z) < 2` is `True`. For this coordinate we can iterate 300 times,
+    and still the test will be `True`. We cannot tell how many iterations we must
+    perform before the condition becomes `False`, and this may be an infinite sequence.
+    The maximum iteration (`maxiter`) break clause will stop us from iterating potentially
+    forever.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In [Figure 2-2](#FIG-julia-non-convergence), we see the first 50 iterations
+    of the preceding sequence. For `0+0j` (the solid line with circle markers), the
+    sequence appears to repeat every eighth iteration, but each sequence of seven
+    calculations has a minor deviation from the previous sequence—we can’t tell if
+    this point will iterate forever within the boundary condition, or for a long time,
+    or maybe for just a few more iterations. The dashed `cutoff` line shows the boundary
+    at `+2`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![julia non convergence](Images/hpp2_0202.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 2-2\. Two coordinate examples evolving for the Julia set
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: For `-0.82+0j` (the dashed line with diamond markers), we can see that after
+    the ninth update, the absolute result has exceeded the `+2` cutoff, so we stop
+    updating this value.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Calculating the Full Julia Set
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this section we break down the code that generates the Julia set. We’ll analyze
+    it in various ways throughout this chapter. As shown in [Example 2-1](#profiling-juliaset-intro1),
+    at the start of our module we import the `time` module for our first profiling
+    approach and define some coordinate constants.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 2-1\. Defining global constants for the coordinate space
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: To generate the plot, we create two lists of input data. The first is `zs` (complex
+    *z* coordinates), and the second is `cs` (a complex initial condition). Neither
+    list varies, and we could optimize `cs` to a single `c` value as a constant. The
+    rationale for building two input lists is so that we have some reasonable-looking
+    data to profile when we profile RAM usage later in this chapter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To build the `zs` and `cs` lists, we need to know the coordinates for each `z`.
+    In [Example 2-2](#profiling-juliaset-intro2), we build up these coordinates using
+    `xcoord` and `ycoord` and a specified `x_step` and `y_step`. The somewhat verbose
+    nature of this setup is useful when porting the code to other tools (such as `numpy`)
+    and to other Python environments, as it helps to have everything *very* clearly
+    defined for debugging.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 2-2\. Establishing the coordinate lists as inputs to our calculation
+    function
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: Having built the `zs` and `cs` lists, we output some information about the size
+    of the lists and calculate the `output` list via `calculate_z_serial_purepython`.
+    Finally, we `sum` the contents of `output` and `assert` that it matches the expected
+    output value. Ian uses it here to confirm that no errors creep into the book.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As the code is deterministic, we can verify that the function works as we expect
+    by summing all the calculated values. This is useful as a sanity check—when we
+    make changes to numerical code, it is *very* sensible to check that we haven’t
+    broken the algorithm. Ideally, we would use unit tests and test more than one
+    configuration of the problem.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Next, in [Example 2-3](#profiling-juliaset-intro3), we define the `calculate_z_serial_purepython`
+    function, which expands on the algorithm we discussed earlier. Notably, we also
+    define an `output` list at the start that has the same length as the input `zs`
+    and `cs` lists.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 2-3\. Our CPU-bound calculation function
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: Now we call the calculation routine in [Example 2-4](#profiling-juliaset-intro4).
+    By wrapping it in a `__main__` check, we can safely import the module without
+    starting the calculations for some of the profiling methods. Here, we’re not showing
+    the method used to plot the output.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 2-4\. `__main__` for our code
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Once we run the code, we see some output about the complexity of the problem:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'In the false-grayscale plot ([Figure 2-1](#FIG-julia-example)), the high-contrast
+    color changes gave us an idea of where the cost of the function was slow changing
+    or fast changing. Here, in [Figure 2-3](#FIG-julia-example-greyscale), we have
+    a linear color map: black is quick to calculate, and white is expensive to calculate.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: By showing two representations of the same data, we can see that lots of detail
+    is lost in the linear mapping. Sometimes it can be useful to have various representations
+    in mind when investigating the cost of a function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Julia set at -0.62772-0.42193i](Images/hpp2_0203.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 2-3\. Julia plot example using a pure gray scale
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Simple Approaches to Timing—print and a Decorator
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: After [Example 2-4](#profiling-juliaset-intro4), we saw the output generated
+    by several `print` statements in our code. On Ian’s laptop, this code takes approximately
+    8 seconds to run using CPython 3.7\. It is useful to note that execution time
+    always varies. You must observe the normal variation when you’re timing your code,
+    or you might incorrectly attribute an improvement in your code to what is simply
+    a random variation in execution time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Your computer will be performing other tasks while running your code, such as
+    accessing the network, disk, or RAM, and these factors can cause variations in
+    the execution time of your program.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Ian’s laptop is a Dell 9550 with an Intel Core I7 6700HQ (2.6 GHz, 6 MB cache,
+    Quad Core with Hyperthreading) and 32 GB of RAM running Linux Mint 19.1 (Ubuntu
+    18.04).
+  prefs: []
+  type: TYPE_NORMAL
+- en: In `calc_pure_python` ([Example 2-2](#profiling-juliaset-intro2)), we can see
+    several `print` statements. This is the simplest way to measure the execution
+    time of a piece of code *inside* a function. It is a basic approach, but despite
+    being quick and dirty, it can be very useful when you’re first looking at a piece
+    of code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using `print` statements is commonplace when debugging and profiling code. It
+    quickly becomes unmanageable but is useful for short investigations. Try to tidy
+    up the `print` statements when you’re done with them, or they will clutter your
+    `stdout`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: A slightly cleaner approach is to use a *decorator*—here, we add one line of
+    code above the function that we care about. Our decorator can be very simple and
+    just replicate the effect of the `print` statements. Later, we can make it more
+    advanced.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In [Example 2-5](#profiling-juliaset-timefn), we define a new function, `timefn`,
+    which takes a function as an argument: the inner function, `measure_time`, takes
+    `*args` (a variable number of positional arguments) and `**kwargs` (a variable
+    number of key/value arguments) and passes them through to `fn` for execution.
+    Around the execution of `fn`, we capture `time.time()` and then `print` the result
+    along with `fn.__name__`. The overhead of using this decorator is small, but if
+    you’re calling `fn` millions of times, the overhead might become noticeable. We
+    use `@wraps(fn)` to expose the function name and docstring to the caller of the
+    decorated function (otherwise, we would see the function name and docstring for
+    the decorator, not the function it decorates).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 2-5\. Defining a decorator to automate timing measurements
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'When we run this version (we keep the `print` statements from before), we can
+    see that the execution time in the decorated version is ever-so-slightly quicker
+    than the call from `calc_pure_python`. This is due to the overhead of calling
+    a function (the difference is very tiny):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: The addition of profiling information will inevitably slow down your code—some
+    profiling options are very informative and induce a heavy speed penalty. The trade-off
+    between profiling detail and speed will be something you have to consider.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We can use the `timeit` module as another way to get a coarse measurement of
+    the execution speed of our CPU-bound function. More typically, you would use this
+    when timing different types of simple expressions as you experiment with ways
+    to solve a problem.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Warning
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: The `timeit` module temporarily disables the garbage collector. This might impact
+    the speed you’ll see with real-world operations if the garbage collector would
+    normally be invoked by your operations. See the [Python documentation](https://oreil.ly/2Zvyk)
+    for help on this.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'From the command line, you can run `timeit` as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note that you have to import the module as a setup step using `-s`, as `calc_pure_python`
+    is inside that module. `timeit` has some sensible defaults for short sections
+    of code, but for longer-running functions it can be sensible to specify the number
+    of loops (`-n 5`) and the number of repetitions (`-r 5`) to repeat the experiments.
+    The best result of all the repetitions is given as the answer. Adding the verbose
+    flag (`-v`) shows the cumulative time of all the loops by each repetition, which
+    can help your variability in the results.
+  prefs: []
+  type: TYPE_NORMAL
+- en: By default, if we run `timeit` on this function without specifying `-n` and
+    `-r`, it runs 10 loops with 5 repetitions, and this takes six minutes to complete.
+    Overriding the defaults can make sense if you want to get your results a little
+    faster.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We’re interested only in the best-case results, as other results will probably
+    have been impacted by other processes:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: Try running the benchmark several times to check if you get varying results—you
+    may need more repetitions to settle on a stable fastest-result time. There is
+    no “correct” configuration, so if you see a wide variation in your timing results,
+    do more repetitions until your final result is stable.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Our results show that the overall cost of calling `calc_pure_python` is 8.45
+    seconds (as the best case), while single calls to `calculate_z_serial_purepython`
+    take 8.0 seconds as measured by the `@timefn` decorator. The difference is mainly
+    the time taken to create the `zs` and `cs` lists.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Inside IPython, we can use the magic `%timeit` in the same way. If you are
+    developing your code interactively in IPython or in a Jupyter Notebook, you can
+    use this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: Warning
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Be aware that “best” is calculated differently by the `timeit.py` approach and
+    the `%timeit` approach in Jupyter and IPython. `timeit.py` uses the minimum value
+    seen. IPython in 2016 switched to using the mean and standard deviation. Both
+    methods have their flaws, but generally they’re both “reasonably good”; you can’t
+    compare between them, though. Use one method or the other; don’t mix them.
+  prefs: []
+  type: TYPE_NORMAL
+- en: It is worth considering the variation in load that you get on a normal computer.
+    Many background tasks are running (e.g., Dropbox, backups) that could impact the
+    CPU and disk resources at random. Scripts in web pages can also cause unpredictable
+    resource usage. [Figure 2-4](#FIG-julia-set-system-monitor-trimmed) shows the
+    single CPU being used at 100% for some of the timing steps we just performed;
+    the other cores on this machine are each lightly working on other tasks.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![System Monitor (Ubuntu) showing background CPU usage during timings](Images/hpp2_0204.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 2-4\. System Monitor on Ubuntu showing variation in background CPU usage
+    while we time our function
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Occasionally, the System Monitor shows spikes of activity on this machine. It
+    is sensible to watch your System Monitor to check that nothing else is interfering
+    with your critical resources (CPU, disk, network).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Simple Timing Using the Unix time Command
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'We can step outside of Python for a moment to use a standard system utility
+    on Unix-like systems. The following will record various views on the execution
+    time of your program, and it won’t care about the internal structure of your code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note that we specifically use `/usr/bin/time` rather than `time` so we get the
+    system’s `time` and not the simpler (and less useful) version built into our shell.
+    If you try `time --verbose` quick-and-dirty get an error, you’re probably looking
+    at the shell’s built-in `time` command and not the system command.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Using the `-p` portability flag, we get three results:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`real` records the wall clock or elapsed time.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`user` records the amount of time the CPU spent on your task outside of kernel
+    functions.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`sys` records the time spent in kernel-level functions.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: By adding `user` and `sys`, you get a sense of how much time was spent in the
+    CPU. The difference between this and `real` might tell you about the amount of
+    time spent waiting for I/O; it might also suggest that your system is busy running
+    other tasks that are distorting your measurements.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`time` is useful because it isn’t specific to Python. It includes the time
+    taken to start the `python` executable, which might be significant if you start
+    lots of fresh processes (rather than having a long-running single process). If
+    you often have short-running scripts where the startup time is a significant part
+    of the overall runtime, then `time` can be a more useful measure.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We can add the `--verbose` flag to get even more output:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: Probably the most useful indicator here is `Major (requiring I/O) page faults`,
+    as this indicates whether the operating system is having to load pages of data
+    from the disk because the data no longer resides in RAM. This will cause a speed
+    penalty.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In our example, the code and data requirements are small, so no page faults
+    occur. If you have a memory-bound process, or several programs that use variable
+    and large amounts of RAM, you might find that this gives you a clue as to which
+    program is being slowed down by disk accesses at the operating system level because
+    parts of it have been swapped out of RAM to disk.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using the cProfile Module
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: '`cProfile` is a built-in profiling tool in the standard library. It hooks into
+    the virtual machine in CPython to measure the time taken to run every function
+    that it sees. This introduces a greater overhead, but you get correspondingly
+    more information. Sometimes the additional information can lead to surprising
+    insights into your code.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`cProfile` is one of two profilers in the standard library, alongside `profile`.
+    `profile` is the original and slower pure Python profiler; `cProfile` has the
+    same interface as `profile` and is written in `C` for a lower overhead. If you’re
+    curious about the history of these libraries, see [Armin Rigo’s 2005 request](http://bit.ly/cProfile_request)
+    to include `cProfile` in the standard library.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: A good practice when profiling is to generate a *hypothesis* about the speed
+    of parts of your code before you profile it. Ian likes to print out the code snippet
+    in question and annotate it. Forming a hypothesis ahead of time means you can
+    measure how wrong you are (and you will be!) and improve your intuition about
+    certain coding styles.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Warning
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: You should never avoid profiling in favor of a gut instinct (we warn you—you
+    *will* get it wrong!). It is definitely worth forming a hypothesis ahead of profiling
+    to help you learn to spot possible slow choices in your code, and you should always
+    back up your choices with evidence.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Always be driven by results that you have measured, and always start with some
+    quick-and-dirty profiling to make sure you’re addressing the right area. There’s
+    nothing more humbling than cleverly optimizing a section of code only to realize
+    (hours or days later) that you missed the slowest part of the process and haven’t
+    really addressed the underlying problem at all.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s hypothesize that `calculate_z_serial_purepython` is the slowest part of
+    the code. In that function, we do a lot of dereferencing and make many calls to
+    basic arithmetic operators and the `abs` function. These will probably show up
+    as consumers of CPU resources.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Here, we’ll use the `cProfile` module to run a variant of the code. The output
+    is spartan but helps us figure out where to analyze further.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The `-s cumulative` flag tells `cProfile` to sort by cumulative time spent
+    inside each function; this gives us a view into the slowest parts of a section
+    of code. The `cProfile` output is written to screen directly after our usual `print`
+    results:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: Sorting by cumulative time gives us an idea about where the majority of execution
+    time is spent. This result shows us that 36,221,995 function calls occurred in
+    just over 12 seconds (this time includes the overhead of using `cProfile`). Previously,
+    our code took around 8 seconds to execute—we’ve just added a 4-second penalty
+    by measuring how long each function takes to execute.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We can see that the entry point to the code `julia1_nopil.py` on line 1 takes
+    a total of 12 seconds. This is just the `__main__` call to `calc_pure_python`.
+    `ncalls` is 1, indicating that this line is executed only once.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Inside `calc_pure_python`, the call to `calculate_z_serial_purepython` consumes
+    11 seconds. Both functions are called only once. We can derive that approximately
+    1 second is spent on lines of code inside `calc_pure_python`, separate to calling
+    the CPU-intensive `calculate_z_serial_purepython` function. However, we can’t
+    derive *which* lines take the time inside the function using `cProfile`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Inside `calculate_z_serial_purepython`, the time spent on lines of code (without
+    calling other functions) is 8 seconds. This function makes 34,219,980 calls to
+    `abs`, which take a total of 3 seconds, along with other calls that do not cost
+    much time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: What about the `{abs}` call? This line is measuring the individual calls to
+    the `abs` function inside `calculate_z_serial_purepython`. While the per-call
+    cost is negligible (it is recorded as 0.000 seconds), the total time for 34,219,980
+    calls is 3 seconds. We couldn’t predict in advance exactly how many calls would
+    be made to `abs`, as the Julia function has unpredictable dynamics (that’s why
+    it is so interesting to look at).
+  prefs: []
+  type: TYPE_NORMAL
+- en: At best we could have said that it will be called a minimum of 1 million times,
+    as we’re calculating `1000*1000` pixels. At most it will be called 300 million
+    times, as we calculate 1,000,000 pixels with a maximum of 300 iterations. So 34
+    million calls is roughly 10% of the worst case.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If we look at the original grayscale image ([Figure 2-3](#FIG-julia-example-greyscale))
+    and, in our mind’s eye, squash the white parts together and into a corner, we
+    can estimate that the expensive white region accounts for roughly 10% of the rest
+    of the image.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The next line in the profiled output, `{method 'append' of 'list' objects}`,
+    details the creation of 2,002,000 list items.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Why 2,002,000 items? Before you read on, think about how many list items are
+    being constructed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This creation of 2,002,000 items is occurring in `calc_pure_python` during the
+    setup phase.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `zs` and `cs` lists will be `1000*1000` items each (generating 1,000,000
+    * 2 calls), and these are built from a list of 1,000 *x* and 1,000 *y* coordinates.
+    In total, this is 2,002,000 calls to append.
+  prefs: []
+  type: TYPE_NORMAL
+- en: It is important to note that this `cProfile` output is not ordered by parent
+    functions; it is summarizing the expense of all functions in the executed block
+    of code. Figuring out what is happening on a line-by-line basis is very hard with
+    `cProfile`, as we get profile information only for the function calls themselves,
+    not for each line within the functions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Inside `calculate_z_serial_purepython`, we can account for `{abs}`, and in total
+    this function costs approximately 3.1 seconds. We know that `calculate_z_serial_purepython`
+    costs 11.4 seconds in total.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The final line of the profiling output refers to `lsprof`; this is the original
+    name of the tool that evolved into `cProfile` and can be ignored.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To get more control over the results of `cProfile`, we can write a statistics
+    file and then analyze it in Python:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We can load this into Python as follows, and it will give us the same cumulative
+    time report as before:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'To trace which functions we’re profiling, we can print the caller information.
+    In the following two listings we can see that `calculate_z_serial_purepython`
+    is the most expensive function, and it is called from one place. If it were called
+    from many places, these listings might help us narrow down the locations of the
+    most expensive parents:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We can flip this around the other way to show which functions call other functions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: '`cProfile` is rather verbose, and you need a side screen to see it without
+    lots of word wrapping. Since it is built in, though, it is a convenient tool for
+    quickly identifying bottlenecks. Tools like `line_profiler` and `memory_profiler`,
+    which we discuss later in this chapter, will then help you to drill down to the
+    specific lines that you should pay attention to.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Visualizing cProfile Output with SnakeViz
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: '`snakeviz` is a visualizer that draws the output of `cProfile` as a diagram
+    in which larger boxes are areas of code that take longer to run. It replaces the
+    older `runsnake` tool.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Use `snakeviz` to get a high-level understanding of a `cProfile` statistics
+    file, particularly if you’re investigating a new project for which you have little
+    intuition. The diagram will help you visualize the CPU-usage behavior of the system,
+    and it may highlight areas that you hadn’t expected to be expensive.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To install SnakeViz, use `$ pip install snakeviz`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In [Figure 2-5](#FIG-snakeviz) we have the visual output of the *profile.stats*
+    file we’ve just generated. The entry point for the program is shown at the top
+    of the diagram. Each layer down is a function called from the function above.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The width of the diagram represents the entire time taken by the program’s execution.
+    The fourth layer shows that the majority of the time is spent in `calculate_z_serial_purepython`.
+    The fifth layer breaks this down some more—the unannotated block to the right
+    occupying approximately 25% of that layer represents the time spent in the `abs`
+    function. Seeing these larger blocks quickly brings home how the time is spent
+    inside your program.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![snakeviz visualizing profile.stats](Images/hpp2_0205.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 2-5\. `snakeviz` visualizing profile.stats
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: The next section down shows a table that is a pretty-printed version of the
+    statistics we’ve just been looking at, which you can sort by `cumtime` (cumulative
+    time), `percall` (cost per call), or `ncalls` (number of calls altogether), among
+    other categories. Starting with `cumtime` will tell you which functions cost the
+    most overall. They’re a pretty good place to start your investigations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you’re comfortable looking at tables, the console output for `cProfile` may
+    be adequate for you. To communicate to others, we strongly suggest you use diagrams—such
+    as this output from `snakeviz`—to help others quickly understand the point you’re
+    making.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using line_profiler for Line-by-Line Measurements
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In Ian’s opinion, Robert Kern’s `line_profiler` is the strongest tool for identifying
+    the cause of CPU-bound problems in Python code. It works by profiling individual
+    functions on a line-by-line basis, so you should start with `cProfile` and use
+    the high-level view to guide which functions to profile with `line_profiler`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: It is worthwhile printing and annotating versions of the output from this tool
+    as you modify your code, so you have a record of changes (successful or not) that
+    you can quickly refer to. Don’t rely on your memory when you’re working on line-by-line
+    changes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To install `line_profiler`, issue the command `pip install line_profiler`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: A decorator (`@profile`) is used to mark the chosen function. The `kernprof`
+    script is used to execute your code, and the CPU time and other statistics for
+    each line of the chosen function are recorded.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The arguments are `-l` for line-by-line (rather than function-level) profiling
+    and `-v` for verbose output. Without `-v`, you receive an *.lprof* output that
+    you can later analyze with the `line_profiler` module. In [Example 2-6](#profiling-kernprof-run1),
+    we’ll do a full run on our CPU-bound function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 2-6\. Running `kernprof` with line-by-line output on a decorated function
+    to record the CPU cost of each line’s execution
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE22]'
+  prefs: []
+  type: TYPE_PRE
+- en: Introducing `kernprof.py` adds a substantial amount to the runtime. In this
+    example, `calculate_z_serial_purepython` takes 49 seconds; this is up from 8 seconds
+    using simple `print` statements and 12 seconds using `cProfile`. The gain is that
+    we get a line-by-line breakdown of where the time is spent inside the function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `% Time` column is the most helpful—we can see that 38% of the time is spent
+    on the `while` testing. We don’t know whether the first statement (`abs(z) < 2`)
+    is more expensive than the second (`n < maxiter`), though. Inside the loop, we
+    see that the update to `z` is also fairly expensive. Even `n += 1` is expensive!
+    Python’s dynamic lookup machinery is at work for every loop, even though we’re
+    using the same types for each variable in each loop—this is where compiling and
+    type specialization ([Chapter 7](ch07.xhtml#chapter-compiling)) give us a massive
+    win. The creation of the `output` list and the updates on line 20 are relatively
+    cheap compared to the cost of the `while` loop.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you haven’t thought about the complexity of Python’s dynamic machinery before,
+    do think about what happens in that `n += 1` operation. Python has to check that
+    the `n` object has an `__add__` function (and if it didn’t, it’d walk up any inherited
+    classes to see if they provided this functionality), and then the other object
+    (`1` in this case) is passed in so that the `__add__` function can decide how
+    to handle the operation. Remember that the second argument might be a `float`
+    or other object that may or may not be compatible. This all happens dynamically.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The obvious way to further analyze the `while` statement is to break it up.
+    While there has been some discussion in the Python community around the idea of
+    rewriting the *.pyc* files with more detailed information for multipart, single-line
+    statements, we are unaware of any production tools that offer a more fine-grained
+    analysis than `line_profiler`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In [Example 2-7](#profiling-kernprof-run2), we break the `while` logic into
+    several statements. This additional complexity will increase the runtime of the
+    function, as we have more lines of code to execute, but it *might* also help us
+    understand the costs incurred in this part of the code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: '*Before you look at the code*, do you think we’ll learn about the costs of
+    the fundamental operations this way? Might other factors complicate the analysis?'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 2-7\. Breaking the compound `while` statement into individual statements
+    to record the cost of each part of the original statement
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE23]'
+  prefs: []
+  type: TYPE_PRE
+- en: This version takes 82 seconds to execute, while the previous version took 49
+    seconds. Other factors *did* complicate the analysis. In this case, having extra
+    statements that have to be executed 34,219,980 times each slows down the code.
+    If we hadn’t used `kernprof.py` to investigate the line-by-line effect of this
+    change, we might have drawn other conclusions about the reason for the slowdown,
+    as we’d have lacked the necessary evidence.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'At this point it makes sense to step back to the earlier `timeit` technique
+    to test the cost of individual expressions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE24]'
+  prefs: []
+  type: TYPE_PRE
+- en: From this simple analysis, it looks as though the logic test on `n` is more
+    than two times faster than the call to `abs`. Since the order of evaluation for
+    Python statements is both left to right and opportunistic, it makes sense to put
+    the cheapest test on the left side of the equation. On 1 in every 301 tests for
+    each coordinate, the `n < maxiter` test will be `False`, so Python wouldn’t need
+    to evaluate the other side of the `and` operator.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We never know whether `abs(z) < 2` will be `False` until we evaluate it, and
+    our earlier observations for this region of the complex plane suggest it is `True`
+    around 10% of the time for all 300 iterations. If we wanted to have a strong understanding
+    of the time complexity of this part of the code, it would make sense to continue
+    the numerical analysis. In this situation, however, we want an easy check to see
+    if we can get a quick win.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We can form a new hypothesis stating, “By swapping the order of the operators
+    in the `while` statement, we will achieve a reliable speedup.” We *can* test this
+    hypothesis using `kernprof`, but the additional overheads of profiling this way
+    might add too much noise. Instead, we can use an earlier version of the code,
+    running a test comparing `while abs(z) < 2 and n < maxiter:` against `while n
+    < maxiter and abs(z) < 2:`, which we see in [Example 2-8](#profiling-kernprof-run3).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Running the two variants *outside* of `line_profiler` means they run at similar
+    speeds. The overheads of `line_profiler` also confuse the result, and the results
+    on line 17 for both versions are similar. We should reject the hypothesis that
+    in Python 3.7 changing the order of the logic results in a consistent speedup—there’s
+    no clear evidence for this. Ian notes that with Python 2.7 we *could* accept this
+    hypothesis, but with Python 3.7 that’s no longer the case.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using a more suitable approach to solve this problem (e.g., swapping to using
+    Cython or PyPy, as described in [Chapter 7](ch07.xhtml#chapter-compiling)) would
+    yield greater gains.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We can be confident in our result because of the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We stated a hypothesis that was easy to test.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: We changed our code so that only the hypothesis would be tested (never test
+    two things at once!).
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: We gathered enough evidence to support our conclusion.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: For completeness, we can run a final `kernprof` on the two main functions including
+    our optimization to confirm that we have a full picture of the overall complexity
+    of our code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 2-8\. Swapping the order of the compound `while` statement makes the
+    function fractionally faster
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE25]'
+  prefs: []
+  type: TYPE_PRE
+- en: As expected, we can see from the output in [Example 2-9](#profiling-kernprof-run4)
+    that `calculate_z_serial_purepython` takes most (97%) of the time of its parent
+    function. The list-creation steps are minor in comparison.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 2-9\. Testing the line-by-line costs of the setup routine
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE26]'
+  prefs: []
+  type: TYPE_PRE
+- en: '`line_profiler` gives us a great insight into the cost of lines inside loops
+    and expensive functions; even though profiling adds a speed penalty, it is a great
+    boon to scientific developers. Remember to use representative data to make sure
+    you’re focusing on the lines of code that’ll give you the biggest win.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using memory_profiler to Diagnose Memory Usage
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Just as Robert Kern’s `line_profiler` package measures CPU usage, the `memory_profiler`
+    module by Fabian Pedregosa and Philippe Gervais measures memory usage on a line-by-line
+    basis. Understanding the memory usage characteristics of your code allows you
+    to ask yourself two questions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Could we use *less* RAM by rewriting this function to work more efficiently?
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Could we use *more* RAM and save CPU cycles by caching?
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`memory_profiler` operates in a very similar way to `line_profiler` but runs
+    far more slowly. If you install the `psutil` package (optional but recommended),
+    `memory_profiler` will run faster. Memory profiling may easily make your code
+    run 10 to 100 times slower. In practice, you will probably use `memory_profiler`
+    occasionally and `line_profiler` (for CPU profiling) more frequently.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Install `memory_profiler` with the command `pip install memory_profiler` (and
+    optionally with `pip install psutil`).
+  prefs: []
+  type: TYPE_NORMAL
+- en: As mentioned, the implementation of `memory_profiler` is not as performant as
+    the implementation of `line_profiler`. It may therefore make sense to run your
+    tests on a smaller problem that completes in a useful amount of time. Overnight
+    runs might be sensible for validation, but you need quick and reasonable iterations
+    to diagnose problems and hypothesize solutions. The code in [Example 2-10](#profiling-memoryprofiler1)
+    uses the full 1,000 × 1,000 grid, and the statistics took about two hours to collect
+    on Ian’s laptop.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: The requirement to modify the source code is a minor annoyance. As with `line_profiler`,
+    a decorator (`@profile`) is used to mark the chosen function. This will break
+    your unit tests unless you make a dummy decorator—see [“No-op @profile Decorator”](#no_op_profile_decorator).
+  prefs: []
+  type: TYPE_NORMAL
+- en: When dealing with memory allocation, you must be aware that the situation is
+    not as clear-cut as it is with CPU usage. Generally, it is more efficient to overallocate
+    memory in a process that can be used at leisure, as memory allocation operations
+    are relatively expensive. Furthermore, garbage collection is not instantaneous,
+    so objects may be unavailable but still in the garbage collection pool for some
+    time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The outcome of this is that it is hard to really understand what is happening
+    with memory usage and release inside a Python program, as a line of code may not
+    allocate a deterministic amount of memory *as observed from outside the process*.
+    Observing the gross trend over a set of lines is likely to lead to better insight
+    than would be gained by observing the behavior of just one line.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s take a look at the output from `memory_profiler` in [Example 2-10](#profiling-memoryprofiler1).
+    Inside `calculate_z_serial_purepython` on line 12, we see that the allocation
+    of 1,000,000 items causes approximately 7 MB of RAM to be added to this process.^([1](ch02.xhtml#idm46122431392152))
+    This does not mean that the `output` list is definitely 7 MB in size, just that
+    the process grew by approximately 7 MB during the internal allocation of the list.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the parent function on line 46, we see that the allocation of the `zs` and
+    `cs` lists changes the `Mem usage` column from 48 MB to 125 MB (a change of +77
+    MB). Again, it is worth noting that this is not necessarily the true size of the
+    arrays, just the size that the process grew by after these lists had been created.
+  prefs: []
+  type: TYPE_NORMAL
+- en: At the time of writing, the `memory_usage` module exhibits a bug—the `Increment`
+    column does not always match the change in the `Mem usage` column. During the
+    first edition of this book, these columns were correctly tracked; you might want
+    to check the status of this bug on [GitHub](https://oreil.ly/vuQPN). We recommend
+    you use the `Mem usage` column, as this correctly tracks the change in process
+    size per line of code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 2-10\. `memory_profiler`’s result on both of our main functions, showing
+    an unexpected memory use in `calculate_z_serial_purepython`
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE27]'
+  prefs: []
+  type: TYPE_PRE
+- en: Another way to visualize the change in memory use is to sample over time and
+    plot the result. `memory_profiler` has a utility called `mprof`, used once to
+    sample the memory usage and a second time to visualize the samples. It samples
+    by time and not by line, so it barely impacts the runtime of the code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Figure 2-6](#FIG-julia-memoryprofiler-mprof) is created using `mprof run julia1_memoryprofiler.py`.
+    This writes a statistics file that is then visualized using `mprof plot`. Our
+    two functions are bracketed: this shows where in time they are entered, and we
+    can see the growth in RAM as they run. Inside `calculate_z_serial_purepython`,
+    we can see the steady increase in RAM usage throughout the execution of the function;
+    this is caused by all the small objects (`int` and `float` types) that are created.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/hpp2_0206.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 2-6\. `memory_profiler` report using `mprof`
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'In addition to observing the behavior at the function level, we can add labels
+    using a context manager. The snippet in [Example 2-11](#profiling-memoryprofiler1-labels)
+    is used to generate the graph in [Figure 2-7](#FIG-julia-memoryprofiler-mprof-labels).
+    We can see the `create_output_list` label: it appears momentarily at around 1.5
+    seconds after `calculate_z_serial_purepython` and results in the process being
+    allocated more RAM. We then pause for a second; `time.sleep(1)` is an artificial
+    addition to make the graph easier to understand.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 2-11\. Using a context manager to add labels to the `mprof` graph
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE28]'
+  prefs: []
+  type: TYPE_PRE
+- en: In the `calculate_output` block that runs for most of the graph, we see a very
+    slow, linear increase in RAM usage. This will be from all of the temporary numbers
+    used in the inner loops. Using the labels really helps us to understand at a fine-grained
+    level where memory is being consumed. Interestingly, we see the “peak RAM usage”
+    line—a dashed vertical line just before the 10-second mark—occurring before the
+    termination of the program. Potentially this is due to the garbage collector recovering
+    some RAM from the temporary objects used during `calculate_output`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: What happens if we simplify our code and remove the creation of the `zs` and
+    `cs` lists? We then have to calculate these coordinates inside `calculate_z_serial_purepython`
+    (so the same work is performed), but we’ll save RAM by not storing them in lists.
+    You can see the code in [Example 2-12](#profiling-memoryprofiler2).
+  prefs: []
+  type: TYPE_NORMAL
+- en: In [Figure 2-8](#FIG-julia-memoryprofiler2-removed-large-lists), we see a major
+    change in behavior—the overall envelope of RAM usage drops from 140 MB to 60 MB,
+    reducing our RAM usage by half!
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/hpp2_0207.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 2-7\. `memory_profiler` report using `mprof` with labels
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: '![](Images/hpp2_0208.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 2-8\. `memory_profiler` after removing two large lists
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Example 2-12\. Creating complex coordinates on the fly to save RAM
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE29]'
+  prefs: []
+  type: TYPE_PRE
+- en: If we want to measure the RAM used by several statements, we can use the IPython
+    magic `%memit`, which works just like `%timeit`. In [Chapter 11](ch11_split_000.xhtml#chapter-lessram),
+    we will look at using `%memit` to measure the memory cost of lists and discuss
+    various ways of using RAM more efficiently.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`memory_profiler` offers an interesting aid to debugging a large process via
+    the `--pdb-mmem=*XXX*` flag. The `pdb` debugger will be activated after the process
+    exceeds `*XXX*` MB. This will drop you in directly at the point in your code where
+    too many allocations are occurring, if you’re in a space-constrained environment.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Introspecting an Existing Process with PySpy
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: '`py-spy` is an intriguing new sampling profiler—rather than requiring any code
+    changes, it introspects an already-running Python process and reports in the console
+    with a `top`-like display. Being a sampling profiler, it has almost no runtime
+    impact on your code. It is written in Rust and requires elevated privileges to
+    introspect another process.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This tool could be very useful in a production environment with long-running
+    processes or complicated installation requirements. It supports Windows, Mac,
+    and Linux. Install it using `pip install py-spy` (note the dash in the name—there’s
+    a separate `pyspy` project that isn’t related). If your process is already running,
+    you’ll want to use `ps` to get its process identifier (the PID); then this can
+    be passed into `py-spy` as shown in [Example 2-13](#profiling-pyspy1).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 2-13\. Running PySpy at the command line
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE30]'
+  prefs: []
+  type: TYPE_PRE
+- en: In [Figure 2-9](#FIG-julia-pyspy), you’ll see a static picture of a `top`-like
+    display in the console; this updates every second to show which functions are
+    currently taking most of the time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Introspecting a Python process using PySpy](Images/hpp2_0209.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 2-9\. Introspecting a Python process using PySpy
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: PySpy can also export a flame chart. Here, we’ll run that option while asking
+    PySpy to run our code directly without requiring a PID using `$ py-spy --flame
+    profile.svg -- python julia1_nopil.py`. You’ll see in [Figure 2-10](#FIG-julia-pyspy-flame)
+    that the width of the display represents the entire program’s runtime, and each
+    layer moving down the image represents functions called from above.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Part of a flame chart for PySpy](Images/hpp2_0210.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 2-10\. Part of a flame chart for PySpy
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'Bytecode: Under the Hood'
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: So far we’ve reviewed various ways to measure the cost of Python code (for both
+    CPU and RAM usage). We haven’t yet looked at the underlying bytecode used by the
+    virtual machine, though. Understanding what’s going on “under the hood” helps
+    to build a mental model of what’s happening in slow functions, and it’ll help
+    when you come to compile your code. So let’s introduce some bytecode.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using the dis Module to Examine CPython Bytecode
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The `dis` module lets us inspect the underlying bytecode that we run inside
+    the stack-based CPython virtual machine. Having an understanding of what’s happening
+    in the virtual machine that runs your higher-level Python code will help you to
+    understand why some styles of coding are faster than others. It will also help
+    when you come to use a tool like Cython, which steps outside of Python and generates
+    C code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `dis` module is built in. You can pass it code or a module, and it will
+    print out a disassembly. In [Example 2-14](#profiling-dis1), we disassemble the
+    outer loop of our CPU-bound function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: You should try to disassemble one of your own functions and to follow *exactly*
+    how the disassembled code matches to the disassembled output. Can you match the
+    following `dis` output to the original function?
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 2-14\. Using the built-in `dis` to understand the underlying stack-based
+    virtual machine that runs our Python code
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE31]'
+  prefs: []
+  type: TYPE_PRE
+- en: The output is fairly straightforward, if terse. The first column contains line
+    numbers that relate to our original file. The second column contains several `>>`
+    symbols; these are the destinations for jump points elsewhere in the code. The
+    third column is the operation address; the fourth has the operation name. The
+    fifth column contains the parameters for the operation. The sixth column contains
+    annotations to help line up the bytecode with the original Python parameters.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Refer back to [Example 2-3](#profiling-juliaset-intro3) to match the bytecode
+    to the corresponding Python code. The bytecode starts on Python line 11 by putting
+    the constant value 0 onto the stack, and then it builds a single-element list.
+    Next, it searches the namespaces to find the `len` function, puts it on the stack,
+    searches the namespaces again to find `zs`, and then puts that onto the stack.
+    Inside Python line 12, it calls the `len` function from the stack, which consumes
+    the `zs` reference in the stack; then it applies a binary multiply to the last
+    two arguments (the length of `zs` and the single-element list) and stores the
+    result in `output`. That’s the first line of our Python function now dealt with.
+    Follow the next block of bytecode to understand the behavior of the second line
+    of Python code (the outer `for` loop).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: The jump points (`>>`) match to instructions like `JUMP_ABSOLUTE` and `POP_JUMP_IF_FALSE`.
+    Go through your own disassembled function and match the jump points to the jump
+    instructions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Having introduced bytecode, we can now ask: what’s the bytecode and time cost
+    of writing a function out explicitly versus using built-ins to perform the same
+    task?'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Different Approaches, Different Complexity
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: There should be one—and preferably only one—obvious way to do it. Although that
+    way may not be obvious at first unless you’re Dutch.^([2](ch02.xhtml#idm46122430772872))
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: ''
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: Tim Peters, The Zen of Python
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: There will be various ways to express your ideas using Python. Generally, the
+    most sensible option should be clear, but if your experience is primarily with
+    an older version of Python or another programming language, you may have other
+    methods in mind. Some of these ways of expressing an idea may be slower than others.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You probably care more about readability than speed for most of your code, so
+    your team can code efficiently without being puzzled by performant but opaque
+    code. Sometimes you will want performance, though (without sacrificing readability).
+    Some speed testing might be what you need.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Take a look at the two code snippets in [Example 2-15](#profiling-dis2). Both
+    do the same job, but the first generates a lot of additional Python bytecode,
+    which will cause more overhead.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 2-15\. A naive and a more efficient way to solve the same summation
+    problem
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE32]'
+  prefs: []
+  type: TYPE_PRE
+- en: Both functions calculate the sum of a range of integers. A simple rule of thumb
+    (but one you *must* back up using profiling!) is that more lines of bytecode will
+    execute more slowly than fewer equivalent lines of bytecode that use built-in
+    functions. In [Example 2-16](#profiling-dis3), we use IPython’s `%timeit` magic
+    function to measure the best execution time from a set of runs. `fn_terse` runs
+    over twice as fast as `fn_expressive`!
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 2-16\. Using `%timeit` to test our hypothesis that using built-in functions
+    should be faster than writing our own functions
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE33]'
+  prefs: []
+  type: TYPE_PRE
+- en: If we use the `dis` module to investigate the code for each function, as shown
+    in [Example 2-17](#profiling-dis4), we can see that the virtual machine has 17
+    lines to execute with the more expressive function and only 6 to execute with
+    the very readable but terser second function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 2-17\. Using `dis` to view the number of bytecode instructions involved
+    in our two functions
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE34]'
+  prefs: []
+  type: TYPE_PRE
+- en: The difference between the two code blocks is striking. Inside `fn_expressive()`,
+    we maintain two local variables and iterate over a list using a `for` statement.
+    The `for` loop will be checking to see if a `StopIteration` exception has been
+    raised on each loop. Each iteration applies the `total.__add__` function, which
+    will check the type of the second variable (`n`) on each iteration. These checks
+    all add a little expense.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Inside `fn_terse()`, we call out to an optimized C list comprehension function
+    that knows how to generate the final result without creating intermediate Python
+    objects. This is much faster, although each iteration must still check for the
+    types of the objects that are being added together (in [Chapter 4](ch04.xhtml#section-dictionary-sets),
+    we look at ways of fixing the type so we don’t need to check it on each iteration).
+  prefs: []
+  type: TYPE_NORMAL
+- en: As noted previously, you *must* profile your code—if you just rely on this heuristic,
+    you will inevitably write slower code at some point. It is definitely worth learning
+    whether a shorter and still readable way to solve your problem is built into Python.
+    If so, it is more likely to be easily readable by another programmer, and it will
+    *probably* run faster.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Unit Testing During Optimization to Maintain Correctness
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: If you aren’t already unit testing your code, you are probably hurting your
+    longer-term productivity. Ian (blushing) is embarrassed to note that he once spent
+    a day optimizing his code, having disabled unit tests because they were inconvenient,
+    only to discover that his significant speedup result was due to breaking a part
+    of the algorithm he was improving. You do not need to make this mistake even once.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Add unit tests to your code for a saner life. You’ll be giving your current
+    self and your colleagues faith that your code works, and you’ll be giving a present
+    to your future-self who has to maintain this code later. You really will save
+    a lot of time in the long term by adding tests to your code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In addition to unit testing, you should also strongly consider using `coverage.py`.
+    It checks to see which lines of code are exercised by your tests and identifies
+    the sections that have no coverage. This quickly lets you figure out whether you’re
+    testing the code that you’re about to optimize, such that any mistakes that might
+    creep in during the optimization process are quickly caught.
+  prefs: []
+  type: TYPE_NORMAL
+- en: No-op @profile Decorator
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Your unit tests will fail with a `NameError` exception if your code uses `@profile`
+    from `line_profiler` or `memory_profiler`. The reason is that the unit test framework
+    will not be injecting the `@profile` decorator into the local namespace. The no-op
+    decorator shown here solves this problem. It is easiest to add it to the block
+    of code that you’re testing and remove it when you’re done.
+  prefs: []
+  type: TYPE_NORMAL
+- en: With the no-op decorator, you can run your tests without modifying the code
+    that you’re testing. This means you can run your tests after every profile-led
+    optimization you make so you’ll never be caught out by a bad optimization step.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s say we have the trivial `ex.py` module shown in [Example 2-18](#profiling-noop1).
+    It has a test (for `pytest`) and a function that we’ve been profiling with either
+    `line_profiler` or `memory_profiler`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 2-18\. Simple function and test case where we wish to use `@profile`
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE35]'
+  prefs: []
+  type: TYPE_PRE
+- en: If we run `pytest` on our code, we’ll get a `NameError`, as shown in [Example 2-19](#profiling-no-decorator).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 2-19\. A missing decorator during testing breaks out tests in an unhelpful
+    way!
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE36]'
+  prefs: []
+  type: TYPE_PRE
+- en: The solution is to add a no-op decorator at the start of our module (you can
+    remove it after you’re done with profiling). If the `@profile` decorator is not
+    found in one of the namespaces (because `line_profiler` or `memory_profiler` is
+    not being used), the no-op version we’ve written is added. If `line_profiler`
+    or `memory_profiler` has injected the new function into the namespace, our no-op
+    version is ignored.
+  prefs: []
+  type: TYPE_NORMAL
+- en: For both `line_profiler` and `memory_profiler`, we can add the code in [Example 2-20](#profiling-noop2).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 2-20\. Add a no-op `@profile` decorator to the namespace while unit
+    testing
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE37]'
+  prefs: []
+  type: TYPE_PRE
+- en: Having added the no-op decorator, we can now run our `pytest` successfully,
+    as shown in [Example 2-21](#profiling-noop3), along with our profilers—with no
+    additional code changes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 2-21\. With the no-op decorator, we have working tests, and both of
+    our profilers work correctly
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE38]'
+  prefs: []
+  type: TYPE_PRE
+- en: You can save yourself a few minutes by avoiding the use of these decorators,
+    but once you’ve lost hours making a false optimization that breaks your code,
+    you’ll want to integrate this into your workflow.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Strategies to Profile Your Code Successfully
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Profiling requires some time and concentration. You will stand a better chance
+    of understanding your code if you separate the section you want to test from the
+    main body of your code. You can then unit test the code to preserve correctness,
+    and you can pass in realistic fabricated data to exercise the inefficiencies you
+    want to address.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Do remember to disable any BIOS-based accelerators, as they will only confuse
+    your results. On Ian’s laptop, the Intel Turbo Boost feature can temporarily accelerate
+    a CPU above its normal maximum speed if it is cool enough. This means that a cool
+    CPU may run the same block of code faster than a hot CPU. Your operating system
+    may also control the clock speed—a laptop on battery power is likely to more aggressively
+    control CPU speed than a laptop on AC power. To create a more stable benchmarking
+    configuration, we do the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Disable Turbo Boost in the BIOS.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Disable the operating system’s ability to override the SpeedStep (you will find
+    this in your BIOS if you’re allowed to control it).
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Use only AC power (never battery power).
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Disable background tools like backups and Dropbox while running experiments.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Run the experiments many times to obtain a stable measurement.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Possibly drop to run level 1 (Unix) so that no other tasks are running.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Reboot and rerun the experiments to double-confirm the results.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Try to hypothesize the expected behavior of your code and then validate (or
+    disprove!) the hypothesis with the result of a profiling step. Your choices will
+    not change (you should only drive your decisions by using the profiled results),
+    but your intuitive understanding of the code will improve, and this will pay off
+    in future projects as you will be more likely to make performant decisions. Of
+    course, you will verify these performant decisions by profiling as you go.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Do not skimp on the preparation. If you try to performance test code deep inside
+    a larger project without separating it from the larger project, you are likely
+    to witness side effects that will sidetrack your efforts. It is likely to be harder
+    to unit test a larger project when you’re making fine-grained changes, and this
+    may further hamper your efforts. Side effects could include other threads and
+    processes impacting CPU and memory usage and network and disk activity, which
+    will skew your results.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Naturally, you’re already using source code control (e.g., Git or Mercurial),
+    so you’ll be able to run multiple experiments in different branches without ever
+    losing “the versions that work well.” If you’re *not* using source code control,
+    do yourself a huge favor and start to do so!
+  prefs: []
+  type: TYPE_NORMAL
+- en: For web servers, investigate `dowser` and `dozer`; you can use these to visualize
+    in real time the behavior of objects in the namespace. Definitely consider separating
+    the code you want to test out of the main web application if possible, as this
+    will make profiling significantly easier.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Make sure your unit tests exercise all the code paths in the code that you’re
+    analyzing. Anything you don’t test that is used in your benchmarking may cause
+    subtle errors that will slow down your progress. Use `coverage.py` to confirm
+    that your tests are covering all the code paths.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Unit testing a complicated section of code that generates a large numerical
+    output may be difficult. Do not be afraid to output a text file of results to
+    run through `diff` or to use a `pickled` object. For numeric optimization problems,
+    Ian likes to create long text files of floating-point numbers and use `diff`—minor
+    rounding errors show up immediately, even if they’re rare in the output.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If your code might be subject to numerical rounding issues due to subtle changes,
+    you are better off with a large output that can be used for a before-and-after
+    comparison. One cause of rounding errors is the difference in floating-point precision
+    between CPU registers and main memory. Running your code through a different code
+    path can cause subtle rounding errors that might later confound you—it is better
+    to be aware of this as soon as they occur.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Obviously, it makes sense to use a source code control tool while you are profiling
+    and optimizing. Branching is cheap, and it will preserve your sanity.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Wrap-Up
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Having looked at profiling techniques, you should have all the tools you need
+    to identify bottlenecks around CPU and RAM usage in your code. Next, we’ll look
+    at how Python implements the most common containers, so you can make sensible
+    decisions about representing larger collections of data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([1](ch02.xhtml#idm46122431392152-marker)) `memory_profiler` measures memory
+    usage according to the International Electrotechnical Commission’s MiB (mebibyte)
+    of 2^(20) bytes. This is slightly different from the more common but also more
+    ambiguous MB (megabyte has two commonly accepted definitions!). 1 MiB is equal
+    to 1.048576 (or approximately 1.05) MB. For our discussion, unless we’re dealing
+    with very specific amounts, we’ll consider the two equivalent.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([2](ch02.xhtml#idm46122430772872-marker)) The language creator Guido van Rossum
+    is Dutch, and not everyone has agreed with his “obvious” choices, but on the whole
+    we like the choices that Guido makes!
+  prefs: []
+  type: TYPE_NORMAL

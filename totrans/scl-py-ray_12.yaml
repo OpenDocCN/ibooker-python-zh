@@ -1,0 +1,261 @@
+- en: Chapter 11\. Using GPUs and Accelerators with Ray
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: While Ray is primarily focused on horizontal scaling, sometimes using special
+    accelerators like GPUs can be cheaper and faster than just throwing more “regular”
+    compute nodes at a problem. GPUs are well suited to vectorized operations performing
+    the same operation on chunks of data at a time. ML, and more generally linear
+    algebra, are some of the top use cases,^([1](ch11.html#idm45354762212512)) as
+    deep learning is incredibly vectorizable.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Often GPU resources are more expensive than CPU resources, so Ray’s architecture
+    makes it easy to request GPU resources only when necessary. To take advantage
+    of GPUs, you need to use specialized libraries, and since these libraries deal
+    with direct memory access, their results may not always be serializable. In the
+    GPU computing world, NVIDIA and, to a lesser degree, AMD are the two main options,
+    with different libraries for integration.
+  prefs: []
+  type: TYPE_NORMAL
+- en: What Are GPUs Good At?
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Not every problem is a good fit for GPU acceleration. GPUs are especially good
+    at performing the same calculation on many data points at the same time. If a
+    problem is well suited to vectorization, there is a good chance that GPUs may
+    be well suited to it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following are common problems that benefit from GPU acceleration:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: ML
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Linear algebra
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Physics simulations
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Graphics (no surprise here)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: GPUs are not well suited to branch-heavy nonvectorized workflows, or workflows
+    for which the cost of copying the data is similar to or higher than the cost of
+    the computation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The Building Blocks
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Working with GPUs involves additional overhead, similar to the overhead of distributing
+    tasks (although a bit faster). This overhead comes from serializing data as well
+    as communication, although the links between CPU and GPU are generally faster
+    than network links. Unlike distributed tasks with Ray, GPUs do not have Python
+    interpreters. Instead of sending Python lambdas, your high-level tools will generally
+    generate or call native GPU code. CUDA and Radeon Open Compute (ROCm) are the
+    two de facto low-level libraries for interacting with GPUs, from NVIDIA and AMD,
+    respectively.
+  prefs: []
+  type: TYPE_NORMAL
+- en: NVIDIA released CUDA first, and it quickly gained traction with many higher-level
+    libraries and tools, including TensorFlow. AMD’s ROCm has had a slower start and
+    has not seen the same level of adoption. Some high-level tools, including PyTorch,
+    have now integrated ROCm support, but many others require using a special forked
+    ROCm version, like TensorFlow (tensorflow-rocm) or LAPACK (rocSOLVER).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Getting the building blocks right can be surprisingly challenging. For example,
+    in our experience, getting NVIDIA GPU Docker containers to build with Ray on Linux4Tegra
+    took several days. ROCm and CUDA libraries have specific versions that support
+    specific hardware, and similarly, higher-level programs that you may wish to use
+    likely support only some versions. If you are running on Kubernetes, or a similar
+    containerized platform, you can benefit from starting with prebuilt containers
+    like NVIDIA’s [CUDA images](https://oreil.ly/klaV4) or AMD’s [ROCm images](https://oreil.ly/IKLF9)
+    as the base.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Higher-Level Libraries
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Unless you have specialized needs, you’ll likely find it easiest to work with
+    higher-level libraries that generate GPU code for you, like Basic Linear Algebra
+    Subprograms (BLAS), TensorFlow, or Numba. You should try to install these libraries
+    in the base container or machine image that you are using, as they often involve
+    a substantial amount of compile time during installation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Some of the libraries, like Numba, perform dynamic rewriting of your Python
+    code. To have Numba operate on your code, you add a decorator to your function
+    (e.g., `@numba.jit`). Unfortunately, `numba.jit` and other dynamic rewriting of
+    your functions are not directly supported in Ray. Instead, if you are using such
+    a library, simply wrap the call as shown in [Example 11-1](#numba_ex).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 11-1\. [Simple CUDA example](https://oreil.ly/xjpkD)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Similar to Ray’s distributed functions, these tools will generally take care
+    of copying data for you, but it’s important to remember it isn’t free to move
+    data in and out of GPUs. Since these datasets can be large, most libraries try
+    to do multiple operations on the same data. If you have an iterative algorithm
+    that reuses the data, using an actor to hold on to the GPU resource and keep data
+    in the GPU can reduce this cost.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Regardless of which libraries you choose (or if you decide to write your own
+    GPU code), you’ll need to make sure Ray schedules your code on nodes with GPUs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Acquiring and Releasing GPU and Accelerator Resources
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: You can request GPU resources by adding `num_gpus` to the `ray.remote` decorator,
+    much the same way as memory and CPU. Like other resources in Ray (including memory),
+    GPUs in Ray are not guaranteed, and Ray does not automatically clean up resources
+    for you. While Ray does not automatically clean up memory for you, Python does
+    (to an extent), making GPU leaks more likely than memory leaks.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Many of the high-level libraries do not release the GPU unless the Python VM
+    exits. You can force the Python VM to exit after each call, thereby releasing
+    any GPU resources, by adding `max_calls=1` in your `ray.remote` decorator, as
+    in [Example 11-2](#remote_gpu).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 11-2\. [Requesting and releasing GPU resources](https://oreil.ly/xjpkD)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: One downside of restarting is that it removes your ability to reuse existing
+    data in the GPU or accelerator. You can work around this by using long-lived actors
+    in place of functions, but with the trade-off of locking up the resources in those
+    actors.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Ray’s ML Libraries
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'You can also configure Ray’s built-in ML libraries to use GPUs. To have Ray
+    Train launch PyTorch to use GPU resources for training, you need to set `use_gpu=True`
+    in your `Trainer` constructor call, just as you configure the number of workers.
+    Ray Tune gives you more flexibility for resource requests, and you specify the
+    resources in `tune.run`, using the same dictionary as you would in `ray.remote`.
+    For example, to use two CPUs and one GPU per trial, you would call `tune.run(trainable,
+    num_samples=10, resources_per_trial=\{"cpu": 2, "gpu": 2})`.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Autoscaler with GPUs and Accelerators
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Ray’s autoscaler has the ability to understand different types of nodes and
+    chooses which node type to schedule based on the requested resources. This is
+    especially important with GPUs, which tend to be more expensive (and in lower
+    supply) than other resources. On our cluster, since we have only four nodes with
+    GPUs, we configure the autoscaler [as follows](https://oreil.ly/juA4y):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: This way, the autoscaler can allocate containers without GPU resources, which
+    allows Kubernetes to place those pods on CPU-only nodes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: CPU Fallback as a Design Pattern
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Most of the high-level libraries that can be accelerated by GPUs also have CPU
+    fallback. Ray does not have a built-in way of expressing the concept of CPU fallback,
+    or “GPU if available.” In Ray, if you ask for a resource and the scheduler cannot
+    find it, and the autoscaler cannot create an instance for it, the function or
+    actor will block forever. With a bit of creativity, you can build your own CPU-fallback
+    code in Ray.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you want to use GPU resources when the cluster has them and fall back to
+    CPU, you’ll need to do a bit of extra work. The simplest way to determine whether
+    a cluster has usable GPU resources is to ask Ray to run a remote task with a GPU
+    and then set the resources based on this, as shown in [Example 11-3](#cpu_fallback).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 11-3\. [Falling back to a CPU if no GPU exists](https://oreil.ly/xjpkD)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: Any libraries you use will also need to fall back to CPU-based code. If they
+    don’t do so automatically (e.g., you have two different functions called depending
+    on CPU versus GPU, like `mul_two_cuda` and `mul_two_np`), you can pass through
+    a Boolean indicating whether the cluster has GPUs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Warning
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: This can still result in failures on GPU clusters if GPU resources are not properly
+    released. Ideally, you should fix the GPU release issue, but on a multitenant
+    cluster, that may not be an option. You can also do try/except with acquiring
+    the GPU inside each function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Other (Non-GPU) Accelerators
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: While much of this chapter has focused on GPU accelerators, the same general
+    techniques apply to other kinds of hardware acceleration. For example, Numba is
+    able to take advantage of special CPU features, and TensorFlow can take advantage
+    of Tensor Processing Units (TPUs). In some cases, resources may not require a
+    code change but instead simply offer faster performance with the same APIs, like
+    machines with Non-Volatile Memory Express (NVMe) drives. In all of those cases,
+    you can configure your autoscaler to tag and make these resources available in
+    much the same way as GPUs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Conclusion
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: GPUs are a wonderful tool to accelerate certain types of workflows on Ray. While
+    Ray itself doesn’t have hooks for accelerating your code with GPUs, it integrates
+    well with the various libraries that you can use for GPU computation. Many of
+    these libraries were not created with shared computation in mind, so it’s important
+    to be on the lookout for accidental resource leaks, especially since GPU resources
+    tend to be more expensive.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([1](ch11.html#idm45354762212512-marker)) Another one of the top use cases
+    has been cryptocurrency mining, but you don’t need a system like Ray for that.
+    Cryptomining with GPUs has led to increased demand, with many cards selling above
+    list price, and NVIDIA has been [attempting to discourage cryptocurrency mining
+    with its latest GPUs](https://oreil.ly/tG6qH).
+  prefs: []
+  type: TYPE_NORMAL

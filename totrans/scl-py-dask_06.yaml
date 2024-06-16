@@ -1,0 +1,399 @@
+- en: 'Chapter 6\. Advanced Task Scheduling: Futures and Friends'
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Dask’s computational flow follows these four main logical steps, which can
+    happen concurrently and recursively for each task:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Collect and read the input data.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Define and build the compute graph representing the set of computations that
+    needs to be performed on the data.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Run the computation (this happens when you run `.compute()`).
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Pass the result as data to the next step.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Now we introduce more ways to control this flow with futures. So far, you have
+    mostly seen lazy operations in Dask, where Dask doesn’t do the work until something
+    forces the computation. This pattern has a number of benefits, including allowing
+    Dask’s optimizer to combine steps when doing so makes sense. However, not all
+    tasks are well suited to lazy evaluation. One common pattern not well suited to
+    lazy evaluation is *fire-and-forget*, where we call a function for its side effect^([1](ch06.xhtml#id660))
+    and necessarily care about the output. Trying to express this with lazy evaluation
+    (e.g., `dask.delayed`) results in unnecessary blocking to force computation. When
+    lazy evaluation is not what you need, you can explore Dask’s futures. Futures
+    can be used for much more than just fire-and-forget, and you can return results
+    from them. This chapter will explore a number of common use cases for futures.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: You may already be familiar with futures from Python. Dask’s futures are an
+    extension of Python’s concurrent.futures library, allowing you to use them in
+    its place. Similar to using Dask DataFrames in place of pandas DataFrames, the
+    behavior can be a bit different (although the differences here are smaller).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Dask futures are a part of Dask’s distributed client library, so you will get
+    started by importing it with `from dask.distributed import Client`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Despite the name, you can use Dask’s distributed client locally. Refer to [“Distributed
+    (Dask Client and Scheduler)”](ch03.xhtml#distributed_ch03_1687438078727) for different
+    local deployment types.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Lazy and Eager Evaluation Revisited
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Eager evaluation is the most common form of evaluation in programming, including
+    in Python. While most eager evaluation is blocking—that is, the program will not
+    move to the next statement until the result is completed—you can still have asynchronous/non-blocking
+    eager evaluation. Futures are one way of representing non-blocking eager computation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Non-blocking eager evaluation still has some potential downsides compared to
+    lazy evaluation. Some of these challenges include:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The inability to combine adjacent stages (sometimes known as pipelining)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Unnecessary computation:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Repeated subgraphs cannot be detected by Dask’s optimizer.
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Even if nothing depends on the result of the future, it may be computed.^([2](ch06.xhtml#id666))
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Potential excessive blocking when futures launch and block on other futures
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: A need for more careful memory management
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Not all Python code is eagerly evaluated. In Python 3 some built-in functions
+    use lazy evaluation, with operators like `map` returning iterators and evaluating
+    elements only on request.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Use Cases for Futures
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Many common use cases can be made faster with careful application of futures:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Integrating with other async servers (like Tornado)
+  prefs: []
+  type: TYPE_NORMAL
+- en: Although we generally believe that most of the time Dask is not the right solution
+    for the “hot path,” there are exceptions, such as dynamically computed analytic
+    dashboards.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Request/response pattern
+  prefs: []
+  type: TYPE_NORMAL
+- en: Make a call to a remote service and (later) block on its result. This can include
+    querying services like databases, remote procedure calls, or even websites.
+  prefs: []
+  type: TYPE_NORMAL
+- en: IO
+  prefs: []
+  type: TYPE_NORMAL
+- en: Input/output can often be slow, but you know you want them to start happening
+    as soon as possible.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Timeouts
+  prefs: []
+  type: TYPE_NORMAL
+- en: Sometimes you care about a result only if you can get it within a certain period
+    of time. For example, think of a boosted ML model where you need to make a decision
+    within a certain time frame, collecting all scores from available models quickly
+    and then skipping any that take too long.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Fire-and-forget
+  prefs: []
+  type: TYPE_NORMAL
+- en: Sometimes you might not care about the result of a function call, but you do
+    want to ensure it is called. Futures allow you to ensure a computation occurs
+    without having to block on the result.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Actors
+  prefs: []
+  type: TYPE_NORMAL
+- en: The results from calling actors are futures. We cover actors in the next chapter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Launching futures in Dask is non-blocking, whereas computing tasks in Dask is
+    blocking. This means that when you submit a future to Dask, while it begins work
+    right away, it does not stop (or block) your program from continuing.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Launching Futures
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The syntax for launching Dask futures is a little different than that for `dask.delayed`.
+    Dask futures are launched from the Dask distributed client with either `submit`
+    for single futures or `map` for multiple futures, as shown in [Example 6-1](#launching_futures_ch06_1686239180753).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-1\. Launching futures
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: Unlike with `dask.delayed`, as soon as the future is launched, Dask begins to
+    compute the value.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: While this `map` is somewhat similar to the `map` on Dask bags, each item results
+    in a separate task, whereas bags are able to group together tasks into partitions
+    to reduce the overhead (although they are lazily evaluated).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Some actions in Dask, like `persist()` on Dask collections, use futures under
+    the hood. You can get the futures of the persisted collection by calling `futures_of`.
+    These futures follow the same life cycle as the futures that you launch yourself.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Future Life Cycle
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Futures have a different life cycle from `dask.delayed` beyond eager computation.
+    With `dask.delayed`, intermediate computations are automatically cleaned up; however,
+    Dask futures results are stored until either the future is explicitly canceled
+    or the reference to it is garbage collected in Python. If you no longer need the
+    value of a future, you can cancel it and free any storage space or cores used
+    by calling `.cancel`. The future life cycle is illustrated in [Example 6-2](#future_lifecycle_ch06_1686239207398).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-2\. Future life cycle
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: Canceling a future behaves differently than deleting or depending on garbage
+    collection. If there is another reference to the future, then deleting or setting
+    the individual reference to None will not cancel the future. This means the result
+    will remain stored in Dask. On the other hand, canceling futures has the downside
+    that if you are incorrect and the futures value is needed, this will cause an
+    error.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Warning
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: When using Dask in a Jupyter notebook, the notebook may “hold on to” the result
+    of any previous cell, so even if the future is unnamed, it will remain present
+    in Dask. There is a [discussion on Discourse](https://oreil.ly/zyy2H) with more
+    context for those interested.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The string representation of a future will show you where it is in its life
+    cycle (e.g., `Future: slow status: cancelled,`).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Fire-and-Forget
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Sometimes you no longer need a future, but you also don’t want it to be canceled.
+    This pattern is called fire-and-forget. This is most useful for things like writing
+    data out, updating a database, or other side effects. If all reference to a future
+    is lost, garbage collection can result in the future being canceled. To work around
+    this, Dask has the aptly named `fire_and_forget` method, which allows you to take
+    advantage of this pattern, as shown in [Example 6-3](#fire_and_forget_ch06_1686239249531),
+    without needing to keep references around.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-3\. Fire-and-forget
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: Retrieving Results
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: More commonly, you will eventually want to know what the future has computed
+    (or even just if it encountered an error). For futures that are not just side
+    effects, you’ll eventually want to get the return value (or error) from the futures.
+    Futures have the blocking method `result`, as shown in [Example 6-4](#get_result_ch06_1686239283618),
+    which gives you back the value computed in the future or raises the exception
+    from the future.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-4\. Getting the result
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: You can extend this to multiple futures, as in [Example 6-5](#get_a_list_of_results_ch06_1686239329136),
+    but there are ways to do it faster.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-5\. Getting a list of results
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: If you’ve got multiple futures together—say, you created them with `map`—you
+    can get the results back as they become available (see [Example 6-6](#get_list_results_as_avail_ch06_1686239357228)).
+    If you can process the results out of order, this can greatly improve your processing
+    time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-6\. Getting a list of results as they become available
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: In the preceding example, by processing futures as they complete you can have
+    the main thread do its “business logic” (similar to `combine` step for an aggregate)
+    for each element as it becomes available. If the futures finish at different times,
+    this can be a large speed increase.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you have a deadline, like scoring a model for ad serving^([3](ch06.xhtml#id675))
+    or doing something funky with the stock market, you might not want to wait for
+    all of your futures. Instead, the `wait` function allows you to fetch results
+    with a timeout, as shown in [Example 6-7](#get_the_first_future_ch06_1686239413080).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-7\. Getting the first future (within a time limit)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: This time limit can apply either to the entire set or to one future at a time.
+    If you want all features finished by a given time, then you need a bit more work,
+    as shown in [Example 6-8](#get_any_futures_that_finish_ch06_1686239442955).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-8\. Getting any futures that finish within a time limit
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: Now that you can get the results from futures, you can compare the execution
+    time of `dask.delayed` versus Dask futures, as shown in [Example 6-9](#how_futures_faster_ch06_1686239467057).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-9\. Seeing that futures can be faster
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: In this (albeit contrived) example, you can see how, by starting the work as
+    soon as possible, the future is completed by the time you get the result, whereas
+    the `dask.delayed` starts only when you get there.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Nested Futures
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: As with `dask.delayed`, you can also launch futures from inside futures. The
+    syntax is a bit different, as you need to get an instance of the `client` object,
+    which is not serializable, so `dask.distributed` has the special function `get_client`
+    to get the client inside a distributed function. Once you have the client, you
+    can then launch the future like normal, as shown in [Example 6-10](#ex_nested).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-10\. Launching a nested future
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note that since Dask uses a centralized scheduler, the client is communicating
+    with that centralized scheduler to determine where to place the future.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Conclusion
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: While Dask’s primary building block is `dask.delayed`, it’s not the only option.
+    You can control more of your execution flow by using Dask’s futures. Futures are
+    ideal for I/O, model inference, and deadline-sensitive applications. In exchange
+    for this additional control, you are responsible for managing the life cycle of
+    your futures and the data they produce in a way that you are not with `dask.delayed`.
+    Dask also has a number of distributed data structures, including queues, variables,
+    and locks. While these distributed data structures are more expensive than their
+    local counterparts, they also give you another layer of flexibility around controlling
+    your task scheduling.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([1](ch06.xhtml#id660-marker)) Like writing a file to disk or updating a database
+    record.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([2](ch06.xhtml#id666-marker)) Although if the only reference to it gets garbage
+    collected, it may not.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([3](ch06.xhtml#id675-marker)) We believe that this is one of the areas in
+    which Dask has more room for growth, and if you do want to implement a microservice
+    for deadline-critical events, you may want to explore using Dask in conjunction
+    with other systems, like Ray.
+  prefs: []
+  type: TYPE_NORMAL

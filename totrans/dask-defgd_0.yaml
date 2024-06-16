@@ -1,0 +1,567 @@
+- en: Chapter 1\. Understanding the Architecture of Dask DataFrames
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Dask DataFrames allow you to scale your pandas workflows. Dask DataFrames overcome
+    two key limitations of pandas:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: pandas cannot run on datasets larger than memory
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: pandas only uses one core when running analyses, which can be slow
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Dask DataFrames are designed to overcome these pandas limitations. They can
+    be run on datasets that are larger than memory and use all cores by default for
+    fast execution. Here are the key Dask DataFrame architecture components that allow
+    for Dask to overcome the limitation of pandas:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Partitioning data
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Lazy execution
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Not loading all data into memory at once
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Let’s take a look at the pandas architecture first, so we can better understand
+    how it’s related to Dask DataFrames.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You’ll need to build some new mental models about distributed processing to
+    fully leverage the power of Dask DataFrames. Luckily for pandas programmers, Dask
+    was intentionally designed to have similar syntax. pandas programmers just need
+    to learn the key differences when working with distributed computing systems to
+    make the Dask transition easily.
+  prefs: []
+  type: TYPE_NORMAL
+- en: pandas Architecture
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: pandas DataFrames are in widespread use today partly because they are easy to
+    use, powerful, and efficient. We don’t dig into them deeply in this book, but
+    will quickly review some of their key characteristics. First, they contain rows
+    and values with an index.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s create a pandas DataFrame with `name` and `balance` columns to illustrate:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: This DataFrame has 4 rows of data, as illustrated in [Figure 1-1](#fig_1_pandas_dataframe_with_four_rows_of_data).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![pandas DataFrame with four rows of data](Images/understanding_the_architecture_of_dask_dataframes_803261_01.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 1-1\. pandas DataFrame with four rows of data
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: The DataFrame in [Figure 1-2](#fig_2_pandas_dataframe_has_an_index) also has
+    an index.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![pandas DataFrame has an index](Images/understanding_the_architecture_of_dask_dataframes_803261_02.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 1-2\. pandas DataFrame has an index
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: pandas makes it easy to run analytical queries on the data. It can also be leveraged
+    to build complex models and is a great option for small datasets, but does not
+    work well for larger datasets. Let’s look at why pandas doesn’t work well for
+    bigger datasets.
+  prefs: []
+  type: TYPE_NORMAL
+- en: pandas Limitations
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'pandas has two key limitations:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Its DataFrames are limited by the amount of computer memory
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Its computations only use a single core, which is slow for large datasets
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: pandas DataFrames are loaded into the memory of a single computer. The amount
+    of data that can be stored in the RAM of a single computer is limited to the size
+    of the computer’s RAM. A computer with 8 GB of memory can only hold 8 GB of data
+    in memory. In practice, pandas requires the memory to be much larger than the
+    dataset size. A 2 GB dataset may require 8 GB of memory for example (the exact
+    memory requirement depends on the operations performed and pandas version). [Figure 1-3](#fig_3_dataset_sizes_pandas_can_handle_on_a_computer_with)
+    illustrates the types of datasets pandas can handle on a computer with 16 GB of
+    RAM.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Dataset sizes pandas can handle on a computer with 16 GB of RAM](Images/understanding_the_architecture_of_dask_dataframes_803261_03.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 1-3\. Dataset sizes pandas can handle on a computer with 16 GB of RAM
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Furthermore, pandas does not support parallelism. This means that even if you
+    have multiple cores in your CPU, with pandas you are always limited to using only
+    one of the CPU cores at a time. And that means you are regularly leaving much
+    of your hardware potential untapped (see FIgure 3-4).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![pandas only uses a single core and don t leverage all available computation
+    power](Images/understanding_the_architecture_of_dask_dataframes_803261_04.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 1-4\. pandas only uses a single core and don’t leverage all available
+    computation power
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Let’s turn our attention to Dask and see how it’s architected to overcome the
+    scaling and performance limitations of pandas.
+  prefs: []
+  type: TYPE_NORMAL
+- en: How Dask DataFrames Differ from pandas
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Dask DataFrames have the same logical structure as pandas DataFrames, and share
+    a lot of the same internals, but have a couple of important architectural differences.
+    As you can see in [Figure 1-5](#fig_5_each_partition_in_a_dask_dataframe_is_a_pandas_dat),
+    pandas stores all data in a single DataFrame, whereas Dask splits up the dataset
+    into a bunch of little pandas DataFrames.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Each partition in a Dask DataFrame is a pandas DataFrame](Images/understanding_the_architecture_of_dask_dataframes_803261_05.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 1-5\. Each partition in a Dask DataFrame is a pandas DataFrame
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'Suppose you have a pandas DataFrame with the following contents:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: This pandas DataFrame can be converted to a Dask DataFrame, which will split
+    up the data into a bunch of smaller partitions. Each partition in a Dask DataFrame
+    is a pandas DataFrame. A Dask DataFrame consists of a bunch of smaller pandas
+    DataFrames.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Similar to a pandas DataFrame, a Dask DataFrame also has columns, values, and
+    an index. Notice that Dask splits up the pandas DataFrame by rows.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Dask DataFrames coordinate many pandas DataFrames in parallel. They arrange
+    many pandas dataframes split along the index.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Dask DataFrames don’t have to be in memory at once because the values are now
+    split into many different pieces. [Figure 1-6](#fig_6_dataset_sizes_that_dask_dataframes_can_handle)
+    shows how Dask DataFrames can load the pieces one at a time, allowing us to compute
+    on datasets that are larger than memory.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Dataset sizes that Dask DataFrames can handle](Images/understanding_the_architecture_of_dask_dataframes_803261_06.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 1-6\. Dataset sizes that Dask DataFrames can handle
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Dask DataFrames can also be processed in parallel because the data is split
+    into pieces, which often leads to faster processing. [Figure 1-7](#fig_7_dask_dataframes_run_computations_with_all_availabl)
+    shows how each Dask DataFrame partition (which is just a pandas DataFrame) can
+    be processed on a separate CPU core.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Dask DataFrames run computations with all available cores](Images/understanding_the_architecture_of_dask_dataframes_803261_07.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 1-7\. Dask DataFrames run computations with all available cores
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: However, because not all the data is in memory at once, some operations are
+    slower or more complicated. For example, operations like sorting a DataFrame or
+    finding a median value can be more difficult. See Chapter 4 for more information
+    and best practices.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example illustrating Dask DataFrame Architectural Components
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Let’s illustrate the architectural concepts discussed in the previous section
+    with a simple code example. We’ll create a pandas DataFrame and then convert it
+    to a Dask DataFrame to highlight the differences.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here’s the code to create a pandas DataFrame with `col1` and `col2` columns:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: Now convert the pandas DataFrame into a Dask DataFrame (`ddf`) with two partitions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: The data in the Dask DataFrame is split into two partitions because we set `npartitions=2`
+    when creating the Dask DataFrame.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Dask intentionally splits up data into different partitions, so it can run computations
+    on the partitions in parallel. Dask’s speed and scalability hinge on its ability
+    to break up computations into smaller chunks and run them using all the computational
+    cores available on a machine.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Figure 1-8](#fig_8_pandas_dataframe_is_split_into_dask_dataframe_part) illustrates
+    how the Dask DataFrame is split into two partitions, each of which is a pandas
+    DataFrame:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![pandas DataFrame is split into Dask DataFrame partitions](Images/understanding_the_architecture_of_dask_dataframes_803261_08.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 1-8\. pandas DataFrame is split into Dask DataFrame partitions
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Dask’s architecuture of splitting up the data also allows for computations to
+    be lazily executed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Lazy Execution
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Dask DataFrames use *lazy* execution, whereas pandas uses *eager* execution.
+    Dask will put off running computations till the last minute in contrast with pandas,
+    which executes computations immediately. This allows Dask to do two things pandas
+    can’t do:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Process datasets that are larger than memory
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Collect as much data as possible about the computation you want to run and then
+    optimize the computation for maximum performance.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'Let’s create a pandas DataFrame and run a filtering operation to demonstrate
+    that it runs computations immediately (eager execution). Then let’s run the same
+    filtering operation on a Dask DataFrame to observe the lazy execution:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: Filter the pandas DataFrame to only include the rows with a `number` value greater
+    than 25.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: pandas immediately executes the computation and returns the result.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s convert the pandas DataFrame to a Dask DataFrame with two partitions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now let’s run the same filtering operation on the Dask DataFrame and see that
+    no actual results are returned:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Here’s what’s output:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: Dask doesn’t run the filtering operation computations unless you explicitly
+    ask for results. In this case, you’ve just asked Dask to filter and haven’t asked
+    for results to be returned, and that’s why the resulting Dask DataFrame doesn’t
+    contain data yet. pandas users find Dask’s lazy execution strange at first, and
+    it takes them a while to get used to explicitly requesting results (rather than
+    eagerly receiving results).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In this case, you can get results by calling the `compute()` method which tells
+    Dask to execute the filtering operation and collect the results in a pandas DataFrame:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: Let’s turn our attention to another key architectural difference between Dask
+    DataFrames and pandas.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Dask DataFrame Divisions
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The pandas index is key to many performant operations like time series operations,
+    efficient joins, finding specific values quickly, and so on. Dask DataFrames don’t
+    store the entire pandas index in memory, but they do track index ranges for each
+    partition, called *divisions*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Figure 1-9](#fig_9_dask_dataframe_that_s_partitioned_by_month) shows an example
+    of a Dask DataFrame that’s partitioned by month and divisions that are stored
+    in the Dask DataFrame. Dask divisions track the starting index value of each partition
+    as well as the ending index value of the last partition.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Dask DataFrame that s partitioned by month](Images/understanding_the_architecture_of_dask_dataframes_803261_09.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 1-9\. Dask DataFrame that’s partitioned by month
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Divisions are key to Dask DataFrames in much the same way that the pandas index
+    is critical to pandas DataFrames. Chapter 4 will show you how good tracking of
+    index/division information can lead to greatly improved performance.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Figure 1-10](#fig_10_dask_dataframe_with_divisions_by_partition) looks at
+    the same Dask DataFrame from earlier and explore the DataFrame divisions in more
+    detail.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Dask DataFrame with divisions by partition](Images/understanding_the_architecture_of_dask_dataframes_803261_10.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 1-10\. Dask DataFrame with divisions by partition
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Notice that the first partition contains rows with index 0 and index 1, and
+    the second partition contains rows with index 2 and index 3.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You can access the `known_divisions` property to figure out if Dask is aware
+    of the partition bounds for a given DataFrame. `ddf.known_divisions` will return
+    `True` in this example because Dask knows the partition bounds.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The `divisions` property will tell you the exact division bounds for your DataFrame:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Here’s how to interpret the `(0, 2, 3)` tuple that’s returned:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The first partition contains index values that span from zero to two (not inclusive
+    upper boundary)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The second partition contains index values that span from two to three (inclusive
+    upper boundary)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Suppose you ask Dask to fetch you the row with index 3\. Dask doesn’t need to
+    scan over all the partitions to find the value. It knows that the row with index
+    3 is in the second partition from the `divisions` metadata, so it can narrow the
+    search for index 3 to a single partition. This is a significant performance optimization,
+    especially when there are thousands of partitions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: '[TIP] Knowing how to properly set the index and manage divisions is necessary
+    when optimizing Dask DataFrame performance.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: pandas vs. Dask DataFrame on Larger than RAM Datasets
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: This section creates a larger than RAM dataset and demonstrates how pandas cannot
+    run queries on this data, but Dask can query the data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s use Dask to create 1,095 Snappy compressed Parquet files of data (58.2
+    GB) on your local machine in the *~/data/timeseries/20-years/parquet/* directory:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Here are the files that are output to disk:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Here’s what the data looks like:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| timestamp | id | name | x | y |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 2000-01-01 00:00:00 | 1008 | Dan | -0.259374 | -0.118314 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 2000-01-01 00:00:01 | 987 | Patricia | 0.069601 | 0.755351 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 2000-01-01 00:00:02 | 980 | Zelda | -0.281843 | -0.510507 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 2000-01-01 00:00:03 | 1020 | Ursula | -0.569904 | 0.523132 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 2000-01-01 00:00:04 | 967 | Michael | -0.251460 | 0.810930 |'
+  prefs: []
+  type: TYPE_TB
+- en: There is one row of data per second for 20 years, so the entire dataset contains
+    662 million rows.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s calculate the mean value of the `id` column for one of the data files
+    with pandas:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'pandas works great when analyzing a single data file. Now let’s try to run
+    the same computation on all the data files with pandas:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: Whoops! This errors out with an out of memory exception. Most personal computers
+    don’t have even nearly enough memory to hold a 58.2 GB dataset. This pandas computation
+    will fill up all the computer’s RAM and then error out.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s run this same computation with Dask:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: This computation takes 8 seconds to execute on a computer with 8 GB of RAM and
+    four cores. A computer with more cores would be able to execute the Dask computation
+    with more parallelism and run even faster.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As this example demonstrates, Dask makes it easy to scale up a localhost workflow
+    to run on all the cores of a machine. Dask doesn’t load all of the data into memory
+    at once and can run queries in a streaming manner. This allows Dask to perform
+    analytical queries on datasets that are bigger than memory.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This example shows how Dask can scale a localhost computation, but that’s not
+    the only type of scaling that Dask allows for.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Scaling Up vs Scaling Out
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Dask DataFrame can scale pandas computations in two different ways:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Scale up:* Use all the cores of a computer rather than one core like pandas'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Scale out:* Execute queries on multiple computers (called a cluster) rather
+    than on a single computer'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: As previously discussed, pandas workflows only use a single core of a single
+    machine. So pandas will only use one core, even if 8 or 96 are available. Dask
+    scales up single machine workflows by running computations with all the cores,
+    in parallel. So if Dask is run on a machine with 96 cores, it will split up the
+    work and leverage all the available hardware to process the computation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The Dask DataFrame architecture is what allows for this parallelism. On a 96-core
+    machine, Dask can split up the data into 96 partitions, and process each partition
+    at the same time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Dask can also scale out a computation to run on multiple machines. Suppose you
+    have a cluster of 3 computers, each with 24 cores. Dask can split up the data
+    on multiple different machines and run the computations on all of the 72 available
+    cores in the cluster.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Scaling up is scaling a workflow from using a single core to all the cores of
+    a given machine. Scaling out is scaling a workflow to run on multiple computers
+    in a cluster. Dask allows you to scale up or scale out, both of which are useful
+    in different scenarios.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: This chapter explained how Dask DataFrames are architected to overcome the scaling
+    and big data performance issues of pandas. A good foundational understanding of
+    Dask DataFrames will help you harness their power effectively.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Dask DataFrames add additional overhead, so they’re not always faster than pandas.
+    For small datasets, loading data into memory and running computations is fast
+    and pandas performs quite well. Dask gains a performance advantage as dataset
+    sizes grow and more powerful machines are used. The larger the data and the more
+    cores a computer has, the more parallelism helps.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Dask is obviously the better option when the dataset is bigger than memory.
+    pandas cannot work with datasets that are bigger than memory. Dask can run queries
+    on datasets much larger than memory, as illustrated in our example.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Chapter 4 continues by digging more into Dask DataFrames. Chapter 4 will show
+    you more important operations you can perform to manipulate your data. You’re
+    in a great place to understand the different types of Dask DataFrame operations
+    now that you’re familiar with how Dask DataFrames are architected.
+  prefs: []
+  type: TYPE_NORMAL

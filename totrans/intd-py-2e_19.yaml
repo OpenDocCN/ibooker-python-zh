@@ -1,0 +1,1796 @@
+- en: 'Chapter 17\. Data in Space: Networks'
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Time is nature’s way of keeping everything from happening at once. Space is
+    what prevents everything from happening to me.
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: ''
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: '[Quotes About Time](http://bit.ly/wiki-time)'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: 'In [Chapter 15](ch15.html#ch_systems), you read about *concurrency*: how to
+    do more than one thing at a time. Now we’ll try to do things in more than one
+    place: *distributed computing* or *networking*. There are many good reasons to
+    challenge time and space:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Performance
+  prefs: []
+  type: TYPE_NORMAL
+- en: Your goal is to keep fast components busy, not waiting for slow ones.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Robustness
+  prefs: []
+  type: TYPE_NORMAL
+- en: There’s safety in numbers, so you want to duplicate tasks to work around hardware
+    and software failures.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Simplicity
+  prefs: []
+  type: TYPE_NORMAL
+- en: It’s best practice to break complex tasks into many little ones that are easier
+    to create, understand, and fix.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Scalability
+  prefs: []
+  type: TYPE_NORMAL
+- en: Increase your servers to handle load, decrease them to save money.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this chapter, we work our way up from networking primitives to higher-level
+    concepts. Let’s start with TCP/IP and sockets.
+  prefs: []
+  type: TYPE_NORMAL
+- en: TCP/IP
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The internet is based on rules about how to make connections, exchange data,
+    terminate connections, handle timeouts, and so on. These are called *protocols*,
+    and they are arranged in *layers*. The purpose of layers is to allow innovation
+    and alternative ways of doing things; you can do anything you want on one layer
+    as long as you follow the conventions in dealing with the layers above and below
+    you.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The very lowest layer governs aspects such as electrical signals; each higher
+    layer builds on those below. In the middle, more or less, is the IP (Internet
+    Protocol) layer, which specifies how network locations are addressed and how *packets*
+    (chunks) of data flow. In the layer above that, two protocols describe how to
+    move bytes between locations:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: UDP (User Datagram Protocol)
+  prefs: []
+  type: TYPE_NORMAL
+- en: This is used for short exchanges. A *datagram* is a tiny message sent in a single
+    burst, like a note on a postcard.
+  prefs: []
+  type: TYPE_NORMAL
+- en: TCP (Transmission Control Protocol)
+  prefs: []
+  type: TYPE_NORMAL
+- en: This protocol is used for longer-lived connections. It sends *streams* of bytes
+    and ensures that they arrive in order without duplication.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'UDP messages are not acknowledged, so you’re never sure whether they arrive
+    at their destination. If you wanted to tell a joke over UDP:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'TCP sets up a secret handshake between sender and receiver to ensure a good
+    connection. A TCP joke would start like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: Your local machine always has the IP address `127.0.0.1` and the name `localhost`.
+    You might see this called the *loopback interface*. If it’s connected to the internet,
+    your machine will also have a *public* IP. If you’re just using a home computer,
+    it’s behind equipment such as a cable modem or router. You can run internet protocols
+    even between processes on the same machine.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Most of the internet with which we interact—the web, database servers, and so
+    on—is based on the TCP protocol running atop the IP protocol; for brevity, TCP/IP.
+    Let’s first look at some basic internet services. After that, we explore general
+    networking patterns.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Sockets
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: If you like to know how things work, all the way down, this section is for you.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The lowest level of network programming uses a *socket*, borrowed from the C
+    language and the Unix operating system. Socket-level coding is tedious. You’ll
+    have more fun using something like ZeroMQ, but it’s useful to see what lies beneath.
+    For instance, messages about sockets often turn up when networking errors take
+    place.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s write a very simple client-server exchange, once with UDP and once with
+    TCP. In the UDP example, the client sends a string in a UDP datagram to a server,
+    and the server returns a packet of data containing a string. The server needs
+    to listen at a particular address and port—like a post office and a post office
+    box. The client needs to know these two values to deliver its message and receive
+    any reply.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the following client and server code, `address` is a tuple of (*address*,
+    *port*). The `address` is a string, which can be a name or an *IP address*. When
+    your programs are just talking to one another on the same machine, you can use
+    the name `'localhost'` or the equivalent address string `'127.0.0.1'`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: First, let’s send a little data from one process to another and return a little
+    data back to the originator. The first program is the client and the second is
+    the server. In each program, we print the time and open a socket. The server will
+    listen for connections to its socket, and the client will write to its socket,
+    which transmits a message to the server.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Example 17-1](#udp_server) presents the first program, *udp_server.py*.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 17-1\. udp_server.py
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: The server has to set up networking through two methods imported from the `socket`
+    package. The first method, `socket.socket`, creates a socket, and the second,
+    `bind`, *binds* to it (listens to any data arriving at that IP address and port).
+    `AF_INET` means we’ll create an IP socket. (There’s another type for *Unix domain
+    sockets*, but those work only on the local machine.) `SOCK_DGRAM` means we’ll
+    send and receive datagrams—in other words, we’ll use UDP.
+  prefs: []
+  type: TYPE_NORMAL
+- en: At this point, the server sits and waits for a datagram to come in (`recvfrom`).
+    When one arrives, the server wakes up and gets both the data and information about
+    the client. The `client` variable contains the address and port combination needed
+    to reach the client. The server ends by sending a reply and closing its connection.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s take a look at *udp_client.py* ([Example 17-2](#udp_client)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 17-2\. udp_client.py
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: The client has most of the same methods as the server (with the exception of
+    `bind()`). The client sends and then receives, whereas the server receives first.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Start the server first, in its own window. It will print its greeting and then
+    wait with an eerie calm until a client sends it some data:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Next, start the client in another window. It will print its greeting, send
+    data (the bytes value `''Hey''`) to the server, print the reply, and then exit:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Finally, the server will print the message it received, and exit:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: The client needed to know the server’s address and port number but didn’t need
+    to specify a port number for itself. That was automatically assigned by the system—in
+    this case, it was `56267`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: UDP sends data in single chunks. It does not guarantee delivery. If you send
+    multiple messages via UDP, they can arrive out of order, or not at all. It’s fast,
+    light, connectionless, and unreliable. UDP is useful when you need to push packets
+    quickly, and can tolerate a lost packet now and then, such as with VoIP (voice
+    over IP).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Which brings us to TCP (Transmission Control Protocol). TCP is used for longer-lived
+    connections, such as the web. TCP delivers data in the order in which you send
+    it. If there were any problems, it tries to send it again. This makes TCP a bit
+    slower than UDP, but usually a better choice when you need all the packets, in
+    the right order.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: The first two versions of the web protocol HTTP were based on TCP, but HTTP/3
+    is based on a protocol called [QUIC](https://oreil.ly/Y3Jym), which itself uses
+    UDP. So choosing between UDP and TCP can involve many factors.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s shoot a few packets from client to server and back with TCP.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*tcp_client.py* acts like the previous UDP client, sending only one string
+    to the server, but there are small differences in the socket calls, illustrated
+    in [Example 17-3](#tcp_client).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 17-3\. tcp_client.py
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: We’ve replaced `SOCK_DGRAM` with `SOCK_STREAM` to get the streaming protocol,
+    TCP. We also added a `connect()` call to set up the stream. We didn’t need that
+    for UDP because each datagram was on its own in the wild, wooly internet.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As [Example 17-4](#tcp_server) demonstrates, *tcp_server.py* also differs from
+    its UDP cousin.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 17-4\. tcp_server.py
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: '`server.listen(5)` is configured to queue up to five client connections before
+    refusing new ones. `server.accept()` gets the first available message as it arrives.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `client.recv(1000)` sets a maximum acceptable message length of 1,000 bytes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As you did earlier, start the server and then the client, and watch the fun.
+    First, the server:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now, start the client. It will send its message to the server, receive a response,
+    and then exit:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The server collects the message, prints it, responds, and then quits:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: Notice that the TCP server called `client.sendall()` to respond, and the earlier
+    UDP server called `client.sendto()`. TCP maintains the client-server connection
+    across multiple socket calls and remembers the client’s IP address.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This didn’t look so bad, but if you try to write anything more complex, you’ll
+    see how sockets really operate at a low level:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: UDP sends messages, but their size is limited and they’re not guaranteed to
+    reach their destination.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: TCP sends streams of bytes, not messages. You don’t know how many bytes the
+    system will send or receive with each call.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'To exchange entire messages with TCP, you need some extra information to reassemble
+    the full message from its segments: a fixed message size (bytes), or the size
+    of the full message, or some delimiting character.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Because messages are bytes, not Unicode text strings, you need to use the Python
+    `bytes` type. For more information on that, see [Chapter 12](ch12.html#ch_munging).
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: After all of this, if you find yourself interested in socket programming, check
+    out the Python socket programming [HOWTO](http://bit.ly/socket-howto) for more
+    details.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Scapy
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Sometimes you need to dip into the networking stream and watch the bytes swimming
+    by. You may want to debug a web API, or track down some security issue. The `scapy`
+    library and program provide a domain-specific language to create and inspect packets
+    in Python, which is much easier than writing and debugging the equivalent C programs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: A standard install uses `pip install scapy`. The [docs](https://scapy.readthedocs.io)
+    are extremely thorough. If you use tools like `tcpdump` or `wireshark` to investigate
+    TCP issues, you should look at `scapy`. Finally, don’t confuse `scapy` with `scrapy`,
+    which is covered in [“Crawl and Scrape”](ch18.html#scraping).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Netcat
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Another tool to test networks and ports is [Netcat](https://oreil.ly/K37H2),
+    often abbreviated to `nc`. Here’s an example of an HTTP connnection to Google’s
+    website, and requesting some basic information about its home page:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: In the next chapter, there’s an example that uses [“Test with telnet”](ch18.html#telnet)
+    to do the same.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Networking Patterns
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'You can build networking applications from some basic patterns:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The most common pattern is *request*-*reply*, also known as *request*-*response*
+    or *client*-*server*. This pattern is synchronous: the client waits until the
+    server responds. You’ve seen many examples of request-reply in this book. Your
+    web browser is also a client, making an HTTP request to a web server, which returns
+    a reply.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Another common pattern is *push*, or *fanout*: you send data to any available
+    worker in a pool of processes. An example is a web server behind a load balancer.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'The opposite of push is *pull*, or *fanin*: you accept data from one or more
+    sources. An example would be a logger that takes text messages from multiple processes
+    and writes them to a single log file.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'One pattern is similar to radio or television broadcasting: *publish*-*subscribe*,
+    or *pub*-*sub*. With this pattern, a publisher sends out data. In a simple pub-sub
+    system, all subscribers would receive a copy. More often, subscribers can indicate
+    that they’re interested only in certain types of data (often called a *topic*),
+    and the publisher will send just those. So, unlike the push pattern, more than
+    one subscriber might receive a given piece of data. If there’s no subscriber for
+    a topic, the data are ignored.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Let’s show some request-reply examples, and later some pub-sub ones.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The Request-Reply Pattern
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: This is the most familiar pattern. You request DNS, web, or email data from
+    the appropriate servers, and they reply, or tell you whether there’s a problem.
+  prefs: []
+  type: TYPE_NORMAL
+- en: I just showed you how to make some basic requests with UDP or TCP, but it’s
+    hard to build a networking application at the socket level. Let’s see if ZeroMQ
+    can help.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ZeroMQ
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'ZeroMQ is a library, not a server. Sometimes described as *sockets on steroids*,
+    ZeroMQ sockets do the things that you sort of expected plain sockets to do:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Exchange entire messages
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Retry connections
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Buffer data to preserve them when the timing between senders and receivers doesn’t
+    line up
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'The [online guide](http://zguide.zeromq.org) is well written and witty, and
+    it presents the best description of networking patterns that I’ve seen. The printed
+    version (*ZeroMQ: Messaging for Many Applications*, by Pieter Hintjens, from that
+    animal house, O’Reilly) has that good code smell and a big fish on the cover,
+    rather than the other way around. All the examples in the printed guide are in
+    the C language, but the online version lets you choose from multiple languages
+    for each code example. The Python [examples are also viewable](http://bit.ly/zeromq-py).
+    In this chapter, I show you some basic request-reply ZeroMQ examples.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'ZeroMQ is like a LEGO set, and we all know that you can build an amazing variety
+    of things from a few Lego shapes. In this case, you construct networks from a
+    few socket types and patterns. The basic “LEGO pieces” presented in the following
+    list are the ZeroMQ socket types, which by some twist of fate look like the network
+    patterns we’ve already discussed:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: REQ (synchronous request)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: REP (synchronous reply)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: DEALER (asynchronous request)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: ROUTER (asynchronous reply)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: PUB (publish)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: SUB (subscribe)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: PUSH (fanout)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: PULL (fanin)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'To try these yourself, you’ll need to install the Python ZeroMQ library by
+    typing this command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The simplest pattern is a single request-reply pair. This is synchronous: one
+    socket makes a request and then the other replies. First, the code for the reply
+    (server), *zmq_server.py*, as shown in [Example 17-5](#zmq_server).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 17-5\. zmq_server.py
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We create a `Context` object: this is a ZeroMQ object that maintains state.
+    Then, we make a ZeroMQ `socket` of type `REP` (for REPly). We call `bind()` to
+    make it listen on a particular IP address and port. Notice that they’re specified
+    in a string such as `''tcp://localhost:6789''` rather than a tuple, as in the
+    plain-socket examples.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This example keeps receiving requests from a sender and sending a response.
+    The messages can be very long—ZeroMQ takes care of the details.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Example 17-6](#zmq_client) shows the code for the corresponding request (client),
+    *zmq_client.py*. Its type is `REQ` (for REQuest), and it calls `connect()` rather
+    than `bind()`.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 17-6\. zmq_client.py
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now it’s time to start them. One interesting difference from the plain-socket
+    examples is that you can start the server and client in either order. Go ahead
+    and start the server in one window in the background:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Start the client in the same window:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'You’ll see these alternating output lines from the client and server:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Our client ends after sending its fifth message, but we didn’t tell the server
+    to quit, so it sits by the phone, waiting for another message. If you run the
+    client again, it will print the same five lines, and the server will print its
+    five also. If you don’t kill the *zmq_server.py* process and try to run another
+    one, Python will complain that the address is already is use:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: The messages need to be sent as byte strings, so we encoded our example’s text
+    strings in UTF-8 format. You can send any kind of message you like, as long as
+    you convert it to `bytes`. We used simple text strings as the source of our messages,
+    so `encode()` and `decode()` were enough to convert to and from byte strings.
+    If your messages have other data types, you can use a library such as [MessagePack](http://msgpack.org).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Even this basic REQ-REP pattern allows for some fancy communication patterns,
+    because any number of REQ clients can `connect()` to a single `REP` server. The
+    server handles requests one at a time, synchronously, but doesn’t drop other requests
+    that are arriving in the meantime. ZeroMQ buffers messages, up to some specified
+    limit, until they can get through; that’s where it earns the Q in its name. The
+    Q stands for Queue, the M stands for Message, and the Zero means there doesn’t
+    need to be any broker.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Although ZeroMQ doesn’t impose any central brokers (intermediaries), you can
+    build them where needed. For example, use DEALER and ROUTER sockets to connect
+    multiple sources and/or destinations asynchronously.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Multiple REQ sockets connect to a single ROUTER, which passes each request to
+    a DEALER, which then contacts any REP sockets that have connected to it ([Figure 17-1](#fig_broker)).
+    This is similar to a bunch of browsers contacting a proxy server in front of a
+    web server farm. It lets you add multiple clients and servers as needed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The REQ sockets connect only to the ROUTER socket; the DEALER connects to the
+    multiple REP sockets behind it. ZeroMQ takes care of the nasty details, ensuring
+    that the requests are load balanced and that the replies go back to the right
+    place.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Another networking pattern called the *ventilator* uses PUSH sockets to farm
+    out asynchronous tasks, and PULL sockets to gather the results.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The last notable feature of ZeroMQ is that it scales up *and* down, just by
+    changing the connection type of the socket when it’s created:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`tcp` between processes, on one or more machines'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`ipc` between processes on one machine'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`inproc` between threads in a single process'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: That last one, `inproc`, is a way to pass data between threads without locks,
+    and an alternative to the `threading` example in [“Threads”](ch15.html#threads).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![inp2 1701](assets/inp2_1701.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 17-1\. Using a broker to connect multiple clients and services
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: After using ZeroMQ, you may not want to write raw socket code again.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Other Messaging Tools
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'ZeroMQ is certainly not the only message-passing library that Python supports.
+    Message passing is one of the most popular ideas in networking, and Python keeps
+    up with other languages:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The Apache project, whose web server we saw in [“Apache”](ch18.html#apache),
+    also maintains the [ActiveMQ](https://activemq.apache.org) project, including
+    several Python interfaces using the simple-text [STOMP](https://oreil.ly/a3h_M)
+    protocol.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[RabbitMQ](http://www.rabbitmq.com) is also popular, and it has useful online
+    Python [tutorials](http://bit.ly/rabbitmq-tut).'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[NATS](http://www.nats.io) is a fast messaging system, written in Go.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The Publish-Subscribe Pattern
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Publish-subscribe is not a queue but a broadcast. One or more processes publish
+    messages. Each subscriber process indicates what type of messages it would like
+    to receive. A copy of each message is sent to each subscriber that matched its
+    type. Thus, a given message might be processed once, more than once, or not at
+    all. Like a lonely radio operator, each publisher is just broadcasting and doesn’t
+    know who, if anyone, is listening.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Redis
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: You’ve seen Redis in [Chapter 16](ch16.html#ch_databases), mainly as a data
+    structure server, but it also contains a pub-sub system. The publisher emits messages
+    with a topic and a value, and subscribers say which topics they want to receive.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Example 17-7](#redis_pub) contains a publisher, *redis_pub.py*.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 17-7\. redis_pub.py
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: Each topic is a breed of cat, and the accompanying message is a type of hat.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Example 17-8](#redis_sub) shows a single subscriber, *redis_sub.py*.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 17-8\. redis_sub.py
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE22]'
+  prefs: []
+  type: TYPE_PRE
+- en: This subscriber wants all messages for cat types `'maine coon'` and `'persian'`,
+    and no others. The `listen()` method returns a dictionary. If its type is `'message'`,
+    it was sent by the publisher and matches our criteria. The `'channel'` key is
+    the topic (cat), and the `'data'` key contains the message (hat).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If you start the publisher first and no one is listening, it’s like a mime
+    falling in the forest (does he make a sound?), so start the subscriber first:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE23]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Next, start the publisher. It will send 10 messages and then quit:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE24]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The subscriber cares about only two types of cat:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE25]'
+  prefs: []
+  type: TYPE_PRE
+- en: We didn’t tell the subscriber to quit, so it’s still waiting for messages. If
+    you restart the publisher, the subscriber will grab a few more messages and print
+    them.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You can have as many subscribers (and publishers) as you want. If there’s no
+    subscriber for a message, it disappears from the Redis server. However, if there
+    are subscribers, the messages stay in the server until all subscribers have retrieved
+    them.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ZeroMQ
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: ZeroMQ has no central server, so each publisher writes to all subscribers. The
+    publisher, *zmq_pub.py*, is provided in [Example 17-9](#zmq_pub).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 17-9\. zmq_pub.py
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE26]'
+  prefs: []
+  type: TYPE_PRE
+- en: Notice how this code uses UTF-8 encoding for the topic and value strings.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The file for the subscriber is *zmq_sub.py* ([Example 17-10](#zmq_sub)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 17-10\. zmq_sub.py
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE27]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'In this code, we subscribe to two different byte values: the two strings in
+    `topics`, encoded as UTF-8.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: It seems a little backward, but if you want *all* topics, you need to subscribe
+    to the empty bytestring `b''`; if you don’t, you’ll get nothing.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Notice that we call `send_multipart()` in the publisher and `recv_multipart()`
+    in the subscriber. This makes it possible for us to send multipart messages and
+    use the first part as the topic. We could also send the topic and message as a
+    single string or bytestring, but it seems cleaner to keep cats and hats separate.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Start the subscriber:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE28]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Start the publisher. It immediately sends 10 messages and then quits:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE29]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The subscriber prints what it requested and received:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE30]'
+  prefs: []
+  type: TYPE_PRE
+- en: Other Pub-Sub Tools
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'You might like to explore some of these other Python pub-sub links:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: RabbitMQ is a well-known messaging broker, and `pika` is a Python API for it.
+    See [the `pika` documentation](http://pika.readthedocs.org) and a [pub-sub tutorial](http://bit.ly/pub-sub-tut).
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Go to the [PyPi](https://pypi.python.org) search window and type `pubsub` to
+    find Python packages like [`pypubsub`](http://pubsub.sourceforge.net).
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[PubSubHubbub](https://code.google.com/p/pubsubhubbub) enables subscribers
+    to register callbacks with publishers.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[NATS](https://nats.io) is a fast, open source messaging system that supports
+    pub-sub, request-reply, and queuing.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Internet Services
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Python has an extensive networking toolset. In the following sections, we look
+    at ways to automate some of the most popular internet services. The official,
+    comprehensive [documentation](http://bit.ly/py-internet) is available online.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Domain Name System
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Computers have numeric IP addresses such as `85.2.101.94`, but we remember names
+    better than numbers. The Domain Name System (DNS) is a critical internet service
+    that converts IP addresses to and from names via a distributed database. Whenever
+    you’re using a web browser and suddenly see a message like “looking up host,”
+    you’ve probably lost your internet connection, and your first clue is a DNS failure.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Some DNS functions are found in the low-level `socket` module. `gethostbyname()`
+    returns the IP address for a domain name, and the extended edition `gethostbyname_ex()`
+    returns the name, a list of alternative names, and a list of addresses:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE31]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The `getaddrinfo()` method looks up the IP address, but it also returns enough
+    information to create a socket to connect to it:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE32]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The preceding call returned two tuples: the first for UDP, and the second for
+    TCP (the `6` in the `2, 1, 6` is the value for TCP).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'You can ask for TCP or UDP information only:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE33]'
+  prefs: []
+  type: TYPE_PRE
+- en: Some [TCP and UDP port numbers](http://bit.ly/tcp-udp-ports) are reserved for
+    certain services by IANA, and are associated with service names. For example,
+    HTTP is named `http` and is assigned TCP port 80.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'These functions convert between service names and port numbers:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE34]'
+  prefs: []
+  type: TYPE_PRE
+- en: Python Email Modules
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'The standard library contains these email modules:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[`smtplib`](https://oreil.ly/_kF6V) for sending email messages via Simple Mail
+    Transfer Protocol (SMTP)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[`email`](https://oreil.ly/WVGbE) for creating and parsing email messages'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[`poplib`](https://oreil.ly/xiJT7) for reading email via Post Office Protocol
+    3 (POP3)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[`imaplib`](https://oreil.ly/wengo) for reading email via Internet Message
+    Access Protocol (IMAP)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: If you want to write your own Python SMTP server, try [`smtpd`](https://oreil.ly/JkLsD),
+    or the new asynchronous version [`aiosmtpd`](https://aiosmtpd.readthedocs.io).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Other Protocols
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Using the standard [`ftplib` module](http://bit.ly/py-ftplib), you can push
+    bytes around by using the File Transfer Protocol (FTP). Although it’s an old protocol,
+    FTP still performs very well.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You’ve seen many of these modules in various places in this book, but also try
+    the documentation for standard library support of [internet protocols](http://bit.ly/py-internet).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Web Services and APIs
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Information providers always have a website, but those are targeted for human
+    eyes, not automation. If data is published only on a website, anyone who wants
+    to access and structure the data needs to write scrapers (as shown in [“Crawl
+    and Scrape”](ch18.html#scraping)), and rewrite them each time a page format changes.
+    This is usually tedious. In contrast, if a website offers an API to its data,
+    the data becomes directly available to client programs. APIs change less often
+    than web page layouts, so client rewrites are less common. A fast, clean data
+    pipeline also makes it easier to build unforeseen but useful combinations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In many ways, the easiest API is a web interface, but one that provides data
+    in a structured format such as JSON or XML rather than plain text or HTML. The
+    API might be minimal or a full-fledged RESTful API (defined in [“Web APIs and
+    REST”](ch18.html#rest)), but it provides another outlet for those restless bytes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: At the very beginning of this book, you saw a web API query the Internet Archive
+    for an old copy of a website.
+  prefs: []
+  type: TYPE_NORMAL
+- en: APIs are especially useful for mining well-known social media sites such as
+    Twitter, Facebook, and LinkedIn. All these sites provide APIs that are free to
+    use, but they require you to register and get a key (a long-generated text string,
+    sometimes also known as a *token*) to use when connecting. The key lets a site
+    determine who’s accessing its data. It can also serve as a way to limit request
+    traffic to servers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here are some interesting service APIs:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[New York Times](http://developer.nytimes.com)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[Twitter](https://python-twitter.readthedocs.io)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[Facebook](https://developers.facebook.com/tools)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[Weather Underground](http://www.wunderground.com/weather/api)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[Marvel Comics](http://developer.marvel.com)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: You can see examples of APIs for maps in [Chapter 21](ch21.html#ch_business),
+    and others in [Chapter 22](ch22.html#ch_science).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Data Serialization
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: As you saw in [Chapter 16](ch16.html#ch_databases), formats like XML, JSON,
+    and YAML are ways to store structured text data. Networked applications need to
+    exchange data with other programs. The conversion between data in memory and byte
+    sequences “on the wire” is called *serialization* or *marshaling*. JSON is a popular
+    serialization format, especially with web RESTful systems, but it can’t express
+    all Python data types directly. Also, as a text format it tends to be more verbose
+    than some binary serialization methods. Let’s look at some approaches that you’re
+    likely to run into.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Serialize with pickle
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Python provides the `pickle` module to save and restore any object in a special
+    binary format.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Remember how JSON lost its mind when encountering a `datetime` object? Not
+    a problem for `pickle`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE35]'
+  prefs: []
+  type: TYPE_PRE
+- en: '`pickle` works with your own classes and objects, too. Let’s define a little
+    class called `Tiny` that returns the string `''tiny''` when treated as a string:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE36]'
+  prefs: []
+  type: TYPE_PRE
+- en: '`pickled` is the pickled binary string made from the object `obj1`. We converted
+    that back to the object `obj2` to make a copy of `obj1`. Use `dump()` to pickle
+    to a file, and `load()` to unpickle from one.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `multiprocessing` module uses `pickle` to interchange data among processes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If `pickle` can’t serialize your data format, a newer third-party package called
+    [`dill`](https://pypi.org/project/dill) might.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'Because `pickle` can create Python objects, the same security warnings that
+    were discussed in earlier sections apply. A public service announcement: don’t
+    unpickle something that you don’t trust.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Other Serialization Formats
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'These binary data interchange formats are usually more compact and faster than
+    XML or JSON:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[MsgPack](http://msgpack.org)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[Protocol Buffers](https://code.google.com/p/protobuf)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[Avro](http://avro.apache.org/docs/current)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[Thrift](http://thrift.apache.org)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[Lima](https://lima.readthedocs.io)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[`Serialize`](https://pypi.org/project/Serialize) is a Python frontend to other
+    formats, including JSON, YAML, pickle, and MsgPack.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: A [benchmark](https://oreil.ly/S3ESH) of various Python serialization packages.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Because they are binary, none can be easily edited by a human with a text editor.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Some third-party packages interconvert objects and basic Python data types
+    (allowing further conversion to/from formats like JSON), and provide *validation*
+    of the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Data types
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Value ranges
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Required versus optional data
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'These include:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Marshmallow](https://marshmallow.readthedocs.io/en/3.0)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[Pydantic](https://pydantic-docs.helpmanual.io)—uses type hints, so requires
+    at least Python 3.6'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[TypeSystem](https://www.encode.io/typesystem)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: These are often used with web servers to ensure that the bytes that came over
+    the wire via HTTP end up in the right data structures for further processing.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Remote Procedure Calls
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Remote Procedure Calls (RPCs) look like normal functions but execute on remote
+    machines across a network. Instead of calling a RESTful API with arguments encoded
+    in the URL or request body, you call an RPC function on your own machine. Your
+    local machine:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Serializes your function arguments into bytes.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Sends the encoded bytes to the remote machine.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'The remote machine:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Receives the encoded request bytes.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Deserializes the bytes back to data structures.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Finds and calls the service function with the decoded data.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Encodes the function results.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Sends the encoded bytes back to the caller.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'And finally, the local machine that started it all:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Decodes the bytes to return values.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: RPC is a popular technique, and people have implemented it in many ways. On
+    the server side, you start a server program, connect it with some byte transport
+    and encoding/decoding method, define some service functions, and light up your
+    *RPC is open for business* sign. The client connects to the server and calls one
+    of its functions via RPC.
+  prefs: []
+  type: TYPE_NORMAL
+- en: XML RPC
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'The standard library includes one RPC implementation that uses XML as the exchange
+    format: `xmlrpc`. You define and register functions on the server, and the client
+    calls them as though they were imported. First, let’s explore the file *xmlrpc_server.py*,
+    as shown in [Example 17-11](#xmlrpc_server).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 17-11\. xmlrpc_server.py
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE37]'
+  prefs: []
+  type: TYPE_PRE
+- en: The function we’re providing on the server is called `double()`. It expects
+    a number as an argument and returns the value of that number times two. The server
+    starts up on an address and port. We need to *register* the function to make it
+    available to clients via RPC. Finally, start serving and carry on.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now—you guessed it—*xmlrpc_client.py*, proudly presented in [Example 17-12](#xmlrpc_client).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 17-12\. xmlrpc_client.py
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE38]'
+  prefs: []
+  type: TYPE_PRE
+- en: The client connects to the server by using `ServerProxy()`. Then, it calls the
+    function `proxy.double()`. Where did that come from? It was created dynamically
+    by the server. The RPC machinery magically hooks this function name into a call
+    to the remote server.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Give it a try—start the server and then run the client:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE39]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Run the client again:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE40]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The server then prints the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE41]'
+  prefs: []
+  type: TYPE_PRE
+- en: Popular transport methods are HTTP and ZeroMQ.
+  prefs: []
+  type: TYPE_NORMAL
+- en: JSON RPC
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'JSON-RPC (versions [1.0](https://oreil.ly/OklKa) and [2.0](https://oreil.ly/4CS0r))
+    is similar to XML-RPC, but with JSON. There are many Python JSON-RPC libraries,
+    but the simplest one I’ve found comes in two parts: [client](https://oreil.ly/8npxf)
+    and [server](https://oreil.ly/P_uDr).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Installation of both is familiar: `pip install jsonrpcserver` and `pip install
+    jsonrpclient`.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: These libraries provide many alternative ways to write a [client](https://oreil.ly/fd412)
+    and [server](https://oreil.ly/SINeg). In [Example 17-13](#jsonrpc_server) and
+    [Example 17-14](#jsonrpc_client), I use this library’s built-in server, which
+    uses port 5000 and is the simplest.
+  prefs: []
+  type: TYPE_NORMAL
+- en: First, the server.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 17-13\. jsonrpc_server.py
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE42]'
+  prefs: []
+  type: TYPE_PRE
+- en: Second, the client.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 17-14\. jsonrpc_client.py
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE43]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'As with most of the client-server examples in this chapter, start the server
+    first (in its own terminal window, or with a following `&` to put it in the background)
+    and then run the client:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE44]'
+  prefs: []
+  type: TYPE_PRE
+- en: If you put the server in the background, kill it when you’re done.
+  prefs: []
+  type: TYPE_NORMAL
+- en: MessagePack RPC
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'The encoding library MessagePack has its own [Python RPC implementation](http://bit.ly/msgpack-rpc).
+    Here’s how to install it:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE45]'
+  prefs: []
+  type: TYPE_PRE
+- en: This will also install `tornado`, a Python event-based web server that this
+    library uses as a transport. As usual, the server (*msgpack_server.py*) comes
+    first ([Example 17-15](#msgpack_server)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 17-15\. msgpack_server.py
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE46]'
+  prefs: []
+  type: TYPE_PRE
+- en: The `Services` class exposes its methods as RPC services. Go ahead and start
+    the client, *msgpack_client.py* ([Example 17-16](#msgpack_client)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 17-16\. msgpack_client.py
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE47]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'To run these, follow the usual drill—start the server and client in separate
+    terminal windows,^([1](ch17.html#idm45794970661368)) and observe the results:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE48]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE49]'
+  prefs: []
+  type: TYPE_PRE
+- en: Zerorpc
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Written by the developers of Docker (when they were called dotCloud), [zerorpc](http://www.zerorpc.io)
+    uses ZeroMQ and MsgPack to connect clients and servers. It magically exposes functions
+    as RPC endpoints.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Type `pip install zerorpc` to install it. The sample code in [Example 17-17](#zerorpc_server)
+    and [Example 17-18](#zerorpc_client) shows a request-reply client and server.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 17-17\. zerorpc_server.py
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE50]'
+  prefs: []
+  type: TYPE_PRE
+- en: Example 17-18\. zerorpc_client.py
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE51]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Notice that the client calls `client.double()`, even though there’s no definition
+    of it in there:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE52]'
+  prefs: []
+  type: TYPE_PRE
+- en: The site has many more [examples](https://github.com/0rpc/zerorpc-python).
+  prefs: []
+  type: TYPE_NORMAL
+- en: gRPC
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Google created [gRPC](https://grpc.io) as a portable and fast way to define
+    and connect services. It encodes data as [protocol buffers](https://oreil.ly/UINlc).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Install the Python parts:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE53]'
+  prefs: []
+  type: TYPE_PRE
+- en: The Python client [docs](https://grpc.io/docs/quickstart/python) are very detailed,
+    so I’m giving only a brief overview here. You may also like this separate [tutorial](https://oreil.ly/awnxO).
+  prefs: []
+  type: TYPE_NORMAL
+- en: To use gRPC, you write a *.proto* file to define a `service` and its `rpc` methods.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'An `rpc` method is like a function definition (describing its arguments and
+    return types) and may specify one of these networking patterns:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Request-response (sync or async)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Request-streaming response
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Streaming request-response (sync or async)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Streaming request-streaming response
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Single responses can be blocking or asynchronous. Streaming responses are iterated.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Next, you would run the `grpc_tools.protoc` program to create Python code for
+    the client and server. gRPC handles the serialization and network communication;
+    you add your application-specific code to the client and server stubs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: gRPC is a top-level alternative to web REST APIs. It seems to be a better fit
+    than REST for inter-service communication, and REST may be preferred for public
+    APIs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Twirp
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: '[Twirp](https://oreil.ly/buf4x) is similar to gRPC, but claims to be simpler.
+    You define a `.proto` file as you would with gRPC, and twirp can generate Python
+    code to handle the client and server ends.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Remote Management Tools
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: '[`Salt`](http://www.saltstack.com) is written in Python. It started as a way
+    to implement remote execution, but grew to a full-fledged systems management platform.
+    Based on ZeroMQ rather than SSH, it can scale to thousands of servers.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[`Puppet`](http://puppetlabs.com) and [`Chef`](http://www.getchef.com/chef)
+    are popular and closely tied to Ruby.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The [`Ansible`](http://www.ansible.com/home) package, which like Salt is written
+    in Python, is also comparable. It’s free to download and use, but support and
+    some add-on packages require a commercial license. It uses SSH by default and
+    does not require any special software to be installed on the machines that it
+    will manage.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`Salt` and `Ansible` are both functional supersets of `Fabric`, handling initial
+    configuration, deployment, and remote execution.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Big Fat Data
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: As Google and other internet companies grew, they found that traditional computing
+    solutions didn’t scale. Software that worked for single machines, or even a few
+    dozen, could not keep up with thousands.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Disk storage for databases and files involved too much *seeking*, which requires
+    mechanical movement of disk heads. (Think of a vinyl record, and the time it takes
+    to move the needle from one track to another manually. And think of the screeching
+    sound it makes when you drop it too hard, not to mention the sounds made by the
+    record’s owner.) But you could *stream* consecutive segments of the disk more
+    quickly.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Developers found that it was faster to distribute and analyze data on many networked
+    machines than on individual ones. They could use algorithms that sounded simplistic
+    but actually worked better overall with massively distributed data. One of these
+    is MapReduce, which spreads a calculation across many machines and then gathers
+    the results. It’s similar to working with queues.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Hadoop
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: After Google published its MapReduce results in a [paper](https://oreil.ly/cla0d),
+    Yahoo followed with an open source Java-based package named *Hadoop* (named after
+    the toy stuffed elephant of the lead programmer’s son).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The phrase *big data* applies here. Often it just means “data too big to fit
+    on my machine”: data that exceeds the disk, memory, CPU time, or all of the above.
+    To some organizations, if *big data* is mentioned somewhere in a question, the
+    answer is always Hadoop. Hadoop copies data among machines, running them through
+    *map* (scatter) and *reduce* (gather) programs, and saving the results on disk
+    at each step.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This batch process can be slow. A quicker method called *Hadoop streaming* works
+    like Unix pipes, streaming the data through programs without requiring disk writes
+    at each step. You can write Hadoop streaming programs in any language, including
+    Python.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Many Python modules have been written for Hadoop, and some are discussed in
+    the blog post [“A Guide to Python Frameworks for Hadoop”](http://bit.ly/py-hadoop).
+    Spotify, known for streaming music, open sourced its Python component for Hadoop
+    streaming, [Luigi](https://github.com/spotify/luigi).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Spark
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: A rival named [Spark](http://bit.ly/about-spark) was designed to run 10 to 100
+    times faster than Hadoop. It can read and process any Hadoop data source and format.
+    Spark includes APIs for Python and other languages. You can find the [installation](http://bit.ly/dl-spark)
+    documents online.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Disco
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Another alternative to Hadoop is [Disco](http://discoproject.org), which uses
+    Python for MapReduce processing and Erlang for communication. Alas, you can’t
+    install it with `pip`; see the [documentation](http://bit.ly/get-disco).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Dask
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: '[Dask](https://dask.org) is similar to Spark, although it’s written in Python
+    and is largely used with scientific Python packages like NumPy, Pandas, and scikit-learn.
+    It can spread tasks across thousand-machine clusters.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To get Dask and all of its extra helpers:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE54]'
+  prefs: []
+  type: TYPE_PRE
+- en: See [Chapter 22](ch22.html#ch_science) for related examples of *parallel programming*,
+    in which a large structured calculation is distributed among many machines.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Clouds
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: I really don’t know clouds at all.
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: ''
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: Joni Mitchell
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: 'Not so long ago, you would buy your own servers, bolt them into racks in data
+    centers, and install layers of software on them: operating systems, device drivers,
+    filesystems, databases, web servers, email servers, name servers, load balancers,
+    monitors, and more. Any initial novelty wore off as you tried to keep multiple
+    systems alive and responsive. And you worried constantly about security.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Many hosting services offered to take care of your servers for a fee, but you
+    still leased the physical devices and had to pay for your peak load configuration
+    at all times.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'With more individual machines, failures are no longer infrequent: they’re very
+    common. You need to scale services horizontally and store data redundantly. You
+    can’t assume that the network operates like a single machine. The eight fallacies
+    of distributed computing, according to Peter Deutsch, are as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The network is reliable.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Latency is zero.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Bandwidth is infinite.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The network is secure.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Topology doesn’t change.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: There is one administrator.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Transport cost is zero.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The network is homogeneous.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'You can try to build these complex distributed systems, but it’s a lot of work,
+    and a different toolset is needed. To borrow an analogy, when you have a handful
+    of servers, you treat them like pets—you give them names, know their personalities,
+    and nurse them back to health when needed. But at scale, you treat servers more
+    like livestock: they look alike, have numbers, and are just replaced if they have
+    any problems.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Instead of building, you can rent servers in the *cloud*. By adopting this model,
+    maintenance is someone else’s problem, and you can concentrate on your service,
+    or blog, or whatever you want to show the world. Using web dashboards and APIs,
+    you can spin up servers with whatever configuration you need, quickly and easily—they’re
+    *elastic*. You can monitor their status, and be alerted if some metric exceeds
+    a given threshold. Clouds are currently a pretty hot topic, and corporate spending
+    on cloud components has spiked.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The big cloud vendors are:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Amazon (AWS)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Google
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Microsoft Azure
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Amazon Web Services
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'As Amazon was growing from hundreds to thousands to millions of servers, developers
+    ran into all the nasty problems of distributed systems. One day in 2002 or thereabouts,
+    CEO Jeff Bezos declared to Amazon employees that, henceforth, all data and functionality
+    needed to be exposed only via network service interfaces—not files, or databases,
+    or local function calls. They had to design these interfaces as though they were
+    being offered to the public. The memo ended with a motivational nugget: *“Anyone
+    who doesn’t do this will be fired.”*'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Not surprisingly, developers got to work, and over time built a huge service-oriented
+    architecture. They borrowed or innovated many solutions, evolving into [Amazon
+    Web Services (AWS)](http://aws.amazon.com), which now dominates the market. The
+    official Python AWS library is `boto3`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[documentation](https://oreil.ly/y2Baz)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[SDK](https://aws.amazon.com/sdk-for-python) pages'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Install it with:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE55]'
+  prefs: []
+  type: TYPE_PRE
+- en: You can use `boto3` as an alternative to AWS’s web-based management pages.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Google Cloud
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Google uses Python a lot internally, and it employs some prominent Python developers
+    (even Guido van Rossum himself, for some time). From its [main](https://cloud.google.com)
+    and [Python](https://cloud.google.com/python) pages, you can find details on its
+    many services.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Microsoft Azure
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Microsoft caught up with Amazon and Google with its cloud offering, [Azure](https://azure.microsoft.com).
+    See [Python on Azure](https://oreil.ly/Yo6Nz) to learn how to develop and deploy
+    Python applications.
+  prefs: []
+  type: TYPE_NORMAL
+- en: OpenStack
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: '[OpenStack](https://www.openstack.org) is an open source framework of Python
+    services and REST APIs. Many of the services are similar to those in the commercial
+    clouds.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Docker
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The humble standardized shipping container revolutionized international trade.
+    Only a few years ago, Docker applied the *container* name and analogy to a *virtualization*
+    method using some little-known Linux features. Containers are much lighter than
+    virtual machines, and a bit heavier than Python virtualenvs. They allow you to
+    package an application separately from other applications on the same machine,
+    sharing only the operating system kernel.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To install Docker’s Python client [library](https://pypi.org/project/docker):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE56]'
+  prefs: []
+  type: TYPE_PRE
+- en: Kubernetes
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Containers caught on and spread through the computing world. Eventually, people
+    needed ways to manage multiple containers and wanted to automate some of the manual
+    steps that have been usually required in large distributed systems:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Failover
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Load balancing
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Scaling up and down
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: It looks like [Kubernetes](https://kubernetes.io) is leading the pack in this
+    new area of *container orchestration*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To install the Python client [library](https://github.com/kubernetes-client/python):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE57]'
+  prefs: []
+  type: TYPE_PRE
+- en: Coming Up
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: As they say on television, our next guest needs no introduction. Learn why Python
+    is one of the best languages to tame the web.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Things to Do
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 17.1 Use a plain `socket` to implement a current-time-service. When a client
+    sends the string *time* to the server, return the current date and time as an
+    ISO string.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 17.2 Use ZeroMQ REQ and REP sockets to do the same thing.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 17.3 Try the same with XMLRPC.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 17.4 You may have seen the classic *I Love Lucy* television episode in which
+    Lucy and Ethel worked in a chocolate factory. The duo fell behind as the conveyor
+    belt that supplied the confections for them to process began operating at an ever-faster
+    rate. Write a simulation that pushes different types of chocolates to a Redis
+    list, and Lucy is a client doing blocking pops of this list. She needs 0.5 seconds
+    to handle a piece of chocolate. Print the time and type of each chocolate as Lucy
+    gets it, and how many remain to be handled.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 17.5 Use ZeroMQ to publish the poem from exercise 12.4 (from [Example 12-1](ch12.html#mammoth)),
+    one word at a time. Write a ZeroMQ consumer that prints every word that starts
+    with a vowel, and another that prints every word that contains five letters. Ignore
+    punctuation characters.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([1](ch17.html#idm45794970661368-marker)) Or put the server in the background
+    with a final `&`.
+  prefs: []
+  type: TYPE_NORMAL

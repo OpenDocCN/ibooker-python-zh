@@ -1,0 +1,513 @@
+- en: Chapter 20\. Static Analysis
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Before I get to testing, I first want to talk about static analysis. *Static
+    analysis* is a set of tools that inspect your codebase, looking for potential
+    errors or inconsistencies. It’s a great asset for finding common mistakes. In
+    fact, you’ve already been working with a static analysis tool: mypy. Mypy (and
+    other typecheckers) inspect your codebase and find typing errors. Other static
+    analysis tools check for other types of errors. In this chapter, I’ll walk you
+    through common static analyzers for linting, complexity checking, and security
+    scanning.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Linting
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The first class of static analysis tools that I’ll walk you through is called
+    a *linter*. Linters search for common programming mistakes and style violations
+    within your codebase. They get their name from the original linter: a program
+    named *lint* that used to check C programs for common errors. It would search
+    for “fuzzy” logic and try to remove that fuzz (hence, linting). In Python, the
+    most common linter you will come across is Pylint. Pylint is used to check for
+    a myriad of common mistakes:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Certain style violations of the [PEP 8](https://oreil.ly/MnCoY) Python style
+    guide
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Dead code that is unreachable (such as code after a return statement)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Violations of access constraints (such as private or protected members of a
+    class)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Unused variables and functions
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Lack of cohesion in a class (no use of self in a method, too many public methods)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Missing documentation in the form of docstrings
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Common programming errors
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Many of these error classes are things that we’ve discussed previously, such
+    as accessing private members or a function needing to be a free function instead
+    of a member function (as discussed in [Chapter 10](part0014_split_000.html#classes).)
+    A linter like Pylint will complement all of the techniques you’ve learned throughout
+    this book; if you violate some of the principles I’ve been espousing, linters
+    will catch those violations for you.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Pylint is also incredibly handy at finding some common errors in your code.
+    Consider a developer adding code that adds all of an author’s cookbooks to an
+    existing list:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: This seems innocuous, but there are two issues in this code. Take a few minutes
+    and see if you can find them.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Now let’s see what Pylint can do. First, I need to install it:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Then, I’ll run Pylint against the example above:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: Pylint has identified the two issues in my code (it actually found more, such
+    as missing documentation strings, but I’ve elided them for the purposes of this
+    discussion). First, there is a dangerous mutable default value of an argument
+    in the form of `[]`. Much has been written on this behavior [before](https://oreil.ly/sCQQu),
+    but it’s a common gotcha for errors, especially for people new to the language.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The other error is a bit more subtle: not all branches return the same type.
+    “But wait!” you exclaim. “It’s OK, because I assert, which raises an error instead
+    of falling through the `if` statement (which returns `None`).” However, while
+    `assert` statements are fantastic, they can be turned off. When you pass the `-O`
+    flag to Python, it disables all `assert` statements. So, when the `-O` flag is
+    turned on, this function returns `None`. For the record, mypy does not catch this
+    error, but Pylint does. Even better, Pylint ran in under a second to find those
+    bugs.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: It doesn’t matter if you don’t make those errors, or you if always find them
+    in code review. There are countless developers working in any codebase, and errors
+    can happen anywhere. By enforcing a linter like Pylint, you can eliminate very
+    common, detectable errors. For a full list of built-in checkers, see the [Pylint
+    documentation](https://oreil.ly/9HRzC).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Writing Your Own Pylint Plug-in
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The real Pylint magic starts to happen when you write your own plug-ins (see
+    [Chapter 19](part0024_split_000.html#pluggable) for more information on plug-in
+    architectures). A Pylint plug-in lets you write your own custom *checkers*, or
+    rules. While built-in checkers look for common Python errors, your custom checkers
+    can look for errors in your problem domain.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Take a look at a snippet of code way back from [Chapter 4](part0007_split_000.html#constraints):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: During [Chapter 4](part0007_split_000.html#constraints), I mentioned that in
+    order for `NewType` to be effective, you need to make sure that you are only constructing
+    it from *blessed* methods, or methods that enforce the constraints tied to that
+    type. At the time, my advice was to use a comment to give hints to readers of
+    the code. However, with Pylint, you can write a custom checker to find out when
+    you violate this expectation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here’s the plug-in in its entirety. I’ll break it down for you afterward:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This linter verifies that when someone creates a `ReadyToServeHotDog`, it is
+    only done in a function that is named `prepare_for_serving`, and that function
+    must live in a module called `hotdog`. Now let’s say I were to create any other
+    function that created a ready-to-serve hot dog, like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'I can run my custom Pylint checker:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Pylint confirms that serving an “unservable” hot dog is now an error:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This is fantastic. Now I can write automated tooling that checks for errors
+    that a typechecker like mypy can’t even begin to look for. Don’t let your imagination
+    constrain you. Use Pylint to catch anything you can dream of: business logic constraint
+    violations, temporal dependencies, or a custom style guide. Now, let’s go see
+    how this linter works so that you can build your own.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Breaking Down the Plug-in
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'The first thing I did to write the plug-in was to define a class that inherits
+    from a `pylint.checkers.BaseChecker`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: You’ll also notice some references to `astroid`. The `astroid` library is useful
+    for parsing Python files into an abstract syntax tree (AST). This provides a conveniently
+    structured way of interacting with Python source code. You’ll see how that’s useful
+    in a little bit.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Next, I define metadata about the plug-in. This provides information such as
+    the plug-in name, messages that get displayed to the user, and an identifier (`unverified-ready-to-serve-hotdog`)
+    that I can refer to later.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: Next, I want to track what function I’m in, so that I can tell if I’m using
+    `prepare_for_serving` or not. This is where the `astroid` library will come to
+    play. As mentioned before, the `astroid` library helps the Pylint checker think
+    in terms of an AST; you don’t need to worry about string parsing. If you’d like
+    to learn more about AST and Python parsing, you can check out [`astroid`’s documentation](https://oreil.ly/JvQgU),
+    but for now, all you have to know is that if you define specific functions in
+    your checker, they will get called when `astroid` parses the code. Each function
+    called gets passed a `node` which represents a specific part of code, such as
+    an expression or a class definition.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: In this case, I’ve defined a constructor to save a member variable to track
+    if I’m in the right function. I’ve also defined two functions, `visit_functiondef`
+    and `leave_functiondef`. `visit_functiondef` will get called whenever `astroid`
+    parses a function definition, and `leave_functiondef` is called whenever the parser
+    stops parsing a function definition. So when the parser encounters a function,
+    I check to see if that function is named `prepare_for_serving`, which is inside
+    a module called `hotdog`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now that I have a member variable to track if I’m in the right function or not,
+    I can write another `astroid` hook to get called whenever a function is called
+    (such as `ReadyToServeHotDog(hot_dog)`).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: If the function call is not `ReadyToServeHotDog` or if the execution is in `prepare_serving`,
+    this checker sees no issue and returns early. If the function call is `ReadyToServeHotDog`
+    and the execution is not in `prepare_serving`, the checker fails and adds a message
+    to indicate an `unverified-ready-to-serve-hotdog` check failure. By adding a message,
+    Pylint will pass this on to the user and flag it as a failed check.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Lastly, I need to register the linter:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: And that’s it! With about 45 lines of Python, I have defined a Pylint plug-in.
+    This was a simple checker, but your imagination is the limit for what you can
+    do. Pylint checks, either built-in or user created, are invaluable for finding
+    errors.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Discussion Topic
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: What checkers can you create in your codebase? What error cases can you catch
+    with the use of these checkers?
+  prefs: []
+  type: TYPE_NORMAL
+- en: Other Static Analyzers
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Typecheckers and linters are often the first things people think of when they
+    hear “static analysis,” but there are so many additional tools that can help you
+    write robust code. Each tool acts as a separate line of defense, all stacked together,
+    to protect your codebase. Think about each tool as a piece of Swiss cheese.^([1](part0026_split_008.html#idm45644727809592))
+    Each individual piece of Swiss cheese has holes of various widths or sizes, but
+    when multiple pieces are stacked together, it is unlikely that there is an area
+    where all holes align and you can see through the stack.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Likewise, each tool you use to build a safety net will miss certain errors.
+    Typecheckers won’t catch common programming mistakes, linters won’t check security
+    violations, security checkers won’t catch complex code, and so on. But when these
+    tools are stacked together, it’s much less likely for a legitimate error to squeak
+    by (and for those that do, that’s why you have tests). As Bruce MacLennan says,
+    “Have a series of defenses so that if an error is not caught by one, it will probably
+    be caught by another.”^([2](part0026_split_008.html#idm45644727806264))
+  prefs: []
+  type: TYPE_NORMAL
+- en: Complexity Checkers
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Most of this book has been centered on readable and maintainable code. I’ve
+    talked about how complex code impacts the speed of feature development. It’d be
+    nice for a tool to indicate which parts of your codebase have high complexity.
+    Unfortunately, complexity is subjective and reducing complexity will not always
+    reduce errors. I can, however, treat complexity measures as a *heuristic*. A heuristic
+    is something that provides an answer, but offers no guarantee that it is an optimal
+    answer. In this case, the question is, “Where can I find the most bugs in my code?”
+    Most of the time, it will be in code with high complexity, but remember that this
+    is not a guarantee.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Cyclomatic complexity with mccabe
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: One of the most popular complexity heuristics is known as *cyclomatic complexity*,
+    first described by Thomas McCabe.^([3](part0026_split_008.html#idm45644727709720))
+    To measure code’s cyclomatic complexity, you must view your code as a *control
+    flow graph*, or a graph that maps out the different paths of execution your code
+    can take. [Figure 20-1](part0026_split_006.html#cyclomatic) shows you a few different
+    examples.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![ropy 2001](../images/00038.gif)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 20-1\. Cyclomatic complexity examples
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'Section A of [Figure 20-1](part0026_split_006.html#cyclomatic) demonstrates
+    a linear flow of statements, which has a complexity of one. An `if` with no `elif`
+    statement, as shown in Section B of [Figure 20-1](part0026_split_006.html#cyclomatic),
+    has two paths (`if` or `else`/fall-through), so the complexity is two. Similarly
+    a `while` loop, like in Section C of [Figure 20-1](part0026_split_006.html#cyclomatic),
+    has two separate paths: either the loop continues or exits. As the code gets more
+    complex, the cyclomatic complexity number gets higher.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: You can use a static analysis tool in Python to measure cyclomatic complexity,
+    aptly named `mccabe`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'I’ll install it with `pip`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'To test it out, I’ll run it on the `mccabe` codebase itself and flag any function
+    that has a cyclomatic complexity greater than or equal to five:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Let’ take a look at `PathGraphingAstVisitor._subgraph_parse`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'There are a few things going on in this function: various conditional branches,
+    loops, and even a loop nested in an `if` statement. Each of these paths is independent
+    and needs to be tested for. As cyclomatic complexity grows, code gets harder to
+    read and harder to reason about. There is no magic number for cyclomatic complexity;
+    you will need to inspect your codebase and look for a suitable limit.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Whitespace heuristic
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'There’s another complexity heuristic that I am quite fond of that is a bit
+    simpler to reason about than cyclomatic complexity: [whitespace checking](https://oreil.ly/i3Dpd).
+    The idea is as follows: count how many levels of indentation there are in a single
+    Python file. High levels of indentation indicate nested loops and branches, which
+    may signal complex code.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Unfortunately, there are no popular tools at the time of writing that handle
+    whitespace heuristics. However, it is easy to write this checker yourself:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Another possible measure of whitespace is the “area” of indentation per function,
+    where you sum up all the indentation instead of averaging it. I am leaving this
+    as an exercise for the reader to implement.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As with cyclomatic complexity, there is no magic number to check for with whitespace
+    complexity. I encourage you to play around in your codebase and determine what
+    an appropriate amount of indentation is.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Security Analysis
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Security is difficult to do right, and hardly anyone ever gets lauded for breach
+    prevention. Instead, it’s the breaches themselves that seem to dominate the news.
+    Every month I hear of another breach or data leak. These breakdowns are incredibly
+    costly to a company, be it from regulatory fines or loss of customer base.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Every developer needs to be hyperaware of the security of their codebase. You
+    don’t want to hear about how *your* codebase is the root cause of the latest massive
+    data breach in the news. Thankfully, there are static analysis tools that can
+    prevent common security flaws.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Leaking secrets
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: If you ever want to be terrified, search for the text `AWS_SECRET_KEY` in your
+    favorite code-hosting tool, like [GitHub](https://oreil.ly/FEm7D). You will be
+    amazed at how many people commit secret values such as the key that provides access
+    to AWS.^([4](part0026_split_008.html#idm45644727499976))
+  prefs: []
+  type: TYPE_NORMAL
+- en: Once a secret is in a version control system, especially a publicly hosted one,
+    it is very hard to remove traces of it. The organization is forced to revoke any
+    leaked credentials, but they have to do it faster than the troves of hackers trawling
+    repositories for keys. To prevent this, use a static analysis tool that specifically
+    looks for leaked secrets, such as [dodgy](https://github.com/landscapeio/dodgy).
+    If you don’t choose to use a prebuilt tool, at least perform a text search on
+    your codebase to make sure that nobody is leaking common credentials.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Security flaw checking
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'Checking for leaked credentials is one thing, but what about more serious security
+    flaws? How do you find things like SQL injection, arbitrary code execution, or
+    incorrectly configured network settings? When exploited, these sorts of flaws
+    can be detrimental to your security profile. But, just like every other problem
+    in this chapter, there is a static analysis tool for handling this: Bandit.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Bandit checks for common security problems. You can find a full list in the
+    [Bandit documentation](https://bandit.readthedocs.io/en/latest), but here is a
+    preview of the sorts of flaws Bandit looks for:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Flask in debug mode, which can lead to remote code execution
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Making an HTTPS request without certificate validation turned on
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Raw SQL statements that have the potential for SQL injection
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Weak cryptographic key creation
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Flagging untrusted data influencing code paths, such as unsafe YAML loading
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Bandit checks for so many different potential security flaws. I highly recommend
+    running it against your codebase:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: Bandit also has a robust plug-in system, so that you can augment the flaw detection
+    with your own security checks.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Warning
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: While security-oriented static analyzers are very useful, do not make them your
+    only line of defense. Supplement these tools by continuing additional security
+    practices (such as conducting audits, running penetration tests, and securing
+    your networks).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Closing Thoughts
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Catching errors early saves you time and money. Your goal is to find errors
+    as you develop code. Static analysis tools are your friends in this endeavor.
+    They are a cheap, quick way to find any problems in your codebase. There are a
+    variety of static analyzers to meet your needs: linters, security checkers, and
+    complexity checkers. Each has its own purpose and provides a layer of defense.
+    And for the errors that these tools don’t catch, you extend the static analyzers
+    through the use of a plug-in system.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: While static analyzers are your first line of defense, they are not your only
+    line. For the rest of the book, I will focus on tests. The next chapter will focus
+    on your testing strategy. I’ll walk through how you need to organize your tests,
+    as well as the best practices surrounding writing tests. You’ll learn how to write
+    a testing triangle, how to ask the right questions around testing, and how to
+    write effective developer tests.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '^([1](part0026_split_005.html#idm45644727809592-marker)) J. Reason. “Human
+    Error: Models and Management.” *BMJ* 320, no. 7237 (2000): 768–70\. [*https://doi.org/10.1136/bmj.320.7237.768*](https://doi.org/10.1136/bmj.320.7237.768).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([2](part0026_split_005.html#idm45644727806264-marker)) Bruce MacLennan. “Principles
+    of Programming Language Design.” web.eecs.utk.edu, September 10, 1998\. [*https://oreil.ly/hrjdR*](https://oreil.ly/hrjdR).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '^([3](part0026_split_006.html#idm45644727709720-marker)) T.J. McCabe. “A Complexity
+    Measure.” *IEEE Transactions on Software Engineering* SE-2, no. 4 (December 1976):
+    308–20\. [*https://doi.org/10.1109/tse.1976.233837*](https://doi.org/10.1109/tse.1976.233837).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([4](part0026_split_007.html#idm45644727499976-marker)) There are real-world
+    implications to this. A quick search on the internet turns up tons of articles
+    detailing this problem, such as [*https://oreil.ly/gimse*](https://oreil.ly/gimse).
+  prefs: []
+  type: TYPE_NORMAL

@@ -1,0 +1,553 @@
+- en: Chapter 6\. Writing Web Crawlers
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: So far, you’ve seen single static pages with somewhat artificial canned examples.
+    In this chapter, you’ll start looking at real-world problems, with scrapers traversing
+    multiple pages and even multiple sites.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Web crawlers* are called such because they crawl across the web. At their
+    core is an element of recursion. They must retrieve page contents for a URL, examine
+    that page for other URLs, and retrieve *those* pages, ad infinitum.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Beware, however: just because you can crawl the web doesn’t mean that you always
+    should. The scrapers used in previous examples work great in situations where
+    all the data you need is on a single page. With web crawlers, you must be extremely
+    conscientious of how much bandwidth you are using and make every effort to determine
+    whether there’s a way to make the target server’s load easier.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Traversing a Single Domain
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Even if you haven’t heard of Six Degrees of Wikipedia, you may have heard of
+    its namesake, Six Degrees of Kevin Bacon.^([1](ch06.html#id458)) In both games,
+    the goal is to link two unlikely subjects (in the first case, Wikipedia articles
+    that link to each other, and in the second case, actors appearing in the same
+    film) by a chain containing no more than six total (including the two original
+    subjects).
+  prefs: []
+  type: TYPE_NORMAL
+- en: For example, Eric Idle appeared in *Dudley Do-Right* with Brendan Fraser, who
+    appeared in *The Air I Breathe* with Kevin Bacon.^([2](ch06.html#id459)) In this
+    case, the chain from Eric Idle to Kevin Bacon is only three subjects long.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In this section, you’ll begin a project that will become a Six Degrees of Wikipedia
+    solution finder: you’ll be able to take [the Eric Idle page](https://en.wikipedia.org/wiki/Eric_Idle)
+    and find the fewest number of link clicks that will take you to [the Kevin Bacon
+    page](https://en.wikipedia.org/wiki/Kevin_Bacon).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'You should already know how to write a Python script that retrieves an arbitrary
+    Wikipedia page and produces a list of links on that page:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'If you look at the list of links produced, you’ll notice that all the articles
+    you’d expect are there: *Apollo 13*, *Philadelphia*, *Primetime Emmy Award*, and
+    other films that Kevin Bacon appeared in. However, there are some things that
+    you may not want as well:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'In fact, Wikipedia is full of sidebar, footer, and header links that appear
+    on every page, along with links to the category pages, talk pages, and other pages
+    that do not contain different articles:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Recently, a friend of mine, while working on a similar Wikipedia-scraping project,
+    mentioned he had written a large filtering function, with more than 100 lines
+    of code, to determine whether an internal Wikipedia link was an article page.
+    Unfortunately, he had not spent much time up-front trying to find patterns between
+    “article links” and “other links,” or he might have discovered the trick. If you
+    examine the links that point to article pages (as opposed to other internal pages),
+    you’ll see that they all have three things in common:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: They reside within the `div` with the `id` set to `bodyContent`.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The URLs do not contain colons.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The URLs begin with */wiki/*.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'You can use these rules to revise the code slightly to retrieve only the desired
+    article links by using the regular expression `^(/wiki/)((?!:).)*$`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: Running this, you should see a list of all article URLs that the Wikipedia article
+    on Kevin Bacon links to.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Of course, having a script that finds all article links in one, hardcoded Wikipedia
+    article, while interesting, is fairly useless in practice. You need to be able
+    to take this code and transform it into something more like the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: A single function, `getLinks`, that takes in a Wikipedia article URL of the
+    form `/wiki/<Article_Name>` and returns a list of all linked article URLs in the
+    same form.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: A main function that calls `getLinks` with a starting article, chooses a random
+    article link from the returned list, and calls `getLinks` again, until you stop
+    the program or until no article links are found on the new page.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Here is the complete code that accomplishes this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: The first thing the program does, after importing the needed libraries, is set
+    the random-number generator seed with the current system time. This practically
+    ensures a new and interesting random path through Wikipedia articles every time
+    the program is run.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Next, the program defines the `getLinks` function, which takes in an article
+    URL of the form `/wiki/...`, prepends the Wikipedia domain name, `http://en.wikipedia.org`,
+    and retrieves the `BeautifulSoup` object for the HTML at that domain. It then
+    extracts a list of article link tags, based on the parameters discussed previously,
+    and returns them.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The main body of the program begins with setting a list of article link tags
+    (the `links` variable) to the list of links in the initial page: *https://en.wikipedia.org/wiki/Kevin_Bacon*. It
+    then goes into a loop, finding a random article link tag in the page, extracting
+    the `href` attribute from it, printing the page, and getting a new list of links
+    from the extracted URL.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Of course, there’s a bit more to solving a Six Degrees of Wikipedia problem
+    than building a scraper that goes from page to page. You also must be able to
+    store and analyze the resulting data. For a continuation of the solution to this
+    problem, see [Chapter 9](ch09.html#c-9).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Handle Your Exceptions!
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Although these code examples omit most exception handling for the sake of brevity,
+    be aware that many potential pitfalls could arise. What if Wikipedia changes the
+    name of the `bodyContent` tag, for example? When the program attempts to extract
+    the text from the tag, it throws an `AttributeError`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: So although these scripts might be fine to run as closely watched examples,
+    autonomous production code requires far more exception handling than can fit into
+    this book. Look back to [Chapter 4](ch04.html#c-4) for more information about
+    this.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Crawling an Entire Site
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In the previous section, you took a random walk through a website, going from
+    link to link. But what if you need to systematically catalog or search every page
+    on a site? Crawling an entire site, especially a large one, is a memory-intensive
+    process that is best suited to applications for which a database to store crawling
+    results is readily available. However, you can explore the behavior of these types
+    of applications without running them full-scale. To learn more about running these
+    applications by using a database, see [Chapter 9](ch09.html#c-9).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'When might crawling an entire website be useful, and when might it be harmful?
+    Web scrapers that traverse an entire site are good for many things, including:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Generating a site map*'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'A few years ago, I was faced with a problem: an important client wanted an
+    estimate for a website redesign but did not want to provide my company with access
+    to the internals of their current content management system and did not have a
+    publicly available site map. I was able to use a crawler to cover the entire site,
+    gather all internal links, and organize the pages into the actual folder structure
+    used on the site. This allowed me to quickly find sections of the site I wasn’t
+    even aware existed and accurately count how many page designs would be required
+    and how much content would need to be migrated.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Gathering data*'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Another client wanted to gather articles (stories, blog posts, news articles,
+    etc.) in order to create a working prototype of a specialized search platform.
+    Although these website crawls didn’t need to be exhaustive, they did need to be
+    fairly expansive (we were interested in getting data from only a few sites). I
+    was able to create crawlers that recursively traversed each site and collected
+    only data found on article pages.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The general approach to an exhaustive site crawl is to start with a top-level
+    page (such as the home page) and search for a list of all internal links on that
+    page. Every one of those links is then crawled, and additional lists of links
+    are found on each one of them, triggering another round of crawling.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Clearly, this is a situation that can blow up quickly. If every page has 10
+    internal links, and a website is 5 pages deep (a fairly typical depth for a medium-size
+    website), then the number of pages you need to crawl is 10⁵, or 100,000 pages,
+    before you can be sure that you’ve exhaustively covered the website. Strangely
+    enough, although “5 pages deep and 10 internal links per page” are fairly typical
+    dimensions for a website, very few websites have 100,000 or more pages. The reason,
+    of course, is that the vast majority of internal links are duplicates.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To avoid crawling the same page twice, it is extremely important that all internal
+    links discovered are formatted consistently and kept in a running set for easy
+    lookups, while the program is running. A *set* is similar to a list, but elements
+    do not have a specific order, and only unique elements are stored, which is ideal
+    for our needs. Only links that are “new” should be crawled and searched for additional
+    links:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'To show you the full effect of how this web crawling business works, I’ve relaxed
+    the standards of what constitutes an internal link (from previous examples). Rather
+    than limit the scraper to article pages, it looks for all links that begin with
+    */wiki/*, regardless of where they are on the page, and regardless of whether
+    they contain colons. Remember: article pages do not contain colons, but file-upload
+    pages, talk pages, and the like do contain colons in the URL.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Initially, `getLinks` is called with an empty URL. This is translated as “the
+    front page of Wikipedia” as soon as the empty URL is prepended with `http://en.wikipedia.org`
+    inside the function. Then, each link on the first page is iterated through and
+    a check is made to see whether it is in the set of pages that the script has encountered
+    already. If not, it is added to the list, printed to the screen, and the `getLinks` function
+    is called recursively on it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: A Warning About Recursion
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'This is a warning rarely seen in software books, but I thought you should be
+    aware: if left running long enough, the preceding program will almost certainly
+    crash.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Python has a default recursion limit (the number of times a program can recursively
+    call itself) of 1,000\. Because Wikipedia’s network of links is extremely large,
+    this program will eventually hit that recursion limit and stop, unless you put
+    in a recursion counter or something to prevent that from happening.
+  prefs: []
+  type: TYPE_NORMAL
+- en: For “flat” sites that are fewer than 1,000 links deep, this method usually works
+    well, with a few unusual exceptions. For instance, I once encountered a bug in
+    a dynamically generated URL that depended on the address of the current page to
+    write the link on that page. This resulted in infinitely repeating paths like
+    */blogs/blogs.../blogs/blog-post.php*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: For the most part, however, this recursive technique should be fine for any
+    typical website you’re likely to encounter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Collecting Data Across an Entire Site
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Web crawlers would be fairly boring if all they did was hop from one page to
+    the other. To make them useful, you need to be able to do something on the page
+    while you’re there. Let’s look at how to build a scraper that collects the title,
+    the first paragraph of content, and the link to edit the page (if available).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As always, the first step to determine how best to do this is to look at a
+    few pages from the site and determine a pattern. By looking at a handful of Wikipedia
+    pages (both articles and nonarticle pages such as the privacy policy page), the
+    following things should be clear:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: All titles (on all pages, regardless of their status as an article page, an
+    edit history page, or any other page) have titles under `h1` → `span` tags, and
+    these are the only `h1` tags on the page.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: As mentioned before, all body text lives under the `div#bodyContent` tag. However,
+    if you want to get more specific and access just the first paragraph of text,
+    you might be better off using `div#mw-content-text` → `​p` (selecting the first
+    paragraph tag only). This is true for all content pages except file pages (for
+    example, [*https://en.wikipedia.org/wiki/File:Orbit_of_274301_Wikipedia.svg*](https://en.wikipedia.org/wiki/File:Orbit_of_274301_Wikipedia.svg)),
+    which do not have sections of content text.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Edit links occur only on article pages. If they occur, they will be found in
+    the `li#ca-edit` tag, under `li#ca-edit` →​ `span` →​ `a`.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'By modifying your basic crawling code, you can create a combination crawler/data-gathering
+    (or at least, data-printing) program:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: The `for` loop in this program is essentially the same as it was in the original
+    crawling program (with the addition of printed dashes for clarity, separating
+    the printed content).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Because you can never be entirely sure that all the data is on each page, each
+    `print` statement is arranged in the order that it is likeliest to appear on the
+    site. That is, the `h1` title tag appears on every page (as far as I can tell,
+    at any rate), so you attempt to get that data first. The text content appears
+    on most pages (except for file pages), so that is the second piece of data retrieved.
+    The Edit button appears only on pages in which both titles and text content already
+    exist, but it does not appear on all of those pages.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Different Patterns for Different Needs
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Obviously, some dangers are involved with wrapping multiple lines in an exception
+    handler. You cannot tell which line threw the exception, for one thing. Also,
+    if for some reason a page contains an Edit button but no title, the Edit button
+    would never be logged. However, it suffices for many instances in which there
+    is an order of likeliness of items appearing on the site, and inadvertently missing
+    a few data points or keeping detailed logs is not a problem.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You might notice that in this and all the previous examples, you haven’t been
+    “collecting” data so much as “printing” it. Obviously, data in your terminal is
+    hard to manipulate. For more on storing information and creating databases, see [Chapter 9](ch09.html#c-9).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Crawling Across the Internet
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Whenever I give a talk on web scraping, someone inevitably asks, “How do you
+    build Google?” My answer is always twofold: “First, you get many billions of dollars
+    so that you can buy the world’s largest data warehouses and place them in hidden
+    locations all around the world. Second, you build a web crawler.”'
+  prefs: []
+  type: TYPE_NORMAL
+- en: When Google started in 1996, it was just two Stanford graduate students with
+    an old server and a Python web crawler. Now that you know how to scrape the web, you’re
+    just some VC funding away from becoming the next tech multibillionaire!
+  prefs: []
+  type: TYPE_NORMAL
+- en: In all seriousness, web crawlers are at the heart of what drives many modern
+    web technologies, and you don’t necessarily need a large data warehouse to use
+    them. To do any cross-domain data analysis, you do need to build crawlers that
+    can interpret and store data across the myriad of pages on the internet.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Just as in the previous example, the web crawlers you are going to build will
+    follow links from page to page, building out a map of the web. But this time,
+    they will not ignore external links; they will follow them.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Unknown Waters Ahead
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Keep in mind that the code from the next section can go *anywhere* on the internet.
+    If we’ve learned anything from Six Degrees of Wikipedia, it’s that it’s entirely
+    possible to go from a site such as [*http://www.sesamestreet.org/*](http://www.sesamestreet.org/)
+    to something less savory in just a few hops.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Kids, ask your parents before running this code. For those with sensitive constitutions
+    or with religious restrictions that might prohibit seeing text from a prurient
+    site, follow along by reading the code examples but be careful when running them.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Before you start writing a crawler that follows all outbound links willy-nilly,
+    you should ask yourself a few questions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: What data am I trying to gather? Can this be accomplished by scraping just a
+    few predefined websites (almost always the easier option), or does my crawler
+    need to be able to discover new websites I might not know about?
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: When my crawler reaches a particular website, will it immediately follow the
+    next outbound link to a new website, or will it stick around for a while and drill
+    down into the current website?
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Are there any conditions under which I would not want to scrape a particular
+    site? Am I interested in non-English content?
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: How am I protecting myself against legal action if my web crawler catches the
+    attention of a webmaster on one of the sites it runs across? (Check out [Chapter 2](ch02.html#c-2)
+    for more information on this subject.)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'A flexible set of Python functions that can be combined to perform a variety
+    of types of web scraping can be easily written in fewer than 60 lines of code.
+    Here, I’ve omitted the library imports for brevity and broken the code up into
+    multiple sections for the purposes of discussion. However, a full working version
+    can be found in the [GitHub repository](https://github.com/REMitchell/python-scraping)
+    for this book:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: The first function is `getInternalLinks`. This takes, as arguments, a BeautifulSoup
+    object and the URL of the page. This URL is used only to identify the `netloc`
+    (network location) and `scheme` (usually `http` or `https`) of the internal site,
+    so it’s important to note that any internal URL for the target site can be used
+    here—it doesn’t need to be the exact URL of the BeautifulSoup object passed in.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This function creates a set called `internalLinks` used to track all internal
+    links found on the page. It checks all anchor tags for an `href` attribute that
+    either doesn’t contain a `netloc` (is a relative URL like “/careers/”) or has
+    a `netloc` that matches that of the URL passed in:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The function `getExternalLinks` works similarly to `getInternalLinks`. It examines
+    all anchor tags with an `href` attribute and looks for those that have a populated
+    `netloc` that does *not* match that of the URL passed in:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The function `getRandomExternalLink` uses the function `getExternalLinks` to
+    get a list of all external links on the page. If at least one link is found, it
+    picks a random link from the list and returns it:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The function `followExternalOnly` uses `getRandomExternalLink` and then recursively
+    traverses across the internet. You can call it like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This program starts at [*http://oreilly.com*](http://oreilly.com) and randomly
+    hops from external link to external link. Here’s an example of the output it produces:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: External links are not always guaranteed to be found on the first page of a
+    website. To find external links in this case, a method similar to the one used
+    in the previous crawling example is employed to recursively drill down into a
+    website until it finds an external link.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Figure 6-1](#flowchart_crawl) illustrates the operation as a flowchart.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Alt Text](assets/wsp3_0601.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6-1\. Flowchart for the script that crawls through sites on the internet
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Don’t Put Example Programs into Production
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: I keep bringing this up, but for the sake of space and readability, the example
+    programs in this book do not always contain the necessary checks and exception
+    handling required for production-ready code. For example, if an external link
+    is not found anywhere on a site that this crawler encounters (unlikely, but it’s
+    bound to happen at some point if you run it long enough), this program will keep
+    running until it hits Python’s recursion limit.
+  prefs: []
+  type: TYPE_NORMAL
+- en: One easy way to increase the robustness of this crawler would be to combine
+    it with the connection exception-handling code in [Chapter 4](ch04.html#c-4).
+    This would allow the code to choose a different URL to go to if an HTTP error
+    or server exception was encountered when retrieving the page.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Before running this code for any serious purpose, make sure that you are putting
+    checks in place to handle potential pitfalls.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The nice thing about breaking up tasks into simple functions such as “find
+    all external links on this page” is that the code can later be refactored to perform
+    a different crawling task. For example, if your goal is to crawl an entire site
+    for external links and make a note of each one, you can add the following function:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: This code can be thought of as two loops—one gathering internal links, one gathering
+    external links—working in conjunction with each other. The flowchart looks something
+    like [Figure 6-2](#flow_diagram_crawl).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Alt Text](assets/wsp3_0602.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6-2\. Flow diagram for the website crawler that collects all external
+    links
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Jotting down or making diagrams of what the code should do before you write
+    the code itself is a fantastic habit to get into, and one that can save you a
+    lot of time and frustration as your crawlers get more complicated.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([1](ch06.html#id458-marker)) A popular parlor game created in the 1990s, [*https://en.wikipedia.org/wiki/Six_Degrees_of_Kevin_Bacon*](https://en.wikipedia.org/wiki/Six_Degrees_of_Kevin_Bacon).
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([2](ch06.html#id459-marker)) Thanks to [The Oracle of Bacon](http://oracleofbacon.org)
+    for satisfying my curiosity about this particular chain.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([3](ch06.html#id473-marker)) See [“Exploring a ‘Deep Web’ That Google Can’t
+    Grasp”](http://nyti.ms/2pohZmu) by Alex Wright.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '^([4](ch06.html#id475-marker)) See [“Hacker Lexicon: What Is the Dark Web?”](http://bit.ly/2psIw2M)
+    by Andy Greenberg.'
+  prefs: []
+  type: TYPE_NORMAL

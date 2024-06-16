@@ -1,0 +1,532 @@
+- en: Chapter 24\. Mutation Testing
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'When weaving your safety net of static analysis and tests, how do you know
+    that you are testing as much as you can? Testing absolutely everything is impossible;
+    you need to be smart in what tests you write. Envision each test as a separate
+    strand in your safety net: the more tests you have, the wider your net. However,
+    this doesn’t inherently mean that your net is well-constructed. A safety net with
+    fraying, brittle strands is worse than no safety net at all; it gives the illusion
+    of safety and provides false confidence.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The goal is to strengthen your safety net so that it is not brittle. You need
+    a way to make sure your tests will actually fail when there are bugs in your code.
+    In this chapter, you will learn how to do just that with mutation testing. You’ll
+    learn how to perform mutation testing with a Python tool called `mutmut`. You’ll
+    use mutation testing to inspect the relation between your tests and code. Finally,
+    you’ll learn about code coverage tools, how best to use those tools, and how to
+    integrate `mutmut` with your coverage reports. Learning how to do mutation testing
+    will give you a way to measure how effective your tests are.
+  prefs: []
+  type: TYPE_NORMAL
+- en: What Is Mutation Testing?
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: '*Mutation testing* is the act of making changes in your source code with the
+    intent of introducing bugs.^([1](part0030_split_007.html#idm45644723126456)) Each
+    change you make in this fashion is known as a *mutant*. You then run your test
+    suite. If the tests fail, it’s good news; your tests were successful in eliminating
+    the mutant. However, if your tests pass, that means your tests are not robust
+    enough to catch legitimate failures; the mutant survives. Mutation testing is
+    a form of *meta-testing*, in that you are testing how good your tests are. After
+    all, your test code should be a first-class citizen in your codebase; it requires
+    some level of testing as well.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Consider a simple calorie-tracking app. A user can input a set of meals and
+    get notified if they exceed their calorie budget for the day. The core functionality
+    is implemented in the following function:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Here is a set of tests for this functionality, all of which pass:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: As a thought exercise, I’d like you to look over these tests (ignoring the fact
+    that this is a chapter about mutation testing) and ask yourself what your opinion
+    would be if you found these tests in production. How confident are you that they
+    are right? How confident are you that I didn’t miss anything? How confident are
+    you that these tests will catch bugs if the code changes?
+  prefs: []
+  type: TYPE_NORMAL
+- en: The central theme of this book is that software will always change. You need
+    to make it easy for your future collaborators to maintain your codebase in spite
+    of this change. You need to write tests that catch not only errors in what you
+    wrote, but errors other developers make as they change your code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: It doesn’t matter if a future developer is refactoring the method to use a common
+    library, changing a single line, or adding more functionality to the code; you
+    want your tests to catch any errors that they introduced. To get into the mindset
+    of mutation testing, you need to think about all the possible changes that can
+    be made to the code and check if your tests would catch any erroneous change.
+    [Table 24-1](part0030_split_001.html#manual_mutation) breaks down the above code
+    line by line and shows the outcome of the tests if that line is missing.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Table 24-1\. Impact of each line removed
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| Code line | Impact if removed |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `for meal in meals:` | Tests fail: Syntax errors and code does no looping
+    |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `target -= meal.calories` | Tests fail: no warnings are ever displayed |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `if target < 0` | Tests fail: all meals show a warning |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `display_warning(meal, WarningType.OVER_CALO⁠RIE_LIMIT)` | Tests fail: no
+    warnings are shown |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `continue` | Tests pass |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `display_checkmark(meal)` | Tests fail: checkmarks are not displayed on meals
+    |'
+  prefs: []
+  type: TYPE_TB
+- en: 'Look at the row in [Table 24-1](part0030_split_001.html#manual_mutation) for
+    the `continue` statement. If I delete that line, all tests pass. This means one
+    of three scenarios occurred: the line isn’t needed; the line is needed, but not
+    important enough to test; or there is missing coverage in our test suite.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The first two scenarios are easy to handle. If the line isn’t needed, delete
+    it. If the line isn’t important enough to test (this is common for things such
+    as debug logging statements or version strings), you can ignore mutation testing
+    on this line. But, if the third scenario is true, you are missing test coverage.
+    You have found a hole in your safety net.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If `continue` is removed from the algorithm, both a checkmark and a warning
+    will show up on any meal that is over the calorie limit. This is not ideal behavior;
+    this is a signal that I should have a test to cover for this case. If I were to
+    just add an assertion that meals with warnings also have no checkmarks, then our
+    test suite would have caught this mutant.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Deleting lines is just one example of a mutation. There are numerous other mutants
+    I could apply to the code above. As a matter of fact, if I change the `continue`
+    to a `break`, the tests still pass. Going through every mutation I can think of
+    is tedious, so I want an automated tool to do this process for me. Enter `mutmut`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Mutation Testing with mutmut
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: '[`mutmut`](https://pypi.org/project/mutmut) is a Python tool that does mutation
+    testing for you. It comes with a pre-programmed set of mutations to apply to your
+    codebase, such as:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Finding integer literals and adding 1 to them to catch off-by-one errors
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Changing string literals by inserting text inside them
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Exchanging `break` and `continue`
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Exchanging `True` and `False`
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Negating expressions, such as converting `x is None` to `x is not None`
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Changing operators (especially changing from `/` to `//`)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: This is by no means a comprehensive list; `mutmut` has quite a few clever ways
+    of mutating your code. It works by making discrete mutations, running your test
+    suite for you, and then displaying which mutants survived the testing process.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To get started, you need to install `mutmut`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Then, you run `mutmut` against all your tests (warning, this can take some
+    time). You can run `mutmut` on my code snippet above with the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: For long-running tests and large codebases, you may want to break up your `mutmut`
+    runs, as they do take some time. However, `mutmut` is intelligent enough to save
+    its progress in a folder called *.mutmut-cache*, so if you exit in the middle,
+    it will pick up execution at the same point on future runs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`mutmut` will display some statistics as it runs, including the number of surviving
+    mutants, the number of eliminated mutants, and which tests were taking a suspiciously
+    long time (such as accidentally introducing an infinite loop).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Once execution completes, you can view the results with `mutmut results`. In
+    my code snippet, `mutmut` identifies three surviving mutants. It will list mutants
+    as numeric IDs, and you can show the specific mutant with the `mutmut show <id>`
+    command.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here are the three mutants that survived in my code snippet:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: In each example, `mutmut` shows the result in *diff notation*, which is a way
+    of representing the changes of a file from one changeset to another. In this case,
+    any line prefixed with a minus sign “-” indicates a line that got changed by `mutmut`.
+    Lines starting with a plus sign “+” are the change that `mutmut` made; these are
+    your mutants.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Each of these cases is a potential hole in my testing. By changing `<=` to `<`,
+    I find out I don’t have coverage for when the calories of a meal exactly match
+    the target. By changing `0` to `1`, I find out that I don’t have coverage at the
+    boundaries of my input domain (refer back to [Chapter 23](part0029_split_000.html#property)
+    for discussion of boundary value analysis). By changing a `continue` to a `break`,
+    I stop the loop early and potentially miss marking later meals as OK.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Fixing Mutants
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Once you identify mutants, it’s time to fix them. One of the best ways to do
+    so is to apply the mutants to the files you have on disk. In my previous example,
+    my mutants had the numbers 32, 33, and 34\. I can apply them to my codebase like
+    so:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: Warning
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Only do this on files that are backed up through version control. This makes
+    it easy to revert the mutants when you are done, restoring the original code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Once the mutants have been applied to disk, your goal is to write a failing
+    test. For instance, I can write the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: You should see this test fail (even if you have only one of the mutations applied).
+    Once you are confident you have caught all mutations, revert the mutants and make
+    sure the tests now pass. Rerunning `mutmut` should show that you eliminated the
+    mutants as well.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Mutation Testing Reports
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: '`mutmut` also provides a way to export its results to JUnit report format.
+    You’ve seen other tools export to JUnit reports already in this book (such as
+    in [Chapter 22](part0028_split_000.html#bdd)), and `mutmut` is no different:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: And just like in [Chapter 22](part0028_split_000.html#bdd), I can use `junit2html`
+    to produce a nice HTML report for the mutation tests, as seen in [Figure 24-1](part0030_split_004.html#mutation_junit).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![ropy 2401](../images/00042.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 24-1\. Example `mutmut` report with `junit2html`
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Adopting Mutation Testing
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Mutation testing is not widespread in the software development community today.
+    I believe this to be for three reasons:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: People are unaware of it and the benefits it provides.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: A codebase’s tests are not mature enough yet for useful mutation testing.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The cost-to-value ratio is too high.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: This book is actively working to improve the first point, but the second and
+    third points certainly have merit.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If your codebase does not have a mature set of tests, you will see little value
+    in introducing mutation testing. It will end up providing too high of a noise-to-signal
+    ratio. You will see much more value from improving your test suite than trying
+    to find all the mutants. Consider running mutation testing on smaller parts of
+    your codebase that do have mature test suites.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Mutation testing does have a high cost; it’s important to maximize the value
+    received in order to make mutation testing worth it. Mutation tests are slow,
+    by virtue of running test suites multiple times. Introducing mutation testing
+    to an existing codebase is painful, as well. It is far easier to start on brand-new
+    code from the beginning.
+  prefs: []
+  type: TYPE_NORMAL
+- en: However, since you are reading a book about improving the robustness of potentially
+    complex codebases, there’s a good chance you are working in an existing codebase.
+    Hope is not lost if you’d like to introduce mutation testing, though. As with
+    any method of improving robustness, the trick is to be selective in where you
+    run mutation testing.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Look for areas of code that have lots of bugs. Look through bug reports and
+    find trends that indicate that a certain area of code is troublesome. Also consider
+    finding areas of code with high churn, as these are the areas that are most likely
+    to introduce a change that current tests do not fully cover.^([2](part0030_split_007.html#idm45644722709960))
+    Find the areas where mutation testing will pay back the cost multifold. You can
+    use `mutmut` to run mutation testing selectively on just these areas.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Also, `mutmut` comes with an option to mutation test only the parts of your
+    codebase that have *line coverage*. A line of code has *coverage* by test suite
+    if it is executed at least once by any test. Other coverage types exist, such
+    as API coverage and branch coverage, but `mutmut` focuses on line coverage. `mutmut`
+    will only generate mutants for code that you actually have tests for in the first
+    place.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To generate coverage, first install `coverage`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Then run your test suite with the `coverage` command. For the example above,
+    I run:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Next, all you have to do is pass the `--use-coverage` flag to your `mutmut`
+    run:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: With this, `mutmut` will ignore any untested code, drastically reducing the
+    amount of noise.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The Fallacy of Coverage (and Other Metrics)
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Any time a way of measuring code emerges, there is a rush to use that measurement
+    as a *metric*, or a goal that acts as a proxy predictor of business value. However,
+    there have been numerous ill-advised metrics through software development history,
+    and none more infamous than using lines of code written as an indicator of project
+    progress. The thinking went that if you could directly measure how much code any
+    one person was writing, you would be able to directly measure that person’s productivity.
+    Unfortunately, this led developers to game the system and try to write intentionally
+    verbose code. This backfired as a metric, because the systems ended up complex
+    and bloated, and development slowed due to poor maintainability.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As an industry, we have moved past measuring lines of code (I hope). However,
+    where one metric disappears, two more come to take its place. I’ve seen other
+    maligned metrics emerge such as number of bugs fixed or number of tests written.
+    At face value, these are good things to be doing, but the problem comes when they
+    are scrutinized as a metric tied to business value. There are ways to manipulate
+    data in each of these metrics. Are you being judged by the number of bugs fixed?
+    Then, just write more bugs in the first place!
+  prefs: []
+  type: TYPE_NORMAL
+- en: Unfortunately, code coverage has fallen into the same trap in recent years.
+    You hear goals such as “This code should be 100% line covered” or “We should strive
+    for 90% branch coverage.” This is laudable in isolation, but it falls short of
+    predicting business value. It misses the point of *why* you want these goals in
+    the first place.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Code coverage is a predictor of the absence of robustness, not quality as many
+    assume. Code with low coverage may or may not do everything you need; you don’t
+    know with any reliability. It is a sign that you will have challenges with modifying
+    the code, as you do not have any sort of safety net built around that part of
+    your system. You should absolutely look for areas with very low coverage and improve
+    the testing story around them.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Conversely, this causes many people to assume that high coverage is a predictor
+    of robustness, when it really isn’t. You can have every line and every branch
+    covered by tests, and still have abysmal maintainability. The tests could be brittle
+    or even flat-out useless.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'I once worked in a codebase that was beginning to adopt unit testing. I came
+    across a file with the equivalent of the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'There were about 30 of these tests, all with good names and following the AAA
+    pattern (as seen in [Chapter 21](part0027_split_000.html#testing_strategy)). But
+    they were all effectively useless: all they did was make sure that no exception
+    was thrown. The worst part of all of this was the tests actually had 100% line
+    coverage and near >80% branch coverage. It’s not bad that the tests were checking
+    that no exception was thrown; it was bad that they didn’t actually test the actual
+    functions, despite indicating otherwise.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Mutation testing is your best defense against poor assumptions about code coverage.
+    When you are measuring the efficacy of your tests, it becomes much harder to write
+    useless, meaningless tests while still eliminating mutants. Mutation testing elevates
+    coverage measurements to become a truer predictor of robustness. Coverage metrics
+    still won’t be a perfect proxy for business value, but mutation testing certainly
+    makes them more valuable as an indicator of robustness.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Warning
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: As mutation testing becomes more popular, I fully expect “number of mutants
+    eliminated” to be the new buzzword metric replacing “100% code coverage.” While
+    you definitely want fewer mutants to survive, beware any goal tied to one metric
+    out of context; this number can be gamed just like all the others. You still need
+    a full testing strategy to ensure robustness in your codebase.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Closing Thoughts
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Mutation testing will probably not be the first tool you reach for. However,
+    it’s a perfect complement for your testing strategy; it finds holes in your safety
+    net and brings them to your attention. With automated tools such as `mutmut`,
+    you can leverage your existing test suite to perform mutation testing effortlessly.
+    Mutation testing helps you improve the robustness of your test suite, which in
+    turn will help you write more robust code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This concludes [Part IV](part0025.html#part_4) of this book. You started by
+    learning about static analysis, which provides early feedback at a low cost. You
+    then learned about testing strategies and how to ask yourself what sorts of questions
+    you want your tests to answer. From there, you learned about three specific types
+    of testing: acceptance testing, property-based testing, and mutation testing.
+    All of these serve as ways of enhancing your existing testing strategy, building
+    a denser and stronger safety net around your codebase. With a strong safety net,
+    you will give future developers the confidence and flexibility to evolve your
+    system as they need.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This also concludes the book as a whole. It’s been a long journey, and you’ve
+    learned a variety of tips, tools, and methods along the way. You’ve dived deep
+    into Python’s type system, learned how writing your own types benefit the codebase,
+    and discovered how to write extensible Python. Each part of this book has given
+    you building blocks that will help your codebase stand the test of time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: While this is the end of the book, this is not the end of the story of robustness
+    in Python. Our relatively young industry continues to evolve and transform, and
+    as software continues to eat the world, the health and maintainability of complex
+    systems become paramount. I expect continuing changes in how we understand software,
+    and new tools and techniques to build better systems.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Never stop learning. Python will continue to evolve, adding features and providing
+    new tools. Each one of these has the potential to transform how you write code.
+    I can’t predict the future of Python or its ecosystem. As Python introduces new
+    features, ask yourself about the intentions that feature conveys. What do readers
+    of code assume if they see this new feature? What do they assume if that feature
+    is not used? Understand how developers interact with your codebase, and empathize
+    with them to create systems that are pleasant to develop in.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Furthermore, take every single thing you’ve read in this book and apply critical
+    thought to it. Ask yourself: what value is provided and what does it cost to implement?
+    The last thing I want readers to do is take the advice in this book as completely
+    prescriptive and use it as a hammer to force codebases to adhere to the standards
+    that “the book said to use” (any developer who worked in the ’90s or ’00s probably
+    remembers “Design Pattern Fever,” where you couldn’t walk 10 steps without running
+    into an `AbstractInterfaceFactorySingleton`). Each of the concepts in this book
+    should be seen as a tool in a toolbox; my hope is that you’ve learned enough of
+    the background context to make the right decisions about how you use them.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Above all, remember that you are a human working on a complex system, and other
+    humans will work on these systems with you and after you. Each person has their
+    own motivations, their own goals, their own dreams. Everybody will have their
+    own challenges and struggles. Mistakes will happen. We will never eliminate them
+    all. Instead, I want you to look at these mistakes and push our field forward
+    by learning from them. I want you to help the future build off of your work. In
+    spite of all the changes, all the ambiguities, all the deadlines and scope creep,
+    and all the tribulations of software development, I want you to be able to stand
+    behind your work and say: “I’m proud I built this. This was a good system.”'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Thank you for taking the time to read this book. Now go forth and write awesome
+    code that stands the test of time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '^([1](part0030_split_001.html#idm45644723126456-marker)) Mutation testing was
+    first proposed in 1971 by Richard A. DeMillo, Richard J. Lipton, and Fred G. Sayward
+    in “Hints on Test Data Selection: Help for the Practicing Programmer,” *IEEE Computer*,
+    11(4): 34–41, April 1978\. The first implementation was developed in 1980 by Tim
+    A. Budd, “Mutation Analysis of Program Test Data,” PhD thesis, Yale University,
+    1980.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '^([2](part0030_split_005.html#idm45644722709960-marker)) You can find code
+    with high churn by measuring files with the highest number of commits. I found
+    the following Git one-liner after a quick Google search: `git rev-list --objects
+    --all | awk ''$2'' | sort -k2 | uniq -cf1 | sort -rn | head`. This was provided
+    by `sehe` on [this Stack Overflow question](https://oreil.ly/39UTx).'
+  prefs: []
+  type: TYPE_NORMAL

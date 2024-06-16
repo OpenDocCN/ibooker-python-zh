@@ -1,0 +1,453 @@
+- en: Chapter 5\. Iterators and Generators
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: When many people with experience in another language start learning Python,
+    they are taken aback by the difference in `for` loop notation. That is to say,
+    instead of writing
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'they are introduced to a new function called `range`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'It seems that in the Python code sample we are calling a function, `range`,
+    which creates all of the data we need for the `for` loop to continue. Intuitively,
+    this can be quite a time-consuming process—if we are trying to loop over the numbers
+    1 through 100,000,000, then we need to spend a lot of time creating that array!
+    However, this is where *generators* come into play: they essentially allow us
+    to lazily evaluate these sorts of functions so we can have the code-readability
+    of these special-purpose functions without the performance impacts.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To understand this concept, let’s implement a function that calculates several
+    Fibonacci numbers both by filling a list and by using a generator:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](Images/1.png)](#co_iterators_and_generators_CO1-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This function will `yield` many values instead of returning one value. This
+    turns this regular-looking function into a generator that can be polled repeatedly
+    for the next available value.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The first thing to note is that the `fibonacci_list` implementation must create
+    and store the list of all the relevant Fibonacci numbers. So if we want to have
+    10,000 numbers of the sequence, the function will do 10,000 appends to the `numbers`
+    list (which, as we discussed in [Chapter 3](ch03.xhtml#chapter-lists-tuples),
+    has overhead associated with it) and then return it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: On the other hand, the generator is able to “return” many values. Every time
+    the code gets to the `yield`, the function emits its value, and when another value
+    is requested, the function resumes running (maintaining its previous state) and
+    emits the new value. When the function reaches its end, a `StopIteration` exception
+    is thrown, indicating that the given generator has no more values. As a result,
+    even though both functions must, in the end, do the same number of calculations,
+    the `fibonacci_list` version of the preceding loop uses 10,000× more memory (or
+    `num_items` times more memory).
+  prefs: []
+  type: TYPE_NORMAL
+- en: With this code in mind, we can decompose the `for` loops that use our implementations
+    of `fibonacci_list` and `fibonacci_gen`. In Python, `for` loops require that the
+    object we are looping over supports iteration. This means that we must be able
+    to create an iterator out of the object we want to loop over. To create an iterator
+    from almost any object, we can use Python’s built-in `iter` function. This function,
+    for lists, tuples, dictionaries, and sets, returns an iterator over the items
+    or keys in the object. For more complex objects, `iter` returns the result of
+    the `__iter__` property of the object. Since `fibonacci_gen` already returns an
+    iterator, calling `iter` on it is a trivial operation, and it returns the original
+    object (so `type(fibonacci_gen(10)) == type(iter(fibonacci_gen(10)))`). However,
+    since `fibonacci_list` returns a list, we must create a new object, a list iterator,
+    that will iterate over all values in the list. In general, once an iterator is
+    created, we call the `next()` function with it, retrieving new values until a
+    `StopIteration` exception is thrown. This gives us a good deconstructed view of
+    `for` loops, as illustrated in [Example 5-1](#iter_py_for).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-1\. Python `for` loop deconstructed
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: The `for` loop code shows that we are doing extra work calling `iter` when using
+    `fibonacci_list` instead of `fibonacci_gen`. When using `fibonacci_gen`, we create
+    a generator that is trivially transformed into an iterator (since it is already
+    an iterator!); however, for `fibonacci_list` we need to allocate a new list and
+    precompute its values, and then we still must create an iterator.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'More importantly, precomputing the `fibonacci_list` list requires allocating
+    enough space for the full dataset and setting each element to the correct value,
+    even though we always require only one value at a time. This also makes the list
+    allocation useless. In fact, it may even make the loop unrunnable, because it
+    may be trying to allocate more memory than is available (`fibonacci_list(100_000_000)`
+    would create a list 3.1 GB large!). By timing the results, we can see this very
+    explicitly:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: As we can see, the generator version is over twice as fast and requires no measurable
+    memory as compared to the `fibonacci_list`’s 441 MB. It may seem at this point
+    that you should use generators everywhere in place of creating lists, but that
+    would create many complications.
+  prefs: []
+  type: TYPE_NORMAL
+- en: What if, for example, you needed to reference the list of Fibonacci numbers
+    multiple times? In this case, `fibonacci_list` would provide a precomputed list
+    of these digits, while `fibonacci_gen` would have to recompute them over and over
+    again. In general, changing to using generators instead of precomputed arrays
+    requires algorithmic changes that are sometimes not so easy to understand.^([1](ch05.xhtml#idm46122423820792))
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: An important choice that must be made when architecting your code is whether
+    you are going to optimize CPU speed or memory efficiency. In some cases, using
+    extra memory so that you have values precalculated and ready for future reference
+    will save in overall speed. Other times, memory may be so constrained that the
+    only solution is to recalculate values as opposed to saving them in memory. Every
+    problem has its own considerations for this CPU/memory trade-off.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'One simple example of this that is often seen in source code is using a generator
+    to create a sequence of numbers, only to use list comprehension to calculate the
+    length of the result:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: While we are still using `fibonacci_gen` to generate the Fibonacci sequence
+    as a generator, we are then saving all values divisible by 3 into an array, only
+    to take the length of that array and then throw away the data. In the process,
+    we’re consuming 86 MB of data for no reason.^([2](ch05.xhtml#idm46122423727656))
+    In fact, if we were doing this for a long enough Fibonacci sequence, the preceding
+    code wouldn’t be able to run because of memory issues, even though the calculation
+    itself is quite simple!
+  prefs: []
+  type: TYPE_NORMAL
+- en: Recall that we can create a list comprehension using a statement of the form
+    [*`<value>`* `for` *`<item>`* `in` *`<sequence>`* `if` *`<condition>`*`]`. This
+    will create a list of all the *`<value>`* items. Alternatively, we can use similar
+    syntax to create a generator of the *`<value>`* items instead of a list with `(`*`<value>`*
+    `for` *`<item>`* `in` *`<sequence>`* `if` *`<condition>`*`)`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Using this subtle difference between list comprehension and generator comprehension,
+    we can optimize the preceding code for `divisible_by_three`. However, generators
+    do not have a `length` property. As a result, we will have to be a bit clever:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: Here, we have a generator that emits a value of `1` whenever it encounters a
+    number divisible by 3, and nothing otherwise. By summing all elements in this
+    generator, we are essentially doing the same as the list comprehension version
+    and consuming no significant memory.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Many of Python’s built-in functions that operate on sequences are generators
+    themselves (albeit sometimes a special type of generator). For example, `range`
+    returns a generator of values as opposed to the actual list of numbers within
+    the specified range. Similarly, `map`, `zip`, `filter`, `reversed`, and `enumerate`
+    all perform the calculation as needed and don’t store the full result. This means
+    that the operation `zip(range(100_000), range(100_000))` will always have only
+    two numbers in memory in order to return its corresponding values, instead of
+    precalculating the result for the entire range beforehand.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The performance of the two versions of this code is almost equivalent for these
+    smaller sequence lengths, but the memory impact of the generator version is far
+    less than that of the list comprehension. Furthermore, we transform the list version
+    into a generator, because all that matters for each element of the list is its
+    current value—either the number is divisible by 3 or it is not; it doesn’t matter
+    where its placement is in the list of numbers or what the previous/next values
+    are. More complex functions can also be transformed into generators, but depending
+    on their reliance on state, this can become a difficult thing to do.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Iterators for Infinite Series
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Instead of calculating a known number of Fibonacci numbers, what if we instead
+    attempted to calculate all of them?
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'In this code we are doing something that wouldn’t be possible with the previous
+    `fibonacci_list` code: we are encapsulating an infinite series of numbers into
+    a function. This allows us to take as many values as we’d like from this stream
+    and terminate when our code thinks it has had enough.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'One reason generators aren’t used as much as they could be is that a lot of
+    the logic within them can be encapsulated in your logic code. Generators are really
+    a way of organizing your code and having smarter loops. For example, we could
+    answer the question “How many Fibonacci numbers below 5,000 are odd?” in multiple
+    ways:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: All of these methods have similar runtime properties (as measured by their memory
+    footprint and runtime performance), but the `fibonacci_transform` function benefits
+    from several things. First, it is much more verbose than `fibonacci_succinct`,
+    which means it will be easy for another developer to debug and understand. The
+    latter mainly stands as a warning for the next section, where we cover some common
+    workflows using `itertools`—while the module greatly simplifies many simple actions
+    with iterators, it can also quickly make Python code very un-Pythonic. Conversely,
+    `fibonacci_naive` is doing multiple things at a time, which hides the actual calculation
+    it is doing! While it is obvious in the generator function that we are iterating
+    over the Fibonacci numbers, we are not overencumbered by the actual calculation.
+    Last, `fibonacci_transform` is more generalizable. This function could be renamed
+    `num_odd_under_5000` and take in the generator by argument, and thus work over
+    any series.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'One additional benefit of the `fibonacci_transform` and `fibonacci_succinct`
+    functions is that they support the notion that in computation there are two phases:
+    generating data and transforming data. These functions are very clearly performing
+    a transformation on data, while the `fibonacci` function generates it. This demarcation
+    adds extra clarity and functionality: we can move a transformative function to
+    work on a new set of data, or perform multiple transformations on existing data.
+    This paradigm has always been important when creating complex programs; however,
+    generators facilitate this clearly by making generators responsible for creating
+    the data and normal functions responsible for acting on the generated data.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Lazy Generator Evaluation
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: As touched on previously, the way we get the memory benefits with a generator
+    is by dealing only with the current values of interest. At any point in our calculation
+    with a generator, we have only the current value and cannot reference any other
+    items in the sequence (algorithms that perform this way are generally called *single
+    pass* or *online*). This can sometimes make generators more difficult to use,
+    but many modules and functions can help.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The main library of interest is `itertools`, in the standard library. It supplies
+    many other useful functions, including these:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`islice`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Allows slicing a potentially infinite generator
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`chain`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Chains together multiple generators
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`takewhile`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Adds a condition that will end a generator
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`cycle`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Makes a finite generator infinite by constantly repeating it
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s build up an example of using generators to analyze a large dataset. Let’s
+    say we’ve had an analysis routine going over temporal data, one piece of data
+    per second, for the last 20 years—that’s 631,152,000 data points! The data is
+    stored in a file, one second per line, and we cannot load the entire dataset into
+    memory. As a result, if we wanted to do some simple anomaly detection, we’d have
+    to use generators to save memory!
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The problem will be: Given a datafile of the form “timestamp, value,” find
+    days whose values differ from normal distribution. We start by writing the code
+    that will read the file, line by line, and output each line’s value as a Python
+    object. We will also create a `read_fake_data` generator to generate fake data
+    that we can test our algorithms with. For this function we still take the argument
+    `filename`, so as to have the same function signature as `read_data`; however,
+    we will simply disregard it. These two functions, shown in [Example 5-2](#iter_read_data),
+    are indeed lazily evaluated—we read the next line in the file, or generate new
+    fake data, only when the `next()` function is called.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-2\. Lazily reading data
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now we’d like to create a function that outputs groups of data that occur in
+    the same day. For this, we can use the `groupby` function in `itertools` ([Example 5-3](#iter_day_grouper)).
+    This function works by taking in a sequence of items and a key used to group these
+    items. The output is a generator that produces tuples whose items are the key
+    for the group and a generator for the items in the group. As our key function,
+    we will output the calendar day that the data was recorded. This “key” function
+    could be anything—we could group our data by hour, by year, or by some property
+    in the actual value. The only limitation is that groups will be formed only for
+    data that is sequential. So if we had the input `A A A A B B A A` and had `groupby`
+    group by the letter, we would get three groups: `(A, [A, A, A, A])`, `(B, [B,
+    B])`, and `(A, [A, A])`.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-3\. Grouping our data
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: Now to do the actual anomaly detection. We do this in [Example 5-4](#iter_anomaly)
+    by creating a function that, given one group of data, returns whether it follows
+    the normal distribution (using `scipy.stats.normaltest`). We can use this check
+    with `itertools.filterfalse` to filter down the full dataset only to inputs that
+    *don’t* pass the test. These inputs are what we consider to be anomalous.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'In [Example 5-3](#iter_day_grouper), we cast `data_group` into a list, even
+    though it is provided to us as an iterator. This is because the `normaltest` function
+    requires an array-like object. We could, however, write our own `normaltest` function
+    that is “one-pass” and could operate on a single view of the data. This could
+    be done without too much trouble by using [Welford’s online averaging algorithm](https://oreil.ly/p2g8Q)
+    to calculate the skew and kurtosis of the numbers. This would save us even more
+    memory by always storing only a single value of the dataset in memory at once
+    instead of storing a full day at a time. However, performance time regressions
+    and development time should be taken into consideration: is storing one day of
+    data in memory at a time sufficient for this problem, or does it need to be further
+    optimized?'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-4\. Generator-based anomaly detection
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: Finally, we can put together the chain of generators to get the days that had
+    anomalous data ([Example 5-5](#iter_chaining_generators)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-5\. Chaining together our generators
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: This method allows us to get the list of days that are anomalous without having
+    to load the entire dataset. Only enough data is read to generate the first five
+    anomalies. Additionally, the `anomaly_generator` object can be read further to
+    continue retrieving anomalous data This is called *lazy evaluation*—only the calculations
+    that are explicitly requested are performed, which can drastically reduce overall
+    runtime if there is an early termination condition.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Another nicety about organizing analysis this way is it allows us to do more
+    expansive calculations easily, without having to rework large parts of the code.
+    For example, if we want to have a moving window of one day instead of chunking
+    up by days, we can replace the `groupby_day` in [Example 5-3](#iter_day_grouper)
+    with something like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: In this version, we also see very explicitly the memory guarantee of this and
+    the previous method—it will store only the window’s worth of data as state (in
+    both cases, one day, or 3,600 data points). Note that the first item retrieved
+    by the `for` loop is the `window_size`-th value. This is because `data` is an
+    iterator, and in the previous line we consumed the first `window_size` values.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'A final note: in the `groupby_window` function, we are constantly creating
+    new tuples, filling them with data, and yielding them to the caller. We can greatly
+    optimize this by using the `deque` object in the `collections` module. This object
+    gives us `O(1)` appends and removals to and from the beginning or end of a list
+    (while normal lists are `O(1)` for appends or removals to/from the end of the
+    list and `O(n)` for the same operations at the beginning of the list). Using the
+    `deque` object, we can `append` the new data to the right (or end) of the list
+    and use `deque.popleft()` to delete data from the left (or beginning) of the list
+    without having to allocate more space or perform long `O(n)` operations. However,
+    we would have to work on the `deque` object in-place and destroy previous views
+    to the rolling window (see [“Memory Allocations and In-Place Operations”](ch06_split_000.xhtml#SEC-numpy-inplace)
+    for more about in-place operations). The only way around this would be to copy
+    the data into a tuple before yielding it back to the caller, which gets rid of
+    any benefit of the change!'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Wrap-Up
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: By formulating our anomaly-finding algorithm with iterators, we can process
+    much more data than could fit into memory. What’s more, we can do it faster than
+    if we had used lists, since we avoid all the costly `append` operations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Since iterators are a primitive type in Python, this should always be a go-to
+    method for trying to reduce the memory footprint of an application. The benefits
+    are that results are lazily evaluated, so you process only the data you need,
+    and memory is saved since we don’t store previous results unless explicitly required
+    to. In [Chapter 11](ch11_split_000.xhtml#chapter-lessram), we will talk about
+    other methods that can be used for more specific problems and introduce some new
+    ways of looking at problems when RAM is an issue.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Another benefit of solving problems using iterators is that it prepares your
+    code to be used on multiple CPUs or multiple computers, as we will see in Chapters
+    [9](ch09_split_000.xhtml#multiprocessing) and [10](ch10.xhtml#clustering). As
+    we discussed in [“Iterators for Infinite Series”](#iterators_inf), when working
+    with iterators, you must always think about the various states that are necessary
+    for your algorithm to work. Once you figure out how to package the state necessary
+    for the algorithm to run, it doesn’t matter where it runs. We can see this sort
+    of paradigm, for example, with the `multiprocessing` and `ipython` modules, both
+    of which use a `map`-like function to launch parallel tasks.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([1](ch05.xhtml#idm46122423820792-marker)) In general, algorithms that are
+    *online* or *single pass* are a great fit for generators. However, when making
+    the switch you have to ensure your algorithm can still function without being
+    able to reference the data more than once.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([2](ch05.xhtml#idm46122423727656-marker)) Calculated with `%memit len([n for
+    n in fibonacci_gen(100_000) if n % 3 == 0])`.
+  prefs: []
+  type: TYPE_NORMAL

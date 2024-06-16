@@ -1,0 +1,491 @@
+- en: Chapter 12\. Ray in the Enterprise
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Deploying software in enterprise environments often comes with additional requirements,
+    especially regarding security. Enterprise deployments tend to involve multiple
+    stakeholders and need to provide service to a larger group of scientists/engineers.
+    While not required, many enterprise clusters tend to have some form of multitenancy
+    to allow more efficient use of resources (including human resources, such as operational
+    staff).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Ray Dependency Security Issues
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Unfortunately, Ray’s default requirements file brings in some insecure libraries.
+    Many enterprise environments have some kind of container scanning or similar system
+    to detect such issues.^([1](ch12.html#idm45354761688512)) In some cases, you can
+    simply remove or upgrade the dependency issues flagged, but when Ray includes
+    the dependencies in its wheel (e.g., the Apache Log4j issue), limiting yourself
+    to prebuilt wheels has serious drawbacks. If you find a Java or native library
+    flagged, you will need to rebuild Ray from source with the version upgraded. Derwen.ai
+    has an example of doing this for Docker in its [ray_base repo](https://oreil.ly/Qef7S).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Interacting with the Existing Tools
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Enterprise deployments often involve interaction with existing tools and the
+    data they produce. Some potential points for integration here are using Ray’s
+    dataset-generic Arrow interface to interact with other tools. When data is stored
+    “at rest,” Parquet is the best format for interaction with other tools.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using Ray with CI/CD Tools
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: When working in large teams, continuous integration and delivery (CI/CD) are
+    important parts of effective collaboration on projects. The simplest option for
+    using Ray with CI/CD is to use Ray in local mode and treat it as a normal Python
+    project. Alternatively, you can submit test jobs by using Ray’s job submission
+    API and verify the result. This can allow you to test Ray jobs beyond the scale
+    of a single machine. Regardless of whether you use Ray’s job API or Ray’s local
+    mode, you can use Ray with any CI/CD tool and virtual environment.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Authentication with Ray
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Ray’s default deployment makes it easy for you to get started, and as such,
+    it leaves out any authentication between the client and server. This lack of authentication
+    means that anyone who can connect to your Ray server can potentially submit jobs
+    and execute arbitrary code. Generally, enterprise environments require a higher
+    level of access control than the default configuration provides.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Ray’s gRPC endpoints, not the job server, can be configured to use Transport
+    Layer Security (TLS) for mutual authentication between the client and the server.
+    Ray uses the same TLS communication mechanism between the client and head node
+    as between the workers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Warning
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Ray’s TLS implementation requires that the clients have the private key. You
+    should consider Ray’s TLS implementation to be akin to shared secret encryption,
+    but slower.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Another option, which works the job server, is to leave the endpoints insecure
+    but restrict who can talk to the endpoint.^([2](ch12.html#idm45354761670192))
+    This can be done using ingress controllers, networking rules, or even as an integrated
+    part of a virtual private network (VPN) like [Tailscale’s RBAC rules example for
+    Grafana](https://oreil.ly/M5O7q).^([3](ch12.html#idm45354761668848)) Thankfully,
+    Ray’s dashboard—and by extension, the job server endpoint—already binds to *local​host/127.0.0.1*
+    and runs on port 8265\. For example, if you have your Ray head node on Kubernetes
+    using Traefik for ingress, you could expose the job API with basic authentication
+    as shown here:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: Dependence on restricting endpoint access has the downside that anyone who can
+    access that computer can submit jobs to your cluster, so it does not work well
+    for shared compute resources.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Multitenancy on Ray
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Out of the box, Ray clusters support multiple running jobs. When all jobs are
+    from the same user and you are not concerned about isolating jobs, you don’t need
+    to consider multitenancy implications.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In our opinion, tenant isolation is less developed than other parts of Ray.
+    Ray achieves per user multitenancy security by binding separate workers to a job,
+    reducing the chance of accidental information leakage between separate users.
+    As with Ray’s execution environments, your users can have different Python libraries
+    installed, but Ray does not isolate system-level libraries (like, for example,
+    CUDA).
+  prefs: []
+  type: TYPE_NORMAL
+- en: We like to think of tenant isolation in Ray as locks on doors. It’s there to
+    keep honest people honest and prevent accidental disclosures. However, named resources,
+    such as named actors, can be called from any other job. This is an intended function
+    of named actors, but as cloudpickle is used frequently throughout Ray, you should
+    consider any named actor as having the *potential* of allowing a malicious actor
+    on the same cluster to be able to execute arbitrary code in your job.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Warning
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Named resources break Ray’s tenant isolation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: While Ray does have some support for multitenancy, we instead recommend deploying
+    multitenant Kubernetes or Yarn clusters. Multitenancy leads nicely into the next
+    problem of providing credentials for data sources.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Credentials for Data Sources
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Multitenancy complicates credentials for datasources as you cannot fall back
+    on instance-based roles/profiles. By adding `env_vars` to your runtime environment,
+    you can specify credentials across the entirety of your job. Ideally, you should
+    not hardcode these credentials in your source code, but instead, fetch them from
+    something like a Kubernetes secret and propagate the values through:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: You can also use this same technique to assign credentials per function (e.g.,
+    if only one actor should have write permissions) by assigning a runtime environment
+    with `.option`. However, in practice, keeping track of the separate credentials
+    can become a headache.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Permanent Versus Ephemeral Clusters
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: When deploying Ray, you have to choose between permanent and ephemeral clusters.
+    With permanent clusters, issues of multitenancy and ensuring that the autoscaler
+    can scale down (e.g., no hanging resources) are especially important. However,
+    as more enterprises have adopted Kubernetes or other cloud-native technologies,
+    we think that ephemeral clusters will increase in appeal.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Ephemeral Clusters
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Ephemeral clusters have many benefits. Two of the most important are low cost
+    and not needing multitenant clusters. Ephemeral clusters allow for resources to
+    be fully released when the computation is finished. You can often avoid multitenancy
+    issues by provisioning ephemeral clusters, which can reduce the operational burden.
+    Ephemeral clusters make experimenting with new versions of Ray and new native
+    libraries comparatively lightweight. This can also serve to prevent the issues
+    that come with forced migrations, where each team can run its own versions of
+    Ray.^([4](ch12.html#idm45354761403136))
+  prefs: []
+  type: TYPE_NORMAL
+- en: Ephemeral clusters have some drawbacks you should be aware of when making this
+    choice. Two of the clearest drawbacks are having to wait for the cluster to start
+    up, on top of your application start time, and not being able to use cache/persistence
+    on the cluster. Starting an ephemeral cluster depends on being able to allocate
+    compute resources, which depending on your environment and budget can take anywhere
+    from seconds to days (during cloud issues). If your computations depend on a large
+    amount of state or data, each time your application is started on a new cluster,
+    it starts by reading back a lot of information, which can be quite slow.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Permanent Clusters
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: In addition to cost and multitenancy issues, permanent clusters bring additional
+    drawbacks. Permanent clusters are more likely to accumulate configuration “artifacts”
+    that can be harder to re-create when it comes time to migrate to a new cluster.
+    These clusters can become brittle with time as the underlying hardware ages. This
+    is true even in the cloud, where long-running instances become increasingly likely
+    to experience outages. Long-lived resources in permanent clusters may end up containing
+    information that needs to be purged for regulatory reasons.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Permanent clusters also have important benefits that can be useful. From a developer’s
+    point of view, one advantage is the ability to have long-lived actors or other
+    resources. From an operations point of view, permanent clusters do not take the
+    same spin-up time, so if you find yourself needing to do a new task, you don’t
+    have to wait for a cluster to become available. [Table 12-1](#comparing-transient-permanent)
+    summarizes the differences between transient and permanent clusters.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Table 12-1\. Transient- and permanent-cluster comparison chart
+  prefs: []
+  type: TYPE_NORMAL
+- en: '|  | Transient/ephemeral clusters | Permanent clusters |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| **Resource cost** | Normally lower unless running, unless workloads could
+    bin-pack or share resources between users | Higher when resource leaks prevent
+    the autoscaler from scaling down |'
+  prefs: []
+  type: TYPE_TB
+- en: '| **Library isolation** | Flexible (including native) | Only venv/Conda env-level
+    isolation |'
+  prefs: []
+  type: TYPE_TB
+- en: '| **Ability to try new versions of Ray** | Yes, may require code changes for
+    new APIs | Higher overhead |'
+  prefs: []
+  type: TYPE_TB
+- en: '| **Longest actor life** | Ephemeral (with the cluster) | “Permanent” (excluding
+    cluster crashes/redeploys) |'
+  prefs: []
+  type: TYPE_TB
+- en: '| **Shared actors** | No | Yes |'
+  prefs: []
+  type: TYPE_TB
+- en: '| **Time to launch new application** | Potentially long (cloud-dependent) |
+    Varies (if the cluster has nearly instant spare capacity; otherwise, cloud-dependent)
+    |'
+  prefs: []
+  type: TYPE_TB
+- en: '| **Data read amortization** | No (each cluster must read in any shared datasets)
+    | Possible (if well structured) |'
+  prefs: []
+  type: TYPE_TB
+- en: The choice between ephemeral and permanent clusters depends on your use cases
+    and requirements. In some deployments, a mix of ephemeral clusters and permanent
+    clusters could offer the correct trade-offs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Monitoring
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: As the size or number of Ray clusters in your organization grows, monitoring
+    becomes increasingly important. Ray has built-in metrics reporting through its
+    internal dashboard or Prometheus, although Prometheus is disabled by default.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Ray’s internal dashboard is installed when you install `ray​[default]`, but
+    not if you simply install `ray`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Ray’s dashboard is excellent when you are working by yourself or debugging a
+    production issue. If it’s installed, Ray will print an info log message with a
+    link to the dashboard (e.g., `View the Ray dashboard at http://127.0.0.1:8265`).
+    In addition, the `ray.init` result contains `webui_url`, which points to the metrics
+    dashboard. However, Ray’s dashboard does not have the ability to create alerts
+    and is therefore helpful only when you know something is wrong. Ray’s dashboard
+    UI is being upgraded in Ray 2; [Figure 12-1](#old_dashboard) shows the old dashboard,
+    and [Figure 12-2](#new_dashboard) shows the new one.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![spwr 1201](assets/spwr_1201.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 12-1\. The old (pre-2.0) Ray dashboard
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: '![spwr 1202](assets/spwr_1202.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 12-2\. The new Ray dashboard
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: As you can see, the new dashboard did not evolve organically; rather, it was
+    intentionally designed and contains new information. Both versions of the dashboard
+    contain information about the executor processes and memory usage. The new dashboard
+    also has a web UI for looking up objects by ID.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Warning
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: The dashboard should not be exposed publicly, and the same port is used for
+    the job API.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Ray metrics can also be exported to Prometheus, and by default, Ray will pick
+    a random port for this. You can find the port by looking at `metrics_export_port`
+    in the result of *ray.init*, or specify a fixed port when launching Ray’s head
+    node with `--metrics-export-port=`. Ray’s integration with Prometheus not only
+    provides integration with metrics visualization tools, like Grafana (see [Figure 12-3](#sample-grafana-dashboard-for-ray)),
+    but importantly adds alerting capabilities when some of the parameters are going
+    outside predetermined ranges.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![spwr 1203](assets/spwr_1203.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 12-3\. Sample Grafana dashboard for Ray^([5](ch12.html#idm45354761321968))
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: To obtain exported metrics, Prometheus needs to be configured for which hosts
+    or pods to scrape. For users with a static cluster, this is as simple as providing
+    a host file, but for dynamic users, you have [many options](https://oreil.ly/RR0kf).
+    Kubernetes users can use [pod monitors](https://oreil.ly/85MrY) to configure Prometheus
+    pod scraping. Because a Ray cluster does not have a unifying label for all nodes,
+    here we are using two pod monitors—one for the head node and one for workers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Non-Kubernetes users can use Prometheus [file-based discovery](https://oreil.ly/eYXbq)
+    to use files that Ray automatically generates on the head node at */tmp/ray/prom_metrics_service​_dis⁠covery.json*
+    for this.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In addition to monitoring Ray itself, you can instrument your code inside Ray.
+    You can either add your own metrics to Ray’s Prometheus metrics or integrate with
+    OpenTelemetry. The correct metrics and instrumentation largely depend on what
+    the rest of your organization uses. Comparing OpenTelemetry and Prometheus is
+    beyond the scope of this book.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Instrumenting Your Code with Ray Metrics
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Ray’s built-in metrics do an excellent job of reporting cluster health, but
+    we often care about application health. For example, a cluster with low memory
+    usage because all the jobs are stuck might look good at the cluster level, but
+    what we actually care about (serving users, training models, etc.) isn’t happening.
+    Thankfully, you can add your own metrics to Ray to monitor your application usage.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: The metrics that you add to Ray metrics are exposed as Prometheus metrics, just
+    like Ray’s built in metrics.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Ray metrics support the [counter](https://oreil.ly/aW2y9), [gauge](https://oreil.ly/xBLAh),
+    and [histogram](https://oreil.ly/tNiTX) metrics types inside `ray.util​.met⁠rics`.
+    These metrics objects are not serializable, as they reference C objects. You need
+    to explicitly create the metric before you can record any values in it. When creating
+    a new metric, you can specify a name, description, and tags. A common tag used
+    is the name of the actor a metric is used inside of, for actor sharding. Since
+    they are not serializable, you need to either create and use them inside actors,
+    as in [Example 12-1](#ray_counters_actor), or use the [lazy singleton pattern](https://oreil.ly/zKck9),
+    as in [Example 12-2](#ray_counters_singleton).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 12-1\. [Using Ray counters inside an actor](https://oreil.ly/LEzXb)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: Example 12-2\. [Using the global singleton hack to use Ray counters with remote
+    functions](https://oreil.ly/LEzXb)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: OpenTelemetry is available across many languages, including Python. Ray has
+    a basic open-telemetry implementation, but it is not used as widely as its Prometheus
+    plug-in.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Wrapping Custom Programs with Ray
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: One of the powerful features of Python is the ability to launch child processes
+    using the [subprocess module](https://oreil.ly/rRlWj).^([6](ch12.html#idm45354760850704))
+    These processes can be any shell command or any application on your system. This
+    capability allows for a lot of interesting options within Ray implementations.
+    One of the options, which we will show here, is the ability to run any custom
+    Docker image as part of Ray execution.^([7](ch12.html#idm45354760849856)) [Example 12-3](#executing-docker-image-inside-ray-function)
+    demonstrates how this can be done.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 12-3\. [Executing a Docker image inside a Ray remote function](https://oreil.ly/gacKK)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: This code contains a simple remote function that executes an external command
+    and returns the execution result. The main function passes to it a simple `docker
+    run` command and then prints the invocation result.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This approach allows you to execute any existing Docker image as part of Ray
+    remote function execution, which in turn allows polyglot Ray implementations or
+    even executing Python with specific library requirements needing to create a virtual
+    environment for this remote function run. It also allows for easy inclusion of
+    prebuilt images in the Ray execution.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Running Docker images is just one of the useful applications of using `subprocess`
+    inside Ray. In general, any application installed on the Ray node can be invoked
+    using this approach.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Conclusion
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Although Ray was initially created in a research lab, you can start bringing
+    Ray to the mainstream enterprise computing infrastructure with the implementation
+    enchancements described here. Specifically, be sure to do the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Carefully evaluate the security and multitenancy issues that this can create.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Be mindful of integration with CI/CD and observability tools.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Decide whether you need permanent or ephemeral Ray clusters.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: These considerations will change based on your enterprise environment and specific
+    use cases for Ray.
+  prefs: []
+  type: TYPE_NORMAL
+- en: At this point in the book, you should have a solid grasp of all of the Ray basics
+    as well as pointers on where to go next. We certainly hope to see you in the Ray
+    community and encourage you to check out the [community resources](https://oreil.ly/9xrm8),
+    including [Ray’s Slack channel](https://oreil.ly/PnLJO). If you want to see one
+    of the ways you can put the pieces of Ray together, [Appendix A](app01.html#appA)
+    explores how to build a backend for an open source satellite communication system.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([1](ch12.html#idm45354761688512-marker)) Some common security scanners include
+    Grype, Anchore, and Dagda.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([2](ch12.html#idm45354761670192-marker)) Making this work with the gRPC client
+    is more complicated, as Ray’s workers need to be able to talk to the head node
+    and Redis server, which breaks when using localhost for binding.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([3](ch12.html#idm45354761668848-marker)) One of the authors has friends who
+    work at Tailscale, and other solutions are totally OK too.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([4](ch12.html#idm45354761403136-marker)) In practice, we recommend supporting
+    only a few versions of Ray, as it is quickly evolving.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([5](ch12.html#idm45354761321968-marker)) See [*Ray metrics-1650932823424.json*](https://oreil.ly/oKtmW)
+    for the configuration.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([6](ch12.html#idm45354760850704-marker)) Special thanks to Michael Behrendt
+    for suggesting the implementation approach discussed in this section.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([7](ch12.html#idm45354760849856-marker)) This will work only for the cloud
+    installations where Ray nodes are using Ray installation on the VM. Refer to [Appendix B](app02.html#appB)
+    to see how to do this on IBM Cloud and AWS.
+  prefs: []
+  type: TYPE_NORMAL

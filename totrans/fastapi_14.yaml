@@ -1,0 +1,1002 @@
+- en: Chapter 11\. Authentication and Authorization
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Respect mah authoritay!
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: ''
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: Eric Cartman, *South Park*
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: Preview
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Sometimes a website is wide open, and any visitor can visit any page. But if
+    any of the site’s content may be modified, some endpoints will be restricted to
+    certain people or groups. If anyone could alter pages on Amazon, imagine the odd
+    items that would show up, and the amazing sales some people would suddenly get.
+    Unfortunately, it’s human nature—for some humans—to take advantage of the rest,
+    who pay a hidden tax for their activities.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Should we leave our cryptid site open for any users to access any endpoint?
+    No! Almost any sizable web service eventually needs to deal with the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Authentication (authn)
+  prefs: []
+  type: TYPE_NORMAL
+- en: Who are you?
+  prefs: []
+  type: TYPE_NORMAL
+- en: Authorization (authz)
+  prefs: []
+  type: TYPE_NORMAL
+- en: What do you want?
+  prefs: []
+  type: TYPE_NORMAL
+- en: Should the authentication and authorization (auth) code have its own new layer,
+    say between Web and Service? Or should everything be handled by the Web or Service
+    layer itself? This chapter dips into auth techniques and where to put them.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Often descriptions of web security seem more confusing than they need to be.
+    Attackers can be really, really sneaky, and countermeasures may not be simple.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: As I’ve mentioned more than once, the official FastAPI documentation is excellent.
+    Try the [Security section](https://oreil.ly/oYsKl) if this chapter doesn’t provide
+    as many details as you’d like.
+  prefs: []
+  type: TYPE_NORMAL
+- en: So, let’s take this walk-through in steps. I’ll start with simple techniques
+    that are intended to only hook auth into a web endpoint for testing, but would
+    not stand up in a public website.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Interlude 1: Do You Need Authentication?'
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Again, *authentication* is concerned with *identity*: who are you? To implement
+    authentication, we need a mapping of secret information to a unique identity.
+    There are many ways to do this, with *many* variations of complexity. Let’s start
+    small and work up.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Often books and articles on web development jump right away into the details
+    of authentication and authorization, sometimes muddling them. They sometimes skip
+    the first question: do you really need either?'
+  prefs: []
+  type: TYPE_NORMAL
+- en: You could allow completely anonymous access to all your website’s pages. But
+    that would leave you open to exploits like denial-of-service attacks. Although
+    some protections like rate limits can be implemented outside the web server (see
+    [Chapter 13](ch13.html#ch13)), almost all public API providers require at least
+    some authentication.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Beyond security, we want to know how effective websites are:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: How many unique visitors?
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: What are the most popular pages?
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Do some changes increase views?
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: What page sequences are common?
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The answers to these questions require authentication of specific visitors.
+    Otherwise, you can get only total counts.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: If your site needs authentication or authorization, access to it should be encrypted
+    (using HTTPS instead of HTTP), to prevent attackers from extracting secret data
+    from plain text. See [Chapter 13](ch13.html#ch13) for details on setting up HTTPS.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Authentication Methods
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'There are many web authentication methods and tools:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Username/email and password
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using classic HTTP Basic and Digest Authentication
+  prefs: []
+  type: TYPE_NORMAL
+- en: API key
+  prefs: []
+  type: TYPE_NORMAL
+- en: An opaque long string with an accompanying *secret*
+  prefs: []
+  type: TYPE_NORMAL
+- en: OAuth2
+  prefs: []
+  type: TYPE_NORMAL
+- en: A set of standards for authentication and authorization
+  prefs: []
+  type: TYPE_NORMAL
+- en: JavaScript Web Tokens (JWT)
+  prefs: []
+  type: TYPE_NORMAL
+- en: An encoding format containing cryptographically signed user information
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this section, I’ll review the first two methods and show you how to traditionally
+    implement them. But I’ll stop before filling out the API and database code. Instead,
+    we’ll fully implement a more modern scheme with OAuth2 and JWT.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Global Authentication: Shared Secret'
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The very simplest authentication method is to pass a secret that’s normally
+    known only by the web server. If it matches, you’re in. This isn’t safe if your
+    API site is exposed to the public with HTTP instead of HTTPS. If it’s hidden behind
+    a frontend site that is itself open, the frontends and backends could communicate
+    using a shared constant secret. But if your frontend site is hacked, then darn.
+    Let’s see how FastAPI handles simple authentication.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Make a new top-level file called *auth.py*. Check that you don’t have another
+    FastAPI server still running from one of those ever-changing *main.py* files from
+    previous chapters. [Example 11-1](#ex-11-1) implements a server that just returns
+    whatever `username` and `password` were sent to it using HTTP Basic Authentication—a
+    method from the original days of the web.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Example 11-1\. Use HTTP Basic Auth to get user info: auth.py'
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: In [Example 11-2](#ex-11-2), tell HTTPie to make this Basic Auth request (this
+    requires the arguments `-a` *`name:password`*). Here, let’s use the name `me`
+    and the password `secret`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 11-2\. Test with HTTPie
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: Testing with the Requests package in [Example 11-3](#ex-11-3) is similar, using
+    the `auth` parameter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 11-3\. Test with Requests
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: You can also test [Example 11-1](#ex-11-1) with the automatic docs page (*http://localhost:8000/docs*),
+    shown in [Figure 11-1](#fig-docs-1).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![fapi 1101](assets/fapi_1101.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 11-1\. Docs page for simple authentication
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Click that down arrow on the right, then the Try It Out button, and then the
+    Execute button. You’ll see a form requesting the username and password. Type anything.
+    The documentation form will hit that server endpoint and show those values in
+    the response.
+  prefs: []
+  type: TYPE_NORMAL
+- en: These tests show that you can get a username and password to the server and
+    back (although none of these actually checked anything). Something in the server
+    needs to verify that this name and password match the approved values. So, in
+    [Example 11-4](#ex-11-4), I’ll include a single secret username and password in
+    the web server. The username and password that you pass in now needs to match
+    them (each is a *shared secret*), or you’ll get an exception. The HTTP status
+    code `401` is officially called `Unauthorized`, but it really means *unauthenticated*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Instead of memorizing all the HTTP status codes, you can import FastAPI’s status
+    module (which itself is imported directly from Starlette). So you can use the
+    more explanatory `sta⁠tus_code=​HTTP_401_UNAUTHORIZED` in [Example 11-4](#ex-11-4)
+    instead of a plain `sta⁠tus_​code=401`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 11-4\. Add a secret username and password to auth.py
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: Misguessing the username and password will earn a mild `401` rebuke in [Example 11-5](#ex-11-5).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 11-5\. Test with HTTPie and a mismatched username/password
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: Using the magic combination returns the username and password, as before, in
+    [Example 11-6](#ex-11-6).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 11-6\. Test with HTTPie and the correct username/password
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: Simple Individual Authentication
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The previous section showed how you could use a shared secret to control access.
+    It’s a broad approach, not very secure. And it doesn’t tell you anything about
+    the individual visitor, just that they (or a sentient AI) know the secret.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Many websites want to do the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Define individual visitors in some way
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Identify specific visitors as they access certain endpoints (authentication)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Possibly assign different permissions to some visitors and endpoints (authorization)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Possibly save specific information per visitor (interests, purchases, and so
+    on)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: If your visitors are humans, you may want them to provide a username or email
+    and a password. If they’re external programs, you may want them to provide an
+    API key and secret.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: From here on, I’ll use just *username* to refer to either a user-selected name
+    or an email.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To authenticate real individual users instead of a fake one, you’ll need to
+    do a bit more:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Pass the user values (name and password) to the API server endpoints as HTTP
+    headers.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Use HTTPS instead of HTTP, to avoid anyone snooping the text of these headers.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Hash* the password to a different string. The result is not “de-hashable”—you
+    can’t derive the original password from its hash.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Make a real database store a `User` database table containing the username and
+    the hashed password (never the original plain-text password).
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Hash the newly input password and compare the result with the hashed password
+    in the database.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: If the username and hashed password match, pass the matching `User` object up
+    the stack. If they don’t match, return `None` or raise an exception.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: In the Service layer, fire off any metrics/logging/whatever that are relevant
+    to individual user authentication.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: In the Web layer, send the authenticated user info to any functions that require
+    it.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: I’ll show you how to do all these things in the following sections, using recent
+    tools like OAuth2 and JWT.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Fancier Individual Authentication
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: If you want to authenticate individuals, you have to store some individual information
+    somewhere—for example, in a database containing records with at least a key (username
+    or API key), and a secret (password or API secret). Your website visitors will
+    provide these when accessing protected URLs, and you need something in the database
+    to match them with.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The official FastAPI security docs ([introductory](https://oreil.ly/kkTUB) and
+    [advanced](https://oreil.ly/biKwy)) have top-down descriptions of how to set up
+    authentication for multiple users, using a local database. But, example web functions
+    fake the actual database access.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here, you’ll do the opposite: starting at the Data layer and working up. You’ll
+    define how a user/visitor is defined, stored, and accessed. Then you’ll work up
+    to the Web layer, and how user identification is passed in, evaluated, and authenticated.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: OAuth2
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: OAuth 2.0, which stands for “Open Authorization,” is a standard designed to
+    allow a website or application to access resources hosted by other web apps on
+    behalf of a user.
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: ''
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: Auth0
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: In the early trusting web days, you could provide your login name and password
+    of a website (let’s call it B) to another website (A, of course) and let it access
+    stuff on B for you. This would give A *full access* to B, although it was trusted
+    to access only what it was supposed to. Examples of B and resources were things
+    like Twitter followers, Facebook friends, email contacts, and so on. Of course,
+    this couldn’t last long, so various companies and groups got together to define
+    OAuth. It was originally designed only to allow website A to access specific (not
+    all) resources on website B.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[OAuth2](https://oauth.net/2) is a popular but complex *authorization* standard,
+    with uses beyond the A/B example. There are many explanations of it, from [light](https://oreil.ly/ehmuf)
+    to [heavy](https://oreil.ly/qAUaM).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: There used to be an [OAuth1](https://oauth.net/1), but it isn’t used anymore.
+    Some of the original OAuth2 recommendations are now deprecated (computerese for
+    *don’t use them*). On the horizon are [OAuth2.1](https://oauth.net/2.1) and, even
+    further into the mist, [txauth](https://oreil.ly/5PW2T).
+  prefs: []
+  type: TYPE_NORMAL
+- en: OAuth offers various [flows](https://oreil.ly/kRiWh) for different circumstances.
+    I’ll use the *authorization code flow* here. This section will walk through an
+    implementation, one average-sized step at a time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'First, you’ll need to install these third-party Python packages:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: JWT handling
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`pip install python-jose[cryptography]`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Secure password handling
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`pip install passlib`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Form handling
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`pip install python-multipart`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The following sections start with the user data model and database management,
+    and work up the familiar layers to the Service and Web, where OAuth pops up.
+  prefs: []
+  type: TYPE_NORMAL
+- en: User Model
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Let’s start with the very minimal user model definitions in [Example 11-7](#ex-11-7).
+    These will be used in all layers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Example 11-7\. User definition: model/user.py'
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: A `User` object contains an arbitrary `name` plus a `hash` string (the hashed
+    password, not the original plain-text password), and is what’s saved in the database.
+    We’ll need both to authenticate a visitor.
+  prefs: []
+  type: TYPE_NORMAL
+- en: User Data Layer
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: '[Example 11-8](#ex-11-8) contains the user database code.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'The code creates `user` (active users) and `xuser` (deleted users) tables.
+    Often developers add a Boolean `deleted` field to a user table to indicate the
+    user is no longer active, without actually deleting the record from the table.
+    I prefer moving the deleted user’s data to another table. This avoids repetitive
+    checking of the `deleted` field in all user queries. It can also help speed up
+    queries: making an index for a *low cardinality* field like a Boolean does no
+    good.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Example 11-8\. Data layer: data/user.py'
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: User Fake Data Layer
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The module in [Example 11-9](#ex-11-9) is used in tests that exclude the database
+    but need some user data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Example 11-9\. Fake layer: fake/user.py'
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: User Service Layer
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: '[Example 11-10](#ex-11-10) defines the Service layer for users. A difference
+    from the other Service layer modules is the addition of OAuth2 and JWT functions.
+    I think it’s cleaner to have them here than in the Web layer, though a few OAuth2
+    Web-layer functions are in the upcoming *web/user.py*.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The CRUD functions are still pass-throughs for now but could be flavored to
+    taste with metrics in the future. Notice that, like the creature and explorer
+    services, this design supports runtime use of either the fake or real Data layers
+    to access user data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Example 11-10\. Service layer: service/user.py'
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: User Web Layer
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: '[Example 11-11](#ex-11-11) defines the base user module in the Web layer. It
+    uses the new auth code from the *service/user.py* module in [Example 11-10](#ex-11-10).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Example 11-11\. Web layer: web/user.py'
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: Test!
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The unit and full tests for this new user component are similar to those that
+    you’ve already seen for creatures and explorers. Rather than using the ink and
+    paper here, you can view them at this book’s accompanying website.^([1](ch11.html#id707))
+  prefs: []
+  type: TYPE_NORMAL
+- en: Top Layer
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The previous section defined a new `router` variable for URLs starting with
+    */user*, so [Example 11-12](#ex-11-12) adds this subrouter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Example 11-12\. Top layer: main.py'
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: When Uvicorn autoreloads, the */user/…​* endpoints should now be available.
+  prefs: []
+  type: TYPE_NORMAL
+- en: That was fun, in a stretched definition of fun. Given all the user code that
+    was just created, let’s give it something to do.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Authentication Steps
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Here’s a review of that heap of code from the previous sections:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: If an endpoint has the dependency `oauth2_dep()` (in *web/user.py*), a form
+    containing username and password fields is generated and sent to the client.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: After the client fills out and submits this form, the username and password
+    (hashed with the same algorithm as those already stored in the local database)
+    are matched against the local database.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: If a match occurs, an access token is generated (in JWT format) and returned.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: This access token is passed back to the web server as an `Authorization` HTTP
+    header in subsequent requests. This JWT token is decoded on the local server to
+    the username and other details. This name does not need to be looked up in the
+    database again.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The username is authenticated, and the server can do whatever it likes with
+    it.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'What can the server do with this hard-won authentication information? The server
+    can do the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Generate metrics (this user, this endpoint, this time) to help study what’s
+    being viewed, by whom, for how long, and so on.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Save user-specific information.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: JWT
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: This section contains some details on the JWT. You really don’t need them to
+    use all the earlier code in this chapter, but if you’re a little curious…​
+  prefs: []
+  type: TYPE_NORMAL
+- en: A [JWT](https://jwt.io) is an encoding scheme, not an authentication method.
+    The low-level details are defined in [RFC 7519](https://oreil.ly/_op1j). It can
+    be used to convey authentication information for OAuth2 (and other methods), and
+    I’ll show that here.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'A JWT is a readable string with three dot-separated sections:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Header*: Encryption algorithm used, and token type'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Payload*: …​'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Signature*: …​'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Each section consists of a JSON string, encoded in [Base 64 URL](https://www.base64url.com)
+    format. Here’s an example (which has been split at the dots to fit on this page):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: As a plain ASCII string that’s also safe to use in URLs, it can be passed to
+    web servers as part of the URL, a query parameter, HTTP header, cookie, and so
+    on.
+  prefs: []
+  type: TYPE_NORMAL
+- en: JWT avoids a database lookup, but this also means that you can’t detect a revoked
+    authorization directly.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Third-Party Authentication: OIDC'
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: You’ll often see websites that let you log in with an ID and password, or let
+    you log in via your account at a different site, like Google, Facebook/Meta, LinkedIn,
+    or many others. These frequently use a standard called [OpenID Connect (OIDC)](https://openid.net/connect),
+    which is built atop OAuth2. When you connect to an external OIDC-enabled site,
+    you’ll get back an OAuth2 access token (as in the examples in this chapter), but
+    also an *ID token*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The official FastAPI docs don’t include example code for integration with OIDC.
+    If you want to try it, some third-party packages (FastAPI-specific and more generic)
+    will save time over rolling your own implementation:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[FastAPI OIDC](https://oreil.ly/TDABr)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[fastapi-third-party-auth](https://oreil.ly/yGaO6)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[FastAPI Resource Server](https://oreil.ly/THByF)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[oauthlib](https://oreil.ly/J-pDB)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[oic](https://oreil.ly/AgYKZ)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[OIDC Client](https://oreil.ly/e9QGb)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[oidc-op](https://oreil.ly/cJCF4)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[OpenID Connect](https://oreil.ly/WH49I)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The [FastAPI Repo Issues page](https://oreil.ly/ztR3r) includes multiple code
+    examples, and a comment from tiangelo (Sebastián Ramírez) that FastAPI OIDC examples
+    will be included in the official docs and tutorials in the future.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Authorization
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Authentication handles the *who* (identity), and authorization handles the
+    *what*: which resources (web endpoints) are you allowed to access, and in what
+    way? The number of combinations of *who* and *what* can be large.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this book, explorers and creatures have been the main resources. Looking
+    up an explorer, or listing all of them, would typically be more “open” than adding
+    or modifying an existing one. If the website is supposed to be a reliable interface
+    to some data, write access should be more limited than read access. Because, grr,
+    people.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If every endpoint is completely open, you don’t need authorization and can skip
+    this section. The simplest authorization could be a simple Boolean (is this user
+    an admin or not?); for the examples in this book, you might require admin authorization
+    to add, delete, or modify an explorer or creature. If your database has lots of
+    entries, you might also want to limit the `get_all()` functions with further permissions
+    for non-admins. As the website gets more complex, the permissions might become
+    more fine-grained.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s look at a progression of authorization cases. We’ll use the `User` table,
+    in which the `name` can be an email, username, or API key; “pair” tables are the
+    relational database way of matching entries from two separate tables:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If you want to track only admin visitors and leave the rest anonymous:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Use an `Admin` table of authenticated usernames. You’d look up the name from
+    the `Admin` table, and if matched, compare the hashed passwords from the `User`
+    table.
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'If *all* visitors should be authenticated, but you need to authorize admins
+    for only some endpoints:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Authenticate everyone as in the earlier examples (from the `User` table), and
+    then check the `Admin` table to see if this user is also an admin.
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'For more than one type of permission (such as read-only, read, write):'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Use a `Permission` definition table.
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Use a `UserPermission` table that pairs users and permissions. This is sometimes
+    called an *access control list*.
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'If permission combinations are complex, add a level and define *roles* (independent
+    sets of permissions):'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Create a `Role` table.
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Create a `UserRole` table pairing `User` and `Role` entries. This is sometimes
+    called *role-based access control* (RBAC).
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Middleware
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'FastAPI enables insertion of code at the Web layer that does the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Intercepts the request
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Does something with the request
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Passes the request to a path function
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Intercepts the response returned by the patch function
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Does something with the response
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Returns the response to the caller
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: It’s similar to what a Python decorator does to the function that it “wraps.”
+  prefs: []
+  type: TYPE_NORMAL
+- en: In some cases, you could use either middleware or dependency injection with
+    `Depends()`. Middleware is handier for more global security issues like CORS,
+    which brings up…​
+  prefs: []
+  type: TYPE_NORMAL
+- en: CORS
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: '*Cross-origin resource sharing* (CORS) involves communication between other
+    trusted servers and your website. If your site has all the frontend and backend
+    code in one place, then there’s no problem. But these days, it’s common to have
+    a JavaScript frontend talking to a backend written in something like FastAPI.
+    These servers will not have the same *origin*:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Protocol
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`http` or `https`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Domain
+  prefs: []
+  type: TYPE_NORMAL
+- en: Internet domain, like `google.com` or `localhost`
+  prefs: []
+  type: TYPE_NORMAL
+- en: Port
+  prefs: []
+  type: TYPE_NORMAL
+- en: Numeric TCP/IP port on that domain, like `80`, `443`, or `8000`
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'How does the backend know a trustable frontend from a box of moldy radishes,
+    or a mustache-twirling attacker? That’s a job for CORS, which specifies what the
+    backend trusts, the most prominent being the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Origins
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: HTTP methods
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: HTTP headers
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: CORS cache timeout
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: You hook into CORS at the Web level. [Example 11-13](#ex-11-13) shows how to
+    allow only one frontend server (with the domain *https://ui.cryptids.com*), and
+    any HTTP headers or methods.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 11-13\. Activate the CORS middleware
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: Once that’s done, any other domain that tries to contact your backend site directly
+    will be refused.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Third-Party Packages
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: You’ve now read examples of how to code authentication and authorization solutions
+    with FastAPI. But maybe you don’t need to do everything yourself. The FastAPI
+    ecosystem is growing fast, and packages may be available that do a lot of the
+    work for you.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here are some untested examples. There are no guarantees that any package in
+    this list will still be around and supported over time, but they may be worth
+    a look:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[FastAPI Users](https://oreil.ly/ueVfq)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[FastAPI JWT Auth](https://oreil.ly/ooGSK)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[FastAPI-Login](https://oreil.ly/oWA3p)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[fastapi-auth0](https://oreil.ly/fHfkU)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[AuthX](https://authx.yezz.me)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[FastAPI-User-Auth](https://oreil.ly/J57xu)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[fastapi-authz](https://oreil.ly/aAGzW)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[fastapi-opa](https://oreil.ly/Bvzv3)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[FastAPI-key-auth](https://oreil.ly/s-Ui5)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[FastAPI Auth Middleware](https://oreil.ly/jnR-s)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[fastapi-jwt](https://oreil.ly/RrxUZ)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[fastapi_auth2](https://oreil.ly/5DXkB)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[fastapi-sso](https://oreil.ly/GLTdt)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[Fief](https://www.fief.dev)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Review
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: This was a heavier chapter than most. It showed ways that you can authenticate
+    visitors and authorize them to do certain things. These are two aspects of web
+    security. The chapter also discussed CORS, another important web security topic.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([1](ch11.html#id707-marker)) If I were paid by the line, fate might have intervened.
+  prefs: []
+  type: TYPE_NORMAL

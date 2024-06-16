@@ -1,0 +1,723 @@
+- en: Chapter 6\. Distributed Training with Ray Train
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Richard Liaw
+  prefs: []
+  type: TYPE_NORMAL
+- en: In previous chapters, you’ve learned how to build and scale reinforcement learning
+    applications with Ray, and how to optimize hyperparameters for such applications.
+    As we indicated in [Chapter 1](ch01.xhtml#chapter_01), Ray also comes with the
+    Ray Train library, which provides an extensive suite of machine learning training
+    integrations and allows them to scale seamlessly.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We will start this chapter by providing context about why you might need to
+    scale out your machine learning training. Then we’ll cover some key concepts you
+    need to know in order to use Ray Train. Finally, we’ll cover some of the more
+    advanced functionality that Ray Train provides.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As always, you can follow along using the [notebook for this chapter](https://github.com/maxpumperla/learning_ray/blob/main/notebooks/ch_06_train.ipynb).
+  prefs: []
+  type: TYPE_NORMAL
+- en: The Basics of Distributed Model Training
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Machine learning often requires a lot of heavy computation. Depending on the
+    type of model that you’re training, whether it be a gradient boosted tree or a
+    neural network, you may face a couple common problems with training machine learning
+    models causing you to investigate distributed training solutions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The time it takes to finish training is too long.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: The size of data is too large to fit into one machine.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: The model itself is too large to fit into a single machine.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: For the first case, training can be accelerated by processing data with increased
+    throughput. Some machine learning algorithms, such as neural networks, can parallelize
+    parts of the computation to speed up training^([1](ch06.xhtml#idm44990023972608)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the second case, your choice of algorithm may require you to fit all the
+    available data from a dataset into memory, but the given single node memory may
+    not be sufficient. In this case, you will need to split the data across multiple
+    nodes and train in a distributed manner. On the other hand, sometimes your algorithm
+    may not require data to be distributed, but if you’re using a distributed database
+    system to begin with, you still want a training framework that can leverage your
+    distributed data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the third case, when your model doesn’t fit into a single machine, you may
+    need to split up the model into multiple parts, spread across multiple machines.
+    The approach of splitting models across multiple machines is called model parallelism.
+    To run into this issue, you first need a model that is large enough to not fit
+    into a single machine anymore. Usually, large companies like Google or Facebook
+    tend to have the need for model-parallelism, and also rely on in-house solutions
+    to handle the distributed training.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In contrast, the first two problems often arise much earlier in the journey
+    to machine learning practitioners. The solutions we just sketched for these problems
+    fall under the umbrella of data-parallel training. Instead of splitting up the
+    model across multiple machines, you instead rely on distributed data to speed
+    up training.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Specifically for the first problem, if you can speed up your training process,
+    hopefully with minimal or no loss in accuracy, and you can do so cost-efficiently,
+    why not go for it? And if you have distributed data, whether by necessity of your
+    algorithm or the way you store your data, you need a training solution to deal
+    with it. As you will see, Ray Train is built for efficient, data-parallel training.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Introduction to Ray Train
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Ray Train is a library for distributed training on Ray. It offers key tools
+    for different parts of the training workflow, from feature processing, to scalable
+    training, to integrations with ML tracking tools, to export mechanisms for models.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In a typical ML training pipeline you will use the following key components
+    of Ray Train:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Preprocessors
+  prefs: []
+  type: TYPE_NORMAL
+- en: Ray Train provides several common preprocessor objects and utilities to process
+    dataset objects into consumable features for Trainers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Trainers
+  prefs: []
+  type: TYPE_NORMAL
+- en: Ray Train has several Trainer classes that make it possible to do distributed
+    training. Trainers are wrapper classes around third-party training frameworks
+    like XGBoost, providing integration with core Ray actors (for distribution), Tune,
+    and Datasets.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Models
+  prefs: []
+  type: TYPE_NORMAL
+- en: Each trainer can produce a model. The model can be used in serving.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s see how to put these concepts in practice by computing a first example
+    with Ray Train.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Creating an End-To-End Example for Ray Train
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: In the below example, we demonstrate the ability to load, process, and train
+    a machine learning model using Ray Train.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We’ll be using a simple dataset for this example, using the `load_breast_cancer`
+    function from the scikit-learn `datasets` package^([2](ch06.xhtml#idm44990023959856)).
+    We load the data into a Pandas DataFrame first and then convert it into a so-called
+    Ray `Dataset`. [Chapter 7](ch07.xhtml#chapter_07) is entirely devoted to the Ray
+    Data library, we just use it here to illustrate the Ray Train API.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-1\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_distributed_training_with_ray_train_CO1-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Load breast cancer data into a Pandas DataFrame.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_distributed_training_with_ray_train_CO1-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Create a Ray Dataset from the DataFrame.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Next, let’s specify a preprocessing function. In this case, we’ll be using
+    three key preprocessors: a `Scaler`, a `Repartitioner`, and a `Chain` object to
+    chain the first two.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-2\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_distributed_training_with_ray_train_CO2-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Create a pre-processing `Chain`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_distributed_training_with_ray_train_CO2-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Scale two specific data columns.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_distributed_training_with_ray_train_CO2-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Repartition the data into two partitions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Our entrypoint for doing distributed training is the Trainer object. There are
+    specific Trainers for different frameworks, and each are configured with some
+    framework-specific parameters.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To give you an example, let’s have a look at the `XGBoostTrainer` class, which
+    implements distributed training for [XGBoost](https://xgboost.readthedocs.io/en/stable/).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-3\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_distributed_training_with_ray_train_CO3-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Specify the scaling configuration.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_distributed_training_with_ray_train_CO3-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Set the label column.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_distributed_training_with_ray_train_CO3-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Specify XGBoost-specific parameters.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](assets/4.png)](#co_distributed_training_with_ray_train_CO3-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Train the model by calling `fit`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Preprocessors in Ray Train
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The Preprocessor is the core class for handling data preprocessing. Each preprocessor
+    has the following APIs:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| transform | Used to process and apply a processing transformation to a Dataset.
+    |'
+  prefs: []
+  type: TYPE_TB
+- en: '| fit | Used to calculate and store aggregate state about the Dataset on Preprocessor.
+    Returns self for chaining. |'
+  prefs: []
+  type: TYPE_TB
+- en: '| fit_transform | Syntactic sugar for performing transformations that require
+    aggregate state. May be optimized at the implementation level for specific Preprocessors.
+    |'
+  prefs: []
+  type: TYPE_TB
+- en: '| transform_batch | Used to apply the same transformation on batches for prediction.
+    |'
+  prefs: []
+  type: TYPE_TB
+- en: Currently, Ray Train offers the following encoders
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| FunctionTransformer | Custom Transformers |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Pipeline | Sequential Preprocessing |'
+  prefs: []
+  type: TYPE_TB
+- en: '| StandardScaler | Standardization |'
+  prefs: []
+  type: TYPE_TB
+- en: '| MinMaxScaler | Standardization |'
+  prefs: []
+  type: TYPE_TB
+- en: '| OrdinalEncoder | Encoding Categorical Features |'
+  prefs: []
+  type: TYPE_TB
+- en: '| OneHotEncoder | Encoding Categorical Features |'
+  prefs: []
+  type: TYPE_TB
+- en: '| SimpleImputer | Missing Value Imputation |'
+  prefs: []
+  type: TYPE_TB
+- en: '| LabelEncoder | Label Encoding |'
+  prefs: []
+  type: TYPE_TB
+- en: You will often want to make sure you can use the same data preprocessing operations
+    at training time and at serving time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Usage of Preprocessors
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: You can use these preprocessors by passing them to a trainer. Ray Train will
+    take care of applying the preprocessor to the dataset in a distributed fashion.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-4\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: Serialization of Preprocessors
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Now, some preprocessing operators such as one-hot encoders are easy to run in
+    training and transfer to serving. However, other operators such as those that
+    do standardization are a bit trickier, since you don’t want to do large data crunching
+    (to find the mean of a particular column) during serving time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The nice thing about the Ray Train preprocessors is that they’re serializable.
+    This makes it so that you can easily get consistency from training to serving
+    just by serializing these operators.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-5\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_distributed_training_with_ray_train_CO4-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We can serialize and save preprocessors.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Trainers in Ray Train
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Trainers are framework-specific classes that run model training in a distributed
+    fashion. Trainers all share a common interface:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| fit(self) | Fit this trainer with the given dataset. |'
+  prefs: []
+  type: TYPE_TB
+- en: '| get_checkpoints(self) | Return list of recent model checkpoints. |'
+  prefs: []
+  type: TYPE_TB
+- en: '| as_trainable(self) | Get a wrapper of this as a Tune trainable class. |'
+  prefs: []
+  type: TYPE_TB
+- en: Ray Train supports a variety of different trainers on a variety of frameworks,
+    namely XGBoost, LightGBM, Pytorch, HuggingFace, Tensorflow, Horovod, Scikit-learn,
+    RLlib, and more.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Next, we’ll dive into two specific classes of Trainers: Gradient Boosted Tree
+    Framework Trainers, and Deep Learning Framework Trainers.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Distributed Training for Gradient Boosted Trees
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Ray Train offers Trainers for LightGBM and XGBoost.
+  prefs: []
+  type: TYPE_NORMAL
+- en: XGBoost is an optimized distributed gradient boosting library designed to be
+    highly efficient, flexible and portable. It implements machine learning algorithms
+    under the Gradient Boosting framework. XGBoost provides a parallel tree boosting
+    (also known as GBDT, GBM) that solve many data science problems in a fast and
+    accurate way.
+  prefs: []
+  type: TYPE_NORMAL
+- en: LightGBM is a gradient boosting framework based on tree-based learning algorithms.
+    Compared to XGBoost, it is a relatively new framework, but one that is quickly
+    becoming popular in both academic and production use cases.
+  prefs: []
+  type: TYPE_NORMAL
+- en: By leveraging Ray Train’s XGBoost or LightGBM trainer, you can take a large
+    dataset and train a XGBoost Booster across multiple machines.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Distributed Training for Deep Learning
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Ray Train offers Deep Learning Trainers, for instance supporting frameworks
+    such as Tensorflow, Horovod, and Pytorch.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Unlike Gradient Boosted Trees Trainers, these Deep Learning frameworks often
+    give more control to the user. For example, Pytorch provides a set of primitives
+    that the user can use to construct their training loop.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As such, the Deep Learning Trainer API allows the user to pass in a training
+    function and provides callback functions for the user to report metrics and checkpoint.
+    Let’s take a look at an example Pytorch training script.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Below, we construct a standard training function:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-6\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_distributed_training_with_ray_train_CO5-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this example we use a randomly generated dataset.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_distributed_training_with_ray_train_CO5-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Define a training function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We construct a training script for Pytorch, where we create a small neural network
+    and use a Mean Squared Error (`MSELoss`) objective to optimize the model. The
+    input to the model here is random noise, but you can imagine that to be generated
+    from a Torch Dataset.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now, there are two key things that Ray Train will take care of for you.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The establishment of a backend that coordinates interprocess communication.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Instantiation of multiple parallel processes.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'So, in short, you just need to make a one-line change to your code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-7\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_distributed_training_with_ray_train_CO6-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Prepare the model for distributed training.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Then, you can plug this into Ray Train:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-8\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_distributed_training_with_ray_train_CO7-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Create a trainer. For GPU Training, set `use_gpu` to True.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This code will work on both a single machine or a distributed cluster.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Scaling Out Training with Ray Train Trainers
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The general philosphy of Ray Train is that the user should not need to think
+    about **how** to parallelize their code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: With Ray Train Trainers, you can specify a `scaling_config` which allows you
+    to scale out your training without writing distributed logic. The `scaling_config`
+    allows you to declaratively specify the *compute resources* used by a Trainer.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In particular, you can specify the amount of parallelism that the Trainer should
+    use by providing the number of workers, along with the type of device that each
+    worker should use:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-9\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note that scaling configuration arguments depend on the Trainer type.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The nice thing about this specification is that you don’t need to think about
+    the underlying hardware. In particular, you can specify to use hundreds of workers
+    and Ray Train will automatically leverage all the nodes within your Ray cluster:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-10\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: Connecting Data to Distributed Training
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Ray Train provides utilities to train on large datasets.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Along the same philosophy that the user should not need to think about **how**
+    to parallelize their code, you can simply “connect” your large dataset to Ray
+    Train without thinking about how to ingest and feed your data into different parallel
+    workers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Here, we create a dataset from random data. However, you can use other data
+    APIs to read a large amount of data (with `read_parquet`, which reads data from
+    the [Parquet format](https://parquet.apache.org/)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-11\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: You can then specify a training function that accesses these datapoints. Note
+    that we use a specific `get_dataset_shard` function here. Under the hood, Ray
+    Train will automatically shard the provided dataset so that individual workers
+    can train on a different subset of the data at once. This avoids training on duplicate
+    data within the same epoch. The `get_dataset_shard` function passes a subset of
+    the data from the data source to each individual parallel training worker.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Next, we make a `iter_epochs` and `to_torch` call on each shard. `iter_epochs`
+    will produce an iterator. This iterator will produce Dataset objects that will
+    possess 1 shard of the entire epoch (named `train_dataset_iterator` and `validation_dataset_iterator`).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`to_torch` will convert the Dataset object into a Pytorch iterator. There is
+    an equivalent `to_tf` function that converts it to a Tensorflow Data iterator.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: When the epoch is finished, the Pytorch iterator will raise a `StopIteration`,
+    and the `train_dataset_iterator` will be queried again for a new shard on a new
+    epoch.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-12\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'You can put things together by using the Trainer in the following way:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-13\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: Ray Train Features
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Checkpoints
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Ray Train will generate **model checkpoints** to checkpoint intermediate state
+    for training. These model checkpoints provide the trained model and fitted preprocessor
+    for usage in downstream applications like serving and inference.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-14\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: The goal of the model checkpoints is to abstract away the actual physical representation
+    of the model and preprocessor. As a result, you should be able to generate a checkpoint
+    from a cloud storage location, and convert it into an in-memory representation
+    or on-disk representation, and vice versa.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-15\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: Callbacks
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: You may want to plug in your training code with your favorite experiment management
+    framework. Ray Train provides an interface to fetch intermediate results and callbacks
+    to process, or log, your intermediate results (the values passed into `train.report(...)`).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Ray Train contains built-in callbacks for popular tracking frameworks, or you
+    can implement your own callback via the TrainingCallback interface. Available
+    callbacks include:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Json Logging
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Tensorboard Logging
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: MLflow Logging
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Torch Profiler
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Example 6-16\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: Integration with Ray Tune
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Ray Train provides an integration with Ray Tune that allows you to perform hyperparameter
+    optimization in just a few lines of code. Tune will create one Trial per hyperparameter
+    configuration. In each Trial, a new Trainer will be initialized and run the training
+    function with its generated configuration.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-17\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Compared to other distributed hyperparameter tuning solutions, Ray Tune and
+    Ray Train has a couple unique features:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Ability to specify the dataset and preprocessor as a parameter
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Fault tolerance
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Ability to adjust the number of workers during training time.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Exporting Models
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: You may want to export the model trained to Ray Serve or a model registry after
+    you’ve trained it with Ray Train.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To do so, you can fetch the model using a load_model API:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-18\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: Some Caveats
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: In particular, recall that standard neural network training works by iterating
+    through a dataset in separate batches of data (usually called minibatch gradient
+    descent).
+  prefs: []
+  type: TYPE_NORMAL
+- en: To speed this up, you can parallelize the gradient computation of every minibatch
+    update. This means that the batch should be split across multiple machines.
+  prefs: []
+  type: TYPE_NORMAL
+- en: One complication is that if you hold the size of the batch constant, the system
+    utilization and efficiency reduces as you increase the number of workers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To compensate, practitioners typically increase the amount of data per batch.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As a result, the time it takes to go through a single pass of the data (one
+    epoch) should ideally reduce, since the number of total batches decreases.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([1](ch06.xhtml#idm44990023972608-marker)) This applies specifically to the
+    gradient computation in neural networks.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([2](ch06.xhtml#idm44990023959856-marker)) Ray can handle much larger datasets
+    than that. In [Chapter 7](ch07.xhtml#chapter_07) we’ll take a closer look at the
+    Ray Data library to see how to handle huge datasets.
+  prefs: []
+  type: TYPE_NORMAL

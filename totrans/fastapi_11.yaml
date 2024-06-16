@@ -1,0 +1,1041 @@
+- en: Chapter 8\. Web Layer
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Preview
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: '[Chapter 3](ch03.html#ch03) was a quick look at how to define FastAPI web endpoints,
+    pass simple string inputs to them, and get responses. This chapter goes further
+    into the top layer of a FastAPI application—which could also be called an *Interface*
+    or *Router* layer—and its integration with the Service and Data layers.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: As before, I’ll start with small examples. Then I’ll introduce some structure,
+    dividing layers into subsections to allow for cleaner development and growth.
+    The less code we write, the less we’ll need to remember and fix later.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The basic sample data in this book concerns imaginary creatures, or *cryptids*,
+    and their explorers. You may find parallels with other domains of information.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'What do we do with information, in general? Like most websites, ours will provide
+    ways to do the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Retrieve
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Create
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Modify
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Replace
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Delete
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Starting from the top, we’ll create web endpoints that perform these functions
+    on our data. At first, we’ll provide fake data to make the endpoints work with
+    any web client. In the following chapters, we’ll move the fake data code down
+    into the lower layers. At each step, we’ll ensure that the site still works and
+    passes data through correctly. Finally, in [Chapter 10](ch10.html#ch10), we’ll
+    drop the faking and store real data in real databases, for a full end-to-end (Web
+    → Service → Data) website.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Allowing any anonymous visitor to perform all these actions will be an object
+    lesson in “why we can’t have nice things.” [Chapter 11](ch11.html#ch11) discusses
+    the *auth* (authentication and authorization) needed to define roles and limit
+    who can do what. For the rest of the current chapter, we’ll sidestep auth and
+    just show how to handle the raw web functions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Interlude: Top-Down, Bottom-Up, Middle-Out?'
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'When designing a website, you could start from one of the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The Web layer and work down
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The Data layer and work up
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The Service layer and work out in both directions
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Do you already have a database, installed and loaded with data, and are just
+    pining for a way to share it with the world? If so, you may want to tackle the
+    Data layer’s code and tests first, then the Service layer, and write the Web layer
+    last.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you’re following [domain-driven design](https://oreil.ly/iJu9Q), you might
+    start in the middle Service layer, defining your core entities and data models.
+    Or you may want to evolve the web interface first, and fake calls to the lower
+    layers until you know what you’ll expect of them.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'You’ll find very good design discussions and recommendations in these books:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[*Clean Architectures in Python*](https://oreil.ly/5KrL9) by Leonardo Giordani
+    (Digital Cat Books)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[*Architecture Patterns with Python*](https://www.cosmicpython.com) by Harry
+    J.W. Percival and Bob Gregory (O’Reilly)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[*Microservice APIs*](https://oreil.ly/Gk0z2) by José Haro Peralta (Manning)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: In these and other sources, you’ll see terms like *hexagonal architecture*,
+    *ports*, and *adapters*. Your choices on how to proceed largely depend on what
+    data you have already and how you want to approach the work of building a site.
+  prefs: []
+  type: TYPE_NORMAL
+- en: I’m guessing that many of you are mainly interested in trying out FastAPI and
+    its related technologies, and don’t necessarily have a predefined mature data
+    domain that you want to instrument right away.
+  prefs: []
+  type: TYPE_NORMAL
+- en: So, in this book I’m taking the web-first approach—step-by-step, starting with
+    essential parts, and adding others as needed on the way down. Sometimes experiments
+    work, sometimes not. I’ll avoid the urge to stuff everything into this Web layer
+    at first.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: This Web layer is just one way of passing data between a user and a service.
+    Alternate ways exist, such as by a CLI or software development kit (SDK). In other
+    frameworks, you might see this Web layer called a *view* or *presentation* layer.
+  prefs: []
+  type: TYPE_NORMAL
+- en: RESTful API Design
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: HTTP is a way to get commands and data between web clients and servers. But,
+    just as you can combine ingredients from your refrigerator in ways from ghastly
+    to gourmet, some recipes for HTTP work better than others.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In [Chapter 1](ch01.html#ch01), I mentioned that *RESTful* became a useful,
+    though sometimes fuzzy, model for HTTP development. RESTful designs have these
+    core components:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Resources
+  prefs: []
+  type: TYPE_NORMAL
+- en: The data elements your application manages
+  prefs: []
+  type: TYPE_NORMAL
+- en: IDs
+  prefs: []
+  type: TYPE_NORMAL
+- en: Unique resource identifiers
+  prefs: []
+  type: TYPE_NORMAL
+- en: URLs
+  prefs: []
+  type: TYPE_NORMAL
+- en: Structured resource and ID strings
+  prefs: []
+  type: TYPE_NORMAL
+- en: Verbs or actions
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Terms that accompany URLs for different purposes:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`GET`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Retrieve a resource.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`POST`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Create a new resource.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`PUT`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Completely replace a resource.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`PATCH`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Partially replace a resource.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`DELETE`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Resource goes kaboom.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: You’ll see disagreement about the relative merits of `PUT` versus `PATCH`. If
+    you don’t need to distinguish between a partial modification and a full one (replacement),
+    you may not need both.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'General RESTful rules for combining verbs and URLs containing resources and
+    IDs use these patterns of path parameters (content between the `/` in the URL):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: verb /resource/
+  prefs: []
+  type: TYPE_NORMAL
+- en: Apply *verb* to all resources of type *resource*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: verb /resource/id
+  prefs: []
+  type: TYPE_NORMAL
+- en: Apply *verb* to the *resource* with ID *id*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using the example data for this book, a `GET` request to the endpoint */thing*
+    would return data on all explorers, but a `GET` request for */thing/abc* would
+    give you data for only the `thing` resource with ID `abc`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Finally, web requests often carry more information, indicating to do the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Sort results
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Paginate results
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Perform another function
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Parameters for these can sometimes be expressed as *path* parameters (tacked
+    onto the end, after another `/`) but are often included as *query* parameters
+    (*var=val* stuff after the `?` in the URL). Because URLs have size limits, large
+    requests are often conveyed in the HTTP body.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'Most authors recommend using plurals when naming the resource, and related
+    namespaces like API sections and database tables. I followed this advice for a
+    long time but now feel that singular names are simpler for many reasons (including
+    oddities of the English language):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Some words are their own plurals: `series`, `fish`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Some words have irregular plurals: `children`, `people`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: You need bespoke singular to/from plural conversion code in many places
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: For these reasons, I’m using a singular naming scheme in many places in this
+    book. This is against usual RESTful advice, so feel free to ignore this if you
+    disagree.
+  prefs: []
+  type: TYPE_NORMAL
+- en: File and Directory Site Layout
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Our data mainly concerns creatures and explorers. Initially, we could define
+    all the URLs and their FastAPI path functions for accessing their data in a single
+    Python file. Let’s resist that temptation, and start as though we were already
+    a rising star in the cryptid web space. With a good foundation, cool new things
+    are much easier to add.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'First, pick a directory on your machine. Name it *fastapi*, or anything that
+    will help you remember where you’ll be messing with the code from this book. Within
+    it, create the following subdirectories:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: src
+  prefs: []
+  type: TYPE_NORMAL
+- en: Contains all the website code
+  prefs: []
+  type: TYPE_NORMAL
+- en: web
+  prefs: []
+  type: TYPE_NORMAL
+- en: The FastAPI web layer
+  prefs: []
+  type: TYPE_NORMAL
+- en: service
+  prefs: []
+  type: TYPE_NORMAL
+- en: The business logic layer
+  prefs: []
+  type: TYPE_NORMAL
+- en: data
+  prefs: []
+  type: TYPE_NORMAL
+- en: The storage interface layer
+  prefs: []
+  type: TYPE_NORMAL
+- en: model
+  prefs: []
+  type: TYPE_NORMAL
+- en: Pydantic model definitions
+  prefs: []
+  type: TYPE_NORMAL
+- en: fake
+  prefs: []
+  type: TYPE_NORMAL
+- en: Early hardwired (*stub*) data
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Each of these directories will soon gain three files:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: __init__.py
+  prefs: []
+  type: TYPE_NORMAL
+- en: Needed to treat this directory as a package
+  prefs: []
+  type: TYPE_NORMAL
+- en: creature.py
+  prefs: []
+  type: TYPE_NORMAL
+- en: Creature code for this layer
+  prefs: []
+  type: TYPE_NORMAL
+- en: explorer.py
+  prefs: []
+  type: TYPE_NORMAL
+- en: Explorer code for this layer
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Many* opinions exist on how to lay out sites for development. This design
+    is intended to show the layer separation and leave room for future additions.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Some explanations are needed right now. First, *__init__.py* files are empty.
+    They’re sort of a Python hack, so their directory should be treated as a Python
+    *package* that may be imported from. Second, the *fake* directory provides some
+    stub data to higher layers as the lower ones are built.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In addition, Python’s *import* logic doesn’t work strictly with directory hierarchies.
+    It relies on Python *packages* and *modules*. The *.py* files listed in the tree
+    structure described previously are Python modules (source files). Their parent
+    directories are packages *if* they contain an *__init__.py* file. (This is a convention
+    to tell Python whether, if you have a directory called *sys* and you type `import
+    sys`, you actually want the system one or your local one.)
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Python programs can import packages and modules. The Python interpreter has
+    a built-in `sys.path` variable, which includes the location of the standard Python
+    code. The environment variable `PYTHONPATH` is an empty or colon-separated string
+    of directory names that tells Python which parent directories to check before
+    `sys.path` to find the imported modules or packages. So, if you change to your
+    new *fastapi* directory, type this (on Linux or macOS) to ensure that the new
+    code under it will be checked first when importing:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: That `$PWD` means *print working directory*, and saves you from typing the full
+    path to your *fastapi* directory, although you can if you want. And the `src`
+    part means to look only in there for modules and packages to import.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To set the `PWD` environment variable under Windows, see [“Excursus: Setting
+    Environment Variables” at the Python Software Foundation site](https://oreil.ly/9NRBA).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Whew.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The First Website Code
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: This section discusses how to use FastAPI to write requests and responses for
+    a RESTful API site. Then, we’ll begin to apply these to our actual, increasingly
+    gnarly, site.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s begin with [Example 8-1](#ex-8-1). Within *src*, make this new top-level
+    *main.py* program that will start the Uvicorn program and FastAPI package.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 8-1\. The main program, main.py
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: That `app` is the FastAPI object that ties everything together. Uvicorn’s first
+    argument is `"main:app"` because the file is called *main.py*, and the second
+    is `app`, the name of the FastAPI object.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Uvicorn will keep on running, and restart if any code changes in the same directory
+    or any subdirectories. Without `reload=True`, each time you modify your code,
+    you’d need to kill and restart Uvicorn manually. In many of the following examples,
+    you’ll just keep changing the same *main.py* file and forcing a restart, instead
+    of creating *main2.py*, *main3.py*, and so on.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Fire up *main.py* in [Example 8-2](#ex-8-2).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 8-2\. Run the main program
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: That final `&` puts the program into the background, and you can run other programs
+    in the same terminal window if you like. Or omit the `&` and run your other code
+    in a different window or tab.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Now you can access the site `localhost:8000` with a browser or any of the test
+    programs that you’ve seen so far. [Example 8-3](#ex-8-3) uses HTTPie:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 8-3\. Test the main program
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: From now on, as you make changes, the web server should restart automatically.
+    If an error kills it, restart it with `python main.py` again.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Example 8-4](#ex-8-4) adds another test endpoint, using a *path* parameter
+    (part of the URL).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 8-4\. Add an endpoint
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'As soon as you save your changes to *main.py* in your editor, the window where
+    your web server is running should print something like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[Example 8-5](#ex-8-5) shows whether the new endpoint was handled correctly
+    (the `-b` prints only the response body).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 8-5\. Test new endpoint
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: In the following sections, we’ll add more endpoints to *main.py*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Requests
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: An HTTP request consists of a text *header* followed by one or more *body* sections.
+    You could write your own code to parse HTTP into Python data structures, but you
+    wouldn’t be the first. In your web application, it’s more productive to have these
+    details done for you by a framework.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'FastAPI’s dependency injection is particularly useful here. Data may come from
+    different parts of the HTTP message, and you’ve already seen how you can specify
+    one or more of these dependencies to say where the data is located:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`Header`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the HTTP headers
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`Path`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the URL
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`Query`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: After the `?` in the URL
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`Body`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the HTTP body
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Other, more indirect, sources include the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Environment variables
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Configuration settings
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[Example 8-6](#ex-8-6) features an HTTP request, using our old friend HTTPie,
+    and ignoring the returned HTML body data.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 8-6\. HTTP request and response headers
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: The first line asks for the top page at *example.com* (a free website that anyone
+    can use in, well, examples). It asks only for a URL, with no parameters anywhere
+    else. The first block of lines is the HTTP request headers sent to the website,
+    and the next block contains the HTTP response headers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Most test examples from here on won’t need all those request and response headers,
+    so you’ll see more use of `http -b`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Multiple Routers
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Most web services handle multiple kinds of resources. Although you could throw
+    all your path-handling code in a single file and head off to a happy hour somewhere,
+    it’s often handy to use multiple *subrouters* instead of the single `app` variable
+    that most of the examples up to now have used.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Under the *web* directory (in the same directory as the *main.py* file that
+    you’ve been modifying so far), make a file called *explorer.py*, as in [Example 8-7](#ex-8-7).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 8-7\. `APIRouter` use in web/explorer.py
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now, [Example 8-8](#ex-8-8) gets the top-level application *main.py* to know
+    that there’s a new subrouter in town, which will handle all URLs that start with
+    */explorer*:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 8-8\. Connect the main application (main.py) to the subrouter
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: This new file will be picked up by Uvicorn. As usual, test in [Example 8-9](#ex-8-9)
+    instead of assuming it will work.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 8-9\. Test new subrouter
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: Build the Web Layer
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Now let’s start adding the actual core functions to the Web layer. Initially,
+    fake all the data in the web functions themselves. In [Chapter 9](ch09.html#ch09),
+    we will move the fake data stuff to corresponding service functions, and in [Chapter 10](ch10.html#ch10),
+    to the data functions. Finally, an actual database will be added for the Data
+    layer to access. At each development step, calls to the web endpoints should still
+    work.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Define Data Models
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: First, define the data that we’ll be passing among levels. Our *domain* contains
+    explorers and creatures, so let’s define minimal initial Pydantic models for them.
+    Other ideas might come up later, like expeditions, journals, or ecommerce sales
+    of coffee mugs. But for now, just include the two breathing (usually, in the case
+    of creatures) models in [Example 8-10](#ex-8-10).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 8-10\. Model definition in model/explorer.py
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[Example 8-11](#ex-8-11) resurrects the `Creature` definition from earlier
+    chapters.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 8-11\. Model definition in model/creature.py
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: These are very simple initial models. You’re not using any of Pydantic’s features,
+    such as required versus optional, or constrained values. This simple code can
+    be enhanced later without massive logic upheavals.
+  prefs: []
+  type: TYPE_NORMAL
+- en: For `country` values, you’ll use the ISO two-character country codes; this saves
+    a little typing, at the cost of looking up uncommon ones.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Stub and Fake Data
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Also known as *mock data*, *stubs* are canned results that are returned without
+    calling the normal “live” modules. They’re a quick way to test your routes and
+    responses.
+  prefs: []
+  type: TYPE_NORMAL
+- en: A *fake* is a stand-in for a real data source that performs at least some of
+    the same functions. An example is an in-memory class that mimics a database. You’ll
+    be making some fake data in this chapter and the next few, as you fill in the
+    code that defines the layers and their communication. In [Chapter 10](ch10.html#ch10),
+    you’ll define an actual live data store (a database) to replace these fakes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Create Common Functions Through the Stack
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Similar to the data examples, the approach to building this site is exploratory.
+    Often it isn’t clear what will eventually be needed, so let’s start with some
+    pieces that would be common to similar sites. Providing a frontend for data usually
+    requires ways to do the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Get* one, some, all'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Create*'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Replace* completely'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Modify* partially'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Delete*'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Essentially, these are the CRUD basics from databases, although I’ve split the
+    U into partial (*modify*) and complete (*replace*) functions. Maybe this distinction
+    will prove unnecessary! It depends on where the data leads.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Create Fake Data
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Working top-down, you’ll duplicate some functions in all three levels. To save
+    typing, [Example 8-12](#ex-8-12) introduces the top-level directory called *fake*,
+    with modules providing fake data on explorers and creatures.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 8-12\. New module fake/explorer.py
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: The creature setup in [Example 8-13](#ex-8-13) is similar.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 8-13\. New module fake/creature.py
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Yes, the module functions are almost identical. They’ll change later, when a
+    real database arrives and must handle the differing fields of the two models.
+    Also, you’re using separate functions here, rather than defining a `Fake` class
+    or abstract class. A module has its own namespace, so it’s an equivalent way of
+    bundling data and functions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Now let’s modify the web functions from Examples [8-12](#ex-8-12) and [8-13](#ex-8-13).
+    Preparing to build out the later layers (Service and Data), import the fake data
+    provider that was just defined, but name it `service` here: `import fake.explorer
+    as service` ([Example 8-14](#ex-8-14)). In [Chapter 9](ch09.html#ch09), you’ll
+    do the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Make a new *service/explorer.py* file.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Import the fake data there.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Make *web/explorer.py* import the new service module instead of the fake module.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: In [Chapter 10](ch10.html#ch10), you’ll do the same in the Data layer. All of
+    this is just adding parts and wiring them together, with as little code rework
+    as possible. You don’t turn on the electricity (i.e., a live database and persistent
+    data) until later in [Chapter 10](ch10.html#ch10).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 8-14\. New endpoints for web/explorer.py
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: And now, do the same for */creature* endpoints ([Example 8-15](#ex-8-15a)).
+    Yes, this is similar cut-and-paste code for now, but doing this up front simplifies
+    changes later on—and there will always be changes later.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 8-15\. New endpoints for web/creature.py
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: The last time we poked at *main.py*, it was to add the subrouter for */explorer*
+    URLs. Now, let’s add another for */creature* in [Example 8-16](#ex-8-15).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 8-16\. Add creature subrouter to main.py
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: Did all of that work? If you typed or pasted everything exactly, Uvicorn should
+    have restarted the application. Let’s try some manual tests.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Test!
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: '[Chapter 12](ch12.html#ch12) will show how to use pytest to automate testing
+    at various levels. Examples [8-17](#ex08-17) to [8-21](#ex08-21) perform some
+    manual Web-layer tests of the explorer endpoints with HTTPie.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 8-17\. Test the Get All endpoint
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: Example 8-18\. Test the Get One endpoint
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: Example 8-19\. Test the Replace endpoint
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: Example 8-20\. Test the Modify endpoint
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: Example 8-21\. Test the Delete endpoint
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE22]'
+  prefs: []
+  type: TYPE_PRE
+- en: You can do the same for the */creature* endpoints.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using the FastAPI Automated Test Forms
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Besides the manual tests that I’ve used in most examples, FastAPI provides very
+    nice automated test forms at the endpoints */docs* and */redocs*. They’re two
+    different styles for the same information, so I’ll just show a little from the
+    */docs* pages in [Figure 8-1](#fig-08-1).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Top docs page](assets/fapi_0801.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 8-1\. Generated documentation page
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'Try the first test:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Click the down-arrow to the right under the top GET `/explorer/` section. That
+    will open up a large light blue form.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Click the blue Execute button on the left. You’ll see the top section of the
+    results in [Figure 8-2](#fig-08-2).
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![GET /explorer results page](assets/fapi_0802.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 8-2\. Generated results page for GET /explorer/
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'In the lower “Response body” section, you’ll see the JSON returned for the
+    (fake) explorer data that you’ve defined so far:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE23]'
+  prefs: []
+  type: TYPE_PRE
+- en: Try all the others. For some (like `GET /explorer/{name}`), you’ll need to provide
+    an input value. You’ll get a response for each, even though a few still do nothing
+    until the database code is added. You can repeat these tests near the end of Chapters
+    [9](ch09.html#ch09) and [10](ch10.html#ch10) to ensure that no data pipelines
+    were punctured during these code changes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Talking to the Service and Data Layers
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Whenever a function in the Web layer needs data that is managed by the Data
+    layer, that function should ask the Service layer to be an intermediary. This
+    requires more code and may seem unnecessary, but it’s a good idea:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: As the label on the jar says, the Web layer deals with the web, and the Data
+    layer deals with external data stores and services. It’s much safer to keep their
+    respective details completely separate.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The layers can be tested independently. Separation of layer mechanisms allows
+    this.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: For a very small site, you could skip the Service layer if it doesn’t add any
+    value. [Chapter 9](ch09.html#ch09) initially defines service functions that do
+    little more than pass requests and responses between the Web and Data layers.
+    At least keep the Web and Data layers separate, though.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'What does that Service layer function do? You’ll see in the next chapter. Hint:
+    it talks to the Data layer, but in a hushed voice so the Web layer doesn’t know
+    exactly what it’s saying. But it also defines any specific business logic, such
+    as interactions between resources. Mainly, the Web and Data layers should not
+    care what’s going on in there. (The Service layer is a Secret Service.)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Pagination and Sorting
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'In web interfaces, when returning many or all things with URL patterns like
+    `GET` *`/resource`*, you often want to request the lookup and return of the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Only one thing
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Possibly many things
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: All things
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'How do you get our well-meaning but extremely literal-minded computer to do
+    these things? Well, for the first case, the RESTful pattern that I mentioned earlier
+    is to include the resource’s ID in the URL path. When getting multiple resources,
+    we may want to see the results in a particular order:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Sort
+  prefs: []
+  type: TYPE_NORMAL
+- en: Order all the results, even if you get only a set of them at a time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Paginate
+  prefs: []
+  type: TYPE_NORMAL
+- en: Return only some results at a time, respecting any sorting.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In each case, a group of user-specified parameters indicates what you want.
+    It’s common to provide these as query parameters. Here are some examples:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Sort
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`GET` `/explorer?sort=country`: Get all explorers, sorted by country code.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Paginate
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`GET` `/explorer?offset=10&size=10`: Return (in this case, unsorted) explorers
+    in places 10 through 19 of the whole list.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Both
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`GET` `/explorer?sort=country&offset=10&size=10`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Although you could specify these as individual query parameters, FastAPI’s
+    dependency injection can help:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Define the sort and paginate parameters as a Pydantic model.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Provide the parameters model to the `get_all()` path function with the `Depends`
+    feature in the path function arguments.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Where should the sorting and pagination occur? At first, it may seem simplest
+    for the database queries to pass full results up to the Web layer, and use Python
+    to carve up the data there. But that isn’t very efficient. These tasks usually
+    fit best in the Data layer, because databases are good at those things. I’ll finally
+    get around to some code for these in [Chapter 17](ch17.html#ch17), which has more
+    database tidbits beyond those in [Chapter 10](ch10.html#ch10).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Review
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: This chapter filled out more details from [Chapter 3](ch03.html#ch03) and others.
+    It began the process of making a full site for information on imaginary creatures
+    and their explorers. Starting with the Web layer, you defined endpoints with FastAPI
+    path decorators and path functions. The path functions gather request data from
+    wherever they live in the HTTP request bytes. Model data is automatically checked
+    and validated by Pydantic. Path functions generally pass arguments to corresponding
+    service functions, which are coming in the next chapter.
+  prefs: []
+  type: TYPE_NORMAL

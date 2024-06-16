@@ -1,0 +1,913 @@
+- en: Chapter 6\. Implementing Streaming Applications
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: So far in the book, we have been using Ray to implement serverless batch applications.
+    In this case, data is collected, or provided from the user, and then used for
+    calculations. Another important group of use cases are the situations requiring
+    you to process data in real time. We use the overloaded term *real* time to mean
+    processing the data as it arrives within some latency constraints. This type of
+    data processing is called *streaming*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this book, we define *streaming* as taking action on a series of data close
+    to the time that the data is created.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Some common streaming [use cases](https://oreil.ly/QQnmm) include the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Log analysis
+  prefs: []
+  type: TYPE_NORMAL
+- en: A way of gaining insights into the state of your hardware and software. It is
+    typically implemented as a distributed processing of streams of logs as they are
+    being produced.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Fraud detection
+  prefs: []
+  type: TYPE_NORMAL
+- en: The monitoring of financial transactions and watching for anomalies that signal
+    fraud in real time and stopping fraudulent transactions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Cybersecurity
+  prefs: []
+  type: TYPE_NORMAL
+- en: The monitoring of interactions with the system to detect anomalies, allowing
+    the identification of security issues in real time to isolate threats.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Streaming logistics
+  prefs: []
+  type: TYPE_NORMAL
+- en: The monitoring of cars, trucks, fleets, and shipments in real time, to optimize
+    routing.
+  prefs: []
+  type: TYPE_NORMAL
+- en: IoT data processing
+  prefs: []
+  type: TYPE_NORMAL
+- en: An example is collecting data about an engine to gain insights that can detect
+    a faulty situation before becoming a major problem.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Recommendation engines
+  prefs: []
+  type: TYPE_NORMAL
+- en: Used to understand user interests based on online behavior for serving ads,
+    recommending products and services, etc.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'When it comes to implementing streaming applications in Ray, you currently
+    have two main options:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Ray’s ecosystem provides a lot of underlying components, described in the previous
+    chapters, that can be used for custom implementations of streaming applications.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: External libraries and tools can be used with Ray to implement streaming.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Ray is not built as a streaming system. It is an ecosystem that enables companies
+    to build streaming systems on these lower-level primitives. You can find several
+    stories of users from big and small companies building streaming applications
+    on top of Ray.
+  prefs: []
+  type: TYPE_NORMAL
+- en: With that being said, building a small streaming application on Ray will give
+    you a perfect example of how to think about Ray application and how to use Ray
+    effectively, and will allow you to understand the basics of streaming applications
+    and how Ray’s capabilities can be leveraged for its implementation. Even if you
+    decide to use external libraries, this material will help you make better decisions
+    on whether and how to use these libraries.
+  prefs: []
+  type: TYPE_NORMAL
+- en: One of the most popular approaches for implementing streaming applications is
+    using [Apache Kafka](https://oreil.ly/kMiQC) to connect data producers with consumers
+    implementing data processing. Before delving into Ray’s streaming implementation,
+    let’s start with a quick introduction to Kafka.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Apache Kafka
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Here we describe only features of Kafka that are relevant for our discussion.
+    For in-depth information, refer to the [Kafka documentation](https://oreil.ly/E9Inp).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Basic Kafka Concepts
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Although many people consider Kafka to be a type of messaging system—similar
+    to, for example, [RabbitMQ](https://oreil.ly/UD8ov)—it is a very different thing.
+    Kafka is a [distributed log](https://oreil.ly/zXwQs) that stores records sequentially
+    (see [Figure 6-1](#Distributed-log)).^([1](ch06.html#idm45354776016592))
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![spwr 0601](assets/spwr_0601.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6-1\. Distributed log
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Kafka records are key/value pairs. (Both the key and value are optional, and
+    an empty value can be used to tombstone an existing value.) Both keys and values
+    are represented in Kafka as byte arrays and are opaque to Kafka itself. Producers
+    always write to the end of the log, while consumers can choose the position (offset)
+    where they want to read from.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The main differences between log-oriented systems like Kafka and messaging
+    systems like RabbitMQ are as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Messages in queue systems are ephemeral; they are kept in the system only until
+    they are delivered. Messages in log-based systems, on the other hand, are persistent.
+    As a result, you can replay messages in a log-based system, which is impossible
+    in traditional messaging.^([2](ch06.html#idm45354775801840))
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: While traditional message brokers manage consumers and their offsets, in log
+    systems consumers are responsible for managing their offsets. This allows a log-based
+    system to support significantly more consumers.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Similar to messaging systems, Kafka organizes data into *topics*. Unlike messaging
+    systems, topics in Kafka are purely logical constructs, composed of multiple partitions
+    ([Figure 6-2](#Anatomy-of-topic)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![spwr 0602](assets/spwr_0602.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6-2\. Anatomy of a topic
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Data in a partition is sequential and can be replicated across multiple brokers.
+    Partitioning is a vital scalability mechanism, allowing individual consumers to
+    read dedicated partitions in parallel and allowing Kafka to store the partitions
+    separately.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'When writing to topics, Kafka supports two main partitioning mechanisms during
+    the write operation: if a key is not defined, it uses round-robin partitioning,
+    distributing the topic’s messages equally across partitions; if the key is defined,
+    the partition to write to is determined by the key. By default, Kafka uses key
+    hashing for partioning. You can also implement custom partitioning mechanisms
+    with Kafka. Message ordering happens only within a partition, so any messages
+    to be processed in order must be in the same partition.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: You deploy Kafka in the form of a cluster composed of multiple (1 to *n*) brokers
+    (servers) to maintain load balancing.^([3](ch06.html#idm45354775789952)) Depending
+    on the configured replication factor, each partition can exist on one or more
+    brokers, and this can improve Kafka’s throughput. Kafka clients can connect to
+    any broker, and the broker routes the requests transparently to one of the correct
+    brokers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To understand how applications scale with Kafka, you need to understand how
+    Kafka’s consumer groups work ([Figure 6-3](#Kafka-consumer-group)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![spwr 0603](assets/spwr_0603.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6-3\. Kafka consumer group
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: You can assign consumers that read from the same set of topics to a *consumer
+    group*. Kafka then gives each consumer in the group a subset of the partitions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: For example, if you have a topic with 10 partitions and a single consumer in
+    a group, this consumer will read all of the topics’ partitions. With the same
+    topic, if you instead have 5 consumers in the group, each consumer will read two
+    partitions from the topic. If you have 11 consumers, 10 of them will each read
+    a single partition, and the 11th one will not read any data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As you can see, the two main factors in how much you can scale your Kafka reading
+    is the number of partitions and the number of consumers in your consumer group.
+    Adding more consumers to a consumer group is easier than adding new partitions,
+    so overprovisioning the number of partitions is a best practice.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Kafka APIs
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'As defined in the [Kafka documentation](https://oreil.ly/1Edbr), Kafka has
+    five core API groups:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Producer API
+  prefs: []
+  type: TYPE_NORMAL
+- en: Allows applications to send streams of data to topics in the Kafka cluster
+  prefs: []
+  type: TYPE_NORMAL
+- en: Consumer API
+  prefs: []
+  type: TYPE_NORMAL
+- en: Allows applications to read streams of data from topics in the Kafka cluster
+  prefs: []
+  type: TYPE_NORMAL
+- en: AdminClient API
+  prefs: []
+  type: TYPE_NORMAL
+- en: Allows managing and inspecting topics, brokers, and other Kafka objects
+  prefs: []
+  type: TYPE_NORMAL
+- en: Streams API
+  prefs: []
+  type: TYPE_NORMAL
+- en: Allows transforming streams of data from input topics to output topics
+  prefs: []
+  type: TYPE_NORMAL
+- en: Connect API
+  prefs: []
+  type: TYPE_NORMAL
+- en: Allows implementing connectors that continually pull from a source system or
+    application into Kafka or push from Kafka into a sink system or application
+  prefs: []
+  type: TYPE_NORMAL
+- en: These APIs are implemented in multiple [languages](https://oreil.ly/gPVs8),
+    including Java, C/C++, Go, C#, and Python. We will be using Kafka’s [Python APIs](https://oreil.ly/c7g3l)
+    for integration with Ray, implementing the first three APIs groups, which is sufficient
+    for our purposes. For a simple example of using Python Kafka APIs, see this book’s
+    [GitHub repo](https://oreil.ly/0VJ3D).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Unlike other messaging systems, Kafka does not guarantee nonduplicate messages.
+    Instead, each Kafka consumer is responsible for ensuring that messages are processed
+    only once.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: If you are interested in learning more, the Confluent [“Kafka Python Client”
+    documentation](https://oreil.ly/QOfMd) has more information on commit options
+    and their implications on delivery guarantees. By default, the Python client uses
+    automatic commit, which is what we use in our examples. For real-life implementation,
+    consider delivery guarantees (exactly once, at least once, etc.) that you need
+    to provide and use an appropriate commit approach.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using Kafka with Ray
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Now that you know about Kafka and its basic APIs, let’s take a look at options
+    for integrating Kafka with Ray. We will implement both the Kafka consumer and
+    producer as Ray actors.^([4](ch06.html#idm45354775738704)) You can benefit from
+    using Ray actors with Kafka for these reasons:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Kafka consumers run in an infinite loop, waiting for new records to arrive,
+    and need to keep track of messages consumed. Being a stateful service, the Ray
+    actor provides an ideal paradigm for implementing a Kafka consumer.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: By putting your Kafka producer in an actor, you can write records to any Kafka
+    topic asynchronously without having to create separate producers.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: A simple implementation of a Kafka producer actor looks like [Example 6-1](#Kafka-producer-actor).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-1\. [Kafka producer actor](https://oreil.ly/5Ycum)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The actor implementation in this example includes the following methods:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The constructor
+  prefs: []
+  type: TYPE_NORMAL
+- en: This method initializes the Kafka producer based on the location of the Kafka
+    cluster.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`produce`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This is the method you will call to send data. It takes data to write to Kafka
+    (as a Python dictionary), an optional key (as a string), and the Kafka topic to
+    write to. Here we chose to use a dictionary for the data as it is a fairly generic
+    way to represent data and can be easily marshaled/unmarshaled to JSON. For debugging,
+    we added an internal `delivery_callback` method that prints out when a message
+    is written or an error has occurred.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`destroy`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Ray calls this method before exiting the application. Our `destroy` method waits
+    for up to 30 seconds for any outstanding messages to be delivered and for delivery
+    report callbacks to be triggered.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Example 6-2](#Kafka-consumer-actor) shows a simple implementation of a Kafka
+    consumer actor.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-2\. [Kafka consumer actor](https://oreil.ly/5Ycum)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The consumer actor in this example has the following methods:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The constructor
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Initializes the Kafka consumer. Here we have more parameters compared to a
+    producer. In addition to the broker location, you need to specify the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Topic name
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Consumer group name (for parallel runs)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Restart, which configures how the client behaves when starting with no offset
+    or if the current offset does not exist anymore on the server^([5](ch06.html#idm45354775188896))
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Callback, which is a pointer to the customer’s function that is used to process
+    a message
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`start`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Runs an infinite loop polling for records. In our example, new records are just
+    printed. For debugging, we also print the consumer’s assignment (which partitions
+    it is consuming).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`stop`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Updates the class property that stops the infinite loop.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`destroy`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Called by Ray before exiting the application to terminate the consumers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In addition to these two actors, we also need to set up the Kafka topics. While
+    Kafka auto-creates new topics as they are used, the default parameters for the
+    number of partitions and [replication factor](https://oreil.ly/ew9Oc) may not
+    match your needs. We create the topic with our preferred settings in [Example 6-3](#Topics-set-up-function).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-3\. [Topics setup function](https://oreil.ly/cKafn)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: Because the topics may already exist, the code first deletes them. Once the
+    deletion is completed, the code waits a short time to make sure that deletion
+    took place on the cluster and then re-creates topics with the target number of
+    partitions and replication factor.
+  prefs: []
+  type: TYPE_NORMAL
+- en: With these three components in place, you can now create a Ray application to
+    publish and read from Kafka. You can run this application either locally or on
+    a cluster. The Ray application itself looks like [Example 6-4](#bringing-it-all-together).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-4\. [Bringing it all together](https://oreil.ly/97nue)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This code does the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Defines a simple callback function for the Kafka consumer that just prints the
+    message.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Initializes Ray.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Creates required topics.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Starts both producer and consumers (the code allows us to specify the number
+    of consumers we want to use).
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Calls the `start` method on all created consumers.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Once all consumers are created, the producer starts sending Kafka requests every
+    second.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Additionally, the code implements graceful termination, ensuring that all resources
+    are cleaned up, once the job is interrupted.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Once the code runs, it produces the output shown in [Example 6-5](#execution-results-for-a-single-consumer).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-5\. Execution results for a single consumer
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'As you can see from the results, the execution does the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Deletes and re-creates the topic `test`.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Creates a consumer listening to all the partitions of a topic (we are running
+    a single consumer here).
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Processes messages. Note here that the producer’s messages are delivered to
+    different partitions but are always received and processed by a single consumer.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Scaling Our Implementation
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Now that everything is working, let’s see how to scale our implementation. As
+    discussed earlier in this chapter, the basic approach to scale an application
+    that reads from Kafka is to increase the number of Kafka consumers (assuming that
+    the topic has enough partitions). Luckily, the code ([Example 6-4](#bringing-it-all-together))
+    already supports this, so we can easily increase the number of consumers by setting
+    `n_consumer=5`. Once this update is done, rerunning the code will produce the
+    output in [Example 6-6](#execution-results-for-five-consumers).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-6\. Execution results for five consumers
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: Here, unlike [Example 6-5](#execution-results-for-a-single-consumer), each of
+    the five Kafka consumers starts listening on 2 partitions (remember, our topic
+    uses 10 partitions). You can also see that as messages are delivered on different
+    partitions, they are being processed by different consumer instances. So we can
+    scale our Kafka applications manually, but what about autoscaling?
+  prefs: []
+  type: TYPE_NORMAL
+- en: Unlike native Kubernetes autoscalers—for example, [KEDA](https://oreil.ly/zJ3yw),
+    which scales consumers based on the [queue depth](https://oreil.ly/u7uEE)—Ray
+    uses a [different approach](https://oreil.ly/4cgo2). Instead of bringing up and
+    down Kafka consumers, Ray uses a fixed number of consumers and spreads them across
+    nodes (adding nodes if required). This gives better performance for each consumer
+    but still runs into issues when there are not enough partitions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now that you know how to integrate Ray with Kafka, let’s discuss how to use
+    this technique for building streaming applications.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Building Stream-Processing Applications with Ray
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'There are two important classes of stream processing:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Stateless stream processing
+  prefs: []
+  type: TYPE_NORMAL
+- en: Each event is handled completely independently from any previous events or mutable
+    shared state. Given an event, the stream processor will treat it exactly the same
+    way every time, no matter what data arrived beforehand or the state of the execution.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Stateful stream processing
+  prefs: []
+  type: TYPE_NORMAL
+- en: A state is shared among events and can influence the way current events are
+    processed. The state, in this case, can be a result of previous events or produced
+    by an external system, controlling stream processing.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Stateless stream processing implementations are typically simple and straightforward.
+    They require an extension of the `start` method of the Kafka consumer ([Example 6-2](#Kafka-consumer-actor))
+    to implement any required transformation of the incoming messages. The result
+    of these transformations can be sent either to different Kafka topics or to any
+    other part of the code. [“Serverless Kafka Stream Processing with Ray”](https://oreil.ly/S51JF)
+    by Javier Redondo describes an example stateless streaming application.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Implementing stateful stream processing is typically more involved. Let’s take
+    a look at options for implementing stateful stream processing based on [dynamically
+    controlled streams](https://oreil.ly/AliOW).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Our sample implementation uses a heater controller example with the following
+    characteristics:^([6](ch06.html#idm45354774560064))
+  prefs: []
+  type: TYPE_NORMAL
+- en: A message producer provides a constant stream of temperature measurements from
+    the sensor.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The thermostat settings are defined as the desired temperature Td and ∆t.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The thermostat settings can arrive at any point.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: When the temperature falls below Td – ∆t, an implementation sends a signal to
+    the heater to start.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: When the temperature goes above Td + ∆t, a signal is sent to the heater to stop.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: A very simple heater model is used here, where temperature increases by 1 degree
+    every *N* (configurable) minutes when the heater is on, and decreases by 1 degree
+    every *M* (configurable) minutes when it is off.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'The following are simplifications that we made to the original example:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Instead of using Protobuf marshaling, we are using JSON marshaling (the same
+    as in the previous examples), which allows us to marshal/unmarshal Python dictionary
+    messages generically.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: To simplify our implementation, instead of using two queues as in the original
+    sample, we are using a single queue containing both control and sensor messages,
+    discriminating between the two as we receive them. Although it works in our toy
+    example, it might not be a good solution in a real-life implementation with a
+    large volume of messages, because it can slow down sensor message processing.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'With these simplifications in place, we will now demonstrate two approaches
+    to implement stateful stream processing with Ray: a key-based approach and a key-independent
+    one.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Key-Based Approach
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Many stateful streaming applications rely on Kafka message keys. Remember that
+    Kafka partitioning uses a key hash to determine which partition a message is written
+    to. This means that Kafka guarantees that all messages with the same key are always
+    picked up by the same consumer. In this case, it is possible to implement stateful
+    stream processing locally on the Kafka consumer that receives them. Because the
+    consumer is implemented as a Ray actor, Ray keeps track of the data inside the
+    actor.^([7](ch06.html#idm45354774537376))
+  prefs: []
+  type: TYPE_NORMAL
+- en: For this implementation, we created a small heater simulator program that you
+    can find in the [accompanying GitHub project](https://oreil.ly/A6iTb) that publishes
+    and gets data based on the heater ID.^([8](ch06.html#idm45354774533936)) With
+    this in place, you can implement the temperature controller as in [Example 6-7](#implementation-of-temperature-controller).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-7\. [Implementation of temperature controller](https://oreil.ly/VoVAk)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The implementation is a Python class with the following methods:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The constructor, taking a Kafka producer actor ([Example 6-1](#Kafka-producer-actor))
+  prefs: []
+  type: TYPE_NORMAL
+- en: Used by this class to write control data to Kafka and an ID of this temperature
+    controller (which is the same as heater device ID).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`process_new_message`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Receives messages and, depending on their content, calls either `set_temperature`
+    or `process_sensordata`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`set_temperature`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Processes a new set temperature method from the thermostat. This message contains
+    the new desired temperature along with additional heater-specific parameters (temperature
+    intervals where controls are ignored).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`process_sensordata`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Handles the temperature control. If the desired temperature is set, this method
+    compares the current temperature with the desired one and calculates the desired
+    control (heater on/off). To avoid resending the same control over and over again,
+    this method additionally compares the calculated control value with the current
+    (cached) and submits a new control value only if it has changed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Because Kafka calculates partitions based on the key hash, the same partition
+    can serve many keys. To manage multiple keys per partition, we introduced a `TemperatureControllerManager`
+    class whose purpose is to manage individual temperature controllers ([Example 6-8](#implementation-of-temperature-controller-manager)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-8\. [Implementation of temperature controller manager](https://oreil.ly/sQbyW)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This implementation is based on a dictionary keeping track of temperature controllers
+    based on their IDs. The class provides two methods:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The constructor, taking a Kafka producer actor ([Example 6-1](#Kafka-producer-actor))
+  prefs: []
+  type: TYPE_NORMAL
+- en: Creates a new empty dictionary of the individual temperature controllers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `process_controller_message` function
+  prefs: []
+  type: TYPE_NORMAL
+- en: Takes every new message received by the *local* Kafka consumer and, based on
+    a key, decides whether a required temperature controller exists. If not, a new
+    temperature controller is created and stores a reference to it. After it finds
+    or creates the controller, it then passes the message to it for processing.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To link this implementation to the Kafka consumer, we do need to modify the
+    Kafka consumer ([Example 6-2](#Kafka-consumer-actor)) a little bit ([Example 6-9](#integrating-kafka-consumer-with-temperature-controller-manager)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-9\. [Integrating the Kafka consumer with the temperature controller
+    manager](https://oreil.ly/5Ycum)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'A couple of notable differences exist between this and the original implementations:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The constructor takes an additional parameter—the Kafka producer—which is used
+    internally to create a *temperature controller manager* as part of the actor’s
+    initialization.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: For every incoming message, in addition to printing it out, we are invoking
+    the temperature *controller manager* to process it.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: With these changes in place, you can implement the [main program](https://oreil.ly/e9Lm0),
+    similar to ([Example 6-4](#bringing-it-all-together)), and start an execution.
+    The partial execution result (in [Example 6-10](#controller-execution-results))
+    shows the output of processing.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-10\. Controller execution results
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: This listing shows the behavior of the controller when the temperature is around
+    the desired value (45 degrees). As expected, the temperature keeps growing until
+    it gets above 46 degrees (to avoid constant switching on and off of the controller,
+    no actions are performed when the difference between desired and actual temperature
+    is less than 1 degree). When the measurement is 46.2, the new message is sent
+    to the heater to switch off and the temperature starts to decrease. Also looking
+    at this listing, we can see that the requests are always delivered to the same
+    partition (they have the same key).
+  prefs: []
+  type: TYPE_NORMAL
+- en: A key-based approach is a good option for many real-world implementations. The
+    advantage of this approach is that all of the data processing is done locally,
+    inside the same Kafka consumer actor.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Two potential pitfalls exist with such implementations:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: As the number of keys grows, it is necessary to ensure that the keys are evenly
+    distributed across Kafka topic partitions. Ensuring this key distribution can
+    sometimes require additional key design procedures, but the default hashing is
+    often sufficient.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Execution locality can become a problem when executions are CPU and memory expensive.
+    Because all the executions are part of the Kafka consumer actor, its scaling can
+    become insufficient for keeping up with high-volume traffic.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Some of these drawbacks can be rectified in a key-independent approach.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Key-Independent Approach
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The difference in this approach compared to the previous one is that both the
+    temperature controller ([Example 6-8](#implementation-of-temperature-controller-manager))
+    and temperature controller manager ([Example 6-9](#integrating-kafka-consumer-with-temperature-controller-manager))
+    are converted from Python objects to [Ray actors](https://oreil.ly/b7hSK). By
+    doing this, both become individually addressable and can be located anywhere.
+    Such an approach loses execution locality (which can lead to a slight execution
+    time increase), but can improve overall scalability of the solution (each actor
+    can run on a separate node). If necessary, you can improve scalability even further
+    by leveraging an actor’s pool (described in [Chapter 4](ch04.html#ch04)) and thus
+    allowing Ray to split execution to even more nodes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Going Beyond Kafka
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter, you learned how to use Ray’s native capabilities to implement
+    streaming by directly integrating Ray with Kafka. But what if you need to use
+    a different messaging infrastracture? If your favorite communication backbone
+    provides Python APIs, you can integrate it with Ray, similar to the Kafka integration
+    described previously.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Another option, as mentioned at the beginning of this chapter, is to use an
+    external library—for example, project [Rayvens](https://oreil.ly/xv2xB), which
+    internally leverages [Apache Camel](https://oreil.ly/HT77R) (a generic integration
+    framework) to make it possible to use a wide range of messaging backbones. You
+    can find a description of the supported messaging backbones and an example of
+    their usage in [“Accessing Hundreds of Event Sources and Sinks with Rayvens”](https://oreil.ly/y4kYx)
+    by Gheorghe-Teodor Bercea and Olivier Tardieu.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Similar to the Kafka integration we’ve described, under the hood, Rayvens is
+    implemented as a set of Ray actors. The Rayvens base class `Stream` is a stateless,
+    serializable, wrapper around the `Stream` Ray actor class, which is responsible
+    for keeping track of the current Rayvens state (see [Chapter 4](ch04.html#ch04)
+    for using actors to manage global variables), including currently defined sources
+    and sinks and their connectivity. The `Stream` class hides the remote nature of
+    a `Stream` actor and implements wrappers that internally implement all communications
+    with the underlying remote actor. If you want more control (in terms of execution
+    timing), you can invoke methods directly on the `Stream` actor. The `Stream` actor
+    will be reclaimed when the original stream handle goes out of scope.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As Rayvens is based on Camel, it requires a setting of Camel to make it work.
+    Ravens supports two main options of Camel usage:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Local mode
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The Camel source or sink runs in the same execution context as the `Stream`
+    actor that is attached to using the Camel client: same container, same virtual
+    or physical machine.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Operator mode
+  prefs: []
+  type: TYPE_NORMAL
+- en: The Camel source or sink runs inside a Kubernetes cluster relying on the Camel
+    operator to manage dedicated Camel pods.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Conclusion
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter, you learned one option to use Ray for implementing streaming.
+    You first learned the basics of Kafka—the most popular streaming application backbone
+    used today—and ways to integrate it with Ray. You then learned how to scale Kafka-based
+    applications with Ray. We have also outlined implementation approaches for both
+    stateless and stateful streaming applications with Ray that you can use as a foundation
+    for your custom implementations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Finally, we briefly discussed alternatives to using Kafka as a transport. Rayvens,
+    a general-purpose integration framework based on Apache Camel, can be used for
+    integration of a wide variety of streaming backbones. You can use this discussion
+    to decide how to implement your specific transports.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the next chapter, we will introduce Ray’s microservices framework and how
+    to use it for model serving.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([1](ch06.html#idm45354776016592-marker)) Other examples of distributed log
+    implementation are [Apache BookKeeper](https://oreil.ly/4Km4h), [Apache Pulsar](https://oreil.ly/ChJdY),
+    and [Pravega](https://oreil.ly/getrt).
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([2](ch06.html#idm45354775801840-marker)) Although we tend to think about infinite
+    logs, in reality a Kafka log is limited to the amount of disk space available
+    to the corresponding Kafka server. Kafka introduces [log retention and cleanup
+    policies](https://oreil.ly/0wudH), which prevent logs from growing indefinitely
+    and consequently crashing Kafka servers. As a result, when we are talking about
+    log replay in a production system, we are talking about replay within a retention
+    window.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([3](ch06.html#idm45354775789952-marker)) Refer to [“Capacity Planning Your
+    Kafka Cluster”](https://oreil.ly/rC2RY) by Jason Bell for more details. Kafka
+    is also available as a serverless product from vendors such as Confluent Cloud.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([4](ch06.html#idm45354775738704-marker)) For another example of the same approach,
+    see [“Serverless Kafka Stream Processing with Ray”](https://oreil.ly/iRxWq) by
+    Javier Redondo.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([5](ch06.html#idm45354775188896-marker)) Allowed values for `reset` are `earliest`,
+    which automatically resets the offset to the beginning of the log, and `latest`,
+    which automatically resets the offset to the latest offset processed by the consumer
+    group.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([6](ch06.html#idm45354774560064-marker)) This example is described further
+    in [“How to Serve Machine Learning Models with Dynamically Controlled Streams”](https://oreil.ly/jekKs),
+    a blog post by Boris.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([7](ch06.html#idm45354774537376-marker)) As described in [Chapter 4](ch04.html#ch04),
+    Ray’s actors are not persistent. Therefore, in the case of node failures, the
+    actor state will be lost. We can implement persistence here as described in [Chapter 4](ch04.html#ch04)
+    to overcome this.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([8](ch06.html#idm45354774533936-marker)) Note the use of threading to ensure
+    that the Kafka consumer is running forever without interference with measurement
+    computations. Again, this is a simplification we made for our toy example; in
+    real implementations, every request to the temperature controller should contain
+    a `replyTo` topic, thus ensuring that any replies will get to the correct instance
+    of the heater.
+  prefs: []
+  type: TYPE_NORMAL

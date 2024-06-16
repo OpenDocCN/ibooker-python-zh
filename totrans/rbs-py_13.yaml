@@ -1,0 +1,717 @@
+- en: Chapter 11\. Defining Your Interfaces
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: You have learned how to create your own user-defined types, but creating them
+    is just half the battle. Now developers have to actually use your types. To do
+    this, they use your type’s API. This is the set of types and related functions,
+    along with any external functions, that a developer interacts with to use your
+    code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Once you get your types in front of users, those types will be used (and abused)
+    in ways that you never thought of. And once the developers depend on your types,
+    it will be hard to change their behavior. This gives rise to what I call the *Paradox
+    of Code Interfaces*:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: You have one chance to get your interface right, but you won’t know it’s right
+    until it’s used.
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: As soon as developers use the types you create, they come to depend on the behavior
+    that those types encompass. If you try to make a backward-incompatible change,
+    you potentially break all calling code. The riskiness in changing your interface
+    is proportional to the amount of outside code depending on it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This paradox doesn’t apply if you control all the code that depends on your
+    type; you can change it. But as soon as that type hits production, and people
+    start using it, you’ll find it difficult to change. In a large codebase, where
+    robustness and maintainability matter, coordinating the change and buy-in needed
+    to make a sweeping change is costly. It becomes near impossible if your type is
+    used by entities outside your organizational control, such as open source libraries
+    or platform SDKs. This quickly leads to code that is difficult to work with, and
+    code that is difficult to work with will slow developers down.
+  prefs: []
+  type: TYPE_NORMAL
+- en: What’s worse is that you won’t truly know if an interface is natural to use
+    until enough people depend on it, giving rise to the paradox. How can you even
+    begin to design an interface if you don’t know how it will be used? Sure, you
+    know how *you* would use the interface, and that’s a great start, but you have
+    an implicit bias when creating the interface. What feels natural to you won’t
+    feel natural to everyone else. Your goal is for your users to do the right things
+    (and avoid the wrong things) with minimal effort. Ideally, the users should not
+    need to do anything extra to use your interface correctly.
+  prefs: []
+  type: TYPE_NORMAL
+- en: I don’t have a silver bullet for you; there is no foolproof way of writing an
+    interface that meets everyone’s needs on the first try. Instead, I’ll talk about
+    some principles you can apply to give you the best chance. For the cases where
+    you need to make changes to an existing API, you’ll learn mitigation strategies.
+    Your API is a first impression for other developers; make it count.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Discussion Topic
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: What interfaces are hard to use in your codebase? Look for common errors that
+    people make when using your types. Also look for parts of your interface that
+    are rarely invoked, especially if you feel like they are useful. Why don’t users
+    call these useful functions? Discuss what costs appear when developers encounter
+    these hard-to-use interfaces.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Natural Interface Design
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Your goal, tough as it may seem, is to make your interface appear natural to
+    use. In other words, you want to reduce friction for the callers of your code.
+    When code is hard to use, the following happens:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Duplicated functionality
+  prefs: []
+  type: TYPE_NORMAL
+- en: Some developers who find your types hard to use will write their own types,
+    duplicating functionality. It may be healthy for different ideas to compete on
+    a large scale (like competing open source projects), but it is not healthy for
+    that divergence to be present in your codebase. Developers are presented with
+    a multitude of types, not sure which one to use. With their attention split, their
+    wires will get crossed and they will make mistakes, which creates bugs, which
+    costs money. Also, if you want to add anything to one of these types, you need
+    to add them in all the places the functionality has diverged, or you’ll create
+    bugs, which costs money.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Broken mental model
+  prefs: []
+  type: TYPE_NORMAL
+- en: Developers build up a mental model of the code they work with. If certain types
+    are difficult to reason about, that mental model breaks. Developers will misuse
+    your types, causing subtle bugs. Perhaps they don’t call methods in the order
+    that you require. Perhaps they miss calling a method that they should have. Perhaps
+    they just misunderstand what the code is doing and pass the wrong information
+    to it. Any of these will introduce fragility into your codebase.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Reduced testing
+  prefs: []
+  type: TYPE_NORMAL
+- en: Code that is hard to use is hard to test. It doesn’t matter if it’s a complicated
+    interface, a large chain of dependencies, or involved interactions; if you can’t
+    easily test the code, fewer tests will be written. The fewer tests that are written,
+    the fewer bugs you’ll catch when things change. It is very frustrating to deal
+    with tests breaking in subtle ways every time a seemingly unrelated change is
+    made.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Hard-to-use code will make your codebase unhealthy. You must take special care
+    when designing your interfaces. Try to adhere to this rule of thumb from Scott
+    Meyers:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Make interfaces easy to use correctly and hard to use incorrectly.^([1](part0015_split_009.html#idm45644739470600))
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: You want developers to find your type easy to use, as if everything behaved
+    as expected (this is a subtle restatement of the Law of Least Surprise, as mentioned
+    in [Chapter 1](part0003_split_000.html#intro)). Furthermore, you also want to
+    prevent users from using your types the wrong way. It is your job to think about
+    all the behaviors that you should support and forbid in your interface. To do
+    this, you need to get into the heads of your collaborators.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Thinking Like a User
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: It’s tricky to think like a user, for you have been bestowed with the Curse
+    of Knowledge. No arcane hex or mystical spell causes this; it is a by-product
+    of your time with the codebase. As you build out ideas, you become so intimately
+    familiar with them that it can blind you to how new users perceive your code.
+    The first step to dealing with cognitive biases is to acknowledge them. From that
+    point, you can take biases into account as you try to get into your users’ mindspace.
+    Here are some useful strategies you can employ.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Test-driven development
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: '*Test-driven development* (TDD), formulated by Kent Beck in the early 2000s,
+    is a popular framework for testing your code.^([2](part0015_split_009.html#idm45644739457384))
+    TDD revolves around a simple loop:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Add a failing test.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Write just enough code to pass that test.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Refactor.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: There are entire books written about TDD, so I won’t go into too much detail
+    about the mechanics.^([3](part0015_split_009.html#idm45644739452664)) However,
+    the intent of TDD is *fabulous* for understanding how to use a type.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Many developers think that test-*driven* development (writing tests first) has
+    similar benefits to test-*after* development (writing tests second). In both cases,
+    you have tested code, right? When simplified to this degree, TDD doesn’t seem
+    worth the effort.
+  prefs: []
+  type: TYPE_NORMAL
+- en: However, this is an unfortunate oversimplification. The confusion stems from
+    thinking of TDD as a testing methodology, when in fact, it is a *design methodology*.
+    The tests are important, but they are merely a by-product of the methodology.
+    The true value lies in how tests help design your interface.
+  prefs: []
+  type: TYPE_NORMAL
+- en: With TDD, you are able to see how calling code looks before you write the implementation.
+    Since you write the test first, you are given a chance to pause and ask yourself
+    if how you interact with your types feels frictionless. If you find yourself making
+    confusing function calls, building up long chains of dependencies, or having to
+    write tests in a fixed order, you are experiencing red flags that should alert
+    you that the type you’re building is too complicated. In these cases, reevaluate
+    or refactor your interface. How great is it that you can simplify this code before
+    you even write it?
+  prefs: []
+  type: TYPE_NORMAL
+- en: As an additional benefit, your tests serve as a form of documentation. Other
+    developers will want to know how to use your code, especially the parts that are
+    not described in top-level documentation. A good set of comprehensive unit tests
+    provides working documentation of exactly how to use your type; you want them
+    to leave a good first impression. Just as your code is a single source of truth
+    for the behavior in your system, your tests are the single source of truth for
+    interacting with your code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: README-driven development
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'Similar to TDD, README-driven development (RDD), [coined by Tom Preston-Werner](https://oreil.ly/qd16A),
+    is another design methodology aimed at catching hard-to-use code before it’s written.
+    The goal with RDD is to distill your top-level ideas and most important interactions
+    with your code into a single document that lives in your project: a README file.
+    This is a great way to formulate how different parts of your code interact, and
+    might provide higher level patterns for users to follow.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'RDD boasts some of the following benefits:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: No need to create every level of documentation up front, like you would in a
+    Waterfall methodology.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: A README is often the first thing a developer sees; RDD gives you a chance to
+    craft the best first impression you can.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: It is easier to change the documentation based on team discussion than it is
+    to change written code.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: You don’t need to use the README to explain poor code decisions; instead, the
+    code needs to morph to support the ideal use cases.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Remember, you are only successful in building maintainable software if future
+    developers can actually maintain it. Give them every chance you can to succeed
+    and craft them an experience starting at your documentation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Usability testing
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'Ultimately, you are trying to think about how your users think. There is a
+    whole discipline dedicated to this very task: user experience (UX). UX is another
+    area where there are countless books available, so I’ll just focus on one strategy
+    that has done me wonders in simplifying code: usability testing.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Usability testing is the process of actively asking your users what they think
+    of your product. It sounds so simple, doesn’t it? In order to think about how
+    your users will behave, just ask them. The simplest thing you can do is talk to
+    potential users (in this case, other developers), but it’s easy to overlook.
+  prefs: []
+  type: TYPE_NORMAL
+- en: It’s incredibly easy to get started with usability testing through hallway testing.
+    As you design your interface, just grab the first person to walk down your hallway
+    and ask them to give feedback on your design. This is a great low-cost way of
+    learning pain points. Don’t take this advice too literally though. Feel free to
+    expand beyond whoever you see in a hallway and ask teammates, peers, or testers
+    to evaluate your interface.
+  prefs: []
+  type: TYPE_NORMAL
+- en: However, for interfaces that will be used by a much broader audience (such as
+    the interface of a popular open source library), you may want something a tad
+    more formal. In these cases, usability testing involves placing your prospective
+    users in front of the interface that you’re writing. You give them a set of tasks
+    to complete, and then observe. Your role is not to teach them or lead them through
+    the exercises, but to see where they struggle and where they excel. Learn from
+    their struggles; they are showing areas that are definitively hard to use.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Usability testing is a great task for the more junior members on your team.
+    Their curse of knowledge won’t be as strong as with the senior members, and they
+    will be more likely to evaluate the design with a fresh set of eyes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Natural Interactions
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Donald Norman describes a mapping as a relationship between “controls and their
+    movements with results in the real world.” That mapping is natural if it “takes
+    advantage of physical analogies and cultural standards, [leading] to immediate
+    understanding.”^([4](part0015_split_009.html#idm45644739841848)) This is what
+    you strive for when you write an interface. You want that immediate understanding
+    to eliminate confusion.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The “controls and their movements” in this case are the functions and types
+    that make up your interface. The “results in the real world” represent the behavior
+    of the code. For this to feel natural, the operations have to agree with the mental
+    model of the user. This is what Donald Norman means when talking about “physical
+    analogies and cultural standards.” You must connect with the readers of your code
+    in a way that they understand, drawing on their experiences and knowledge. The
+    best way to do this is mapping your domain and other common knowledge into your
+    code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: When designing an interface, you need to think through the entire life cycle
+    of a user’s interactions and ask yourself if the entirety of it maps to what a
+    user unfamiliar with your code would understand. Model your interface such that
+    it is easy to comprehend for someone who knows the domain well, even if they aren’t
+    familiar with code. As you do this, your interface becomes intuitive, which lessens
+    the chances of developers making mistakes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Natural Interfaces in Action
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: For this chapter, you’re going to design an interface for part of an automated
+    grocery pick-up service. A user scans their recipes using their smartphone, and
+    the app will automatically figure out what ingredients are required. After the
+    user confirms the order, the app queries local grocery stores for ingredient availability
+    and schedules delivery. [Figure 11-1](part0015_split_005.html#figure_11_1) provides
+    a representation of this workflow.
+  prefs: []
+  type: TYPE_NORMAL
+- en: I’m going to focus on the specific interface for building up an order given
+    a set of recipes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Workflow for automated grocery delivery app](../images/00015.gif)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 11-1\. Workflow for automated grocery delivery app
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'To represent a recipe, I’ll modify parts of the `Recipe` `dataclass` from [Chapter 9](part0013_split_000.html#dataclasses):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The codebase also has functions and types to retrieve local grocery store inventory:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The other developers in the codebase have already set up the code to figure
+    out the recipes from smartphone scans, but now they need to generate the ingredient
+    list to order from each grocery store. That’s where you come in. Here’s what they
+    have so far:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Your goal is to fill in the blanks marked `HELP` or `????`. I want you to get
+    in the habit of deliberately designing your interface before you start coding.
+    How would you describe the purpose of the code to a nontechnical product manager
+    or marketing agent? Take a few minutes before looking at the following code: how
+    do you want a user to interact with your interface?'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here’s what I came up with (there are plenty of ways to solve this; it’s OK
+    if you have something vastly different):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: For each recipe received, grab all the ingredients and aggregate them together.
+    This becomes an `Order`.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: An `Order` is a list of ingredients, and the user can add/remove ingredients
+    as needed. However, once confirmed, the `Order` should not be changeable.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Once the order is confirmed, take all the ingredients and figure out what stores
+    have the items available. This is a `Grocery List`.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: A `Grocery List` contains a list of stores and the items to pick up from each
+    store. Each item is reserved at the store until the app places the order. Items
+    may come from different stores; the app tries to find the cheapest item that matches.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Once the user confirms the `GroceryList`, place the order. Grocery items are
+    unreserved and set for delivery.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: The order is delivered to the user’s home.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'Isn’t it amazing that you can come up with an implementation without having
+    to know exactly how `get_recipe_from_scans` or `get_grocery_inventory` is implemented?
+    This is the beauty of having types to describe domain concepts: if these were
+    represented by tuples or dictionaries (or with no type annotations, which makes
+    me shudder), you’d have to go digging through the codebase finding out what data
+    you were dealing with.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: That description of the interface contained no code concepts; it was all described
+    in a way that is familiar to workers in the grocery domain. When designing an
+    interface, you want to map as naturally to the domain as you can.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s start with the order handling by creating a class:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: Not too bad of a start. If I look at the first step of my description above,
+    it matches pretty closely to the code. I am getting the ingredients from each
+    recipe and aggregating them together in a set. I’m having some trouble with how
+    I want to represent adding ingredients to the set I’m already tracking, but I’ll
+    come back to this in a bit, I promise.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'For now, I want to make sure that I am properly representing the invariant
+    of an `Order`. If the order is confirmed, a user should not be able to modify
+    anything inside it. I’ll change the `Order` class to do the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: Now I have the first two items on my list represented in code, and the code
+    mirrors the description pretty closely. By using a type to represent the `Order`,
+    I have created an interface for the calling code to operate with. You can construct
+    an order with `order = Order(recipes)` and then use that order to add ingredients,
+    change the amount of existing ingredients, and handle confirmation logic.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The only thing that is missing is that `????` when adding an ingredient that
+    I’m already tracking (such as adding an extra 3 cups of flour). My first instinct
+    was to just add the amounts together, but that won’t work if the units of measure
+    are different, such as adding 1 cup of olive oil to 1 tablespoon. Neither 2 tablespoons
+    nor 2 cups is the right answer.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'I could do type conversions right here in the code, but that doesn’t feel natural.
+    What I really want to do is do something like `already_tracked_ingredient += new_ingredient`.
+    But doing that gives me an exception:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: However, this is achievable; I just have to use a little Python magic to make
+    it so.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Magic Methods
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: '*Magic methods* allow you to define custom behavior when built-in operations
+    are invoked in Python. A magic method is prefixed and suffixed by two underscores.
+    Because of this, they are sometimes called *dunder* methods (or *double underscore*
+    methods). You’ve already seen them in earlier chapters:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In [Chapter 10](part0014_split_000.html#classes), I used the `__init__` method
+    to construct a class. `__init__` gets called whenever a class is constructed.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: In [Chapter 9](part0013_split_000.html#dataclasses), I used `__lt__`, `__gt__`,
+    and others to define what happens when two objects were compared with < or >,
+    respectively.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: In [Chapter 5](part0008_split_000.html#collections), I introduced `__getitem__`
+    for intercepting calls to indexing with brackets such as `recipes['Stromboli']`.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'I can use the magic method `__add__` to control behavior for addition:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now with the `__add__` method defined, I can add ingredients together with
+    the `+` operator. The `add_ingredient` method can look like the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: I can now express the idea of adding ingredients naturally. It doesn’t stop
+    here, either. I can define subtraction, or multiplication/division (for scaling
+    serving numbers), or comparison. It is far easier for users to understand your
+    codebase when such natural operations are available. Just about every operation
+    in Python has a magic method backing it. There are so many that I can’t even begin
+    to enumerate them all. However, some common methods are listed in [Table 11-1](part0015_split_006.html#table_11-2).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Table 11-1\. Common magic methods in Python
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| Magic method | Used for |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `__add__`, `__sub__`, `__mul__`, `__div__` | Arithmetic operations (add,
+    subtract, multiply, divide) |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `__bool__` | Implicitly converting to Boolean for `if <expression>` checks
+    |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `__and__`, `__or__` | Logical operations (`and` and `or`) |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `__getattr__`, `__setattr__`, `__delattr__` | Attribute access (such as `obj.name`
+    or `del obj.name`) |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `__le__`, `__lt__`, `__eq__`, `__ne__`, `__gt__`, `__ge__` | Comparision
+    (`<=`, `<`, `==`, `!=`, `>`, `>=`) |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `__str__`, `__repr__` | Converting to string (str()) or reproducible (repr())
+    forms |'
+  prefs: []
+  type: TYPE_TB
+- en: If you want to learn more, check out the Python documentation regarding the
+    [data model](https://oreil.ly/jHBaZ).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Discussion Topic
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: What are some types in your codebase that could benefit from a more natural
+    mapping? Discuss where magic methods might make sense, and where they might not.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Context Managers
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Your code can now handle orders, but it’s time to fill in the other half: the
+    grocery list handling. I want you to take a break from reading and think about
+    filling in the blanks of the grocery list handling code. Take what you learned
+    from the last section and create an interface that naturally maps to the written
+    description of the problem.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here’s a reminder of the grocery list handling:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: A `Grocery List` contains a list of stores and the items to pick up from each
+    store. Each item is reserved at the store until the app places the order. Items
+    may come from different stores; the app tries to find the cheapest item that matches.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Once the user confirms the `GroceryList`, place the order. Grocery items are
+    unreserved and set for delivery.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'From a calling code perspective, here’s what I have:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: Given this grocery list interface, this is certainly easy to use (if I do say
+    so myself). It’s clear what the code is doing, and if making the interface intuitive
+    were the full story, I’d be golden. But I forgot the other half of Scott Meyers’s
+    quote. I forgot to make the code *hard to use incorrectly*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Take a look again. What happens if the user doesn’t confirm their order? What
+    if some exception were thrown while waiting? If this were to happen, I would never
+    unreserve the items, leaving them reserved in perpetuity. Sure, I could hope that
+    calling code would always try to catch an exception, but that’s easy to forget
+    to do. In fact, it’d be quite easy to use incorrectly, wouldn’t you agree?
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: You can’t only focus on the happy path, which is the execution of the code when
+    everything goes as planned. Your interface must also handle all the possible ways
+    problems can arise.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Wanting to automatically invoke some sort of function when you are done with
+    an operation is a common case in Python. File open/close, session authenticate/logout,
+    database command batching/submission; these are all examples where you want to
+    always make sure to invoke the second operation, regardless of what the previous
+    code did. If you don’t, you often leak resources or otherwise tie up the system.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Chances are, you’ve actually run across how to handle this: using a `with`
+    block.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: This is something you learn early on in your Python journey as a best practice.
+    As soon as the `with` block is finished (when the code returns to the original
+    indent level of the `with` statement), Python closes the opened file. This is
+    a convenient way of making sure that an operation occurs, even with no explicit
+    user interaction. This is the key you need to making your grocery list interface
+    hard to use incorrectly—what if you could make the grocery list unreserve items
+    automatically, regardless of what path the code takes?
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To do this, you need to employ a *context manager*, which is a Python construct
+    that lets you take advantage of `with` blocks. Using a context manager, I can
+    make our grocery list code much more fault-tolerant:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Any function decorated with `@contextmanager` will be usable alongside a `with`
+    block. I construct a `_GroceryList` (notice how it’s private, so nobody should
+    be creating a grocery list in ways other than `create_grocery_list`), then *yield*
+    it. Yielding a value interrupts this function, returning the value yielded to
+    the calling code. The user can then use it like so:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: The yielded value becomes `grocery_list` in the example above. When the `with`
+    block exits, execution is returned to the context manager, right after the yield
+    statement. It doesn’t matter if an exception is thrown, or if the `with` block
+    finishes normally; because I wrapped our yield in a `try...finally block`, the
+    grocery list will always clear any reserved items.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This is how you can effectively force a user to clean up after themselves. You
+    are eliminating an entire class of errors that can happen when you use context
+    managers—the errors of omission. Errors of omission are so easy to make; you literally
+    have to do nothing. Instead, a context manager lets users do the right thing,
+    even when they do nothing. It’s a sure sign of a robust codebase when a user can
+    do the right thing without even knowing it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Warning
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Context managers will not finish if the program is forcibly closed, such as
+    a force kill from the operating system or a power loss. Context managers are just
+    a tool to keep developers from forgetting to clean up after themselves; make sure
+    your system can still handle things outside a developer’s control.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Closing Thoughts
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: You can create all the types in the world, but if other developers can’t use
+    them without error, your codebase will suffer. Just like a house needs a strong
+    foundation to stand upon, the types you create and vocabulary you surround them
+    with need to be rock solid for your codebase to be healthy. When you have natural
+    interfaces to your code, future developers will be able to reach for these types
+    and build new features effortlessly. Have empathy for those future developers,
+    and design your types with care.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You’ll need to think through the domain concepts your types represent, and how
+    users interact with those types. By building a natural mapping, you tie real-world
+    operations to your codebase. The interfaces you build should feel intuitive; remember,
+    they should be easy to use correctly and hard to use incorrectly. Use every trick
+    and tip at your disposal, from proper naming to magic methods to context managers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the next chapter, I’m going to cover how types relate to one another when
+    you create subtypes. Subtypes are a way of specializing a type’s interface; they
+    allow for extension without modifying the original types. Any modification to
+    existing code is a potential regression, so being able to create new types without
+    changing old ones can significantly reduce erratic behavior.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '^([1](part0015_split_002.html#idm45644739470600-marker)) Kevlin Henney and
+    Scott Meyers. “Make Interfaces Easy to Use Correctly and Hard to Use Incorrectly.”
+    Chap. 55 in *97 Things Every Programmer Should Know: Collective Wisdom from the
+    Experts*. Sebastopol: O’Reilly Media, 2010.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '^([2](part0015_split_003.html#idm45644739457384-marker)) Kent Beck. *Test Driven
+    Development: By Example*. Upper Saddle River, NJ: Addison-Wesley Professional,
+    2002.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([3](part0015_split_003.html#idm45644739452664-marker)) I recommend [*Test-Driven
+    Development with Python*](https://oreil.ly/PJARR) by Harry Percival (O’Reilly,
+    2017) if you’d like more information.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([4](part0015_split_004.html#idm45644739841848-marker)) This is from *Design
+    of Everyday Things* by Donald Norman (Basic Books). This classic book is essential
+    to anyone wanting to get into a UX mindset.
+  prefs: []
+  type: TYPE_NORMAL

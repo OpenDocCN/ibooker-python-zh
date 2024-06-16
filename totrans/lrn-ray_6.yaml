@@ -1,0 +1,957 @@
+- en: Chapter 7\. Data Processing with Ray
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Edward Oakes
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In the previous chapter, you learned how to scale machine learning training
+    using Ray Train. Of course, the key component to applying machine learning in
+    practice is data. In this chapter, we’ll explore the core set of data processing
+    capabilities on Ray: Ray Data.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: While not meant to be a replacement for more general data processing systems
+    such as Apache Spark or Apache Hadoop, Ray Data offers basic data processing capabilities
+    and a standard way to load, transform, and pass data to different parts of a Ray
+    application. This enables an ecosystem of libraries on Ray to all speak the same
+    language so users can mix and match functionality in a framework-agnostic way
+    to meet their needs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The central component of the Ray Data ecosystem is the aptly-named “Datasets,”
+    which offers the core abstractions for loading, transforming, and passing references
+    to data in a Ray cluster. Datasets are the “glue” that enable different libraries
+    to interoperate on top of Ray. You’ll see this in action later in the chapter,
+    as we show how you can do dataframe processing using the full expressiveness of
+    the Dask API using Dask on Ray and transform the result into a Dataset, as well
+    as how a Dataset can be used to efficiently do distributed deep learning training
+    at scale using Ray Train and Ray Tune.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The main benefits of Datasets are:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Flexibility
+  prefs: []
+  type: TYPE_NORMAL
+- en: Datasets support a wide range of data formats, work seamlessly with library
+    integrations like Dask on Ray, and can be passed between Ray tasks and actors
+    without copying data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Performance for ML workloads
+  prefs: []
+  type: TYPE_NORMAL
+- en: Datasets offers important features like accelerator support, pipelining, and
+    global random shuffles that accelerate ML training and inference workloads.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This chapter is intended to get you familiar with the core concepts for doing
+    data processing on Ray and to help you understand how to accomplish common patterns
+    and why you would choose to use different pieces to accomplish a task. The chapter
+    assumes a basic familiarity with data processing concepts such as map, filter,
+    groupby, and partitions, but it’s not to be a tutorial on data science in general
+    nor a deep dive into the internals of how these operations are implemented. Readers
+    with a limited data processing / data science background should not have a problem
+    following along.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We’ll start by giving a basic introduction to the core building block: Ray
+    Datasets. This will cover the architecture, basics of the API, and an example
+    how Datasets can be used to making building complex data-intensive applications
+    easy. Then, we’ll briefly cover external library integrations on Ray, focusing
+    on Dask on Ray. Finally, we’ll bring it all together by building a scalable end-to-end
+    machine learning pipeline in a single Python script.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The notebook for this chapter [is also available online](https://github.com/maxpumperla/learning_ray/blob/main/notebooks/ch_07_data_processing.ipynb).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Ray Datasets
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: An Overview of Datasets
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The main goal of Datasets is to support a scalable, flexible abstraction for
+    data processing on Ray. Datasets are intended to be the standard way to read,
+    write, and transfer data across the full ecosystem of Ray libraries. One of the
+    most powerful uses of Datasets is acting as the data ingest and preprocessing
+    layer for machine learning workloads, allowing you to efficiently scale up training
+    using Ray Train and Ray Tune. This will be explored in more detail in the last
+    section of the chapter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you’ve worked with other distributed data processing APIs such as Apache
+    Spark’s RDDs in the past, you will find the Datasets API very familiar. The core
+    of the API leans on functional programming and offers standard functionality such
+    as reading/writing many different data sources, performing basic transformations
+    like map, filter, and sort, as well as some simple aggregations such as groupby.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Under the hood, Datasets implements Distributed [Apache Arrow](https://arrow.apache.org/).
+    Apache Arrow is a unified columnar data format for data processing libraries and
+    applications, so integrating with it means that Datasets get interoperability
+    with many of the most popular processing libraries such as NumPy and pandas out
+    of the box.
+  prefs: []
+  type: TYPE_NORMAL
+- en: A Dataset consists of a list of Ray object references, each of which points
+    at a “block” of data. These blocks are either Arrow tables or Python lists (for
+    data that isn’t supported by the Arrow format) in Ray’s shared memory object store,
+    and compute over the data such as for map or filter operations happens in Ray
+    tasks (and sometimes actors).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Because Datasets relies on the core Ray primitives of tasks and objects in
+    the shared memory object store, it inherits key benefits of Ray: scalability to
+    hundreds of nodes, efficient memory usage due to sharing memory across processes
+    on the same node, and object spilling + recovery to gracefully handle failures.
+    Additionally, because Datasets are just lists of object references, they can also
+    be passed between tasks and actors efficiently without needing to make a copy
+    of the data, which is crucial for making data-intensive applications and libraries
+    scalable.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Datasets Basics
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: This section will give a basic overview of Ray Datasets, covering how to get
+    started reading, writing, and transforming datasets. This is not meant to be a
+    comprehensive reference, but rather to introduce you to the basic concepts so
+    we can build up to some interesting examples of what makes Ray Datasets powerful
+    in later sections. For up-to-date information on what’s supported and exact syntax,
+    see the [Datasets documentation](https://docs.ray.io/en/latest/data/dataset.xhtml).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To follow along with the examples in this section, please make sure you have
+    Ray Data installed locally:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: Creating a dataset
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'First, let’s create a simple Dataset and perform some basic operations on it:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-1\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Here we created a Dataset containing the numbers from 0 to 10000, then printed
+    some basic information about it: the total number of records, a few samples, and
+    the schema (we will discuss this in more detail later).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Reading from and writing to storage
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'Of course, for real workloads you’ll often want to read from and write to persistent
+    storage to load your data and write the results. Writing and reading Datasets
+    is simple; for example, to write a Dataset to a CSV file and then load it back
+    into memory, we just need to use the builtin write_csv and read_csv utilities:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-2\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: Datasets supports a number of common serialization formats such as CSV, JSON,
+    and Parquet and can read from or write to local disk as well as remote storage
+    like HDFS or AWS S3.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the example above, we provided just a local file path (`"local_dir"`) so
+    the Dataset was written to a directory on the local machine. If we wanted to write
+    to and read from S3 instead, we would instead provide a path like `"s3://my_bucket/"`
+    and Datasets would automatically handle efficiently reading/writing remote storage,
+    parallelizing the requests across many tasks to improve throughput.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note that Datasets also supports custom datasources that you can use to write
+    to any external data storage system that isn’t supported out-of-the-box.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Built-in transformations
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'Now that we understand the basic APIs around how to create and inspect Datasets,
+    let’s take a look at some of the builtin operations we can do on them. The code
+    sample below shows three basic operations that Datasets support: - First, we `union`
+    two Datasets together. The result is a new Dataset that contains all of the records
+    of both. - Then, we `filter` the elements of a Dataset to only include even integers
+    by providing a custom filter function. - Finally, we `sort` the Dataset.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-3\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: In addition to the operations above, Datasets also support common aggregations
+    you might expect such as `groupby`, `sum`, `min`, etc. You can also pass a user-defined
+    function for custom aggregations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Blocks and repartitioning
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: One of the important things to keep in mind when using Datasets is the concept
+    of *blocks* discussed earlier in the section. Blocks are the underlying chunks
+    of data that make up a Dataset; operations are applied to the underlying data
+    one block at a time. If the number of blocks in a Dataset is too high, each block
+    will be small and there will be a lot of overhead for each operation. If the number
+    of blocks is too small, operations won’t be able to be parallelized as efficiently.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If we take a peek under the hood from the example above, we can see that the
+    initial datasets we created each had 200 blocks by default and when we combined
+    them, the resulting Dataset had 400 blocks. In this case, we may want to repartition
+    the Dataset to bring it back to the original 200 blocks that we started with:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-4\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: Blocks also control the number of files that are created when we write a Dataset
+    to storage (so if you want all of the data to be coalesced into a single output
+    file, you should call `.repartition(1)` before writing it).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Schemas and data formats
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Up until this point, we’ve been operating on simple Datasets made up only of
+    integers. However, for more complex data processing we often want to have a schema,
+    allowing us to more easily comprehend the data and enforce types on each column.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Given that datasets are meant to be the point of interoperation for applications
+    and libraries on Ray, they are designed to be agnostic to a specific datatype
+    and offer flexibility to read, write, and convert between many popular data formats.
+    Datasets by supporting Arrow’s columnar format, which enables converting between
+    different types of structured data such as Python dictionaries, DataFrames, and
+    serialized parquet files.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The simplest way to create a Dataset with a schema is to create it from a list
+    of Python dictionaries:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-5\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'In this case, the schema was inferred from the keys in the dictionaries we
+    passed in. We can also convert to/from data types from popular libraries such
+    as pandas:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-6\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Here we went from a Dataset to a pandas DataFrame, but this also works in reverse:
+    if you create a Dataset from a dataframe, it will automatically inherit the schema
+    from the DataFrame.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Computing Over Datasets
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: In the section above, we introduced some of the functionality that comes built
+    in with Ray Datasets such as filtering, sorting, and unioning. However, one of
+    the most powerful parts of Datasets is that they allow you to harness the flexible
+    compute model of Ray and perform computations efficiently over large amounts of
+    data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The primary way to perform a custom transformation on a Dataset is using `.map()`.
+    This allows you to pass a custom function that will be applied to the records
+    of a Dataset. A basic example might be to square the records of a Dataset:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-7\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: In this example, we passed a simple lambda function and the data we operated
+    on was integers, but we could pass any function here and operate on structured
+    data that supports the Arrow format.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We can also choose to map batches of data instead of individual records using
+    `.map_batches()`. There are some types of computations that are much more efficient
+    when they’re *vectorized*, meaning that they use an algorithm or implementation
+    that is more efficient operating on a set of items instead of one at a time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Revisiting our simple example of squaring the values in the Dataset, we can
+    rewrite it to be performed in batches and use the `numpy.square` optimized implementation
+    instead of the naive Python implemenation:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-8\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: Vectorized computations are especially useful on GPUs when performing deep learning
+    training or inference. However, generally performing computations on GPUs also
+    has significant fixed cost due to needing to load model weights or other data
+    into the GPU RAM. For this purpose, Datasets supports mapping data using Ray actors.
+    Ray actors are long lived and can hold state, as opposed to stateless Ray tasks,
+    so we can cache expensive operations costs by running them in the actor’s constructor
+    (such as loading a model onto a GPU).
+  prefs: []
+  type: TYPE_NORMAL
+- en: To perform batch inference using Datasets, we need to pass a class instead of
+    a function, specify that this computation should run using actors, and use `.map_batches()`
+    so we can perform vectorized inference. If we want this to run on a GPU, we would
+    also pass `num_gpus=1`, which specifies that the actors running the map function
+    each require a GPU. Datasets will automatically autoscale a group of actors to
+    perform the map operation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-9\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: Dataset Pipelines
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'By default, Dataset operations are blocking, meaning they run synchronously
+    from start to finish and there is only a single operation happening at a time.
+    This pattern can be very inefficient for some workloads, however. For example,
+    consider the following set of Dataset transformations that might be used to do
+    batch inference for a machine learning model:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-10\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'There are five stages to this pipeline, and each of them stresses different
+    parts of the system: - Reading from remote storage requires ingress bandwidth
+    to the cluster and may be limited by the throughput of the storage system. - Preprocessing
+    the inputs requires CPU resources. - Vectorized inference on the model requires
+    GPU resources. - Repartitioning requires network bandwidth within the cluster.
+    - Writing to remote storage requires egress bandwidth from the cluster and may
+    be limited by the throughput of storage once again.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Inefficient Dataset Computation](assets/data_pipeline_1.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 7-1\. A naive Dataset computation, leading to idle resources between
+    stages
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: In this scenario, it would likely be much more efficient to instead *pipeline*
+    the the stages and allow them to overlap. This means that as soon as some data
+    has been read from storage, it is fed into the preprocessing stage, then to the
+    inference stage, and so on.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Optimized DatasetPipeline](assets/data_pipeline_2.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 7-2\. An optimized DatasetPipeline that enables overlapping compute between
+    stages and reduces idle resources
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: This pipelining will improve the overall resource usage of the end-to-end workload,
+    improving throughput and therefore decreasing the cost it takes to run the computation
+    (fewer idle resources is better!).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Datasets can be converted to [DatasetPipelines](https://docs.ray.io/en/latest/data/dataset-pipeline.xhtml)
+    using `ds.window()`, enabling the pipelining behavior that we want in this scenario.
+    A window specifies the number of blocks that will be passed through a stage in
+    the pipeline before being passed to the next stage in the pipeline. This behavior
+    can be tuned using the `blocks_per_window` parameter, which defaults to 10.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s rewrite the inefficient pseudocode above to use a DatasetPipeline instead:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-11\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: The only modification made was the addition of a `.window()` call after `read_parquet`
+    and before the preprocessing stage. Now the Dataset has been converted to a DatasetPipeline
+    and its stages will proceed in parallel in 5-block windows, decreasing idle resources
+    and improving efficiency.
+  prefs: []
+  type: TYPE_NORMAL
+- en: DatasetPipelines can also be created using `ds.repeat()` to repeat stages in
+    a pipeline a finite or infinite number of times. This will be explored further
+    in the next section, where we’ll use it for a training workload. Of course, pipelining
+    can be equally beneficial for performance for training in addition to inference.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Example: Parallel SGD from Scratch'
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: One of the key benefits of Datasets is that they can be passed between tasks
+    and actors. In this section, we’ll explore how this can be used to write efficient
+    implementations of complex distributed workloads like distributed hyperparameter
+    tuning and machine learning training.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As discussed in [Chapter 5](ch05.xhtml#chapter_05), a common pattern in machine
+    learning training is to explore a range of “hyperparameters” to find the ones
+    that result in the best model. We may want to run across a wide range of hyperparameters,
+    and doing this naively could be very expensive. Datasets allows us to easily share
+    the same in-memory data across a range of parallel training runs in a single Python
+    script: we can load and preprocess the data once, then pass a reference to it
+    to many downstream actors who can read the data from shared memory.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Additionally, sometimes when working with very large data sets it can be infeasible
+    to load the full training data into memory in a single process or on a single
+    machine. It’s common in distributed training to instead shard the data across
+    many different workers to train in parallel and combining the results either synchronously
+    or asynchronously using a parameter server. There are some important considerations
+    that can make this tricky: 1\. Many distributed training algorithms take a *synchronous*
+    approach, requiring the workers to synchronize their weights after each training
+    epoch. This means there needs to be some coordination between the workers to maintain
+    consistency beween which batch of data they are operating on. 2\. It’s important
+    that each worker gets a random sample of the data during each epoch. A global
+    random shuffle has been shown to perform better than local shuffle or no shuffle.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s walk through an example of how we can implement this type of pattern using
+    Ray Datasets. In the example, we will training multiple copies of an SDG classifier
+    using different hyperparameters across different workers in parallel. This isn’t
+    exactly the same, but it is a similar pattern that focuses on the flexibility
+    and power of Ray Datasets for ML training workloads.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We’ll be training a scikit-learn `SGDClassifier` on a generated binary classification
+    dataset and the hyperparameter we’ll tune is the regularization term (alpha value).
+    The actual details of the ML task and model aren’t too important to this example,
+    you could replace the model and data with any number of examples. The main thing
+    to focus on here is how we orchestrate the data loading and computation using
+    Datasets.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'First, let’s define our `TrainingWorker` that will train a copy of the classifier
+    on the data:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-12\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'There are a few important things to note about the `TrainingWorker`: - It’s
+    a simple wrapper around the `SGDClassifier` and instantiates it with a given alpha
+    value. - The main training function happens in the `train` method. For each epoch,
+    it trains the classifier on the data available. - We also have a `test` method
+    that can be used to run the trained model against a testing set.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Now, let’s instantiate a number of `TrainingWorker`s with different hyperparameters
+    (alpha values):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-13\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: Next, we generate training and validation data and convert the training data
+    to a Dataset. Here, we’re using `.repeat()` to create a DatasetPipeline. This
+    defines the number of epochs that our training will run for. In each epoch, the
+    subsequent operations will be applied to the Dataset and the workers will be able
+    to iterate over the resulting data. We also shuffle the data randomly and shard
+    it to be passed to the training workers, each getting an equal chunk.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-14\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'To run the training on the workers, we invoke their `train` method and pass
+    in one shard of the DatasetPipeline to each. We then block waiting for training
+    to complete across all of the workers. To summarize what happens during this phase:
+    - Each epoch, each worker gets a random shard of the data. - The worker trains
+    its local model on the shard of data assigned to it. - Once a worker has finished
+    training on the current shard, it blocks until the other workers have finished.
+    - The above repeats for the remaining epochs (in this case, 10 total).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-15\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: Finally, we can test out the trained models from each worker on some test data
+    to determine which alpha value produced the most accurate model.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-16\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: While this not be a real-world ML task and in reality you should likely reach
+    for Ray Tune or Ray Train, this example conveys the power of Ray Datasets, especially
+    for machine learning workloads. In just a few 10s of lines of Python code, we
+    were able to implement a complex distributed hyperparameter tuning and training
+    workflow that could easily be scaled up to 10s or 100s of machines and is agnostic
+    to any framework or specific ML task.
+  prefs: []
+  type: TYPE_NORMAL
+- en: External Library Integrations
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Overview
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: While Ray Datasets supports a number of common data processing functionalities
+    out of the box, as mentioned above it’s not a replacement for full data processing
+    systems. Instead, it’s more focused on performing “last mile” processing such
+    as basic data loading, cleaning, and featurization before ML training or inference.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Ray for last-mile data processing](assets/data_positioning_1.svg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Figure 7-3\. A typical workflow using Ray for machine learning: use external
+    systems for primary data processing and ETL, use Ray Datasets for last-mile preprocessing'
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'However, there are a number of other more fully-featured DataFrame and relational
+    data processing systems that integrate with Ray: - Dask on Ray - RayDP (Spark
+    on Ray) - Modin (Pandas on Ray) - Mars on Ray'
+  prefs: []
+  type: TYPE_NORMAL
+- en: These are all standalone data processing libraries that you may be familiar
+    with outside the context of Ray. Each of these tools has an integration with Ray
+    core that enables more expressive data processing than comes with the built-in
+    Datasets while still using Ray’s deployment tooling, scalable scheduling, and
+    shared memory object store for exchanging data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Ray with ecosystem integrations](assets/data_positioning_1.svg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 7-4\. The benefit of Ray data ecosystem integrations, enabling more expressive
+    data processing on Ray. These libraries integrate with Ray Datasets to feed into
+    downstream libraries such as Ray Train.
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: For the purposes of this book, we’ll explore Dask on Ray in slightly more depth
+    to give you a feel for what these integrations look like. If you’re interested
+    in the details of a specific integration, please see the latest [Ray documentation](https://docs.ray.io/en/latest/data/dask-on-ray.xhtml)
+    for up-to-date information.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Dask on Ray
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'To follow along with the examples in this section, please install Ray and Dask:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[Dask]([*https://dask.org/*](https://dask.org/)) is a Python library for parallel
+    computing that is specifically target at scaling analytics and scientific computing
+    workloads to a cluster. One of the most popular features of Dask is [Dask DataFrames](https://docs.dask.org/en/stable/dataframe.xhtml),
+    which offers a subset of the pandas DataFrame API that can be scaled to a cluster
+    of machines in cases where processing in memory on a single node is not feasible.
+    DataFrames work by creating a *task graph* that is submitted to a scheduler for
+    execution. The most typical way to execute Dask DataFrames operations is using
+    the Dask Distributed scheduler, but there is also a pluggable API that allows
+    other schedulers to execute these task graphs as well.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Ray comes packaged with a Dask scheduler backend, allowing Dask DataFrame task
+    graphs to be executed as Ray tasks and therefore make use of the Ray scheduler
+    and shared memory object store. This doesn’t require modifying the core DataFrames
+    code at all; instead, in order to run using Ray all you need to do is first connect
+    to a running Ray cluster (or run Ray locally) and then enable the Ray scheduler
+    backend:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-17\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: Now we can run regular Dask DataFrames code and have it scaled across the Ray
+    cluster. For example, we might want to do some time series analysis using standard
+    DataFrame operations like filter, groupby, and computing the standard deviation
+    (example taken from Dask documentation).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-18\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: If you’re used to pandas or other DataFrame libraries, you might wonder why
+    we need to call `df.compute()`. This is because Dask is *lazy* by default, and
+    will only compute results on demand, allowing it to optimize the task graph that
+    will be executed across the cluster.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'One of the most powerful aspects of the is that it integrates very nicely with
+    Ray Datasets. We can convert a Ray Dataset to a Dask DataFrame and vice versa
+    using built-in utilities:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-19\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: This simple example might not look too impressive because we’re able to compute
+    the standard deviation using either Dask DataFrames or Ray Datasets. However,
+    as you’ll see in the next section when we build an end-to-end ML pipeline, this
+    enables really powerful workflows. For example, we can use the full expressiveness
+    of DataFrames to do our featurization and preprocessing, then pass the data directly
+    into downstream operations such as distributed training or inference while keeping
+    everything in memory. This highlights how Datasets enables a wide range of use
+    cases on top of Ray, and how integrations like Dask on Ray make the ecosystem
+    even more powerful.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Building an ML Pipeline
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Although we were able to we build a simple distributed training application
+    from scratch in the previous section, there were many edge cases, opportunities
+    for performance optimization, and usability features that we would want to address
+    to build a real-world application. As you’ve learned in the previous chapters
+    about Ray RLlib, Ray Tune, and Ray Train, Ray has an ecosystem of libraries that
+    enable us to build production-ready ML applications. In this section, we’ll explore
+    how to use Datasets as the “glue layer” to build an ML pipeline end-to-end.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Background
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'To successfully productionize a machine learning model, one first needs to
+    collect and catalog data using standard ETL processes. However, that’s not the
+    end of the story: in order to train a model, we also often need to do featurization
+    of the data before feeding into our training process, and how we feed the data
+    into training can make a big impact on cost and performance. After training a
+    model, we’ll also want to run inference across many different datasets — that’s
+    the whole point of training the model after all! This end-to-end process is summarized
+    in the figure below.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Though this might look like just a chain of steps, in practice the data processing
+    workflow for machine learning is an iterative process of experimentation to define
+    the right set of features and train a high-performing model on them. Efficiently
+    loading, transforming, and feeding the data into training and inference is also
+    crucial for performance, which translates directly to cost for compute-intensive
+    models. Often times, implementing these ML pipelines means stitching together
+    multiple different systems and materializing intermediate results to remote storage
+    between the stages. This has two major downsides: 1\. First, it requires orchestrating
+    many different systems and programs for a single workflow. This can be a lot to
+    handle for any ML practictioner, so many people reach to workflow orchestration
+    systems like [Apache Airflow](https://airflow.apache.org/). While Airflow has
+    some great benefits, it’s also a lot of complexity to introduce (especially in
+    development). 2\. Second, running our ML workflow across multiple different systems
+    means we need to read from and write to storage between each stage. This incurs
+    significant overhead and cost due to data transfer and serialization.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In contrast, using Ray we are able to build a complete machine learning pipeline
+    as a single application that can be run as a single Python script. The ecosystem
+    of built-in and third party libraries make it possible to mix-and-match the right
+    functionality for a gien use case and build scalable, production-ready pipelines.
+    Ray Datasets acts as the glue layer, enabling us to efficiently load, preprocess,
+    and compute over the data while avoiding expensive serialization costs and keeping
+    intermediate data in shared memory.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'End-to-End Example: Predicting Big Tips in Nyc Taxi Rides'
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'This section walks through a practical, end-to-end example of building a deep
+    learning pipeline using Ray. We will build a binary classification model to predict
+    if a taxi ride will result in a big tip (>20% of the fare) using the public [New
+    York City Taxi and Limousine Commission (TLC) Trip Record Data](https://www1.nyc.gov/site/tlc/about/tlc-trip-record-data.page).
+    Our workflow will closely resemble that of a typical ML practitioner: - First,
+    we will load the data, do some basic preprocessing, and compute features we’ll
+    use in our model. - Then, we will define a neural network and train it using distributed
+    data-parallel training. - Finally, we will apply the trained neural network to
+    a fresh batch of data.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The example will use Dask on Ray and train a PyTorch neural network, but note
+    that nothing here is specific to either of those libraries, Ray Datasets and Ray
+    Train can be used with a wide range of popular machine learning tools. To follow
+    along with the example code in this section, please install Ray, PyTorch, and
+    Dask:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'In the examples below, we’ll be loading the data from local disk to make it
+    easy to run the examples on your machine. You can download the data to your local
+    machine from the [AWS Registry of Open Data](https://registry.opendata.aws/nyc-tlc-trip-records-pds/)
+    using the AWS CLI:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE22]'
+  prefs: []
+  type: TYPE_PRE
+- en: If you’d like to try loading the data directly from cloud storage, simply replace
+    the local paths in the examples with the corresponding S3 URL.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Loading, preprocessing, and featurizing with dask on Ray
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: The first step in training our model is to load and preprocess it. To do this,
+    we’ll be using Dask on Ray, which as discussed above gives us a convenient DataFrames
+    API and the ability to scale up the preprocessing across a cluster and efficiently
+    pass it into our training and inference operations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Below is our code for preprocessing and featurization:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-20\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE23]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This involves basic data loading and cleaning (dropping nulls and outliers)
+    as well as transforming some columns into a format that can be used as features
+    in our machine learning model. For instance, we transform the pickup and dropoff
+    datetimes, which are provided as a string, into three numerical features: `trip_duration`,
+    `hour`, and `day_of_week`. This is made easy by Dask’s built-in support for [Python
+    datetime utilites](https://docs.python.org/3/library/datetime.xhtml). If this
+    data is going to be used for training, we also need to compute the label column
+    (whether the tip was more or less than 20% of the fare amount).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Finally, once we’ve computed our preprocessed Dask DataFrame, we transform it
+    into a Ray Dataset so we can pass it into our training and inference processes
+    later.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Defining a PyTorch model
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Now that we’ve cleaned and prepared the data, we need to define a model architecture
+    that we’ll use for the model. In practice, this would likely be an iterative process
+    and involve researching the state of the art for similar problems. For the sake
+    of our example, we’ll keep things simple and use use a basic PyTorch neural network.
+    The neural network has three linear transformations starting with the dimension
+    of our feature vector and then outputs a value between 0 and 1 using a Sigmoid
+    activation function. This output value will be rounded to produce the binary prediction
+    of if the ride will result in a big tip or not.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-21\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE24]'
+  prefs: []
+  type: TYPE_PRE
+- en: Distributed training with Ray Train
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Now that we’ve defined the neural network architecture, we need a way to efficiently
+    train this on our data. This data set is very large (hundreds of gigabytes in
+    total), so our best bet is probably to perform distributed data-parallel training.
+    We will use Ray Train, which you learned about in [Chapter 6](ch06.xhtml#chapter_06),
+    to define a scalable training process that will use [PyTorch DataParallel](https://pytorch.org/docs/stable/generated/torch.nn.DataParallel.xhtml)
+    under the hood.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The first thing we need to do is define the logic that will happen to train
+    on a batch of data on each worker in each epoch. This will take in a local shard
+    of the full dataset, run it through the local copy of the model, and perform backpropagation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-22\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE25]'
+  prefs: []
+  type: TYPE_PRE
+- en: Next, we also need to define the logic for each worker to validate its current
+    copy of the model in each epoch. This will run a local batch of data through the
+    model, compare the predictions to the actual label values, and compute the subsequent
+    loss using a provided loss function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-23\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE26]'
+  prefs: []
+  type: TYPE_PRE
+- en: Finally, we define the core training logic. This will take in a variety of configuration
+    options (such as a batch size and other model hyperparameters), instantiate the
+    model, loss function, and optimizer, and then run the core training loop. In each
+    epoch, each worker will get its shard of the training and validation datasets,
+    convert it to a local [PyTorch Dataset](https://pytorch.org/docs/stable/data.xhtml),
+    and run the validation and training code we defined above. After each epoch, the
+    worker will using Ray Train utilities to report the result and save the current
+    model weights for use later.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-24\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE27]'
+  prefs: []
+  type: TYPE_PRE
+- en: Now that the full training process has been defined, we need to load the training
+    and validation data to feed into our training workers. Here, we call the `load_dataset`
+    function we defined earlier that will do preprocessing and featurization, then
+    split the dataset into a training and validation Dataset^([1](ch07.xhtml#idm44990019385840)).
+    Finally, we want to convert both Datasets into [Dataset Pipelines](https://docs.ray.io/en/latest/data/dataset-pipeline.xhtml)
+    for efficiency and make sure that the training dataset is globally shuffled between
+    all of the workers in each epoch.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-25\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE28]'
+  prefs: []
+  type: TYPE_PRE
+- en: Everything is set, and it’s time to run our distributed training process! All
+    that’s left is to create a Trainer, pass in our Datasets, and let the training
+    scale up and run across the configured number of workers. After training has completed,
+    we fetch the latest model weights using the checkpoint API.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-26\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE29]'
+  prefs: []
+  type: TYPE_PRE
+- en: Distributed batch inference with Ray datasets
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Once we’ve trained a model and gotten the best accuracy that we can, the next
+    step is to actually apply it in practice. Sometimes this means powering a low-latency
+    service, which we’ll explore in [Chapter 8](ch08.xhtml#chapter_08), but often
+    the task is to apply the model across batches of data as they come in.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s use the trained model weights from the training process above and apply
+    them across a new batch of data (in this case, it’ll just be another chunk of
+    the same public data set). To do this, first we need to load, preprocess, and
+    featurize the data in the same way we did for training. Then we will load our
+    model and `map` it across the whole data set. As discussed in the section above,
+    Datasets allows us to do this efficiently with Ray Actors, even using GPUs just
+    by changing one parameter. We simply wrap our trained model weights in a class
+    that will load them and configure a model for inference, then call `map_batches`
+    and pass in the inference model class:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-27\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE30]'
+  prefs: []
+  type: TYPE_PRE
+- en: ^([1](ch07.xhtml#idm44990019385840-marker)) The code only loads a subset of
+    the data for testing, to test at scale use all partitions of the data when calling
+    `load_dataset` and increase `num_workers` when training the model.
+  prefs: []
+  type: TYPE_NORMAL

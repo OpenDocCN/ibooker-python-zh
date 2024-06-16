@@ -1,0 +1,2531 @@
+- en: Chapter 4\. 20 Asyncio Libraries You Aren’t Using (But…Oh, Never Mind)
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter, we look at case studies using the new Python features for async
+    programming. We’ll be making use of several third-party libraries, as you will
+    in your own projects.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The title of this chapter is a play on the title of a previous book I wrote
+    called [*20 Python Libraries You Aren’t Using (But Should)*](https://oreil.ly/HLsvb)
+    (O’Reilly). Many of those libraries will also be useful in your `asyncio`-based
+    applications, but this chapter focuses on libraries that have been designed specifically
+    for the new async features in Python.
+  prefs: []
+  type: TYPE_NORMAL
+- en: It is difficult to present `asyncio`-based code in short snippets. As you have
+    seen in all the previous code samples in the book, I’ve tried to make each example
+    a complete, runnable program, because application lifetime management is a core
+    consideration for using async programming correctly.
+  prefs: []
+  type: TYPE_NORMAL
+- en: For this reason, most of the case studies in this chapter will be somewhat larger,
+    in terms of lines of code, than is usual for such a book. My goal in using this
+    approach is to make the case studies more useful by giving you a “whole view”
+    of an async program rather than leaving you to figure out how detached fragments
+    might fit together.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Some of the code samples in this chapter compromise on style in order to save
+    space. I like PEP8 as much as the next Pythonista, but practicality beats purity!
+  prefs: []
+  type: TYPE_NORMAL
+- en: Streams (Standard Library)
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Before looking at third-party libraries, let’s begin with the standard library.
+    The [streams API](https://oreil.ly/mnMZD) is the high-level interface offered
+    for async socket programming, and as the following case study will show, it’s
+    pretty easy to use. However, application design remains complex simply because
+    of the nature of the domain.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The following case study shows an implementation of a message broker, with an
+    initial naive design followed by a more considered design. Neither should be considered
+    production-ready; my goal is to help you think about the various aspects of concurrent
+    network programming that need to be taken into account when designing such applications.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Case Study: A Message Queue'
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'A *message queue service* is a backend application that receives connections
+    from other applications and passes messages between those connected services,
+    often referred to as *publishers* and *subscribers*. Subscribers typically listen
+    to specific channels for messages, and usually it is possible to configure the
+    message distribution in different channels in two ways: messages can be distributed
+    to all subscribers on a channel (*pub-sub*), or a different message can go to
+    each subscriber one at a time (*point-to-point*).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Recently, I worked on a project that involved using [ActiveMQ](https://oreil.ly/yiaK0)
+    as a message broker for microservices intercommunication. At a basic level, such
+    a broker (server):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Maintains persistent socket connections to multiple clients
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Receives messages from clients with a target *channel name*
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Delivers those messages to all *other* clients subscribed to that same channel
+    name
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'I recall wondering how hard it might be to create such an application. As an
+    added touch, ActiveMQ can perform both models of message distribution, and the
+    two models are generally differentiated by the channel name:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Channel names with the prefix `/topic` (e.g., `/topic/customer/registration`)
+    are managed with the [pub-sub](https://oreil.ly/y6cYr) pattern, where all channel
+    subscribers get all messages.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Channel names with the prefix `/queue` are handled with the [point-to-point](http://bit.ly/2CeNbxr)
+    model, in which messages on a channel are distributed between channel subscribers
+    in a round-robin fashion: each subscriber gets a unique message.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'In our case study, we will build a toy message broker with these basic features.
+    The first issue we must address is that TCP is not a message-based protocol: we
+    just get streams of bytes on the wire. We need to create our own protocol for
+    the structure of messages, and the simplest protocol is to prefix each message
+    with a size header, followed by a message payload of that size. The utility library
+    in [Example 4-1](#msgproto) provides *read* and *write* capabilities for such
+    messages.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Example 4-1\. Message protocol: read and write'
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO1-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Get the first 4 bytes. This is the size prefix.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO1-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Those 4 bytes must be converted into an integer.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO1-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now we know the payload size, so we read that off the stream.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](assets/4.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO1-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Write* is the inverse of *read*: first we send the length of the data, encoded
+    as 4 bytes, and thereafter the data.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now that we have a rudimentary message protocol, we can focus on the message
+    broker application in [Example 4-2](#msgserver).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 4-2\. A 40-line prototype server
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO2-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Imports from our *msgproto.py* module.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO2-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: A global collection of currently active subscribers. Every time a client connects,
+    they must first send a channel name they’re subscribing to. A deque will hold
+    all the subscribers for a particular channel.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO2-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `client()` coroutine function will produce a long-lived coroutine for each
+    new connection. Think of it as a callback for the TCP server started in `main()`.
+    On this line, I’ve shown how the host and port of the remote peer can be obtained,
+    for example, for logging.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](assets/4.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO2-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Our protocol for clients is the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: On first connect, a client *must* send a message containing the channel to subscribe
+    to (here, `subscribe_chan`).
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Thereafter, for the life of the connection, a client sends a message to a channel
+    by first sending a message containing the destination channel name, followed by
+    a message containing the data. Our broker will send such data messages to every
+    client subscribed to that channel name.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[![5](assets/5.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO2-5)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Add the `StreamWriter` instance to the global collection of subscribers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![6](assets/6.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO2-6)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: An infinite loop, waiting for data from this client. The first message from
+    a client must be the destination channel name.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![7](assets/7.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO2-7)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Next comes the actual data to distribute to the channel.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![8](assets/8.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO2-8)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Get the deque of subscribers on the target channel.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![9](assets/9.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO2-9)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Some special handling if the channel name begins with the magic word `/queue`:
+    in this case, we send the data to *only one* of the subscribers, not all of them.
+    This can be used for sharing work between a bunch of workers, rather than the
+    usual pub-sub notification scheme, where all subscribers on a channel get all
+    the messages.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![10](assets/10.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO2-10)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here is why we use a deque and not a list: rotation of the deque is how we
+    keep track of which client is next in line for `/queue` distribution. This seems
+    expensive until you realize that a single deque rotation is an O(1) operation.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![11](assets/11.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO2-11)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Target only whichever client is first; this changes after every rotation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![12](assets/12.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO2-12)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Create a list of coroutines for sending the message to each writer, and then
+    unpack these into `gather()` so we can wait for all of the sending to complete.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This line is a bad flaw in our program, but it may not be obvious why: though
+    it may be true that all of the sending to each subscriber will happen concurrently,
+    what happens if we have one very slow client? In this case, the `gather()` will
+    finish only when the slowest subscriber has received its data. We can’t receive
+    any more data from the sending client until all these `send_msg()` coroutines
+    finish. This slows all message distribution to the speed of the slowest subscriber.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![13](assets/13.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO2-13)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: When leaving the `client()` coroutine, we make sure to remove ourselves from
+    the global `SUBSCRIBERS` collection. Unfortunately, this is an O(*n*) operation,
+    which can be a little expensive for very large *n*. A different data structure
+    would fix this, but for now we console ourselves with the knowledge that connections
+    are intended to be long-lived—thus, there should be few disconnection events—and
+    *n* is unlikely to be very large (say ~10,000 as a rough order-of-magnitude estimate),
+    and this code is at least easy to understand.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'So that’s our server; now we need clients, and then we can show some output.
+    For demonstration purposes, I’ll make two kinds of clients: a *sender* and a *listener*.
+    The server doesn’t differentiate; all clients are the same. The distinction between
+    sender and listener behavior is only for educational purposes. [Example 4-3](#listener)
+    shows the code for the listener application.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Example 4-3\. Listener: a toolkit for listening for messages on our message
+    broker'
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO3-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `uuid` standard library module is a convenient way of creating an “identity”
+    for this listener. If you start up multiple instances, each will have its own
+    identity, and you’ll be able to track what is happening in the logs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO3-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Open a connection to the server.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO3-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The channel to subscribe to is an input parameter, captured in `args.listen`.
+    Encode it into bytes before sending.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](assets/4.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO3-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: By our protocol rules (as discussed in the broker code analysis previously),
+    the first thing to do after connecting is to send the channel name to subscribe
+    to.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![5](assets/5.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO3-5)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This loop does nothing else but wait for data to appear on the socket.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![6](assets/6.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO3-6)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The command-line arguments for this program make it easy to point to a host,
+    a port, and a channel name to listen to.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The code for the other client, the sender program shown in [Example 4-4](#sender),
+    is similar in structure to the listener module.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Example 4-4\. Sender: a toolkit for sending data to our message broker'
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO4-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: As with the listener, claim an identity.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO4-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Reach out and make a connection.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO4-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: According to our protocol rules, the first thing to do after connecting to the
+    server is to give the name of the channel to subscribe to; however, since we are
+    a sender, we don’t really care about subscribing to any channels. Nevertheless,
+    the protocol requires it, so just provide a null channel to subscribe to (we won’t
+    actually listen for anything).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](assets/4.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO4-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Send the channel to subscribe to.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![5](assets/5.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO4-5)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The command-line parameter `args.channel` provides the channel *to which* we
+    want to send messages. It must be converted to bytes first before sending.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![6](assets/6.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO4-6)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using `itertools.count()` is like a `while True` loop, except that we get an
+    iteration variable to use. We use this in the debugging messages since it makes
+    it a bit easier to track which message got sent from where.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![7](assets/7.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO4-7)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The delay between sent messages is an input parameter, `args.interval`. The
+    next line generates the message payload. It’s either a bytestring of specified
+    size (`args.size`) or a descriptive message. This flexibility is just for testing.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![8](assets/8.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO4-8)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Note that *two* messages are sent here: the first is the destination channel
+    name, and the second is the payload.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![9](assets/9.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO4-9)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As with the listener, there are a bunch of command-line options for tweaking
+    the sender: `channel` determines the target channel to send to, while `interval`
+    controls the delay between sends. The `size` parameter controls the size of each
+    message payload.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We now have a broker, a listener, and a sender; it’s time to see some output.
+    To produce the following code snippets, I started up the server, then two listeners,
+    and then a sender. Then, after a few messages had been sent, I stopped the server
+    with Ctrl-C. The server output is shown in [Example 4-5](#brokeoutput), the sender
+    output in [Example 4-6](#senderoutput), and the listener output in Examples [4-7](#listeneroutput)
+    and [4-8](#listener2output).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 4-5\. Message broker (server) output
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: Example 4-6\. Sender (client) output
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: Example 4-7\. Listener 1 (client) output
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: Example 4-8\. Listener 2 (client) output
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: Our toy message broker works. The code is also pretty easy to understand, given
+    such a complex problem domain, but unfortunately, the design of the broker code
+    itself is problematic.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The problem is that, for a particular client, we send messages to subscribers
+    in the same coroutine as where new messages are received. This means that if any
+    subscriber is slow to consume what we’re sending, it might take a long time for
+    that `await gather(...)` line in [Example 4-2](#msgserver) to complete, and we
+    cannot receive and process more messages while we wait.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Instead, we need to decouple the receiving of messages from the sending of messages.
+    In the next case study, we refactor our code to do exactly that.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Case Study: Improving the Message Queue'
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: In this case study, we improve the design of our toy message broker. The listener
+    and sender programs remain as is. The specific improvement in the new broker design
+    is to decouple sending and receiving messages; this will resolve the problem where
+    a slow subscriber would also slow down receiving new messages, as discussed in
+    the previous section. The new code, shown in [Example 4-9](#msgserverbetter),
+    is a bit longer but not terribly so.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Example 4-9\. Message broker: improved design'
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO5-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In the previous implementation, there were only `SUBSCRIBERS`; now there are
+    `SEND_QUEUES` and `CHAN_QUEUES` as global collections. This is a consequence of
+    completely decoupling the *receiving* and *sending* of data. `SEND_QUEUES` has
+    one queue entry for each client connection: all data that must be sent to that
+    client must be placed onto that queue. (If you peek ahead, the `send_client()`
+    coroutine will pull data off `SEND_QUEUES` and send it.)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO5-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Up until this point in the `client()` coroutine function, the code is the same
+    as in the simple server: the subscribed channel name is received, and we add the
+    `StreamWriter` instance for the new client to the global `SUBSCRIBERS` collection.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO5-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This is new: we create a long-lived task that will do all the sending of data
+    to this client. The task will run independently as a separate coroutine and will
+    pull messages off the supplied queue, `SEND_QUEUES[writer]`, for sending.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](assets/4.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO5-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Now we’re inside the loop where we receive data. Remember that we always receive
+    two messages: one for the destination channel name, and one for the data. We’re
+    going to create a new, dedicated `Queue` for every destination channel, and that’s
+    what `CHAN_QUEUES` is for: when any client wants to push data to a channel, we’re
+    going to put that data onto the appropriate queue and then go immediately back
+    to listening for more data. This approach decouples the distribution of messages
+    from the receiving of messages from this client.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![5](assets/5.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO5-5)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: If there isn’t already a queue for the target channel, make one.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![6](assets/6.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO5-6)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Create a dedicated and long-lived task for that channel. The coroutine `chan_sender()`
+    will be responsible for taking data off the channel queue and distributing that
+    data to subscribers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![7](assets/7.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO5-7)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Place the newly received data onto the specific channel’s queue. If the queue
+    fills up, we’ll wait here until there is space for the new data. Waiting here
+    means we won’t be reading any new data off the socket, which means that the client
+    will have to wait on sending new data into the socket on its side. This isn’t
+    necessarily a bad thing, since it communicates so-called *back-pressure* to this
+    client. (Alternatively, you could choose to drop messages here if the use case
+    is OK with that.)
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![8](assets/8.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO5-8)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: When the connection is closed, it’s time to clean up. The long-lived task we
+    created for sending data to this client, `send_task`, can be shut down by placing
+    `None` onto its queue, `SEND_QUEUES[writer]` (check the code for `send_client()`).
+    It’s important to use a value on the queue, rather than outright cancellation,
+    because there may already be data on that queue and we want that data to be sent
+    out before `send_client()` is ended.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![9](assets/9.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO5-9)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Wait for that sender task to finish…
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![10](assets/10.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO5-10)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: …then remove the entry in the `SEND_QUEUES` collection (and in the next line,
+    we also remove the `sock` from the `SUBSCRIBERS` collection as before).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![11](assets/11.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO5-11)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The `send_client()` coroutine function is very nearly a textbook example of
+    pulling work off a queue. Note how the coroutine will exit only if `None` is placed
+    onto the queue. Note also how we suppress `CancelledError` *inside* the loop:
+    this is because we want this task to be closed only by receiving a `None` on the
+    queue. This way, all pending data on the queue can be sent out before shutdown.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![12](assets/12.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO5-12)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`chan_sender()` is the distribution logic for a channel: it sends data from
+    a dedicated channel `Queue` instance to all the subscribers on that channel. But
+    what happens if there are no subscribers for this channel yet? We’ll just wait
+    a bit and try again. (Note, though, that the queue for this channel, `CHAN_QUEUES[name]`,
+    will keep filling up.)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![13](assets/13.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO5-13)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As in our previous broker implementation, we do something special for channels
+    whose name begins with `/queue`: we rotate the deque and send only to the first
+    entry. This acts like a crude load-balancing system because each subscriber gets
+    different messages off the same queue. For all other channels, all subscribers
+    get all the messages.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![14](assets/14.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO5-14)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We’ll wait here for data on the queue, and exit if `None` is received. Currently,
+    this isn’t triggered anywhere (so these `chan_sender()` coroutines live forever),
+    but if logic were added to clean up these channel tasks after, say, some period
+    of inactivity, that’s how it would be done.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![15](assets/15.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO5-15)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Data has been received, so it’s time to send to subscribers. We do not do the
+    sending here: instead, we place the data onto each subscriber’s own send queue.
+    This decoupling is necessary to make sure that a slow subscriber doesn’t slow
+    down anyone else receiving data. And furthermore, if the subscriber is so slow
+    that their send queue fills up, we don’t put that data on their queue; i.e., it
+    is lost.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The preceding design produces the same output as the earlier, simplistic implementation,
+    but now we can be sure that a slow listener will not interfere with message distribution
+    to other listeners.
+  prefs: []
+  type: TYPE_NORMAL
+- en: These two case studies show a progression in thinking around the design of a
+    message distribution system. A key aspect was the realization that sending and
+    receiving data might be best handled in separate coroutines, depending on the
+    use case. In such instances, queues can be very useful for moving data between
+    those different coroutines and for providing buffering to decouple them.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The more important goal of these case studies was to show how the streams API
+    in `asyncio` makes it very easy to build socket-based applications.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Twisted
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The [Twisted](https://oreil.ly/Y3dY2) project predates—dramatically—the `asyncio`
+    standard library, and has been flying the flag of async programming in Python
+    for around 14 years now. The project provides not only the basic building blocks,
+    like an event loop, but also primitives like *deferreds* that are a bit like the
+    futures in `asyncio`. The design of `asyncio` has been heavily influenced by Twisted
+    and the extensive experience of its leaders and maintainers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Note that [`asyncio` does *not* replace Twisted](https://oreil.ly/J0ezC). Twisted
+    includes high-quality implementations of a huge number of internet protocols,
+    including not only the usual HTTP but also XMPP, NNTP, IMAP, SSH, IRC, and FTP
+    (both servers and clients). And the list goes on: DNS? Check. SMTP? Check. POP3?
+    Check. The availability of these excellent internet protocol implementations continues
+    to make Twisted compelling.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: At the code level, the main difference between Twisted and `asyncio`, apart
+    from history and historical context, is that for a long time Python lacked language
+    support for coroutines, and this meant that Twisted and projects like it had to
+    figure out ways of dealing with asynchronicity that worked with standard Python
+    syntax.
+  prefs: []
+  type: TYPE_NORMAL
+- en: For most of Twisted’s history, *callbacks* were the means by which async programming
+    was done, with all the nonlinear complexity that entails; however, when it became
+    possible to use generators as makeshift coroutines, it suddenly became possible
+    to lay out code in Twisted in a linear fashion using its `@defer.inlineCallbacks`
+    decorator, as shown in [Example 4-10](#twistedinline).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 4-10\. Even more Twisted with inlined callbacks
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO6-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Ordinarily, Twisted requires creating instances of `Deferred` and adding callbacks
+    to those instances as the method of constructing async programs. A few years ago,
+    the `@inlineCallbacks` decorator was added, which repurposes generators as coroutines.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO6-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: While `@inlineCallbacks` *did* allow you to write code that was linear in appearance
+    (unlike callbacks), some hacks were required, such as this call to `defer.returnValue()`,
+    which is how you have to return values from `@inlineCallbacks` coroutines.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO6-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Here we can see the `yield` that makes this function a generator. For `@inlineCallbacks`
+    to work, there must be at least one `yield` present in the function being decorated.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Since native coroutines appeared in Python 3.5, the Twisted team (and [Amber
+    Brown](https://atleastfornow.net) in particular) have been working to add support
+    for running Twisted on the `asyncio` event loop.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This is an ongoing effort, and my goal in this section is not to convince you
+    to create all your applications as Twisted-`asyncio` hybrids, but rather to make
+    you aware that work is currently being done to provide significant interoperability
+    between the two.
+  prefs: []
+  type: TYPE_NORMAL
+- en: For those of you with experience using Twisted, [Example 4-11](#twistedasyncio)
+    might be jarring.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 4-11\. Support for asyncio in Twisted
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO7-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This is how you tell Twisted to use the `asyncio` event loop as its main `reactor`.
+    Note that this line *must* come before the `reactor` is imported from `twisted.internet`
+    on the following line.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO7-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Anyone familiar with Twisted programming will recognize these imports. We don’t
+    have space to cover them in depth here, but in a nutshell, the `reactor` is the
+    `Twisted` version of the `asyncio` *loop*, and `defer` and `task` are namespaces
+    for tools to work with scheduling coroutines.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO7-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Seeing `async def` here, in a Twisted program, looks odd, but this is indeed
+    what the new support for `async/await` gives us: the ability to use native coroutines
+    directly in Twisted programs.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](assets/4.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO7-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the older `@inlineCallbacks` world, you would have used `yield from` here,
+    but now we can use `await`, the same as in `asyncio` code. The other part of this
+    line, `deferLater()`, is an alternative way to do the same thing as `asyncio.sleep(1)`.
+    We `await` a future where, after one second, a do-nothing callback will fire.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![5](assets/5.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO7-5)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`ensureDeferred()` is a Twisted version of scheduling a coroutine. This would
+    be analogous to `loop.create_task()` or `asyncio.ensure_future()`.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![6](assets/6.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO7-6)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Running the `reactor` is the same as `loop.run_forever()` in `asyncio`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Running this script produces the following output:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: There’s much more to learn about Twisted. In particular, it’s well worth your
+    time to go through the list of networking protocols it implements. There is still
+    some work to be done, but the future looks very bright for interoperation between
+    Twisted and `asyncio`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`asyncio` has been designed in such a way that we can look forward to a future
+    where it will be possible to incorporate code from many async frameworks, such
+    as Twisted and Tornado, into a single application, with all code running on the
+    same event loop.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The Janus Queue
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The Janus queue (installed with `pip install janus`) provides a solution for
+    communication between threads and coroutines. In the Python standard library,
+    there are two kinds of queues:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`queue.Queue`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: A *blocking* queue, commonly used for communication and buffering between threads
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`asyncio.Queue`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: An `async`-compatible queue, commonly used for communication and buffering between
+    coroutines
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Unfortunately, neither is useful for communication between threads and coroutines!
+    This is where Janus comes in: it is a single queue that exposes both APIs, a blocking
+    one *and* an async one. [Example 4-12](#janusex) generates data from inside a
+    thread, places that data on a queue, and then consumes that data from a coroutine.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 4-12\. Connecting coroutines and threads with a Janus queue
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO8-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Create a Janus queue. Note that just like an `asyncio.Queue`, the Janus queue
+    will be associated with a specific event loop. As usual, if you don’t provide
+    the `loop` parameter, the standard `get_event_loop()` call will be used internally.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO8-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Our `main()` coroutine function simply waits for data on a queue. This line
+    will suspend until there is data, exactly until there is data, exactly like calling
+    `get()` on an `asyncio.Queue` instance. The queue object has two *faces*: this
+    one is called `async_q` and provides the async-compatible queue API.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO8-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Print a message.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](assets/4.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO8-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Inside the `data_source()` function, a random `int` is generated, which is used
+    both as a sleep duration and a data value. Note that the `time.sleep()` call is
+    blocking, so this function must be executed in a thread.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![5](assets/5.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO8-5)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Place the data onto the Janus queue. This shows the other *face* of the Janus
+    queue: `sync_q`, which provides the standard, blocking `Queue` API.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here’s the output:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: If you can, it’s better to aim for having short executor jobs, and in these
+    cases, a queue (for communication) won’t be necessary. This isn’t always possible,
+    though, and in such situations, the Janus queue can be the most convenient solution
+    to buffer and distribute data between threads and coroutines.
+  prefs: []
+  type: TYPE_NORMAL
+- en: aiohttp
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: '`aiohttp` brings all things HTTP to `asyncio`, including support for HTTP clients
+    and servers, as well as WebSocket support. Let’s jump straight into code examples,
+    starting with simplicity itself: “Hello World.”'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Case Study: Hello World'
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: '[Example 4-13](#aiohttpminimal) shows a minimal web server using `aiohttp`.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 4-13\. Minimal aiohttp example
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO9-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: An `Application` instance is created.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO9-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: A route is created, with the target coroutine `hello()` given as the handler.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO9-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The web application is run.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Observe that there is no mention of loops, tasks, or futures in this code:
+    the developers of the `aiohttp` framework have hidden all that away from us, leaving
+    a very clean API. This is going to be common in most frameworks that build on
+    top of `asyncio`, which has been designed to allow framework designers to choose
+    only the bits they need, and encapsulate them in their preferred API.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Case Study: Scraping the News'
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: '`aiohttp` can be used both as a server and a client library, like the very
+    popular (but blocking!) [`requests`](https://oreil.ly/E2s9d) library. I wanted
+    to showcase `aiohttp` by using an example that incorporates both features.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In this case study, we’ll implement a website that does web scraping behind
+    the scenes. The application will scrape two news websites and combine the headlines
+    into one page of results. Here is the strategy:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: A browser client makes a web request to *http://localhost:8080/news*.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Our web server receives the request, and then on the backend fetches HTML data
+    from multiple news websites.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Each page’s data is scraped for headlines.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: The headlines are sorted and formatted into the response HTML that we send back
+    to the browser client.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[Figure 4-1](#scraper-image) shows the output.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![uaip 0401](assets/uaip_0401.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Figure 4-1\. The final product of our news scraper: headlines from CNN are
+    shown in one color, and Al Jazeera in another'
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Web scraping has become quite difficult nowadays. For example, if you try `requests.get('http://edition.cnn.com')`,
+    you’re going to find that the response contains very little usable data! It has
+    become increasingly necessary to be able to execute JavaScript locally in order
+    to obtain data, because many sites use JavaScript to load their actual content.
+    The process of executing such JavaScript to produce the final, complete HTML output
+    is called *rendering*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To accomplish rendering, we use a neat project called [Splash](https://oreil.ly/1IAie),
+    which describes itself as a “JavaScript rendering service.” It can run in a [Docker](https://www.docker.com)
+    container and provides an API for rendering other sites. Internally, it uses a
+    (JavaScript-capable) WebKit engine to fully load and render a website. This is
+    what we’ll use to obtain website data. Our `aiohttp` server, shown in [Example 4-14](#exscraper),
+    will call this Splash API to obtain the page data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'To obtain and run the Splash container, run these commands in your shell:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: Our server backend will call the Splash API at *http://localhost:8050*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 4-14\. Code for the news scraper
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO10-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `news()` function is the handler for the */news* URL on our server. It returns
+    the HTML page showing all the headlines.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO10-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here, we have only two news websites to be scraped: CNN and Al Jazeera. More
+    could easily be added, but then additional postprocessors would also have to be
+    added, just like the `cnn_articles()` and `aljazeera_articles()` functions that
+    are customized to extract headline data.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO10-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: For each news site, we create a task to fetch and process the HTML page data
+    for its front page. Note that we unpack the tuple (`(*s)`) since the `news_fetch()`
+    coroutine function takes both the URL and the postprocessing function as parameters.
+    Each `news_fetch()` call will return a *list of tuples* as headline results, in
+    the form *`<article URL>`*, *`<article title>`*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](assets/4.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO10-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: All the tasks are gathered together into a single `Future` (`gather()` returns
+    a future representing the state of all the tasks being gathered), and then we
+    immediately `await` the completion of that future. This line will suspend until
+    the future completes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![5](assets/5.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO10-5)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Since all the `news_fetch()` tasks are now complete, we collect all of the results
+    into a dictionary. Note how nested comprehensions are used to iterate over tasks,
+    and then over the list of tuples returned by each task. We also use *f-strings*
+    to substitute data directly, including even the kind of page, which will be used
+    in CSS to color the `div` background.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![6](assets/6.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO10-6)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this dictionary, the *key* is the headline title, and the *value* is an HTML
+    string for a `div` that will be displayed in our result page.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![7](assets/7.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO10-7)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Our web server is going to return HTML. We’re loading HTML data from a local
+    file called *index.html*. This file is presented in [Example B-1](app02.html#corobot)
+    if you want to re-create the case study yourself.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![8](assets/8.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO10-8)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We substitute the collected headline `div` into the template and return the
+    page to the browser client. This generates the page shown in [Figure 4-1](#scraper-image).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![9](assets/9.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO10-9)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Here, inside the `news_fetch()` coroutine function, we have a tiny template
+    for hitting the Splash API (which, for me, is running in a local Docker container
+    on port 8050). This demonstrates how `aiohttp` can be used as an HTTP client.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![10](assets/10.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO10-10)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The standard way is to create a `ClientSession()` instance, and then use the
+    `get()` method on the session instance to perform the REST call. In the next line,
+    the response data is obtained. Note that because we’re always operating on coroutines,
+    with `async with` and `await`, this coroutine will never block: we’ll be able
+    to handle many thousands of these requests, even though this operation (`news_fetch()`)
+    might be relatively slow since we’re doing web calls internally.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![11](assets/11.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO10-11)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: After the data is obtained, we call the postprocessing function. For CNN, it’ll
+    be `cnn_articles()`, and for Al Jazeera it’ll be `aljazeera_articles()`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![12](assets/12.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO10-12)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We have space only for a brief look at the postprocessing. After getting the
+    page data, we use the Beautiful Soup 4 library for extracting headlines.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![13](assets/13.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO10-13)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `match()` function will return all matching tags (I’ve manually checked
+    the HTML source of these news websites to figure out which combination of filters
+    extracts the best tags), and then we return a list of tuples matching the format
+    *`<article URL>`*, *`<article title>`*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![14](assets/14.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO10-14)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This is the analogous postprocessor for Al Jazeera. The `match()` condition
+    is slightly different, but it is otherwise the same as the CNN one.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Generally, you’ll find that `aiohttp` has a simple API and “stays out of your
+    way” while you develop your applications.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the next section, we’ll look at using ZeroMQ with `asyncio`, which has the
+    curious effect of making socket programming quite enjoyable.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ØMQ (ZeroMQ)
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Programming is a science dressed up as art, because most of us don’t understand
+    the physics of software and it’s rarely, if ever, taught. The physics of software
+    is not algorithms, data structures, languages, and abstractions. These are just
+    tools we make, use, and throw away. The real physics of software is the physics
+    of people. Specifically, it’s about our limitations when it comes to complexity
+    and our desire to work together to solve large problems in pieces. This is the
+    science of programming: make building blocks that people can understand and use
+    easily, and people will work together to solve the very largest problems.'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: ''
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: 'Pieter Hintjens, *ZeroMQ: Messaging for Many Applications*'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: 'ØMQ (or [ZeroMQ](http://zeromq.org)) is a popular language-agnostic library
+    for networking applications: it provides “smart” sockets. When you create ØMQ
+    sockets in code, they resemble regular sockets, with recognizable method names
+    like `recv()` and `send()` and so on—but internally these sockets handle some
+    of the more annoying and tedious tasks required for working with conventional
+    sockets.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: One of the features it provides is management of message passing, so you don’t
+    have to invent your own protocol and count bytes on the wire to figure out when
+    all the bytes for a particular message have arrived—you simply send whatever you
+    consider to be a “message,” and the whole thing arrives on the other end intact.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Another great feature is automatic reconnection logic. If the server goes down
+    and comes back up later, the client ØMQ socket will *automatically* reconnect.
+    And even better, messages your code sends into the socket will be buffered during
+    the disconnected period, so they will all still be sent out when the server returns.
+    These are some of the reasons ØMQ is sometimes referred to as [*brokerless* messaging](https://oreil.ly/oQE4x):
+    it provides some of the features of message broker software directly in the socket
+    objects themselves.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: ØMQ sockets are already implemented as asynchronous internally (so they can
+    maintain many thousands of concurrent connections, even when used in threaded
+    code), but this is hidden from us behind the ØMQ API. Nevertheless, support for
+    Asyncio has been added to the [PyZMQ](https://oreil.ly/N8w7J) Python bindings
+    for the ØMQ library, and in this section we’re going to look at several examples
+    of how you might incorporate these smart sockets into your Python applications.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Case Study: Multiple Sockets'
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Here’s a head-scratcher: if ØMQ provides sockets that are already asynchronous,
+    in a way that is usable with threading, what is the point of using ØMQ with `asyncio`?
+    The answer is cleaner code.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: To demonstrate, let’s look at a tiny case study in which you use multiple ØMQ
+    sockets in the same application. First, [Example 4-15](#zmqtrad) shows the blocking
+    version (this example is taken from the [zguide](https://oreil.ly/qXAj8), the
+    official guide for ØMQ).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 4-15\. The traditional ØMQ approach
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO11-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: ØMQ sockets have *types*. This is a `PULL` socket. You can think of it as a
+    *receive-only* kind of socket that will be fed by some other *send-only* socket,
+    which will be a `PUSH` type.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO11-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `SUB` socket is another kind of receive-only socket, and it will be fed
+    a `PUB` socket which is send-only.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO11-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you need to move data between multiple sockets in a threaded ØMQ application,
+    you’re going to need a *poller*. This is because these sockets are not thread-safe,
+    so you cannot `recv()` on different sockets in different threads.^([1](ch04.html#idm46363022865560))
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](assets/4.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO11-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: It works similarly to the `select()` system call. The poller will unblock when
+    there is data ready to be received on one of the registered sockets, and then
+    it’s up to you to pull the data off and do something with it. The big `if` block
+    is how you detect the correct socket.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using a poller loop plus an explicit socket-selection block makes the code look
+    a little clunky, but this approach avoids thread-safety problems by guaranteeing
+    the same socket is not used from different threads.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Example 4-16](#zmqsrv) shows the server code.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 4-16\. Server code
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This code is not important for the discussion, but briefly: there’s a `PUSH`
+    socket and a `PUB` socket, as I said earlier, and a loop inside that sends data
+    to both sockets every second. Here’s sample output from *poller.py* (note: *both*
+    programs must be running):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: The code works; however, our interest here is not whether the code runs, but
+    rather whether `asyncio` has anything to offer for the structure of *poller.py*.
+    The key thing to understand is that our `asyncio` code is going to run in a single
+    thread, which means that it’s fine to handle different sockets in different *coroutines*—and
+    indeed, this is exactly what we’ll do.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Of course, [someone had to do the hard work](http://bit.ly/2sPCihI) to add support
+    for coroutines into `pyzmq` (the Python client library for ØMQ) itself for this
+    to work, so it wasn’t free. But we can take advantage of that hard work to improve
+    on the “traditional” code structure, as shown in [Example 4-17](#cleansep).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 4-17\. Clean separation with asyncio
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO12-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This code sample does the same as [Example 4-15](#zmqtrad), except that now
+    we’re taking advantage of coroutines to restructure everything. Now we can deal
+    with each socket in isolation. I’ve created two coroutine functions, one for each
+    socket; this one is for the `PULL` socket.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO12-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: I’m using the `asyncio` support in `pyzmq`, which means that all `send()` and
+    `recv()` calls must use the `await` keyword. The `Poller` no longer appears anywhere,
+    because it’s been integrated into the `asyncio` event loop itself.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO12-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This is the handler for the `SUB` socket. The structure is very similar to the
+    `PULL` socket’s handler, but that need not have been the case. If more complex
+    logic had been required, I’d have been able to easily add it here, fully encapsulated
+    within the `SUB`-handler code only.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](assets/4.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO12-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Again, the `asyncio`-compatible sockets require the `await` keyword to send
+    and receive.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The output is the same as before, so I won’t show it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The use of coroutines has, in my opinion, a staggeringly positive effect on
+    the code layout in these examples. In real production code with lots of ØMQ sockets,
+    the coroutine handlers for each could even be in separate files, providing more
+    opportunities for better code structure. And even for programs with a single read/write
+    socket, it is very easy to use separate coroutines for reading and writing, if
+    necessary.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The improved code looks a lot like threaded code, and indeed, for the specific
+    example shown here, the same refactor will work for threading: run blocking `do_receiver()`
+    and `do_subscriber()` functions in separate threads. But do you really want to
+    deal with even the *potential* for race conditions, especially as your application
+    grows in features and complexity over time?'
+  prefs: []
+  type: TYPE_NORMAL
+- en: There is lots to explore here, and as I said before, these magic sockets are
+    a lot of fun to play with. In the next case study, we’ll look at a more practical
+    use of ØMQ.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Case Study: Application Performance Monitoring'
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: With the modern, containerized, microservice-based deployment practices of today,
+    some things that used to be trivial, such as monitoring your apps’ CPU and memory
+    usage, have become somewhat more complicated than just running `top`. Several
+    commercial products have emerged over the last few years to deal with these problems,
+    but their cost can be prohibitive for small startup teams and hobbyists.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In this case study, I’ll exploit ØMQ and `asyncio` to build a toy prototype
+    for distributed application monitoring. Our design has three parts:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Application layer
+  prefs: []
+  type: TYPE_NORMAL
+- en: This layer contains all our applications. Examples might be a “customers” microservice,
+    a “bookings” microservice, an “emailer” microservice, and so on. I will add a
+    ØMQ “transmitting” socket to each of our applications. This socket will send performance
+    metrics to a central server.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Collection layer
+  prefs: []
+  type: TYPE_NORMAL
+- en: The central server will expose a ØMQ socket to collect the data from all the
+    running application instances. The server will also serve a web page to show performance
+    graphs over time and will live-stream the data as it comes in.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Visualization layer
+  prefs: []
+  type: TYPE_NORMAL
+- en: This is the web page being served. We’ll display the collected data in a set
+    of charts, and the charts will live-update in real time. To simplify the code
+    samples, I will use the convenient [Smoothie Charts](http://smoothiecharts.org)
+    JavaScript library, which provides all the necessary client-side features.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The backend app (application layer) that produces metrics is shown in [Example 4-18](#applayer).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Example 4-18\. The application layer: producing metrics'
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO13-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This coroutine function will run as a long-lived coroutine, continually sending
+    out data to the server process.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO13-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Create a ØMQ socket. As you know, there are different flavors of socket; this
+    one is a `PUB` type, which allows one-way messages to be sent to another ØMQ socket.
+    This socket has—as the ØMQ guide says—superpowers. It will automatically handle
+    all reconnection and buffering logic for us.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO13-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Connect to the server.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](assets/4.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO13-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Our shutdown sequence is driven by `KeyboardInterrupt`, farther down. When that
+    signal is received, all the tasks will be cancelled. Here I handle the raised
+    `CancelledError` with the handy `suppress()` context manager from the `contextlib`
+    standard library module.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![5](assets/5.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO13-5)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Iterate forever, sending out data to the server.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![6](assets/6.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO13-6)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Since ØMQ knows how to work with complete messages, and not just chunks off
+    a bytestream, it opens the door to a bunch of useful wrappers around the usual
+    `sock.send()` idiom: here, I use one of those helper methods, `send_json()`, which
+    will automatically serialize the argument into JSON. This allows us to use a `dict()`
+    directly.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![7](assets/7.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO13-7)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: A reliable way to transmit datetime information is via the ISO 8601 format.
+    This is especially true if you have to pass datetime data between software written
+    in different languages, since the vast majority of language implementations will
+    be able to work with this standard.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![8](assets/8.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO13-8)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: To end up here, we must have received the `CancelledError` exception resulting
+    from task cancellation. The ØMQ socket must be closed to allow program shutdown.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![9](assets/9.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO13-9)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `main()` function symbolizes the actual microservice application. Fake work
+    is produced with this sum over random numbers, just to give us some nonzero data
+    to view in the visualization layer a bit later.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![10](assets/10.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO13-10)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: I’m going to create multiple instances of this application, so it will be convenient
+    to be able to distinguish between them (later, in the graphs) with a `--color`
+    parameter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![11](assets/11.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO13-11)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Finally, the ØMQ context can be terminated.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The primary point of interest is the `stats_reporter()` function. This is what
+    streams out metrics data (collected by the useful `psutil` library). The rest
+    of the code can be assumed to be a typical microservice application.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The server code in [Example 4-19](#metserver) collects all the data and serves
+    it to a web client.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Example 4-19\. The collection layer: this server collects process stats'
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE22]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO14-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: One half of this program will receive data from other applications, and the
+    other half will provide data to browser clients via *server-sent events* (SSEs).
+    I use a `WeakSet()` to keep track of all the currently connected web clients.
+    Each connected client will have an associated `Queue()` instance, so this `connections`
+    identifier is really a set of queues.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO14-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Recall that in the application layer, I used a `zmq.PUB` socket; here in the
+    collection layer, I use its partner, the `zmq.SUB` socket type. This ØMQ socket
+    can only receive, not send.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO14-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: For the `zmq.SUB` socket type, providing a subscription name is required, but
+    for our purposes, we’ll just take everything that comes in—hence the empty topic
+    name.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](assets/4.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO14-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'I *bind* the `zmq.SUB` socket. Think about that for second. In pub-sub configurations,
+    you usually have to make the *pub* end the server (`bind()`) and the *sub* end
+    the client (`connect()`). ØMQ is different: either end can be the server. For
+    our use case, this is important, because each of our application-layer instances
+    will be connecting to the same collection server domain name, and not the other
+    way around.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![5](assets/5.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO14-5)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The support for `asyncio` in `pyzmq` allows us to `await` data from our connected
+    apps. And not only that, but the incoming data will be automatically deserialized
+    from JSON (yes, this means `data` is a `dict()`).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![6](assets/6.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO14-6)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Recall that our `connections` set holds a queue for every connected web client.
+    Now that data has been received, it’s time to send it to all the clients: the
+    data is placed onto each queue.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![7](assets/7.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO14-7)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `feed()` coroutine function will create coroutines for each connected web
+    client. Internally, [server-sent events](https://mzl.la/2omEs3t) are used to push
+    data to the web clients.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![8](assets/8.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO14-8)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: As described earlier, each web client will have its own `queue` instance, in
+    order to receive data from the `collector()` coroutine. The `queue` instance is
+    added to the `connections` set, but because `connections` is a *weak* set, the
+    entry will automatically be removed from `connections` when the `queue` goes out
+    of scope—i.e., when a web client disconnects. [Weakrefs](https://oreil.ly/fRmdu)
+    are great for simplifying these kinds of bookkeeping tasks.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![9](assets/9.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO14-9)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `aiohttp_sse` package provides the `sse_response()` context manager. This
+    gives us a scope inside which to push data to the web client.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![10](assets/10.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO14-10)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We remain connected to the web client, and wait for data on this specific client’s
+    queue.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![11](assets/11.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO14-11)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: As soon as the data comes in (inside `collector()`), it will be sent to the
+    connected web client. Note that I reserialize the `data` dict here. An optimization
+    to this code would be to avoid deserializing JSON in `collector()`, and instead
+    use `sock.recv_string()` to avoid the serialization round trip. Of course, in
+    a real scenario, you might want to deserialize in the collector, and perform some
+    validation on the data before sending it to the browser client. So many choices!
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![12](assets/12.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO14-12)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `index()` endpoint is the primary page load, and here we serve a static
+    file called *charts.html*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![13](assets/13.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO14-13)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `aiohttp` library provides facilities for us to hook in additional long-lived
+    coroutines we might need. With the `collector()` coroutine, we have exactly that
+    situation, so I create a startup coroutine, `start_collector()`, and a shutdown
+    coroutine. These will be called during specific phases of `aiohttp`’s startup
+    and shutdown sequence. Note that I add the collector task to the `app` itself,
+    which implements a mapping protocol so that you can use it like a dict.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![14](assets/14.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO14-14)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: I obtain our `collector()` coroutine off the `app` identifier and call `cancel()`
+    on that.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![15](assets/15.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO14-15)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Finally, you can see where the custom startup and shutdown coroutines are hooked
+    in: the `app` instance provides hooks to which our custom coroutines may be appended.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: All that remains is the visualization layer, shown in [Example 4-20](#vislayer).
+    I’m using the [Smoothie Charts library](http://smoothiecharts.org) to generate
+    scrolling charts, and the complete HTML for our main (and only) web page, *charts.html*,
+    is provided in the [Example B-1](app02.html#corobot). There is too much HTML,
+    CSS, and JavaScript to present in this section, but I do want to highlight a few
+    points about how the server-sent events are handled in JavaScript in the browser
+    client.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 4-20\. The visualization layer, which is a fancy way of saying “the
+    browser”
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE23]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO15-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Create a new `EventSource()` instance on the */feed* URL. The browser will connect
+    to */feed* on our server, (*metric_server.py*). Note that the browser will automatically
+    try to reconnect if the connection is lost. Server-sent events are often overlooked,
+    but in many situations their simplicity makes them preferable to WebSockets.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO15-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `onmessage` event will fire every time the server sends data. Here the data
+    is parsed as JSON.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO15-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `cpu` identifier is a mapping of a color to a `TimeSeries()` instance (for
+    more on this, see [Example B-1](app02.html#corobot)). Here, we obtain that time
+    series and append data to it. We also obtain the timestamp and parse it to get
+    the correct format required by the chart.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Now we can run the code. To get the whole show moving, a bunch of command-line
+    instructions are required, the first of which is to start up the data collector
+    process:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE24]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The next step is to start up all the microservice instances. These will send
+    their CPU and memory usage metrics to the collector. Each will be identified by
+    a different color, which is specified on the command line. Note how two of the
+    microservices are told to leak some memory:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE25]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[Figure 4-2](#appmonshot) shows our final product in a browser. You’ll have
+    to take my word for it that the graphs really do animate. You’ll notice in the
+    preceding command lines that I added some memory leakage to blue, and a lot to
+    green. I even had to restart the green service a few times to prevent it from
+    climbing over 100 MB.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![uaip 0402](assets/uaip_0402.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4-2\. We’d better get an SRE on green ASAP!
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'What is especially interesting about this project is this: *any* of the running
+    instances in any part of this stack can be restarted, and no reconnect-handling
+    code is necessary. The ØMQ sockets, along with the `EventSource()` JavaScript
+    instance in the browser, magically reconnect and pick up where they left off.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the next section, we turn our attention to databases and to how `asyncio`
+    might be used to design a system for cache invalidation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: asyncpg and Sanic
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The [`asyncpg` library](https://oreil.ly/yGdNh) provides client access to the
+    PostgreSQL database, but differentiates itself from other `asyncio`-compatible
+    Postgres client libraries with its emphasis on speed. `asyncpg` is authored by
+    [Yury Selivanov](https://twitter.com/1st1), one of the core `asyncio` Python developers,
+    who is also the author of the uvloop project. It has no third-party dependencies,
+    although [Cython](http://cython.org) is required if you’re installing from source.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`asyncpg` achieves its speed by working directly against the PostgreSQL binary
+    protocol, and other advantages to this low-level approach include support for
+    [prepared statements](http://bit.ly/2sMNlIz) and [scrollable cursors](http://bit.ly/2Chr0H5).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We’ll be looking at a case study using `asyncpg` for cache invalidation, but
+    before that it will be useful to get a basic understanding of the API `asyncpg`
+    provides. For all of the code in this section, we’ll need a running instance of
+    PostgreSQL. This is most easily done with Docker, using the following command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE26]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note that I’ve exposed port 55432 rather than the default, 5432, just in case
+    you already have a running instance of the database on the default port. [Example 4-21](#asyncpgdemo)
+    briefly demonstrates how to use `asyncpg` to talk to PostgreSQL.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 4-21\. Basic demo of asyncpg
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE27]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO16-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: I’ve hidden some boilerplate away in a tiny `util` module to simplify things
+    and keep the core message.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO16-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `Database` class gives us a context manager that will create a new database
+    for us—in this, case named `test`—and will destroy that database when the context
+    manager exits. This turns out to be very useful when experimenting with ideas
+    in code. Because no state is carried over between experiments, you start from
+    a clean database every time. Note that this is an `async with` context manager;
+    we’ll talk more about that later, but for now, the focal area of this demo is
+    what happens inside the `demo()` coroutine.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO16-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `Database` context manager has provided us with a `Connection` instance,
+    which is immediately used to create a new table, `users`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](assets/4.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO16-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: I use `fetchval()` to insert a new record. While I could have used `execute()`
+    to do the insertion, the benefit of using `fetchval()` is that I can obtain the
+    `id` of the newly inserted record, which I store in the `pk` identifier.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note that I use *parameters* (`$1` and `$2`) for passing data to the SQL query.
+    *Never* use string interpolation or concatenation to build queries, as this is
+    a security risk!
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![5](assets/5.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO16-5)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the remainder of this demo, I’m going to be manipulating data in the `users`
+    table, so here I make a new utility coroutine function that fetches a record in
+    the table. This will be called several times.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![6](assets/6.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO16-6)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: When *retrieving* data, it is far more useful to use the `fetch`-based methods,
+    because these will return `Record` objects. `asyncpg` will automatically cast
+    datatypes to the most appropriate types for Python.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![7](assets/7.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO16-7)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: I immediately use the `get_row()` helper to display the newly inserted record.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![8](assets/8.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO16-8)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'I modify data by using the `UPDATE` command for SQL. It’s a tiny modification:
+    the year value in the date of birth is changed by one year. As before, this is
+    performed with the connection’s `execute()` method. The remainder of the code
+    demo follows the same structure as seen so far, and a `DELETE`, followed by another
+    `print()`, happens a few lines down.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here’s the output of running this script:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE28]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Note how the date value retrieved in our `Record` object has been converted
+    to a Python `date` object: `asyncpg` has automatically converted the datatype
+    from the SQL type to its Python counterpart. A large table of [type conversions](http://bit.ly/2sQszaQ)
+    in the `asyncpg` documentation describes all the type mappings that are built
+    into the library.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The preceding code is very simple, perhaps even crudely so if you’re used to
+    the convenience of object-relational mappers (ORMs) like SQLAlchemy or the Django
+    web framework’s built-in ORM. At the end of this chapter, I mention several third-party
+    libraries that provide access to ORMs or ORM-like features for `asyncpg`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Example 4-22](#dbobject) shows my boilerplate `Database` object in the `utils`
+    module; you may find it useful to make something similar for your own experiments.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 4-22\. Useful tooling for your asyncpg experiments
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE29]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO17-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `Database` class is just a fancy context manager for creating and deleting
+    a database from a PostgreSQL instance. The database name is passed into the constructor.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO17-6)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '(Note: The sequence of callouts in the code is intentionally different from
+    this list.) This is an *asynchronous* context manager. Instead of the usual `__enter__()`
+    and `__exit__()` methods, I use their `__aenter__()` and `__aexit__()` counterparts.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO17-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Here, in the entering side, I’ll create the new database and return a connection
+    to that new database. `server_command()` is another helper method defined a few
+    lines down. I use it to run the command for creating our new database.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](assets/4.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO17-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'I then make a connection to the newly created database. Note that I’ve hardcoded
+    several details about the connection: this is intentional, as I wanted to keep
+    the code samples small. You could easily generalize this by making fields for
+    the username, hostname, and port.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![5](assets/5.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO17-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the exiting side of the context manager, I close the connection and…
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![6](assets/6.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO17-5)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: …destroy the database.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![7](assets/7.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO17-7)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: For completeness, this is our utility method for running commands against the
+    PostgreSQL server itself. It creates a connection for that purpose, runs the given
+    command, and exits.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![8](assets/8.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO17-8)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This function creates a long-lived socket connection to the database that will
+    listen for events. This mechanism will be featured in the upcoming case study.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Caution
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: In point 8 for the preceding code, I created a dedicated connection for each
+    channel I want to listen on. This is expensive since it means that a PostgreSQL
+    worker will be completely tied up for every channel being listened to. A much
+    better design would be to use one connection for multiple channels. Once you have
+    worked through this example, try to modify the code to use a single connection
+    for multiple channel listeners.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Now that you have an understanding of the basic building blocks of `asyncpg`,
+    we can explore it further with a really fun case study: using PostgreSQL’s built-in
+    support for sending event notifications to perform cache invalidation!'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Case Study: Cache Invalidation'
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'There are two hard things in computer science: cache invalidation, naming things,
+    and off-by-one errors.'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: ''
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: Phil Karlton
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: It is common in web services and web applications that the persistence layer,
+    i.e., the backing database (DB), becomes the performance bottleneck sooner than
+    any other part of the stack. The application layer can usually be scaled horizontally
+    by running more instances, whereas it’s trickier to do that with a database.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This is why it’s common practice to look at design options that can limit excessive
+    interaction with the database. The most common option is to use *caching* to “remember”
+    previously fetched database results and replay them when asked, thus avoiding
+    subsequent calls to the DB for the same information.
+  prefs: []
+  type: TYPE_NORMAL
+- en: However, what happens if one of your app instances writes new data to the database
+    while another app instance is still returning the old, stale data from its internal
+    cache? This is a classic *cache invalidation* problem, and it can be very difficult
+    to resolve in a robust way.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Our attack strategy is as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Each app instance has an in-memory cache of DB queries.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: When one writes new data to the database, the database alerts all of the connected
+    app instances of the new data.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Each app instance then updates its internal cache accordingly.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: This case study will highlight how PostgreSQL, with its built-in support for
+    event updates via the [`LISTEN`](http://bit.ly/2EP9yeJ) and [`NOTIFY`](http://bit.ly/2BN5lp1)
+    commands, can simply *tell us* when its data has changed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`asyncpg` already has support for the `LISTEN`/`NOTIFY` API. This feature of
+    PostgreSQL allows your app to subscribe to events on a named channel and to post
+    events to named channels. PostgreSQL can almost become a lighter version of [RabbitMQ](https://oreil.ly/jvDgm)
+    or [ActiveMQ](https://oreil.ly/yiaK0)!'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This case study has more moving parts than usual, and that makes it awkward
+    to present in the usual linear format. Instead, we’ll begin by looking at the
+    final product, and work backward toward the underlying implementation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Our app provides a JSON-based API server for managing the favorite dishes of
+    patrons at our robotic restaurant. The backing database will have only one table,
+    `patron`, with only two fields: `name` and `fav_dish`. Our API will allow the
+    usual set of four operations: *create*, *read*, *update*, and *delete* (CRUD).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following is a sample interaction with our API using `curl`, illustrating
+    how to create a new entry in our database (I haven’t yet shown how to start up
+    the server running on *localhost:8000*; that will come later):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE30]'
+  prefs: []
+  type: TYPE_PRE
+- en: The `-d` parameter is for data,^([2](ch04.html#idm46363020071448)) `-H` is for
+    the HTTP headers, `-X` is for the HTTP request method (alternatives include `GET`,
+    `DELETE`, `PUT`, and a few others), and the URL is for our API server. We’ll get
+    to the code for that shortly.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the output, we see that the creation was `ok`, and the `id` being returned
+    is the primary key of the new record in the database.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In the next few shell snippets, we’ll run through the other three operations:
+    *read*, *update*, and *delete*. We can read the patron record we just created
+    with this command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE31]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE32]'
+  prefs: []
+  type: TYPE_PRE
+- en: Reading the data is pretty straightforward. Note that the `id` of the desired
+    record must be supplied in the URL.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Next, we’ll update the record and check the results:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE33]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Updating a resource is similar to creating one, with two key differences:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The HTTP request method (`-X`) is `PUT`, not `POST`.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The URL now requires the `id` field to specify which resource to update.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Finally, we can delete the record and verify its deletion with the following
+    commands:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE34]'
+  prefs: []
+  type: TYPE_PRE
+- en: As you can see, `null` is returned when you try to `GET` a record that doesn’t
+    exist.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'So far this all looks quite ordinary, but our objective is not only to make
+    a CRUD API—we want to look at cache invalidation. So, let’s turn our attention
+    toward the cache. Now that we have a basic understanding of our app’s API, we
+    can look at the application logs to see timing data for each request: this will
+    tell us which requests are cached, and which hit the DB.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'When the server is first started up, the cache is empty; it’s a memory cache,
+    after all. We’re going to start up our server, and then in a separate shell run
+    two `GET` requests in quick succession:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE35]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We expect that the first time we retrieve our record, there’s going to be a
+    cache miss, and the second time, a hit. We can see evidence of this in the log
+    for the API server itself (the first Sanic web server, running on *localhost:8000*):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE36]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO18-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Everything up to this line is the default `sanic` startup log message.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO18-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: As described, the first `GET` results in a cache miss because the server has
+    only just started.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO18-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This is from our first `curl -X GET`. I’ve added some timing functionality to
+    the API endpoints. Here we can see that the handler for the `GET` request took
+    ~4 ms.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](assets/4.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO18-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The second `GET` returns data from the cache, and the much faster (100x faster!)
+    timing data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: So far, nothing unusual. Many web apps use caching in this way.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Now let’s start up a second app instance on port 8001 (the first instance was
+    on port 8000):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE37]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Both instances, of course, connect to the same database. Now, with both API
+    server instances running, let’s modify the data for patron *John*, who clearly
+    lacks sufficient Spam in his diet. Here we perform an `UPDATE` against the first
+    app instance at port 8000:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE38]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Immediately after this update event on only one of the app instances, *both*
+    API servers, 8000 and 8001, report the event in their respective logs:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE39]'
+  prefs: []
+  type: TYPE_PRE
+- en: The database has reported the update event back to both app instances. We haven’t
+    done any requests against app instance 8001 yet, though—does this mean that the
+    new data is already cached there?
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To check, we can do a `GET` on the second server, at port 8001:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE40]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The timing info in the log output shows that we do indeed obtain the data directly
+    from the cache, even though this is our first request:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE41]'
+  prefs: []
+  type: TYPE_PRE
+- en: The upshot is that when the database changes, *all connected app instances*
+    get notified, allowing them to update their caches.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'With this explanation out of the way, we can now look at the `asyncpg` code
+    implementation required to make our cache invalidation actually work. The basic
+    design for the server code shown in [Example 4-23](#sanicdemo) is the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We have a simple web API using the new, `asyncio`-compatible [Sanic web framework](https://oreil.ly/q5eA4).
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: The data will be stored in a backend PostgreSQL instance, but the API will be
+    served via multiple instances of the web API app servers.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: The app servers will cache data from the database.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: The app servers will subscribe to events via `asyncpg` in specific tables on
+    the DB, and will receive update notifications when the data in the DB table has
+    been changed. This allows the app servers to update their individual in-memory
+    caches.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Example 4-23\. API server with Sanic
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE42]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO19-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `Database` utility helper, as described earlier. This will provide the methods
+    required to connect to the database.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO19-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Two more tools I’ve cobbled together to log the elapsed time of each API endpoint.
+    I used this in the previous discussion to detect when a `GET` was being returned
+    from the cache. The implementations for `aelapsed()` and `aprofiler()` are not
+    important for this case study, but you can obtain them in [Example B-1](app02.html#corobot).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO19-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We create the main Sanic app instance.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](assets/4.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO19-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This coroutine function is for creating new patron entries. In an `add_route()`
+    call toward the bottom of the code, `new_patron()` is associated with the endpoint
+    `/patron`, only for the `POST` HTTP method. The `@aelapsed` decorator is not part
+    of the Sanic API: it’s my own invention, merely to log out timings for each call.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![5](assets/5.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO19-5)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Sanic provides immediate deserialization of received JSON data by using the
+    `.json` attribute on the `request` object.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![6](assets/6.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO19-6)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `model` module, which I imported, is the *model* for our `patron` table
+    in the database. I’ll go through that in more detail in the next code listing;
+    for now, just understand that all the database queries and SQL are in this `model`
+    module. Here I’m passing the connection pool for the database, and the same pattern
+    is used for all the interaction with the database model in this function and in
+    the `PatronAPI` class further down.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![7](assets/7.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO19-7)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: A new primary key, `id`, will be created, and this is returned back to the caller
+    as JSON.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![8](assets/8.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO19-8)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: While creation is handled in the `new_patron()` function, all other interactions
+    are handled in this *class-based view*, which is a convenience provided by Sanic.
+    All the methods in this class are associated with the same URL, `/patron/<id:int>`,
+    which you can see in the `add_route()` function near the bottom. Note that the
+    `id` URL parameter will be passed to each of the methods, and this parameter is
+    required for all three endpoints.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'You can safely ignore the `metaclass` argument: all it does is wrap each method
+    with the `@aelapsed` decorator so that timings will be printed in the logs. Again,
+    this is not part of the Sanic API; it’s my own invention for logging timing data.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![9](assets/9.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO19-9)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: As before, model interaction is performed inside the `model` module.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![10](assets/10.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO19-10)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: If the model reports failure for doing the update, I modify the response data.
+    I’ve included this for readers who have not yet seen Python’s version of the *ternary
+    operator*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![11](assets/11.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO19-11)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `@app.listener` decorators are hooks provided by Sanic to give you a place
+    to add extra actions during the startup and shutdown sequence. This one, `before_server_start`,
+    is invoked before the API server is started up. This seems like a good place to
+    initialize our database connection.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![12](assets/12.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO19-12)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Use the `Database` helper to create a connection to our PostgreSQL instance.
+    The DB we’re connecting to is `restaurant`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![13](assets/13.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO19-13)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Obtain a connection pool to our database.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![14](assets/14.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO19-14)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Use our model (for the `patron` table) to create the table if it’s missing.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![15](assets/15.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO19-15)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Use our model to create a dedicated_listener for database events, listening
+    on the channel `chan_patron`. The callback function for these events is `model.db_event()`,
+    which I’ll go through in the next listing. The callback will be called every time
+    the database updates the channel.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![16](assets/16.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO19-16)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`after_server_stop` is the hook for tasks that must happen during shutdown.
+    Here we disconnect from the database.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![17](assets/17.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO19-17)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This `add_route()` call sends `POST` requests for the `/patron` URL to the `new_patron()`
+    coroutine function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![18](assets/18.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO19-18)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This `add_route()` call sends *all* requests for the `/patron/<id:int>` URL
+    to the `PatronAPI` class-based view. The method names in that class determine
+    which one is called: a `GET` HTTP request will call the `PatronAPI.get()` method,
+    and so on.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The preceding code contains all the HTTP handling for our server, as well as
+    startup and shutdown tasks like setting up a connection pool to the database and,
+    crucially, setting up a `db-event` listener on the `chan_patron` channel on the
+    DB server.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Example 4-24](#sanicdbmodel) presents the model for the `patron` table in
+    the database.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 4-24\. DB model for the “patron” table
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE43]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO20-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: You have to add triggers to the database in order to get notifications when
+    data changes. I’ve created these handy helpers to create the trigger function
+    itself (with `create_notify_trigger`) and to add the trigger to a specific table
+    (with `add_table_triggers`). The SQL required to do this is somewhat out of scope
+    for this book, but it’s still crucial to understanding how this case study works.
+    I’ve included the annotated code for these triggers in [Appendix B](app02.html#corobot).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO20-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The third-party `boltons` package provides a bunch of useful tools, not the
+    least of which is the `LRU` cache, a more versatile option than the `@lru_cache`
+    decorator in the `functools` standard library module.^([3](ch04.html#idm46363021245640))
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO20-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This block of text holds all the SQL for the standard CRUD operations. Note
+    that I’m using native PostgreSQL syntax for the parameters: `$1`, `$2`, and so
+    on. There is nothing novel here, and it won’t be discussed further.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](assets/4.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO20-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Create the cache for this app instance.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![5](assets/5.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO20-5)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: I called this function from the Sanic module inside the `new_patron()` endpoint
+    for adding new patrons. Inside the function, I use the `fetchval()` method to
+    insert new data. Why `fetchval()` and not `execute()`? Because `fetchval()` returns
+    the primary key of the new inserted record!^([4](ch04.html#idm46363020825512))
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![6](assets/6.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO20-6)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Update an existing record. When this succeeds, PostgreSQL will return `UPDATE
+    1`, so I use that as a check to verify that the update succeeded.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![7](assets/7.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO20-7)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Deletion is very similar to updating.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![8](assets/8.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO20-8)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This is the read operation. This is the only part of our CRUD interface that
+    cares about the cache. Think about that for a second: we don’t update the cache
+    when doing an insert, update, or delete. This is because we rely on the async
+    notification from the database (via the installed triggers) to update the cache
+    if any data is changed.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![9](assets/9.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO20-9)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Of course, we do still want to use the cache after the first `GET`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![10](assets/10.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO20-10)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `db_event()` function is the callback that `asyncpg` will make when there
+    are events on our DB notification channel, `chan_patron`. This specific parameter
+    list is required by `asyncpg`. `conn` is the connection on which the event was
+    sent, `pid` is the process ID of the PostgreSQL instance that sent the event,
+    `channel` is the name of the channel (which in this case will be `chan_patron`),
+    and the payload is the data being sent on the channel.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![11](assets/11.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO20-11)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Deserialize the JSON data to a dict.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![12](assets/12.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO20-12)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The cache population is generally quite straightforward, but note that update
+    events contain both new and old data, so we need to make sure to cache the new
+    data only.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![13](assets/13.png)](#co_20_asyncio_libraries_you_aren__8217_t_using__but__8230_oh__never_mind__CO20-13)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This is a small utility function I’ve made to easily re-create a table if it’s
+    missing. This is really useful if you need to do this frequently—such as when
+    writing the code samples for this book!
+  prefs: []
+  type: TYPE_NORMAL
+- en: This is also where the database notification triggers are created and added
+    to our `patron` table. See [Example B-1](app02.html#corobot) for annotated listing
+    of these functions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: That brings us to the end of this case study. We’ve seen how Sanic makes it
+    very simple to create an API server, and we’ve seen how to use `asyncpg` for performing
+    queries via a connection pool, and how to use PostgreSQL’s async notification
+    features to receive callbacks over a dedicated, long-lived database connection.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Many people prefer to use object-relational mappers to work with databases,
+    and in this area, [SQLAlchemy](https://www.sqlalchemy.org) is the leader. There
+    is growing support for using SQLAlchemy together with `asyncpg` in third-party
+    libraries like [`asyncpgsa`](https://oreil.ly/TAKwC) and [GINO](https://oreil.ly/a4qOR).
+    Another popular ORM, [Peewee](https://oreil.ly/pl0Gn), is given support for `asyncio`
+    through the [`aiopeewee`](https://oreil.ly/76dzO) package.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Other Libraries and Resources
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: There are many other libraries for `asyncio` not covered in this book. To find
+    out more, you can check out the [`aio-libs` project](https://oreil.ly/40Uf_),
+    which manages nearly 40 libraries, and the [Awesome `asyncio` project](https://oreil.ly/SsC_0),
+    which bookmarks many other projects compatible with the `asyncio` module.
+  prefs: []
+  type: TYPE_NORMAL
+- en: One library that bears special mention is [`aiofiles`](https://oreil.ly/6ThkG).
+    As you may recall from our earlier discussions, I said that to achieve high concurrency
+    in Asyncio, it is vitally important that the loop never block. In this context,
+    our focus on blocking operations has been exclusively network-based I/O, but it
+    turns out that disk access is also a blocking operation that will impact your
+    performance at very high concurrency levels. The solution to this is `aiofiles`,
+    which provides a convenient wrapper for performing disk access in a thread. This
+    works because Python releases the GIL during file operations so your main thread
+    (running the `asyncio` loop) is unaffected.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The most important domain for Asyncio is going to be network programming. For
+    this reason, it’s not a bad idea to learn a little about socket programming, and
+    even after all these years, Gordon McMillan’s [“Socket Programming HOWTO”](http://bit.ly/2sQt2d6),
+    included with the standard Python documentation, is one of the best introductions
+    you’ll find.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'I learned Asyncio from a wide variety of sources, many of which have already
+    been mentioned in earlier sections. Everyone learns differently, so it’s worth
+    exploring different types of learning materials. Here are a few others that I
+    found useful:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Robert Smallshire’s [“Get to Grips with Asyncio in Python 3” talk](https://oreil.ly/S5jRX),
+    presented at NDC London in January 2017\. This is by far the best YouTube video
+    on Asyncio I’ve come across. The talk may be somewhat advanced for a beginner,
+    but it really does give a clear description of how Asyncio is designed.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Nikolay Novik’s [“Building Apps with Asyncio” slides](https://oreil.ly/ufpft),
+    presented at PyCon UA 2016\. The information is dense, but a lot of practical
+    experience is captured in these slides.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Endless sessions in the Python REPL, trying things out and “seeing what happens.”
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: I encourage you to continue learning, and if a concept doesn’t stick, keep looking
+    for new sources until you find an explanation that works for you.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([1](ch04.html#idm46363022865560-marker)) Actually, you *can* as long as the
+    sockets being used in different threads are created, used, and destroyed entirely
+    in their own threads. It is possible but hard to do, and many people struggle
+    to get this right. This is why the recommendation to use a single thread and a
+    polling mechanism is so strong.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([2](ch04.html#idm46363020071448-marker)) The recipe for this dish, and recipes
+    for other fine Spam-based fare, can be found [on the UKTV website](http://bit.ly/2CGymPL).
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([3](ch04.html#idm46363021245640-marker)) Obtain `boltons` with `pip install
+    boltons`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([4](ch04.html#idm46363020825512-marker)) You *also* need the `RETURNING id`
+    part of the SQL, though!
+  prefs: []
+  type: TYPE_NORMAL

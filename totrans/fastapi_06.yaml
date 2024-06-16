@@ -1,0 +1,595 @@
+- en: Chapter 4\. Async, Concurrency, and Starlette Tour
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Starlette is a lightweight ASGI framework/toolkit, which is ideal for building
+    async web services in Python.
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: ''
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: Tom Christie, creator of Starlette
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: Preview
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The previous chapter briefly introduced the first things a developer would encounter
+    on writing a new FastAPI application. This chapter emphasizes FastAPI’s underlying
+    Starlette library, particularly its support of *async* processing. After an overview
+    of multiple ways of “doing more things at once” in Python, you’ll see how its
+    newer `async` and `await` keywords have been incorporated into Starlette and FastAPI.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Starlette
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Much of FastAPI’s web code is based on the [Starlette package](https://www.starlette.io),
+    which was created by Tom Christie. It can be used as a web framework in its own
+    right or as a library for other frameworks, such as FastAPI. Like any other web
+    framework, Starlette handles all the usual HTTP request parsing and response generation.
+    It’s similar to [Werkzeug](https://werkzeug.palletsprojects.com), the package
+    that underlies Flask.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'But its most important feature is its support of the modern Python asynchronous
+    web standard: [ASGI](https://asgi.readthedocs.io). Until now, most Python web
+    frameworks (like Flask and Django) have been based on the traditional synchronous
+    [WSGI standard](https://wsgi.readthedocs.io). Because web applications so frequently
+    connect to much slower code (e.g., database, file, and network access), ASGI avoids
+    the blocking and busy waiting of WSGI-based applications.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: As a result, Starlette and frameworks that use it are the fastest Python web
+    packages, rivaling even Go and Node.js applications.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Types of Concurrency
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Before getting into the details of the *async* support provided by Starlette
+    and FastAPI, it’s useful to know the multiple ways we can implement *concurrency*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In *parallel* computing, a task is spread across multiple dedicated CPUs at
+    the same time. This is common in “number-crunching” applications like graphics
+    and machine learning.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In *concurrent* computing, each CPU switches among multiple tasks. Some tasks
+    take longer than others, and we want to reduce the total time needed. Reading
+    a file or accessing a remote network service is literally thousands to millions
+    of times slower than running calculations in the CPU.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Web applications do a lot of this slow work. How can we make web servers, or
+    any servers, run faster? This section discusses some possibilities, from system-wide
+    down to the focus of this chapter: FastAPI’s implementation of Python’s `async`
+    and `await`.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Distributed and Parallel Computing
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: If you have a really big application—one that would huff and puff on a single
+    CPU—you can break it into pieces and make those pieces run on separate CPUs in
+    a single machine or on multiple machines. You can do this in many, many ways,
+    and if you have such an application, you already know a number of them. Managing
+    all these pieces is more complex and expensive than managing a single server.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this book, the focus is on small- to medium-sized applications that could
+    fit on a single box. And these applications can have a mixture of synchronous
+    and asynchronous code, nicely managed by FastAPI.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Operating System Processes
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'An operating system (or *OS*, because typing hurts) schedules resources: memory,
+    CPUs, devices, networks, and so on. Every program that it runs executes its code
+    in one or more *processes*. The OS provides each process with managed, protected
+    access to resources, including when they can use the CPU.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Most systems use *preemptive* process scheduling, not allowing any process to
+    hog the CPU, memory, or any other resource. An OS continually suspends and resumes
+    processes, according to its design and settings.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'For developers, the good news is: not your problem! But the bad news (which
+    usually seems to shadow the good) is: you can’t do much to change it, even if
+    you want to.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: With CPU-intensive Python applications, the usual solution is to use multiple
+    processes and let the OS manage them. Python has a [multiprocessing module](https://oreil.ly/YO4YE)
+    for this.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Operating System Threads
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: You can also run *threads* of control within a single process. Python’s [threading
+    package](https://oreil.ly/xwVB1) manages these.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Threads are often recommended when your program is I/O bound, and multiple
+    processes are recommended when you’re CPU bound. But threads are tricky to program
+    and can cause errors that are hard to find. In *Introducing Python*, I likened
+    threads to ghosts wafting around in a haunted house: independent and invisible,
+    detected only by their effects. Hey, who moved that candlestick?'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Traditionally, Python kept the process-based and thread-based libraries separate.
+    Developers had to learn the arcane details of either to use them. A more recent
+    package called [concurrent.futures](https://oreil.ly/dT150) is a higher-level
+    interface that makes them easier to use.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As you’ll see, you can get the benefits of threads more easily with the newer
+    async functions. FastAPI also manages threads for normal synchronous functions
+    (`def`, not `async def`) via threadpools.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Green Threads
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'A more mysterious mechanism is presented by *green threads* such as [greenlet](https://greenlet.readthedocs.io),
+    [gevent](http://www.gevent.org) and [Eventlet](https://eventlet.net). These are
+    *cooperative* (not preemptive). They’re similar to OS threads but run in user
+    space (i.e., your program) rather than in the OS kernel. They work by *monkey-patching*
+    standard Python functions (modifying standard Python functions as they’re running)
+    to make concurrent code look like normal sequential code: they give up control
+    when they would block waiting for I/O.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: OS threads are “lighter” (use less memory) than OS processes, and green threads
+    are lighter than OS threads. In some [benchmarks](https://oreil.ly/1NFYb), all
+    the async methods were generally faster than their sync counterparts.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'After you’ve read this chapter, you may wonder which is better: gevent or asyncio?
+    I don’t think there’s a single preference for all uses. Green threads were implemented
+    earlier (using ideas from the multiplayer game *Eve Online*). This book features
+    Python’s standard asyncio, which is used by FastAPI, is simpler than threads,
+    and performs well.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Callbacks
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Developers of interactive applications like games and graphic user interfaces
+    are probably familiar with *callbacks*. You write functions and associate them
+    with an event, like a mouse click, keypress, or time. The prominent Python package
+    in this category is [Twisted](https://twisted.org). Its name reflects the reality
+    that callback-based programs are a bit “inside-out” and hard to follow.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Python Generators
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Like most languages, Python usually executes code sequentially. When you call
+    a function, Python runs it from its first line until its end or a `return`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: But in a Python *generator function*, you can stop and return from any point,
+    *and go back to that point* later. The trick is the `yield` keyword.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In one *Simpsons* episode, Homer crashes his car into a deer statue, followed
+    by three lines of dialogue. [Example 4-1](#ex-4-1) defines a normal Python function
+    to `return` these lines as a list and have the caller iterate over them.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 4-1\. Use `return`
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: This works perfectly when lists are relatively small. But what if we’re grabbing
+    all the dialogue from all the *Simpsons* episodes? Lists use memory.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Example 4-2](#ex-4-2) shows how a generator function would dole out the lines.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 4-2\. Use `yield`
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: Instead of iterating over a list returned by the plain function `doh()`, we’re
+    iterating over a *generator object* returned by the *generator function* `doh2()`.
+    The actual iteration (`for...in`) looks the same. Python returns the first string
+    from `doh2()`, but keeps track of where it is for the next iteration, and so on
+    until the function runs out of dialogue.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Any function containing `yield` is a generator function. Given this ability
+    to go back into the middle of a function and resume execution, the next section
+    looks like a logical adaptation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Python async, await, and asyncio
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Python’s [asyncio](https://oreil.ly/cBMAc) features have been introduced over
+    various releases. You’re running at least Python 3.7, when the `async` and `await`
+    terms became reserved keywords.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The following examples show a joke that’s funny only when run asynchronously.
+    Run both yourself, because the timing matters.
+  prefs: []
+  type: TYPE_NORMAL
+- en: First, run the unfunny [Example 4-3](#ex-4-3).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 4-3\. Dullness
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: You’ll see a three-second gap between the question and answer. Yawn.
+  prefs: []
+  type: TYPE_NORMAL
+- en: But the async [Example 4-4](#ex-4-4) is a little different.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 4-4\. Hilarity
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: This time, the answer should pop out right after the question, followed by three
+    seconds of silence—just as though a programmer is telling it. Ha ha! Ahem.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: I’ve used `asyncio.gather()` and `asyncio.run()` in [Example 4-4](#ex-4-4),
+    but there are multiple ways of calling async functions. When using FastAPI, you
+    won’t need to use these.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Python thinks this when running [Example 4-4](#ex-4-4):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Execute `q()`. Well, just the first line right now.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: OK, you lazy async `q()`, I’ve set my stopwatch and I’ll come back to you in
+    three seconds.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: In the meantime I’ll run `a()`, printing the answer right away.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: No other `await`, so back to `q()`.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Boring event loop! I’ll sit here aaaand stare for the rest of the three seconds.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: OK, now I’m done.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: This example uses `asyncio.sleep()` for a function that takes some time, much
+    like a function that reads a file or accesses a website. You put `await` in front
+    of the function that might spend most of its time waiting. And that function needs
+    to have `async` before its `def`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: If you define a function with `async def`, its caller must put an `await` before
+    the call to it. And the caller itself must be declared `async def`, and *its*
+    caller must `await` it, all the way up.
+  prefs: []
+  type: TYPE_NORMAL
+- en: By the way, you can declare a function as `async` even if it doesn’t contain
+    an `await` call to another async function. It doesn’t hurt.
+  prefs: []
+  type: TYPE_NORMAL
+- en: FastAPI and Async
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: After that long field trip over hill and dale, let’s get back to FastAPI and
+    why any of it matters.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Because web servers spend a lot of time waiting, performance can be increased
+    by avoiding some of that waiting—in other words, concurrency. Other web servers
+    use many of the methods mentioned earlier: threads, gevent, and so on. One of
+    the reasons that FastAPI is one of the fastest Python web frameworks is its incorporation
+    of async code, via the underlying Starlette package’s ASGI support, and some of
+    its own inventions.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: The use of `async` and `await` on their own does not make code run faster. In
+    fact, it might be a little slower, from async setup overhead. The main use of
+    `async` is to avoid long waits for I/O.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now, let’s look at our earlier web endpoint calls and see how to make them async.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The functions that map URLs to code are called *path functions* in the FastAPI
+    docs. I’ve also called them *web endpoints*, and you saw synchronous examples
+    of them in [Chapter 3](ch03.html#ch03). Let’s make some async ones. As in those
+    earlier examples, we’ll just use simple types like numbers and strings for now.
+    [Chapter 5](ch05.html#ch05) introduces *type hints* and Pydantic, which we’ll
+    need to handle fancier data structures.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Example 4-5](#ex-4-5) revisits the first FastAPI program from the previous
+    chapter and makes it asynchronous.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 4-5\. A shy async endpoint (greet_async.py)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: To run that chunk of web code, you need a web server like Uvicorn.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The first way is to run Uvicorn on the command line:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: The second, as in [Example 4-6](#ex-4-6), is to call Uvicorn from inside the
+    example code, when it’s run as a main program instead of a module.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 4-6\. Another shy async endpoint (greet_async_uvicorn.py)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: When run as a standalone program, Python names it `main`. That `if __name__...`
+    stuff is Python’s way of running it only when called as a main program. Yes, it’s
+    ugly.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This code will pause for one second before returning its timorous greeting.
+    The only difference from a synchronous function that used the standard `sleep(1)`
+    function is that the web server can handle other requests in the meantime with
+    the async example.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using `asyncio.sleep(1)` fakes a real-world function that might take one second,
+    like calling a database or downloading a web page. Later chapters will show examples
+    of such calls from this Web layer to the Service layer, and from there to the
+    Data layer, actually spending that wait time on real work.
+  prefs: []
+  type: TYPE_NORMAL
+- en: FastAPI calls this async `greet()` path function itself when it receives a `GET`
+    request for the URL */hi*. You don’t need to add an `await` anywhere. But for
+    any other `async def` function definitions that you make, the caller must put
+    an `await` before each call.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: FastAPI runs an async *event loop* that coordinates the async path functions,
+    and a *threadpool* for synchronous path functions. A developer doesn’t need to
+    know the tricky details, which is a great plus. For example, you don’t need to
+    run methods like `asyncio.gather()` or `asyncio.run()`, as in the (standalone,
+    non-FastAPI) joke example earlier.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using Starlette Directly
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: FastAPI doesn’t expose Starlette as much as it does Pydantic. Starlette is largely
+    the machinery humming in the engine room, keeping the ship running smoothly.
+  prefs: []
+  type: TYPE_NORMAL
+- en: But if you’re curious, you could use Starlette directly to write a web application.
+    [Example 3-1](ch03.html#ex-3-1) in the previous chapter might look like [Example 4-7](#ex-4-7).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Example 4-7\. Using Starlette: starlette_hello.py'
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Run this web application with this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: In my opinion, the FastAPI additions make web API development much easier.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Interlude: Cleaning the Clue House'
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'You own a small (very small: just you) house-cleaning company. You’ve been
+    living on ramen but just landed a contract that will let you afford much better
+    ramen.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Your client bought an old mansion that was built in the style of the board
+    game Clue and wants to host a character party there soon. But the place is an
+    incredible mess. If Marie Kondo saw the place, she might do the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Scream
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Gag
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Run away
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: All of the above
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Your contract includes a speed bonus. How can you clean the place thoroughly,
+    in the least amount of elapsed time? The best approach would have been to have
+    more Clue Preservation Units (CPUs), but you’re it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'So you can try one of these:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Do everything in one room, then everything in the next, etc.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Do a specific task in one room, then the next, etc. Like polishing the silver
+    in the Kitchen and Dining Room, or the pool balls in the Billiard Room.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Would your total time for these approaches differ? Maybe. But it might be more
+    important to consider whether you have to wait an appreciable time for any step.
+    An example might be underfoot: after cleaning rugs and waxing floors, they might
+    need to dry for hours before moving furniture back onto them.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'So, here’s your plan for each room:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Clean all the static parts (windows, etc.).
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Move all the furniture from the room into the Hall.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Remove years of grime from the rug and/or hardwood floor.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'Do either of these:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Wait for the rug or wax to dry, but wave your bonus goodbye.
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Go to the next room now, and repeat. After the last room, move the furniture
+    back into the first room, and so on.
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: The waiting-to-dry approach is the synchronous one, and it might be best if
+    time isn’t a factor and you need a break. The second is async and saves the waiting
+    time for each room.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s assume you choose the async path, because money. You get the old dump
+    to sparkle and receive that bonus from your grateful client. The later party turns
+    out to be a great success, except for these issues:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: One memeless guest came as Mario.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: You overwaxed the dance floor in the Ball Room, and a tipsy Professor Plum skated
+    about in his socks, until he sailed into a table and spilled champagne on Miss
+    Scarlet.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'Morals of this story:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Requirements can be conflicting and/or strange.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Estimating time and effort can depend on many factors.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Sequencing tasks may be as much art as science.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: You’ll feel great when it’s all done. Mmm, ramen.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Review
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: After an overview of ways of increasing concurrency, this chapter expanded on
+    functions that use the recent Python keywords `async` and `await`. It showed how
+    FastAPI and Starlette handle both plain old synchronous functions and these new
+    async funky functions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The next chapter introduces the second leg of FastAPI: how Pydantic helps you
+    define your data.'
+  prefs: []
+  type: TYPE_NORMAL

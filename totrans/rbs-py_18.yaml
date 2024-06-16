@@ -1,0 +1,430 @@
+- en: Chapter 15\. Extensibility
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: This chapter focuses on extensibility. Extensibility underpins this part of
+    the book; it’s important to understand this key concept. Once you know how extensibility
+    affects robustness, you’ll start seeing opportunities to apply it throughout your
+    codebase. Extensible systems allow other developers to enhance your codebase with
+    confidence, reducing the chance of errors. Let’s examine how.
+  prefs: []
+  type: TYPE_NORMAL
+- en: What Is Extensibility?
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: '*Extensibility* is the property of systems that allows new functionality to
+    be added without modifying existing parts of your system. Software is not static;
+    it will change. Throughout your codebase’s lifetime, developers will change your
+    software. The *soft* part of *software* indicates as much. These changes can be
+    quite large. Think about the times you need to swap out a key piece of your architecture
+    as you scale, or add in new workflows. These changes touch multiple parts of your
+    codebase; simple typechecking won’t catch all errors at this level. After all,
+    you may be redesigning your types completely. The goal of extensible software
+    is to be designed in such a way that you have provided easy extension points for
+    future developers, especially in areas of code that are changed often.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: To illustrate this idea, let’s consider a restaurant chain that wants to implement
+    some sort of notification system to help suppliers respond to demand. A restaurant
+    may have a special, or be out of a certain ingredient, or indicate that some ingredient
+    has gone bad. In each case, the restaurant wants the supplier to automatically
+    be notified that a restock is needed. The supplier has provided a Python library
+    to do the actual notifications.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The implementation looks like the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: This code is pretty straightforward at first glance. Whenever an event of note
+    occurs, the appropriate notification can be sent to the supplier (imagine some
+    dictionary being sent as part of a JSON request).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Fast forward a few months, and a new work item comes in. Your boss at the restaurant
+    is so pleased with the notification system that they want to expand it. They want
+    notifications to come to their email address. Sounds simple enough, right? You
+    make the `declare_special` function take an email address as well:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This has far-reaching implications, though. A function calling `declare_special`
+    will also need knowledge of what email to pass down. Thankfully, typecheckers
+    will catch any omission. But what if other use cases start rolling in? You take
+    a look at your backlog and the following tasks are present:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Notify sales team about specials and items out of stock.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Notify the restaurant’s customers of new specials.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Support different APIs for different suppliers.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Support text message notifications so your boss can get notifications, too.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Create a new notification type: New Menu Item. Marketers and the boss want
+    to know about this, but not the supplier.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: As developers implement these features, `declare_special` gets bigger and bigger.
+    It handles more and more cases, and as the logic gets more complex, the potential
+    for making a mistake grows. What’s worse, any changes to the API (such as adding
+    a list of email addresses or phone numbers for texting) will have repercussions
+    for all the callers. At some point, doing simple things like adding a new email
+    address to the list of marketers touches multiple files in your codebase. This
+    is colloquially known as “shotgun surgery”:^([1](part0020_split_007.html#idm45644733127304))
+    where a single change spreads out in a blast pattern, impacting a variety of files.
+    Furthermore, developers are modifying existing code, increasing the chances of
+    a mistake. To top it off, we’ve only covered `declare_special`, but `order_dish`
+    and `check_for_expired_ingredients` need their own custom logic as well. Handling
+    the notification code duplicated everywhere would be quite tedious. Ask yourself
+    if you would enjoy having to look for every notification snippet in the codebase
+    just because a new user wants text notifications.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This all stems from the code not being very extensible. You start requiring
+    developers to know about all the intricacies of multiple files in order to make
+    their changes. It will take significantly more work for a maintainer to implement
+    their features. Recall from [Chapter 1](part0003_split_000.html#intro) the discussion
+    between accidental complexity and necessary complexity. Necessary complexity is
+    intrinsic to your problem domain; accidental complexity is the complexity you
+    introduce. In this case, the combination of notifications, recipients, and filters
+    is necessary; it is a required functionality of the system.
+  prefs: []
+  type: TYPE_NORMAL
+- en: However, how you implement the system dictates how much accidental complexity
+    you incur. The way I’ve described is chock full of accidental complexity. Adding
+    any one simple thing is quite a monumental undertaking. Requiring developers to
+    hunt through the codebase to find all the places that need to change is just asking
+    for trouble. Easy changes should be easy to make. Otherwise, extending the system
+    becomes a chore every single time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The Redesign
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Let’s look at the `declare_special` function again:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The problem all started with adding email as a parameter to the function. This
+    is what caused a ripple effect that affected other parts of the codebase. It’s
+    not the future developer’s fault; they are often constrained by time, trying to
+    jam their feature into a part of the codebase they are unfamiliar with. They will
+    typically follow the patterns already laid out for them. If you can lay groundwork
+    to lead them in the right direction, you increase the maintainability of your
+    code. If you let the maintainability fester, you start seeing methods like the
+    following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: The function will grow and grow out of control until it’s a tangled mess of
+    dependencies. If I need to add a customer to a mailing list, why do I need to
+    look at how specials are declared?
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'I need to redesign the notification system so that changes are easy to make.
+    First, I’ll look at use cases and think about what needs to be made easy for future
+    developers. (If you’d like additional advice around designing interfaces, revisit
+    [Part II](part0011.html#part_2), specifically [Chapter 11](part0015_split_000.html#api).)
+    In this specific use case, I want future developers to be able to add three things
+    easily:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: New notification types
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: New notification methods (such as email, text message, or APIs)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: New users to notify
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Notification code is littered around the codebase, so I want to make sure that
+    as developers make these changes, they don’t need to engage in any shotgun surgery.
+    Remember, I want the easy things to be easy.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now, think about my *necessary* complexities. In this case, there will be multiple
+    notification methods, multiple notification types, and multiple users needing
+    to be notified. These are three separate complexities; I want to limit the interactions
+    between these. Part of the problem of `declare_special` is that the combination
+    of concerns it has to account for are daunting. Multiply that complexity by every
+    function needing slightly different notification needs and you have a real nightmare
+    of maintenance on your hand.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The first thing to do is decouple the intents as best as you can. I’ll start
+    by creating classes for each notification type:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'If I think about how I want `declare_special` to interact with the codebase,
+    I really only want it to know about this `NotificationType`. Declaring a special
+    should not require knowing who is signed up for that special and how they will
+    be notified. Ideally, the `declare_special` (and any other function needing to
+    send notifications) should look something like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: '`send_notification` can just be declared like such:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: This means that if any part of the codebase wants to send a notification, it
+    merely needs to invoke this function. All you need to pass in is a notification
+    type. Adding new notification types is simple; you add a new class, add that class
+    to the `Union`, and call the `send_notification` with the new notification type.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Next, you have to make it easy to add new notification methods. Again, I’ll
+    add new types to represent each notification method:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Somewhere in the codebase, I need to actually send a different notification
+    type per method. I can create a few helper functions to handle that functionality:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: Now, adding a new notification method is straightforward as well. I add a new
+    type, add it to the union, add an `if` statement in `notify`, and write a corresponding
+    method to handle all different notification types.
+  prefs: []
+  type: TYPE_NORMAL
+- en: It may seem unwieldy to handle all the notification types in each `send_***`
+    method, but this is necessary complexity; there is different functionality per
+    method/type combo due to different messages, different information, and different
+    formats. If the sheer amount of code did grow, you could make a dynamic lookup
+    dictionary (so that adding a new key-value would be all that’s needed for adding
+    a notification method), but in these cases you will trade off early error detection
+    with typechecking for more readability.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Now I have easy ways to add a new notification method or type. I just have
+    to tie it all together so that it’s easy to add new users. To do that, I will
+    write a function to get the list of users needing to be notified:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: In practice, this data could be coming from a config file or some other declarative
+    source, but for the brevity needed for a book example, it will do. To add new
+    users, I just add a new entry to this dictionary. Adding new notification methods
+    or notification types for a user is just as easy. The code for users to notify
+    is much easier to handle.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To put it all together, I’ll implement `send_notification` using all of these
+    concepts:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: That’s it! All of this code for notifications can live in one file, and the
+    rest of the codebase only needs to know one function—`send_notification`—to interact
+    with the notification system. This becomes much easier to test once there’s no
+    need to interact with any other part of the codebase. Furthermore, this code is
+    extensible; developers can easily add new notification types, methods, or users
+    without trawling through the codebase for all the myriad invocations. You want
+    to make it easy to add new functionality to your codebase while minimizing modifications
+    to existing code. This is known as the Open-Closed Principle.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Open-Closed Principle
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The *Open-Closed Principle* (OCP) states that code should be open for extension
+    and closed for modification.^([2](part0020_split_007.html#idm45644732423576))
+    This is the heart of extensibility. Our redesign in the previous section tried
+    to uphold this principle. Rather than requiring new functionality to touch multiple
+    parts of the codebase, it instead required adding new types or functions. Even
+    when existing functions changed, all I did was add a new conditional check instead
+    of modifying an existing check.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'It may seem like all I’ve done is aim for code reuse, but the OCP goes a step
+    further. Yes, I’ve deduplicated the notification code, but more importantly, I’ve
+    made it easier for developers to manage the complexity. Ask yourself which you
+    prefer: implementing a feature by examining call stacks and not being sure if
+    you found every place that needs to be changed, or one file that is easy to modify
+    and doesn’t require extensive changes. I know what I’d pick.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: You’ve already been exposed to the OCP in this book. Duck typing (in [Chapter 2](part0005_split_000.html#types)),
+    subtyping (in [Chapter 12](part0016_split_000.html#subtyping)), and protocols
+    (in [Chapter 13](part0017_split_000.html#protocols)) are all mechanisms that can
+    help with the OCP. The common thread among all these mechanisms is that they allow
+    you to program in a generic fashion. You no longer need to handle every special
+    case directly where the functionality is used. Instead, you provide extension
+    points for other developers to utilize, allowing them to inject their own functionality
+    without modifying your code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The OCP is the heart of extensibility. Keeping your code extensible will improve
+    robustness. Developers can implement functionality with confidence; there is one
+    place to make the change, and the rest of the codebase is all geared up to support
+    the change. Less cognitive overhead and less code to change will lead to fewer
+    errors.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Detecting OCP Violations
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'How can you tell if you should be writing code to be more extensible, adhering
+    to the OCP? Here are some indicators that should raise an eyebrow as you think
+    about your codebase:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Are the easy things hard to do?
+  prefs: []
+  type: TYPE_NORMAL
+- en: Some things should be conceptually easy in your codebase. The effort needed
+    to implement the concept should match the domain complexity. I once worked in
+    a codebase that required 13 different files to be modified in order to add a user-configurable
+    option. For a product that had hundreds of configurable options, this should have
+    been an easy task. Suffice to say, it was not.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Do you encounter pushback against similar features?
+  prefs: []
+  type: TYPE_NORMAL
+- en: If feature requesters are constantly pushing back on timelines for a feature,
+    especially if it, in their words, “is almost identical to previous feature *X*“,
+    ask yourself if the disconnect is due to complexity. It might be that the complexity
+    is inherent in the domain, in which case you should make sure the feature requester
+    is on the same page as you. If the complexity is accidental, though, your code
+    probably needs to be reworked to make it easier to work in.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Do you have consistently high estimates?
+  prefs: []
+  type: TYPE_NORMAL
+- en: Some teams use estimates to predict the amount of work they will do in a given
+    timeline. If features consistently have high estimates, ask yourself the source
+    of the estimate. Is complexity driving the high estimate, and is that complexity
+    necessary? Is it risk and fear of the unknown? If it’s the latter, ask why your
+    codebase feels risky to work in. Some teams split features into separate estimates
+    by splitting the work. If you’re doing this consistently, ask if restructuring
+    the codebase could have mitigated the split.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Do commits contain large changesets?
+  prefs: []
+  type: TYPE_NORMAL
+- en: Look for commits in your version control system that have a large number of
+    files. This is a great indication that shotgun surgery is happening, especially
+    if the same files keep showing up in multiple commits. Keep in mind this is a
+    guideline; big commits don’t always indicate a problem, but if they happen frequently,
+    it’s worth checking into.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Discussion Topic
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Which OCP violations have you encountered in your codebase? How could you restructure
+    code to avoid them?
+  prefs: []
+  type: TYPE_NORMAL
+- en: Drawbacks
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Extensibility is not a panacea to all of your coding woes. In fact, you can
+    actually *degrade* your codebase with too much flexibility. If you overdo the
+    OCP and try to make everything configurable and extensible, you will quickly find
+    yourself in a mess. The problem is that while making your code extensible reduces
+    accidental complexity in making changes, it can *increase* accidental complexity
+    in other areas.
+  prefs: []
+  type: TYPE_NORMAL
+- en: First, readability suffers. You are creating a whole new layer of abstraction
+    that separates your business logic from other parts of your codebase. Anyone who
+    wants to understand the entire picture has to jump through a few extra hoops.
+    This will affect new developers getting up to speed, as well as hinder debugging
+    efforts. You can mitigate this with good documentation and explaining your code
+    structure.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Secondly, you introduce a coupling that may not have been present before. Before,
+    separate parts of the codebase were independent of each other. Now, they share
+    a common subsystem; any change in that subsystem will affect all the consumers.
+    I’ll go more in depth in [Chapter 16](part0021_split_000.html#dependencies). Mitigate
+    this with a strong set of tests.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Use the OCP in moderation and take care when applying these principles. Use
+    them too much, and your codebase will be overabstracted with a confusing tangle
+    of dependencies. Use it too little, and developers will take longer to make changes
+    as well as introduce more bugs. Define extension points in areas that you are
+    reasonably sure that someone will have to modify again, and you will drastically
+    improve your future maintainer’s experience with your codebase.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Closing Thoughts
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Extensibility is one of the most important aspects of codebase maintenance.
+    It allows your collaborators a way of adding functionality without modifying existing
+    code. Any time you get away without modifying existing code is a time that you
+    aren’t introducing any regressions. Adding extensible code now prevents bugs in
+    the future. Remember the OCP: keep code open to extension but closed for modification.
+    Apply this principle judiciously and you will see your codebase become more maintainable.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Extensibility is an important theme that will weave throughout the next few
+    chapters. In the next chapter, I’m going to focus on dependencies and how relationships
+    in your codebase can constrain its extensibility. You’ll learn about the different
+    types of dependencies and how to manage them. You’ll learn how to visualize and
+    understand your dependencies, and why some parts of your codebases can have more
+    dependencies than others. Once you start managing your dependencies, you will
+    find it much easier to extend and modify code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '^([1](part0020_split_001.html#idm45644733127304-marker)) Martin Fowler. *Refactoring:
+    Improving the Design of Existing Code*. 2nd ed. Upper Saddle River, NJ: Addison-Wesley
+    Professional, 2018.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([2](part0020_split_003.html#idm45644732423576-marker)) The OCP was first described
+    in *Object-Oriented Software Construction* by Bertrand Meyer (Pearson).
+  prefs: []
+  type: TYPE_NORMAL

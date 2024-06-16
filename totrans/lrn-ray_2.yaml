@@ -1,0 +1,984 @@
+- en: Chapter 3\. Building Your First Distributed Application
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Now that you’ve seen the basics of the Ray API in action, let’s build something
+    more realistic with it. By the end of this comparatively short chapter, you will
+    have built a reinforcement learning (RL) problem from scratch, implemented your
+    first algorithm to tackle it, and used Ray tasks and actors to parallelize this
+    solution to a local cluster — all in less than 250 lines of code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This chapter is designed to work for readers who don’t have any experience with
+    reinforcement learning. We’ll work on a straightforward problem and develop the
+    necessary skills to tackle it hands-on. Since chapter [Chapter 4](ch04.xhtml#chapter_04)
+    is devoted entirely to this topic, we’ll skip all advanced RL topics and language
+    and just focus on the problem at hand. But even if you’re a quite advanced RL
+    user, you’ll likely benefit from implementing a classical algorithm in a distributed
+    setting.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This is the last chapter working *only* with Ray Core. I hope you learn to appreciate
+    how powerful and flexible it is, and how quickly you can implement distributed
+    experiments, that would otherwise take considerable efforts to scale.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Setting Up A Simple Maze Problem
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: As with the chapters before, I encourage you to code this chapter with me and
+    build this application together as we go. In case you don’t want to do that, you
+    can also simply follow [the notebook for this chapter](https://github.com/maxpumperla/learning_ray/blob/main/notebooks/ch_03_core_app.ipynb).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To give you an idea, the app we’re building is structured as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: You implement a simple 2D-maze game in which a single player can move around
+    in the four major directions.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: You initialize the maze as a `5x5` grid to which the player is confined.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: One of the `25` grid cells is the “goal” that a player called the “seeker” must
+    reach.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Instead of hard-coding a solution, you will employ a reinforcement learning
+    algorithm, so that the seeker learns to find the goal.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: This is done by repeatedly running simulations of the maze, rewarding the seeker
+    for finding the goal and smartly keeping track of which decisions of the seeker
+    worked and which didn’t.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: As running simulations can be parallelized and our RL algorithm can also be
+    trained in parallel, we utilize the Ray API to parallelize the whole process.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: We’re not quite ready to deploy this application on an actual Ray cluster comprised
+    of multiple nodes just yet, so for now we’ll continue to work with local clusters.
+    If you’re interested in infrastructure topics and want to learn how to set up
+    Ray clusters, jump ahead to [Link to Come], and to see a fully deployed Ray application
+    you can go to [Link to Come].
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s start by implementing the 2D maze we just sketched. The idea is to implement
+    a simple grid in Python that spans a 5x5 grid starting at `(0, 0)` and ending
+    at `(4, 4)` and properly define how a player can move around the grid. To do this,
+    we first need an abstraction for moving in the four cardinal directions. These
+    four actions, namely moving up, down, left, and right, can be encoded in Python
+    as a class we call `Discrete`. The abstraction of moving in several discrete actions
+    is so useful that we’ll generalize it to `n` directions, instead of just four.
+    In case you’re worried, this is not premature - we’ll actually need a general
+    `Discrete` class in a moment.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 3-1\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_building_your_first_distributed_application_CO1-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: A discrete action can be uniformly sampled between `0` and `n-1`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_building_your_first_distributed_application_CO1-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: For instance, a `Discrete(4)` sample will give you `0`, `1`, `2`, or `3`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Sampling from a `Discrete(4)` like in this example will randomly return `0`,
+    `1`, `2`, or `3`. How we interpret these numbers is up to us, so let’s say we
+    go for “down”, “left”, “right”, and “up” in that order.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now that we know how to encode moving around the maze, let’s code the maze itself,
+    including the `goal` cell and the position of the `seeker` player that tries to
+    find the goal. To this end we’re going to implement a Python class called `Environment`.
+    It’s called that, because the maze is the environment in which the player “lives”.
+    To make matters easy, we’ll always put the `seeker` at `(0, 0)` and the `goal`
+    at `(4, 4)`. To make the `seeker` move and find its goal, we initialize the `Environment`
+    with an `action_space` of `Discrete(4)`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'There is one last bit of information we need to set up for our maze environment,
+    namely an encoding of the `seeker` position. The reason for that is that we’re
+    going to implement an algorithm later that keeps track of which actions led to
+    good results for which seeker positions. By encoding the seeker position as a
+    `Discrete(5*5)`, it becomes a single number that’s much easier to work with. In
+    RL lingo it is common to call the information of the game that is accessible to
+    the player an *observation*. So, in analogy to the actions we can carry out for
+    our `seeker`, we can also define an `observation_space` for it. Here’s the implementation
+    of what we’ve just discussed:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 3-2\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_building_your_first_distributed_application_CO2-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `seeker` gets initialized in the top left, the `goal` in the bottom right
+    of the maze.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_building_your_first_distributed_application_CO2-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Our `seeker` can move down, left, up and right.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_building_your_first_distributed_application_CO2-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: And it can be in a total of `25` states, one for each position on the grid.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note that we defined an `info` variable as well, which can be used to print
+    information about the current state of the maze, for instance for debugging purposes.
+    To play an actual game of find-the-goal from the perspective of the seeker, we
+    have to define a few helper methods. Clearly, the game should be considered “done”
+    when the seeker finds the goal. Also, we should reward the seeker for finding
+    the goal. And when the game is over, we should be able to reset it to its initial
+    state, to play again. To round things off, we also define a `get_observation`
+    method that returns the encoded `seeker` position. Continuing our implementation
+    of the `Environment` class, this translates into the following four methods.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 3-3\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_building_your_first_distributed_application_CO3-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: To play a new game, we’ll have to `reset` the grid to its original state.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_building_your_first_distributed_application_CO3-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Converting the seeker tuple to a value from the environment’s `observation_space`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_building_your_first_distributed_application_CO3-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The seeker is only rewarded when reaching the goal.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](assets/4.png)](#co_building_your_first_distributed_application_CO3-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: If the seeker is at the goal, the game is over.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The last essential method to implement is the `step` method. Imagine you’re
+    playing our maze game and decide to go right as your next move. The `step` method
+    will take this action (namely `3`, the encoding of “right”) and apply it to the
+    internal state of the game. To reflect what changed, the `step` method will then
+    return the seeker’s observations, its reward, whether the game is over, and the
+    `info` value of the game. Here’s how the `step` method works:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 3-4\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_building_your_first_distributed_application_CO4-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: After taking a step in the specified direction, we return observation, reward,
+    whether we’re done, and any additional information we might find useful.
+  prefs: []
+  type: TYPE_NORMAL
+- en: I said the `step` method was the last essential method, but we actually want
+    to define one more helper method that’s extremely helpful to visualize the game
+    and help us understand it. This `render` method will print the current state of
+    the game to the command line.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 3-5\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_building_your_first_distributed_application_CO5-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: First we clear the screen.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_building_your_first_distributed_application_CO5-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Then we draw the grid and mark the goal as `G` and the seeker as `S` on it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_building_your_first_distributed_application_CO5-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The grid then gets rendered by printing it to your screen.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Great, now we have completed the implementation of our `Environment` class that’s
+    defining our 2D-maze game. We can `step` through this game, know when it’s `done`
+    and `reset` it again. The player of the game, the `seeker`, can also observe its
+    environment and gets rewarded for finding the goal.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s use this implementation to play a game of find-the-goal for a seeker
+    that simply takes random actions. This can be done by creating a new `Environment`,
+    sampling and applying actions to it, and rendering the environment until the game
+    is over:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 3-6\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_building_your_first_distributed_application_CO6-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We can test our environment by applying sampled actions until we’re done.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_building_your_first_distributed_application_CO6-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: To visualize the environment we render it after waiting for a tenth of a second
+    (otherwise the code runs too fast to follow).
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you run this on your computer, eventually you’ll see that the game is over
+    and the seeker has found the goal. It might take a while if you’re unlucky.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In case you’re objecting that this is an extremely simple problem, and to solve
+    it all you have to do is take at total of 8 steps, namely going right and down
+    four times each in arbitrary order, I’m not arguing with you. The point is that
+    we want to tackle this problem using machine learning, so that we can take on
+    much harder problems later. Specifically, we want to implement an algorithm that
+    figures out on its own how to play the game, merely by playing the game repeatedly:
+    observing what’s happening, deciding what to do next, and getting rewarded for
+    your actions.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If you want to, now is a good time to make the game more complex yourself.
+    As long as you do not change the interface we defined for the `Environment` class,
+    you could modify this game in many ways. Here are a few suggestions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Make it a 10x10 grid or randomize the initial position of the seeker.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Make the outer walls of the grid dangerous. Whenever you try to touch them,
+    you’ll incur a reward of -100, i.e a steep penalty.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Introduce obstacles in the grid that the seeker cannot pass through.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: If you’re feeling really adventurous, you could also randomize the goal position.
+    This requires extra care, as currently the seeker has no information about the
+    goal position in terms of the `get_observation` method. Maybe come back to tackling
+    this last exercise after you’ve finished reading this chapter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Building a Simulation
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: With the `Environment` class implemented, what does it take to tackle the problem
+    of “teaching” the seeker to play the game well? How can it find the goal consistently
+    in the minimum number of 8 steps necessary? We’ve equipped the maze environment
+    with reward information, so that the seeker can use this signal to learn to play
+    the game. In reinforcement learning, you play games repeatedly and learn from
+    the experience you made in the process. The player of the game is often referred
+    to as *agent* that takes *actions* in the environment, observes its *state* and
+    receives a *reward*.^([1](ch03.xhtml#idm44990031607120)) The better an agent learns,
+    the better it becomes at interpreting the current game state (observations) and
+    finding actions that lead to more rewarding outcomes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Regardless of the RL algorithm you want to use (in case you know any), you need
+    to have a way of simulating the game repeatedly, to collect experience data. For
+    this reason we’re going to implement a simple `Simulation` class in just a bit.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The other useful abstraction we need to proceed is that of a `Policy`, a way
+    of specifying actions. Right now the only thing we can do to play the game is
+    sampling random actions for our seeker. What a `Policy` allows us to do is to
+    get better actions for the current state of the game. In fact, we define a `Policy`
+    to be a class with a `get_action` method that takes a game state and returns an
+    action.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Remember that in our game the seeker has a total of `25` possible states on
+    the grid, and can carry out `4` actions. A simple idea would be to look at pairs
+    of states and actions and assign a high value to a pair if carrying out this action
+    in this state will lead to a high reward, and a low value otherwise. For instance,
+    from your intuition of the game it should be clear that going down or right is
+    always a good idea, whereas going left or up is not. Then, create a `25x4` lookup
+    table of all possible state-action pairs and store it in our `Policy`. Then we
+    could simply ask our policy to return the highest value of any action given a
+    state. Of course, implementing an algorithm that finds good values for these state-action
+    pairs is the challenging part. Let’s implement this idea of a `Policy` in first
+    and worry about a suitable algorithm later.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 3-7\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_building_your_first_distributed_application_CO7-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We define a nested list of values for each state-action pair, initialized to
+    zero.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_building_your_first_distributed_application_CO7-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: On demand, we can `explore` random actions so that we don’t get stuck in suboptimal
+    behavior.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_building_your_first_distributed_application_CO7-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Sometimes we might want to randomly explore actions in the game, which is why
+    we introduce an `explore` parameter to the `get_action` method. By default, this
+    happens 10% of the time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We return the action with the highest value in the lookup table, given the current
+    state.
+  prefs: []
+  type: TYPE_NORMAL
+- en: I’ve snuck in a little implementation detail into the `Policy` definition that
+    might be a bit confusing. The `get_action` method has an `explore` parameter.
+    The reason for this is that if you learn an extremely poor policy, e.g. one that
+    always wants you to move left, you have no chance of ever finding better solutions.
+    In other words, sometimes you need to explore new ways, and not “exploit” your
+    current understanding of the game. As indicated before, we haven’t discussed how
+    to learn to improve the values in the `state_action_table` of our policy. For
+    now, just keep in mind that the policy gives us the actions we want to follow
+    when simulating the maze game.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Moving on to the `Simulation` class we spoke about earlier, a simulation should
+    take an `Environment` and compute actions of a given `Policy` until the goal is
+    reached and the game ends. The data we observe when “rolling out” a full game
+    like this is what we call the *experience* we gained. Accordingly, our `Simulation`
+    class has a `rollout` method that computes `experiences` for a full game and returns
+    them. Here’s what the implementation of the `Simulation` class looks like:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 3-8\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_building_your_first_distributed_application_CO8-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We compute a game “roll-out” by following the actions of a `policy`, and we
+    can optionally render the simulation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_building_your_first_distributed_application_CO8-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: To be sure, we reset the environment before each rollout.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_building_your_first_distributed_application_CO8-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The passed in `policy` drives the actions we take. The `explore` and `epsilon`
+    parameters are passed through.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](assets/4.png)](#co_building_your_first_distributed_application_CO8-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We step through the environment by applying the policy’s `action`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![5](assets/5.png)](#co_building_your_first_distributed_application_CO8-5)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We define an experience as a `(state, action, reward, next_state)` quadruple.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![6](assets/6.png)](#co_building_your_first_distributed_application_CO8-6)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Optionally render the environment at each step.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Note that each entry of the `experiences` we collect in a `rollout` consists
+    of four values: the current state, the action taken, the reward received, and
+    the next state. The algorithm we’re going to implement in a moment will use these
+    experiences to learn from them. Other algorithms might use other experience values,
+    but those are the ones we need to proceed.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Now we have a policy that hasn’t learned anything just yet, but we can already
+    test its interface to see if it works. Let’s try it out by initializing a `Simulation`
+    object, calling its `rollout` method on a not-so-smart `Policy`, and then printing
+    the `state_action_table` of it:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 3-9\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_building_your_first_distributed_application_CO9-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We roll-out one full game with an “untrained” policy that we render.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_building_your_first_distributed_application_CO9-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The state-action values are currently all zero.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you feel like we haven’t made much progress since the last section, I can
+    promise you that things will come together in the next one. The prep work of setting
+    up a `Simulation` and a `Policy` were necessary to frame the problem correctly.
+    Now the only thing that’s left is to devise a smart way to update the internal
+    state of the `Policy` based on the experiences we’ve collected, so that it actually
+    learns to play the maze game.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Training a Reinforcement Learning Model
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Imagine we have a set of experiences that we’ve collected from a couple of games.
+    What would be a smart way to update the values in the `state_action_table` of
+    our `Policy`? Here’s one idea. Let’s say you’re sitting at position `(3,5)`, and
+    you’ve decided to go right, which puts you at `(4,5)`, just one step away from
+    the goal. Clearly you could then just go right and collect a reward of `1` in
+    this scenario. That must mean the current state you’re in combined with an action
+    of going “right” should have a high value. In other words, the value of this particular
+    state-action pair should be high. In contrast, moving left in the same situation
+    does not lead to anything, and the corresponding state-action pair should have
+    a low value.
+  prefs: []
+  type: TYPE_NORMAL
+- en: More generally, let’s say you were in a given `state`, you’ve decided to take
+    an `action`, leading to a `reward`, and you’re then in `next_state`. Remember
+    that this is how we defined an experience. With our `policy.state_action_table`
+    we can peek a little ahead and see if we can expect to gain anything from actions
+    taken from `next_state`. That is, we can compute
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'How should we compare the knowledge of this value to the current state-action
+    value, which is `value = policy.state_action_table[state][action]`? There are
+    many ways to go about this, but we clearly can’t completely discard the current
+    `value` and put too much trust in `next_max`. After all, this is just a single
+    piece of experience we’re using here. So as a first approximation, why don’t we
+    simply compute a weighted sum of the old and the expected value and go with `new_value
+    = 0.9 * value + 0.1 * next_max`? Here, the values `0.9` and `0.1` have been chosen
+    somewhat arbitrarily, the only important piece is that the first value is high
+    enough to reflect our preference to keep the old value, and that both weights
+    sum to `1`. That formula is a good starting point, but the problem is that we’re
+    not at all factoring in the crucial information that we’re getting from the `reward`.
+    In fact, we should put more trust in the current `reward` value than in the projected
+    `next_max` value, so it’s a good idea to discount the latter a little, let’s say
+    by 10%. Updating the state-action value would then look like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: Depending on your level of experience with this kind of reasoning, the last
+    few paragraphs might be a lot to digest. The good thing is that, if you’ve understood
+    the explanations up to this point, the remainder of this chapter will likely come
+    easy to you. Mathematically, this was the last (and only) hard part of this example.
+    If you’ve worked with RL before, you will have noticed by now that this is an
+    implementation of the so-called Q-Learning algorithm. It’s called that, because
+    the state-action table can be described as a function `Q(state, action)` that
+    returns values for these pairs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We’re almost there, so let’s formalize this procedure by implementing an `update_policy`
+    function for a policy and collected experiences:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 3-10\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_building_your_first_distributed_application_CO10-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We loop through all experiences in order.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_building_your_first_distributed_application_CO10-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Then we choose the maximum value among all possible actions in the next state.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_building_your_first_distributed_application_CO10-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We then extract the current state-action value.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](assets/4.png)](#co_building_your_first_distributed_application_CO10-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The new value is the weighted sum of the old value and the expected value, which
+    is the sum of the current reward and the discounted `next_max`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![5](assets/5.png)](#co_building_your_first_distributed_application_CO10-5)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: After updating, we set the new `state_action_table` value.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Having this function in place now makes it really simple to train a policy
+    to make better decisions. We can use the following procedure:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Initialize a policy and a simulation.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Run the simulation many times, let’s say for a total of `10000` runs.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: For each game, first collect the experiences by running a `rollout`.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Then update the policy by calling `update_policy` on the collected experiences.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: That’s it! The following `train_policy` function implements the above procedure
+    straight up.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 3-11\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_building_your_first_distributed_application_CO11-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Collect experiences for each game.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_building_your_first_distributed_application_CO11-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Update our policy with those experiences.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_building_your_first_distributed_application_CO11-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Finally, train and return a policy for our `enviroment` from before.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note that the high-brow way of speaking of a full play-through of the maze game
+    is an *episode* in the RL literature. That’s why we call the argument `num_episodes`
+    in the `train_policy` function, rather than `num_games`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Now that we have a trained policy, let’s see how well it performs. We’ve run
+    random policies twice before in this chapter, just to get an idea of how well
+    they work for the maze problem. But let’s now properly evaluate our trained policy
+    on several games and see how it does on average. Specifically, we’ll run our simulation
+    for a couple of episodes and count how many steps it took per episode to reach
+    the goal. So, let’s implement an `evaluate_policy` function that does precisely
+    that:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 3-12\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_building_your_first_distributed_application_CO12-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This time we set `explore` to `False` to fully exploit the learnings of the
+    trained policy.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_building_your_first_distributed_application_CO12-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The length of the `experiences` is the number of steps we took to finish the
+    game.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Apart from seeing the trained policy crush the maze problem ten times in a
+    row, as we hoped it would, you should also see the following prompt:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: In other words, the trained policy is able to find optimal solutions for the
+    maze game. That means you’ve successfully implemented your first RL algorithm
+    from scratch!
+  prefs: []
+  type: TYPE_NORMAL
+- en: With the understanding you’ve built up by now, do you think placing the `seeker`
+    into randomized starting positions and then running this evaluation function would
+    still work? Why don’t you go ahead and make the changes necessary for that?
+  prefs: []
+  type: TYPE_NORMAL
+- en: Another interesting question to ask yourself is what assumptions went into the
+    algorithm we used. For instance, it’s clearly a prerequisite for the algorithm
+    that all state-action pairs can be tabulated. Do you think this would still work
+    well if we had millions of states and thousands of actions?
+  prefs: []
+  type: TYPE_NORMAL
+- en: Building a Distributed Ray App
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Let’s take a step back here. If you’re an RL expert, you’ll know what we’ve
+    been doing the whole time. If you’re completely new to RL, you might just be a
+    little overwhelmed. If you’re somewhere in between, you hopefully like the example
+    but might be wondering how what we’ve done so far relates to Ray. That’s a great
+    question. As you’ll see shortly, all we need to make the above RL experiment a
+    distributed Ray app is writing three short code snippets. This is what we’re going
+    to do:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We create a Ray task that can initialize a `Policy` remotely.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Then we make the `Simulation` a Ray actor in just a few lines of code.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: After that we wrap the `update_policy` function in a Ray task.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Finally, we define a parallel version of `train_policy` that’s structurally
+    identical to its original version.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Let’s tackle the first two steps of this plan by implementing a `create_policy`
+    task and a Ray actor called `SimulationActor`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 3-13\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_building_your_first_distributed_application_CO13-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: After initializing it, we put our `environment` into the Ray object store.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_building_your_first_distributed_application_CO13-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This remote task returns a new `Policy` object.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_building_your_first_distributed_application_CO13-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This Ray actor wraps our `Simulation` class in a straightforward way.
+  prefs: []
+  type: TYPE_NORMAL
+- en: With the foundations on Ray Core you’ve developed in chapter [Chapter 2](ch02.xhtml#chapter_02)
+    you should have no problems reading this code. It might take some getting used
+    to writing it yourself, but conceptually you should be on top of this example.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Moving on, let’s define a distributed `update_policy_task` Ray task and then
+    wrap everything (two tasks and one actor) in a `train_policy_parallel` function
+    that distributes this RL workload on your local Ray cluster:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 3-14\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_building_your_first_distributed_application_CO14-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This task defers to the original `update_policy` function by passing a reference
+    to a policy and experiences retrieved from the object store.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_building_your_first_distributed_application_CO14-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: To train in parallel, we first create a policy remotely, which returns a reference
+    we call `policy`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_building_your_first_distributed_application_CO14-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Instead of one simulation, we create four simulation actors.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](assets/4.png)](#co_building_your_first_distributed_application_CO14-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Experiences now get collected from remote roll-outs on simulation actors.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![5](assets/5.png)](#co_building_your_first_distributed_application_CO14-5)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Then we can update our policy remotely. Note that `experiences` is a nested
+    list of experiences.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![6](assets/6.png)](#co_building_your_first_distributed_application_CO14-6)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Finally, we return the trained policy by retrieving it from the object store
+    again.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This allows us to take the last step and run the training procedure in parallel
+    and then evaluate the resulting as before.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 3-15\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: The result of those two lines is the same as before, when we ran the serial
+    version of the RL training for the maze. I hope you appreciate how `train_policy_parallel`
+    has the exact same high-level structure as `train_policy`. It’s a good exercise
+    to compare the two line-by-line. Essentially, all it took to parallelize the training
+    process was to use the `ray.remote` decorator three times in a suitable way. Of
+    course, you need some experience to get this right. But notice how little time
+    we spent on thinking about distributed computing, and how much time we could spend
+    on the actual application code. We didn’t need to adopt an entirely new programming
+    paradigm and could simply approach the problem in the most natural way. Ultimately,
+    that’s what you want — and Ray is great at giving you this kind of flexibility.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To wrap things up, let’s have a quick look at the task execution graph of the
+    Ray application that we’ve just built. To recap, what we did was:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `train_policy_parallel` function creates several `SimulationActor` actors
+    and a policy with `create_policy`
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The simulation actors create roll-outs with the policy and thereby collect experiences
+    that `update_policy_task` uses to update the policy.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: This works, because of the way updating the policy is designed. It doesn’t matter
+    if the experiences were collected by one or multiple simulations.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The rolling out and updating continues until we reached the number of episodes
+    we wante to train for, then the final `trained_policy` is returned.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Figure [Figure 3-1](#fig_ray_train_policy) summarizes this task graph in a
+    compact way:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Ray Training](assets/train_policy.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 3-1\. Parallel training of a reinforcement learning policy with Ray
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: An interesting side note about the running example of this chapter is that it’s
+    an implementation of the pseudo-code example used to illustrate the flexibility
+    of Ray in [the initial paper](https://arxiv.org/abs/1712.05889) by its creators.
+    That paper has a figure similar to [Figure 3-1](#fig_ray_train_policy) and is
+    worth reading for context.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Recapping RL Terminology
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Before we wrap up this chapter, let’s discuss the concepts we’ve encountered
+    in the maze example in a broader context. Doing so will prepare you for more complex
+    RL settings in the next chapter and show you where we simplified things a little
+    for the running example of this chapter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Every RL problem starts with the formulation of an *environment*, which describes
+    the dynamics of the “game” you want to play. The environment hosts a player or
+    *agent* which interacts with its environment through a simple interface. The agent
+    can request information from the environment, namely its current *state* within
+    the environment, the *reward* it has received in this state, and whether the game
+    is *done* or not. In observing states and rewards, the agent can learn to make
+    decisions based on the information it receives. Specifically, the agent will emit
+    an *action* that can be executed by the environment by taking the next `step`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The mechanism used by an agent to produce actions for a given state is called
+    a *policy*, and we will sometimes say that the agent follows a given policy. Given
+    a policy, we can simulate or *roll-out* a few steps or an entire game using said
+    policy. During a roll-out we can collect *experiences*, which we collect information
+    about the current state and reward, the next action and the resulting state. An
+    entire sequence of steps from start to finish is referred to as an *episode*,
+    and the environment can be `reset` to its initial state to start a new episode.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The policy we used in this chapter was based on the simple idea of tabulating
+    *state-action values* (also called *Q-values*), and the algorithm used to update
+    the policy from the experiences collected during roll-outs is called *Q-learning*.
+    More generally, you can consider the state-action table we implemented as the
+    *model* used by the policy. In the next chapter you will see examples of more
+    complex models, such as a neural network to learn state-action values. The policy
+    can decide to *exploit* what it has learnt about the environment by choosing the
+    best available value of its model, or *explore* the environment by choosing a
+    random action.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Many of the basic concepts introduced here hold for any RL problem, but we’ve
+    made a few simplifying assumptions. For instance, there could be *multiple agents*
+    acting in the environment (imagine having multiple seekers competing for reaching
+    the goal first), and we’ll look into so-called multi-agent environments and multi-agent
+    RL and in the next chapter. Also, we assumed that the *action space* of an agent
+    was *discrete*, meaning that the agent could only take a fixed set of actions.
+    You can, of course, also have *continuous* action spaces, and the pendulum example
+    from [Chapter 1](ch01.xhtml#chapter_01) is one example of this. Especially when
+    you have multiple agents, action spaces can be more complicated, and you might
+    need tuples of actions or even nest them accordingly. The *observation space*
+    we’ve considered for the maze game was also quite simple, and was modeled as a
+    discrete set of states. You can easily imagine that complex agents like robots
+    interacting with their environments might work with image or video data as observations,
+    which would require a more complex observation space, too.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Another crucial assumption we made is that the environment is *deterministic*,
+    meaning that when our agent chose to take an action, the resulting state would
+    always reflect that choice. In general environments this is not the case, and
+    there can be elements of randomness at play in the environment. For instance,
+    we could have implemented a coin flip in the maze game and whenever tails came
+    up, the agent would get pushed in a random direction. In that scenario, we couldn’t
+    have planned ahead like we did in this chapter, as actions would not deterministically
+    lead to the same next state every time. To reflect this probabilistic behavior,
+    in general we have to account for *state transition probabilities* in our RL experiments.
+  prefs: []
+  type: TYPE_NORMAL
+- en: And the last simplifying assumption I’d like to talk about here is that we’ve
+    been treating the environment and its dynamics as a game that can be perfectly
+    simulated. But the fact is that there are physical systems that can’t be faithfully
+    simulated. In that case you might still interact with this physical environment
+    through an interface like the one we defined in our `Environment` class, but there
+    would be some communication overhead involved. In practice, I find that *reasoning*
+    about RL problems as if they were games takes very little away from the experience.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: To recap, we’ve implemented a simple maze problem in plain Python and then solved
+    the task of finding the goal in that maze using a straightforward reinforcement
+    learning algorithm. We then took this solution and ported it to a distributed
+    Ray application in roughly 25 lines of code. We did so without having to plan
+    how to work with Ray — we simply used the Ray API to parallelize our Python code.
+    This example shows how Ray gets out of your way and lets you focus on your application
+    code. It also demonstrates how custom workloads that use advanced techniques like
+    RL can be efficiently implemented and distributed with Ray.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the next chapter, you’ll build on what you’ve learned here and see how easy
+    it is to solve our maze problem directly with the higher-level Ray RLlib library.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([1](ch03.xhtml#idm44990031607120-marker)) As we’ll see in chapter [Chapter 4](ch04.xhtml#chapter_04),
+    you can run RL on multi-player games, too. Making the maze environment a so-called
+    multi-agent environment, in which multiple seekers compete for the goal, is an
+    interesting exercise.
+  prefs: []
+  type: TYPE_NORMAL

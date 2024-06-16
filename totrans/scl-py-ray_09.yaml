@@ -1,0 +1,896 @@
+- en: Chapter 8\. Ray Workflows
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: With contributions from Carlos Andrade Costa
+  prefs: []
+  type: TYPE_NORMAL
+- en: Real-life and modern applications in a wide range of domains are often a combination
+    of multiple interdependent steps. For example, in AI/ML workflows, training workloads
+    require multiple steps for data cleaning, balancing, and augmentation, while model
+    serving often includes many subtasks and integration with long-running business
+    processes. Different steps in the workflows can depend on multiple upstreams and
+    sometimes require different scaling tools.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Computer libraries for workflow management date back over 25 years, with new
+    tools focused on AI/ML emerging. Workflow specifications range from graphical
+    user interfaces to custom formats, YAML Ain’t Markup Language (YAML) and Extensible
+    Markup Language (XML), and libraries in full-fledged programming languages. Specifying
+    workflows in code allows you to use general programming tools, like source control
+    for versioning and collaboration.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this chapter, you will learn the basics of Ray’s Workflows implementation
+    and some simple examples of its usage.
+  prefs: []
+  type: TYPE_NORMAL
+- en: What Is Ray Workflows?
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: '*Ray Workflows* extends Ray Core by adding workflow primitives, providing support
+    for programmatic workflow execution with a shared interface with tasks and actors.
+    This allows you to use Ray’s core primitives as part of your workflow’s steps.
+    Ray Workflows is targeted at supporting both traditional ML and data workflows
+    (e.g., data preprocessing and training) and long-running business workflows, including
+    model-serving integration. It leverages Ray tasks for execution to provide scalability
+    and reliability. Ray’s workflow primitives greatly reduce the burden of embedding
+    workflow logic into application steps.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: How Is It Different from Other Solutions?
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Unlike other popular workflow frameworks—​e.g., [Apache Airflow](https://oreil.ly/ZKymk),
+    [Kubeflow Pipelines](https://oreil.ly/dgEk7), and others—​which focus on tool
+    integration and deployment orchestration, Ray Workflows focuses on lower-level
+    workflow primitives enabling programmatic workflows.^([1](ch08.html#idm45354770928336))
+    This programmatic approach can be considered a lower level compared to other implementations;
+    this low-level approach allows for unique workflow management features.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Ray Workflows focuses on embedding core workflow primitives into Ray Core to
+    enable rich programmatic workflows, as opposed to supporting tools integration
+    and deployment orchestration.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Ray Workflows Features
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this section, we will walk through the main features of Ray Workflows, review
+    the core primitives, and see how they are used in simple examples.
+  prefs: []
+  type: TYPE_NORMAL
+- en: What Are the Main Features?
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'The main features provided by Ray Workflows include the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Durability
+  prefs: []
+  type: TYPE_NORMAL
+- en: By adding virtual actors (see [“Virtual Actors”](#virtual-actors-section)),
+    Ray Workflows adds durability guarantees to steps executed with Ray’s dynamic
+    task graph.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Dependency management
+  prefs: []
+  type: TYPE_NORMAL
+- en: Ray Workflows leverages Ray’s runtime environment feature to snapshot the code
+    dependencies of a workflow. This enables management of workflows and virtual actors
+    as code is upgraded over time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Low-latency and scale
+  prefs: []
+  type: TYPE_NORMAL
+- en: By leveraging Ray’s zero-copy overhead with Plasma (a shared memory store),
+    Ray Workflows provides subsecond overhead when launching tasks. Ray’s scalability
+    extends to workflows, allowing you to create workflows with thousands of steps.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Ray Workflows provides durable execution of workflow steps using any of Ray’s
+    distributed libraries, with low-latency and dynamic dependency management.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Workflow Primitives
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Ray Workflows provides core primitives to build workflows with steps and a
+    *virtual actor*. The following list summarizes the core primitives and basic concepts
+    in Ray Workflows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Steps
+  prefs: []
+  type: TYPE_NORMAL
+- en: Annotated functions with the `@workflow.step` decorator. Steps are executed
+    once when finished successfully, and retried on failure. Steps can be used as
+    arguments for other step futures. To ensure recoverability, steps don’t support
+    the `ray.get` and `ray.wait` calls.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Objects
+  prefs: []
+  type: TYPE_NORMAL
+- en: Data objects stored in the Ray object store, with references to these objects
+    being passed into and returned from steps. When initially returned from a step,
+    objects are checkpointed and can be shared with other Workflows steps through
+    the Ray object store.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Workflows
+  prefs: []
+  type: TYPE_NORMAL
+- en: Execution graph created with `@Workflow.run` and `Workflow.run_async`. The workflow
+    execution, after starting, is logged to storage for durability and can be resumed
+    upon failure on any Ray cluster with access to the storage.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Workflows can also be dynamic, generating new steps in subworkflows at runtime.
+    Workflows support dynamic looping, nesting, and recursion. You can even dynamically
+    add new steps to your workflow directed acyclic graph (DAG) by returning more
+    workflow steps from a workflow step.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Virtual actors
+  prefs: []
+  type: TYPE_NORMAL
+- en: Virtual actors are like regular Ray actors, which can hold member states. The
+    main difference is that virtual actors are backed by durable storage instead of
+    only in-process memory, which does not survive cluster restarts or worker failures.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Virtual actors manage long-running business workflows. They save their state
+    into external storage for durability. They also support the launch of sub­work⁠flows
+    from method calls and receive externally triggered events.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You can use virtual actors to add state to an otherwise stateless workflow.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Events
+  prefs: []
+  type: TYPE_NORMAL
+- en: Workflows can be triggered by timers and external events through pluggable event
+    listeners. Events can also be used as an argument for a step, making the step
+    execution wait until the event is received.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Working with Basic Workflow Concepts
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Workflows are built out of various primitives, and you’ll start with learning
+    how to use steps and objects.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Workflows, Steps, and Objects
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: '[Example 8-1](#basic_workflow) shows a simple Hello World workflow example,
+    demonstrating how the step, object, and workflow primitives work in a simple case.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 8-1\. [Hello World workflow](https://oreil.ly/4G4VW)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Similar to Ray tasks and actors (described in Chapters [3](ch03.html#ch03)
+    and [4](ch04.html#ch04)), you can explicitly assign computing resources (e.g.,
+    CPU core, GPUs) to a step with the same arguments as in core Ray: `num_cpus`,
+    `num_gpus`, and `resources`. See [Example 8-2](#step_resources).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 8-2\. Adding resources to steps
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: Dynamic Workflows
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'In addition to the workflows with the predefined DAG, Ray allows you to create
+    steps programmatically based on the current state of workflow execution: *dynamic
+    workflows*. You can use this type of workflow, for example, to implement recursion
+    and more complex execution flows. A simple recursion can be illustrated with a
+    recursive factorial program. [Example 8-3](#basic_dynamic_workflow) shows how
+    you can use recursion within a workflow (note that this is for illustration only
+    and that other implementations with better performance exist without the need
+    of Ray Workflows).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 8-3\. [Dynamically creating workflow steps](https://oreil.ly/3vtT5)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: Virtual Actors
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: '*Virtual actors* are Ray actors (see [Chapter 4](ch04.html#ch04)) backed by
+    durable storage instead of memory; they are created with the decorator `@virtual_actor`.
+    [Example 8-4](#basic_virtual_actor) shows how to use a persistent virtual actor
+    to implement a counter.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 8-4\. [Virtual actors](https://oreil.ly/1lV4k)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: Warning
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Because a virtual actor retrieves and stores its state before and after every
+    step of execution, its state either has to be JSON serializable (in the form of
+    state dictionary) or `getstate` and `setstate` methods should be provided that
+    convert the actor’s state to and from a JSON serializable dictionary.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Workflows in Real Life
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Let’s take a look at the common steps for creating and managing a reference
+    use case implementation with Ray Workflows.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Building Workflows
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: As seen before, you start with implementing individual workflow steps and declaring
+    them with the `@workflow.step` annotation. Similarly to a Ray task, steps can
+    receive one or more inputs, where each input can be a specific value or a future—​the
+    result of executing one or more previous workflow steps. The return type of workflow
+    is `Workflow[T]` and is a future with the value available after the execution
+    of the workflow is completed. [Example 8-5](#workflow_step) illustrates this process.
+    In this case, the steps `get_value1` and `get_value2` return futures that are
+    passed to the `sum` step function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 8-5\. [Implementing workflow steps](https://oreil.ly/Sl5bx)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: To simplify accessing step execution results and passing data between steps,
+    Ray Workflows allows you to explicitly name the steps. You can, for example, retrieve
+    the results of step execution by calling `workflow.get_output(workflow_id, name="step_name")`,
+    which will return an `ObjectRef[T]`. If you do not explicitly name the step, Ray
+    will automatically generate one in the format of `<*WORK⁠FLOW_ID*>​.<*MOD⁠ULE_NAME*>.<*FUNC_NAME*>`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note that you can call `ray.get` on the returned reference, which will block
+    until the workflow is completed. For example, `ray.get(workflow.get_output("sum​_exam⁠ple"))
+    == 100`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Steps can be named in two ways:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using `.options(name="step_name")`
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Using the decorator `@workflows.step(name=”step_name”)`
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Managing Workflows
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Each workflow in Ray Workflows has a unique `workflow_id`. You can explicitly
+    set a workflow ID during workflow startup, using `.run(workflow_id="workflow_id")`.
+    The same option is also applicable to `.run_async`. If no ID is provided when
+    calling `.run` and `run_async`, a random ID is generated.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Once created, workflows can be in the following states:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Running
+  prefs: []
+  type: TYPE_NORMAL
+- en: Currently running in the cluster.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Failed
+  prefs: []
+  type: TYPE_NORMAL
+- en: Failed with an application error. It may be resumed from the failed step.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Resumable
+  prefs: []
+  type: TYPE_NORMAL
+- en: Workflow that failed with a system error and can be resumed from the failed
+    step.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Canceled
+  prefs: []
+  type: TYPE_NORMAL
+- en: Workflow has been canceled. It cannot be resumed, and results are unavailable.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Successful
+  prefs: []
+  type: TYPE_NORMAL
+- en: Workflow completed successfully.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Table 8-1](#table-workflow-mgmt-apis) shows a summary of the management APIs
+    and how you can use them to manage workflows both individually or in bulk.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Table 8-1\. Workflow management APIs
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| Single workflow | Action | Bulk workflow | Action |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- | --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `.get_status(​work⁠flow_id=<>)` | Get status of workflows (running, resumable,
+    failed, canceled, successful) | `.list_all(​<*work⁠flow_state1*, *work⁠flow_state2*,
+    …>)` | List all workflows in the states listed |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `.resume(​work⁠flow_id=<>)` | Resume a workflow | `.resume_all` | Resume
+    all resumable workflows |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `.cancel(​work⁠flow_id=<>)` | Cancel a workflow |  |  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `.delete(​work⁠flow_id=<>)` | Delete a workflow |  |  |'
+  prefs: []
+  type: TYPE_TB
+- en: Ray Workflows stores workflow information in your configured storage location.
+    You configure the location either when creating the workflow with the decorator
+    `workflow.init(storage=<*path*>)`, or by setting the environment variable `RAY_WORKFLOW_STORAGE`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'You can use either regular/local storage or distributed storage using an S3-compatible
+    API:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Local filesystem
+  prefs: []
+  type: TYPE_NORMAL
+- en: Either single node, for testing purposes only, or through a shared filesystem
+    (e.g., NFS mount) across the nodes in the cluster. Location is passed as an absolute
+    path.
+  prefs: []
+  type: TYPE_NORMAL
+- en: S3 backend
+  prefs: []
+  type: TYPE_NORMAL
+- en: Enable workflow data to be written to an S3-based backend for use in production.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If you do not specify a path, Workflows will use the default location: */tmp/ray/work​flow_data*.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Warning
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: If no storage data location is specified, workflow data is saved locally and
+    works for only a single-node Ray cluster.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Ray’s Workflows dependencies are actively under development. Once available,
+    this feature will allow Ray to log the full runtime environment to storage, at
+    the workflow submission time. By tracking this information, Ray can ensure that
+    the workflow can run on a different cluster.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Building a Dynamic Workflow
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: As mentioned before, you can create workflows dynamically by creating steps
+    based on the current state of a given step. When such a step is created, it is
+    inserted into the original workflow DAG. [Example 8-6](#dynamic_workflow) shows
+    how to use a dynamic workflow to calculate the Fibonacci sequence.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 8-6\. [Dynamic workflow](https://oreil.ly/zaIwk)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: Building Workflows with Conditional Steps
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Workflows with conditional steps are central to many use cases. [Example 8-7](#flight_booking_example)
+    shows a simplified scenario of a workflow implementing a trip booking.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 8-7\. [Trip-booking example](https://oreil.ly/i7jro)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: Handling Exceptions
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'You can choose to have Ray handle exceptions in one of two ways:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Automatic retry, until a maximum number of retries is reached
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Catching and handling the exception
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'You configure this in either the step decorator or via `.options`. You specify
+    the settings for the two techniques, respectively, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`max_retries`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The step is retried upon failure until `max_retries` is reached. The `max_retries`
+    default is `3`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`catch_exceptions`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: When `True`, this option will convert the return value of the function to a
+    `Tuple[Optional[T], Optional[Exception]]`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You can also pass these to the `workflow.step` decorator.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Example 8-8](#exception_handling_example) illustrates exception handling with
+    these options.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 8-8\. [Exception handling](https://oreil.ly/Itn5V)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: Handling Durability Guarantees
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Ray Workflows ensures that once a step succeeds, it will never be reexecuted.
+    To enforce this guarantee, Ray Workflows logs the step result to durable storage,
+    ensuring that results from previous successful steps will not change when used
+    in subsequent steps.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Ray’s workflows go beyond the durability of retrying within a cluster or single
+    application. Workflows implements a failure model based on two statuses:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Cluster failure
+  prefs: []
+  type: TYPE_NORMAL
+- en: If the cluster fails, any workflow running on the cluster is set to `RESUMABLE`
+    state. Workflows in `RESUMABLE` state can be resumed on a different cluster. This
+    can be done with `ray.workflow.resume.all`, which will resume all resumable workflow
+    jobs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Driver failure
+  prefs: []
+  type: TYPE_NORMAL
+- en: The workflow will transition to the failed state, and once the issue is resolved,
+    it can be resumed from the failed step.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Warning
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Workflow resumability is a beta API at the moment of writing and may change
+    before becoming stable.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You can use durability guarantees to create idempotent workflows that include
+    steps that have side effects. This is needed because a step can fail before its
+    output is logged. [Example 8-9](#idempotent_workflow_example) shows how to use
+    a durability guarantee to make a workflow idempotent.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 8-9\. [Idempotent workflow](https://oreil.ly/wmmp1)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: Extending Dynamic Workflows with Virtual Actors
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Virtual actors, described previously, also allow subworkflows to be called from
+    each of their methods.
+  prefs: []
+  type: TYPE_NORMAL
+- en: When you create a virtual actor, Ray stores its initial state and class definition
+    in durable storage. As a workflow name is used in the actor’s definition, Ray
+    stores it in durable storage. When the actor’s method creates new steps, they
+    are dynamically appended to the workflow and executed. In this case, both the
+    step definition and its result are stored in the actor’s state. To retrieve the
+    actor, you can use the decorator `.get_actor(workflow_id="workflow_id")`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You can also define workflows as read-only. Because they don’t require logging,
+    they incur less overhead. Additionally, because they don’t imply conflict issues
+    with mutating methods in the actor, Ray can execute them concurrently.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Example 8-10](#virtual_actor_workflow_example) shows how virtual actors can
+    be used to manage state in a workflow.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 8-10\. [Workflow management with virtual actors](https://oreil.ly/zTWOk)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: Virtual actors can also create subworkflows that involve other methods in the
+    virtual actor or steps defined outside the actor class to be invoked. This means
+    that a workflow can be launched inside a method or passed to another method. See
+    [Example 8-11](#subworkflow_example).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 8-11\. [Using subworkflows](https://oreil.ly/exFyJ)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: Virtual actors can also be used for sharing data among multiple workflows (even
+    running on different Ray clusters). For example, virtual actors may be used to
+    store fitted parameters in an ML model such as a Python scikit-learn pipeline.
+    [Example 8-12](#machine_learning_workflow) illustrates a simple two-stage pipeline
+    consisting of a standard scalar followed by a decision tree classifier. Each stage
+    is implemented as a workflow step, directly invoking an instance of a virtual
+    actor defined in the class `estimator_virtual_actor`. Its member estimator uses
+    the `getstate` and `setstate` methods to convert its state to and from the JSON
+    serializable dictionary. The pipeline is trained when the third input parameter
+    of the input tuple is specified as `'fit'`, and the pipeline is used for prediction
+    when that parameter is specified as `'predict'`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To train a pipeline, the workflow execution submits `training_tuple` to the
+    standard scalar, whose output is then piped through the classification model to
+    train:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'To use the trained pipeline for prediction, the workflow execution submits
+    `predict_tuple` to the same chain of steps, although its `''predict''` parameter
+    invokes the `predict` function in the virtual actor. The prediction result is
+    returned as another tuple with labels found in `pred_y`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: The power of the workflow virtual actor is to make the trained model available
+    to another Ray cluster. Furthermore, the ML workflow backed by a virtual actor
+    can incrementally update its state, such as recalculated time-series features.
+    This makes it easier to implement stateful time-series analysis, including forecasting,
+    prediction, and anomaly detection.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 8-12\. [Machine learning workflow](https://oreil.ly/mQBVn)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: Long-running workflows require special attention when used as subworkflows,
+    since subworkflows block future actor calls when running. To properly handle long-running
+    workflows, it is recommended to use the Workflows API to monitor execution and
+    to run separate workflows with deterministic names. This approach prevents a duplicate
+    workflow from being launched in the case of a failure.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Warning
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Subworkflows block future actor method calls. It is not recommended to run a
+    long running workflow as a subworkflow of a virtual actor.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Example 8-13](#non_blocking_example) shows how to run a long-running workflow
+    without blocking.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 8-13\. [Nonblocking workflow](https://oreil.ly/eRs6K)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: Integrating Workflows with Other Ray Primitives
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Ray workflows can be used with Ray’s core primitives. Here we will describe
+    some common scenarios where the Workflows API is integrated with a common Ray
+    program. There are two main scenarios when integrating workflows with tasks and
+    actors:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Running a workflow from within a Ray task or actor
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Using a Ray task or actor within a workflow step
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Another common case is passing object references between steps in a workflow.
+    Ray object references can be passed as arguments and returned from any workflow
+    step, as shown in [Example 8-14](#object_reference_example).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 8-14\. [Using object references](https://oreil.ly/NaZs2)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: To ensure recoverability, Ray Workflows logs the contents to persistent storage.
+    Thankfully, when passed to multiple steps, Ray will not checkpoint the object
+    more than once.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Warning
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Ray actor handlers cannot be passed between steps.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Another consideration when integrating actors and tasks with Workflows is handling
+    nested arguments. As described before, workflow outputs are fully resolved when
+    passed to a step, as a form to guarantee that all the ancestors of a step are
+    executed before the current step is executed. [Example 8-15](#output_arguments_example)
+    illustrates this behavior.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 8-15\. [Using output arguments](https://oreil.ly/RiOl3)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: Triggering Workflows (Connecting to Events)
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Workflows has a pluggable event system, allowing external events to trigger
+    workflows. This framework provides an efficient built-in wait mechanism and guarantee
+    of exactly-once event delivery semantics. This implies that the user doesn’t need
+    to implement a trigger mechanism based on a running workflow step to react to
+    an event. As with the rest of workflows, for fault-tolerance, events are checkpointed
+    upon occurrence.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Workflow *events* can be seen as a type of workflow step that completes only
+    when the event occurs. The decorator `.wait_for_event` is used to create an event
+    step.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Example 8-16](#event_integration_example) shows a workflow step that finishes
+    after 90 seconds and triggers the execution for an outer workflow.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 8-16\. [Using events](https://oreil.ly/7hwaG)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: Events also support customer listeners by subclassing the `EventListener` interface,
+    as shown in [Example 8-17](#custom_listeners_example).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 8-17\. [Custom event listeners](https://oreil.ly/3j532)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: Working with Workflow Metadata
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'One of the important requirements for workflow execution is observability.
+    Typically, you want not only to see the workflow execution results but also to
+    get the information about the internal states (e.g., paths that execution took,
+    their performance, and values of variables). Ray’s [workflow metadata](https://oreil.ly/kgiX2)
+    provides support for some of the standard and user-defined metadata options. Standard
+    metadata is split between workflow-level metadata:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`status`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Workflow states, which can be one of `RUNNING`, `FAILED`, `RESUMABLE`, `CANCELED`,
+    or `SUCCESSFUL`
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`user_metadata`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: A Python dictionary of custom metadata by the user via `workflow.run`
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`stats`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Workflow running stats, including workflow start time and end time
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'And step-level metadata:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`name`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Name of the step, either provided by the user via `step.options` or generated
+    by the system
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`step_options`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Options of the step, either provided by the user via `step.options` or the system
+    default
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`user_metadata`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: A Python dictionary of custom metadata by the user via `step.options`
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`stats`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The step’s running stats, including step start time and end time
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Ray Workflows provides a simple API to obtain standard metadata:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'You can also get metadata about the workflow and a step:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: Both versions of the API return a dictionary containing all the metadata for
+    either the workflow itself or an individual step.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In addition to the standard metadata, you can add custom ones, capturing parameters
+    of interest either in the workflow or specific step:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Workflow-level metadata can be added via `.run(metadata=metadata)`.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Step-level metadata can be added via `.options(metadata=metadata)` or in the
+    decorator `@workflow.step(metadata=metadata)`.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Finally, you can expose metadata from the virtual actors execution and also
+    retrieve workflow/steps metadata to control execution.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: The metrics that you add to Ray metrics are exposed as Prometheus metrics, just
+    like Ray’s built-in metrics.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Be aware that `get_metadata` returns an immediate result at invocation time,
+    which means that not all fields might be available in the result.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Conclusion
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter, you learned how Ray Workflows adds workflow primitives to Ray,
+    allowing you to create dynamic pipelines with rich workflow management support.
+    Ray Workflows allows you to create common pipelines involving multiple steps,
+    like data preprocessing, training, and long-running business workflows. With Ray,
+    the possibility of a programmatic workflow execution engine became feasible with
+    a shared interface with Ray tasks and actors. This capability can greatly reduce
+    the burden of orchestrating workflows and embedding workflow logic into application
+    steps.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This said, be aware that Ray remote functions (see [Chapter 3](ch03.html#ch03))
+    provide basic execution sequencing and fork/merge capabilities based on an argument’s
+    availability. As a result, for some simple use cases, using Ray Workflows might
+    seem like overkill, but if you need execution reliability, restartability, programmatic
+    control, and metadata management (which you typically do), Ray Workflows is a
+    preferred implementation approach.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([1](ch08.html#idm45354770928336-marker)) The approach was originally introduced
+    by [Cadence workflow](https://oreil.ly/UNfII). Cadence consists of a programming
+    framework (or client library) that provides what its documentation calls a “fault-oblivious”
+    stateful programming model, allowing developers to create workflows the same way
+    they are writing normal code.
+  prefs: []
+  type: TYPE_NORMAL

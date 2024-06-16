@@ -1,0 +1,1439 @@
+- en: Chapter 4\. Reinforcement Learning with Ray RLlib
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In the last chapter you’ve built a Reinforcement Learning (RL) environment,
+    a simulation to play out some games, an RL algorithm, and the code to parallelize
+    the training of the algorithm - all completely from scratch. It’s good to know
+    how to do all that, but in practice the only thing you really want to do when
+    training RL algorithms is the first part, namely specifying your custom environment,
+    the “game”^([1](ch04.xhtml#idm44990030106000)) you want to play. Most of your
+    efforts will then go into selecting the right algorithm, setting it up, finding
+    the best parameters for the problem, and generally focusing on training a well-performing
+    algorithm.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Ray RLlib is an industry-grade library for building RL algorithms at scale.
+    You’ve seen a first example of the RLlib in [Chapter 1](ch01.xhtml#chapter_01)
+    already, but in this chapter we’ll go into much more depth. The great thing about
+    RLlib is that it’s a mature library for developers and comes with good abstractions
+    to work with. As you will see, many of these abstractions you already know from
+    the last chapter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We start out this chapter by first giving you an overview of RLlib’s capabilities.
+    Then we quickly revisit the maze game from [Chapter 3](ch03.xhtml#chapter_03)
+    and show you how to tackle it both with the RLlib command line interface (CLI)
+    and the RLlib Python API in a few lines of code. You’ll see how easy RLlib is
+    to get started with before learning about its key concepts, such as RLlib environments,
+    algorithms, and trainers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We’ll also take a closer look at some advanced RL topics that are extremely
+    useful in practice, but are not often properly supported in other RL libraries.
+    For instance, you will learn how to create a learning curriculum for your RL agents
+    so that they can learn simple scenarios first, before moving on to more complex
+    ones. You will also see how RLlib deals with having multiple agents in a single
+    environment, and how to leverage experience data that you’ve collected outside
+    your current application to improve your agent’s performance.
+  prefs: []
+  type: TYPE_NORMAL
+- en: An Overview of RLlib
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Before we dive into some examples, let’s take a quick overview of what RLlib
+    is and what it can do. As part of the Ray ecosystem, RLlib inherits all the performance
+    and scalability benefits of Ray. In particular, RLlib is distributed by default,
+    so you can scale out your RL training to as many nodes as you want. Other RL libraries
+    can potentially scale out experiments, but it’s usually not straightforward to
+    do so.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Another benefit of being built on top of Ray is that RLlib integrates tightly
+    with other Ray libraries. For instance, all RLlib algorithms can be tuned with
+    Ray Tune, as we will see in [Chapter 5](ch05.xhtml#chapter_05), and you can seamlessly
+    deploy your RLlib models with Ray Serve, as we will discuss in [Chapter 8](ch08.xhtml#chapter_08).
+  prefs: []
+  type: TYPE_NORMAL
+- en: What’s extremely useful is that RLlib works with both of the predominant deep
+    learning frameworks at the time of this writing, namely PyTorch and TensorFlow.
+    You can use either one of them as your backend and can easily switch between them,
+    often by just changing one line of code. That’s a huge benefit, as companies are
+    often locked into their underlying deep learning framework and can’t afford to
+    switch to another system and rewrite their code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: RLlib also has a track record of solving real-world problems and is a mature
+    library used by many companies to bring their RL workloads to production. I often
+    recommend RLlib to engineers, because its API tends to appeal to them. One of
+    the reasons for that is that the RLlib API offers the right level of abstraction
+    for many applications, while still being flexible enough to be extended, if necessary.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Apart from these more general benefits, RLlib has a lot of RL specific features
+    that we will cover in this chapter. In fact, RLlib is so feature rich that it
+    would deserve a book on its own, so we can only touch on some aspects of it here.
+    For instance, RLlib has a rich library of advanced RL algorithms to choose from.
+    In this chapter we will only focus on a few select ones, but you can track the
+    growing list of options on the [RLlib algorithms page](https://docs.ray.io/en/latest/rllib-algorithms.xhtml).
+    RLlib also has many options for specifying RL environments and is very flexible
+    in handling them during training, see [for an overview of RLlib environments](https://docs.ray.io/en/latest/rllib-env.xhtml).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Getting Started With RLlib
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'To use RLlib, make sure you have installed it on your computer:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: As with every chapter in this book, if you don’t feel like following along by
+    typing the code yourself, you can check out the accompanying [notebook for this
+    chapter](https://github.com/maxpumperla/learning_ray/blob/main/notebooks/ch_04_rllib.ipynb).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Every RL problem starts with having an interesting environment to investigate.
+    In [Chapter 1](ch01.xhtml#chapter_01) we already looked at the classical pendulum
+    balancing problem. Recall that we didn’t implement this pendulum environment,
+    it came out of the box with RLlib.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In contrast, in [Chapter 3](ch03.xhtml#chapter_03) we implemented a simple maze
+    game on our own. The problem with this implementation is that we can’t directly
+    use it with RLlib, or any other RL library for that matter. The reason is that
+    in RL you have ubiquitous standards for environments. Your environments need to
+    implement certain interfaces. The best known and most widely used library for
+    RL environments is `gym`, an [open-source Python project](https://gym.openai.com/)
+    from OpenAI.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s have a look at what `gym` is and how to make our maze `Environment` from
+    the last chapter a `gym` environment compatible with RLlib.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Building A Gym Environment
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: If you look at the well-documented and easy to read `gym.Env` environment interface
+    [on GitHub](https://github.com/openai/gym/blob/master/gym/core.py#L17), you’ll
+    notice that an implementation of this interface has two mandatory class variables
+    and three methods that subclasses need to implement. You don’t have to check the
+    source code, but I do encourage you to have a look. You might just be surprised
+    by how much you already know about `gym` environments.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In short, the interface of a gym environment looks like the following pseudo-code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_reinforcement_learning_with_ray_rllib_CO1-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `gym.Env` interface has an action and an observation space.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_reinforcement_learning_with_ray_rllib_CO1-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `Env` can run a `step` and returns a tuple of observations, reward, done
+    condition, and further info.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_reinforcement_learning_with_ray_rllib_CO1-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: An `Env` can `reset` itself, which will return the current observations
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](assets/4.png)](#co_reinforcement_learning_with_ray_rllib_CO1-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We can `render` an `Env` for different purposes, like for human display or as
+    string representation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you’ve read [Chapter 3](ch03.xhtml#chapter_03) carefully, you’ll notice that
+    this is very similar to the interface of the maze `Environment` we built there.
+    In fact, `gym` has a so-called `Discrete` space implemented in `gym.spaces`, which
+    means that we can make our maze `Environment` a `gym.Env` as follows. We assume
+    that you store this code in a file called `maze_gym_env.py` and that the code
+    for the `Discrete` space and the `Environment` from [Chapter 3](ch03.xhtml#chapter_03)
+    is either located at the top of that file (or is imported there).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_reinforcement_learning_with_ray_rllib_CO2-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We override our own `Discrete` implementation with that of `gym`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_reinforcement_learning_with_ray_rllib_CO2-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We then simply make our `GymEnvironment` implement a `gym.Env`. The interface
+    is essentially the same as before.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Of course, we could have made our original `Environment` implement `gym.Env`
+    by simply inheriting from it in the first place. But the point is that the `gym.Env`
+    interface comes up so naturally in the context of RL that it is a good exercise
+    to implement it without having to resort to external libraries.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Notably, the `gym.Env` interface also comes with helpful utility functionality
+    and many interesting example implementations. For instance, the `Pendulum-v1`
+    environment we used in [Chapter 1](ch01.xhtml#chapter_01) is an example from `gym`,
+    and there are [many other environments](https://gym.openai.com/envs) available
+    to test your RL algorithms.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Running the RLlib CLI
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Now that we have our `GymEnvironment` implemented as a `gym.Env`, here’s how
+    you can use it with RLlib. You’ve seen the RLlib CLI in action in [Chapter 1](ch01.xhtml#chapter_01)
+    before, but this time the situation is a bit different. In the first chapter we
+    simply referenced the `Pendulum-v1` environment from by *name* in a YAML file,
+    along with other RL training configuration. This time around we want to bring
+    our own `gym` environment class, namely the class `GymEnvironment` that we defined
+    in `maze_gym_env.py`. To specify this class in Ray RLlib, you use the full qualifying
+    name of the class from where you’re referencing it, i.e. in our case `maze_gym_env.GymEnvironment`.
+    If you had a more complicated Python project and your environment is stored in
+    another module, you’d simply add the module name accordingly.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The following YAML file specifies the minimal configuration needed to train
+    an RLlib algorithm on the `GymEnvironment` class. To align as closely as possible
+    with our experiment from [Chapter 3](ch03.xhtml#chapter_03), in which we used
+    Q-learning, we use `DQN` as the algorithm for our training `run`. Also, to make
+    sure we can control the time of training, we set an explicit `stop` condition,
+    namely by setting `timesteps_total` to `10000`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_reinforcement_learning_with_ray_rllib_CO3-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We specify the relative Python path to our environment class here.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_reinforcement_learning_with_ray_rllib_CO3-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We store checkpoints of our model after each training iteration.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_reinforcement_learning_with_ray_rllib_CO3-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We can also specify a stopping condition for training, here a maximum of 10000
+    steps.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Assuming you store this configuration in a file called `maze.yml` you can now
+    kick off an RLlib training run by running the following `train` command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: This single line of code basically takes care of everything we did in [Chapter 3](ch03.xhtml#chapter_03),
+    but better. It runs a more sophisticated version of Q-Learning for us (DQN), takes
+    care of scaling out to multiple workers under the hood, and even creates checkpoints
+    of the algorithm automatically for us.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'From the output of that training script you should see that Ray will write
+    training results to a `logdir` directory located at `~/ray_results/maze_env`.
+    Within that folder you’ll find another directory that starts with `DQN_maze_gym_env.GymEnvironment_`
+    and contains both an identifier for this experiment (`0ae8d` in my case) and the
+    current date and time. Within that directory you should find several other subdirectories
+    starting with a `checkpoint` prefix. For the training run on my computer there
+    are a total of `10` checkpoints available and we’re using the last one (`checkpoint_000010/checkpoint-10`)
+    to evaluate our trained RLlib algorithm with it. With the folders and checkpoints
+    generated on my machine the `rllib evaluate` command you can use reads as follows
+    (adapt the checkpoint path to what you see on your machine):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The algorithm used in `--run` and the environment specified with `--env` have
+    to match the ones used in the training run, and we evaluate the trained algorithm
+    for a total of 100 `steps`. This should lead to output of the following form:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: It should not come as a big surprise that the `DQN` algorithm from RLlib gets
+    the maximum reward of `1` for the simple maze environment we tasked it with every
+    single time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Before moving on to the Python API of RLlib, it should be noted that the `train`
+    and `evaluate` CLI commands can come in handy even for more complex environments.
+    The YAML configuration can take any parameter the Python API would, so in that
+    sense there is no limit for training your experiments on the command line^([2](ch04.xhtml#idm44990029718176)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using the RLlib Python API
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Having said that, you will likely spend most of your time coding your reinforcement
+    learning experiments in Python. In the end the RLlib CLI is merely a wrapper around
+    the underlying Python library that we’re going to look at now.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To run RL workloads with RLlib from Python, your main entrypoint is that of
+    the `Trainer` class. Specifically, for the algorithm of your choice you want to
+    use the corresponding `Trainer` of it. In our case, since we decided to use Deep
+    Q-Learning (DQN) for demonstration purposes, we’ll use the `DQNTrainer` class.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Training RLlib models
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: RLlib has good defaults for all its `Trainer` implementations, meaning that
+    you can initialize them without having to tweak any configuration parameters for
+    these trainers^([3](ch04.xhtml#idm44990029687616)). For instance, to generate
+    a DQN trainer you can simply use `DQNTrainer(env=GymEnvironment)`. That said,
+    it’s worth noting that RLlib trainers are highly configurable, as you will see
+    in the following example. Specifically, we pass a `config` dictionary to the `Trainer`
+    constructor and tell it to use four workers in total. What that means is that
+    the `DQNTrainer` will spawn four Ray actors, each using a CPU kernel, to train
+    our DQN algorithm in parallel.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'After you’ve initialized your trainer with the `env` you want to train on,
+    and pass in the `config` you want, you can simply call the `train` method. Let’s
+    use this method to train the algorithm for ten iterations in total:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_reinforcement_learning_with_ray_rllib_CO4-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We use the `DQNTrainer` from RLlib to use Deep-Q-Networks (DQN) for training,
+    using 4 parallel workers (Ray actors).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_reinforcement_learning_with_ray_rllib_CO4-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Each `Trainer` has a complex default configuration.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_reinforcement_learning_with_ray_rllib_CO4-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We can then simply call the `train` method to train the agent for ten iterations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](assets/4.png)](#co_reinforcement_learning_with_ray_rllib_CO4-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: With the `pretty_print` utility we can generate human-readable output of the
+    training results.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note that the number `10` training iterations has no special meaning, but it
+    should be enough for the algorithm to learn to solve the maze problem adequately.
+    The example just goes to show you that you have full control over the training
+    process.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'From printing the `config` dictionary, you can verify that the `num_workers`
+    parameter is set to 4^([4](ch04.xhtml#idm44990029518816)). Similarly, If you run
+    this training script, the `result` contains detailed information about the state
+    of the `Trainer` and the training results that’s too verbose to put here. The
+    part that’s most relevant for us right now is information about the reward of
+    the algorithm, which hopefully indicates that the algorithm learned to solve the
+    maze problem. You should see output of the following form:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: In particular, this output shows that the minimum reward attained on average
+    per episode is `1.0`, which in turn means that the agent always reached the goal
+    and collected the maximum reward (`1.0`).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Saving, loading, and evaluating RLlib models
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Reaching the goal for this simple example isn’t too hard, but let’s see if evaluating
+    the trained algorithm confirms that the agent can also do so in an optimal way,
+    namely by only taking the minimum number of eight steps to reach the goal.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To do so, we utilize another mechanism that you’ve already seen from the RLlib
+    CLI, namely *checkpointing*. Creating model checkpoints is very useful to ensure
+    you can recover your work in case of a crash, or simply to track training progress
+    persistently. You can simply create a checkpoint of your RLlib trainers at any
+    point in the training process by calling `trainer.save()`. Once you have a checkpoint,
+    you can easily `restore` your `Trainer` with it. And evaluating a model is as
+    simple as calling `trainer.evaluate(checkpoint)` with the checkpoint you created.
+    Here’s how that looks like if you put it all together:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_reinforcement_learning_with_ray_rllib_CO5-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: You can `save` trainers to create checkpoints.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_reinforcement_learning_with_ray_rllib_CO5-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: RLlib trainers can be evaluated at your checkpoints.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_reinforcement_learning_with_ray_rllib_CO5-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: And you can also `restore` any `Trainer` from a given checkpoint.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'I should mention that you can also just call `trainer.evaluate()` without creating
+    a checkpoint first, but it’s usually good practice to use checkpoints anyway.
+    Looking at the output, we can now confirm that the trained RLlib algorithm did
+    indeed converge to a good solution for the maze problem, as indicated by episodes
+    of length `8` in evaluation:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: Computing actions
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'RLlib trainers have much more functionality than just the `train`, `evaluate`,
+    `save` and `restore` methods we’ve seen so far. For example, you can directly
+    compute actions given the current state of an environment. In [Chapter 3](ch03.xhtml#chapter_03)
+    we implemented episode rollouts by stepping through an environment and collecting
+    rewards. We can easily do the same with RLlib for our `GymEnvironment` as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_reinforcement_learning_with_ray_rllib_CO6-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: To compute actions for given `observations` use `compute_single_action`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In case you should need to compute many actions at once, not just a single one,
+    you can use the `compute_actions` method instead, which takes dictionaries of
+    observations as input and produces dictionaries of actions with the same dictionary
+    keys as output.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: Accessing policy and model states
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Remember that each reinforcement learning algorithm is based on a *policy* that
+    chooses next actions given the current observations the agent has of the environment.
+    Each policy is in turn based on an underlying *model*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the case of vanilla Q-Learning that we discussed in [Chapter 3](ch03.xhtml#chapter_03)
+    the model was a simple look-up table of state-action values, also called Q-values.
+    And that policy used this model for predicting next actions in case it decided
+    to *exploit* what the model had learned so far, or to *explore* the environment
+    with random actions otherwise.
+  prefs: []
+  type: TYPE_NORMAL
+- en: When using Deep Q-Learning, the underlying model of the policy is a neural network
+    that, loosely speaking, maps observations to actions. Note that for choosing next
+    actions in an environment, we’re ultimately we’re not interested in the concrete
+    values of the approximated Q-values, but rather in the *probabilities* of taking
+    each action. The probability distribution over all possible actions is called
+    an *action distribution*. In the maze example we’re using here as a running examples
+    we can move up, right, down or left, so in that case an action distribution is
+    a vector of four probabilities, one for each action.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To make things concrete, let’s have a look at how you access policies and models
+    in RLlib:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: Both `policy` and `model` have many useful methods to explore. In this example
+    we use `get_weights` to inspect the parameters of the model underlying the policy
+    (which are called “weights” by standard convention).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To convince you that there is in fact not just one model at play here, but
+    in fact a collection of four models that we trained on separate Ray workers, we
+    can access all the workers we used in training - and then ask each worker’s policy
+    for their weights like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: In this way, you can access every method available on a `Trainer` instance on
+    each of your workers. In principle, you can use this to *set* model parameters
+    as well, or otherwise configure your workers. RLlib workers are ultimately Ray
+    actors, so you can alter and manipulate them in almost any way you like.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We haven’t talked about the specific implementation of Deep Q-Learning used
+    in `DQNTrainer`, but the `model` used is in fact a bit more complex than what
+    I’ve described so far. Every RLlib `model` obtained from a policy has a `base_model`
+    that has a neat `summary` method to describe itself:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: As you can see from the output below, this model takes in our `observations`.
+    The shape of these `observations` is a bit strangely annotated as `[(None, 25)]`,
+    but essentially this just means we have the expected `5*5` maze grid values correctly
+    encoded. The model follows up with two so-called `Dense` layers and predicts a
+    single value at the end.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note that it’s perfectly possible to customize this model for your RLlib experiments.
+    If your environment is quite complex and has a big observation space, for instance,
+    you might need a bigger model to capture that complexity. However, doing so requires
+    in-depth knowledge of the underlying neural network framework (in this case TensorFlow),
+    which we don’t assume you have^([5](ch04.xhtml#idm44990029092880)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Next, let’s see if we can take some observations from our environment and pass
+    them to the `model` we just extracted from our `policy`. This part is a bit technically
+    involved, because models are a bit more difficult to access directly in RLlib.
+    The reason is that normally you would only interface with a `model` through your
+    `policy`, which takes care of preprocessing the observations and passing them
+    to the model (among other things).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Luckily, we can simply access the preprocessor used by the policy, `transform`
+    the observations from our environment, and then pass them to the model:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_reinforcement_learning_with_ray_rllib_CO7-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: You can use `get_processor` to access the preprocessor used by the policy.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_reinforcement_learning_with_ray_rllib_CO7-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: For any `observations` obtained from your `env` you can use `transform` them
+    to the format expected by the model. Note that we need to reshape the observations,
+    too.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_reinforcement_learning_with_ray_rllib_CO7-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: You get the model output by using the `from_batch` method of the model on a
+    preprocessed observation dictionary.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Having computed our `model_output`, we can now both access the Q-values, as
+    well as the action distribution of the model for this output like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_reinforcement_learning_with_ray_rllib_CO8-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `get_q_value_distributions` method is specific to `DQN` models only.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_reinforcement_learning_with_ray_rllib_CO8-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: By accessing `dist_class` we get the policy’s action distribution class.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_reinforcement_learning_with_ray_rllib_CO8-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Action distributions can be sampled from.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Configuring RLlib Experiments
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Now that you’ve seen the basic Python training API of RLlib in an example, let’s
+    take a step back and discuss in more depth how to configure and run RLlib experiments.
+    By now you know that your `Trainer` takes a `config` argument, which so far we’ve
+    only used to set the number of Ray workers to 4.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you want to alter the behaviour of your RLlib training run, the way to do
+    this is to change the `config` argument of your `Trainer`. This is at the same
+    time relatively simple, as you can add configuration properties quickly, and a
+    bit tricky, as you have to know which key-words the `config` dictionary expects.
+    Finding and tweaking the right configuration properties becomes easier once you
+    have a good grasp of what’s available and what to expect.
+  prefs: []
+  type: TYPE_NORMAL
+- en: RLlib configuration splits in two parts, namely algorithm-specific and common
+    configuration. We’ve used `DQN` as our algorithm in the examples so far, which
+    has certain properties that are only available to this choice^([6](ch04.xhtml#idm44990028855872)).
+    Algorithm-specific configuration only becomes more relevant once you’ve settled
+    on an algorithm and want to squeeze it for performance, but in practice RLlib
+    provides you with good defaults to get started. You can look up configuration
+    arguments in the [API reference for RLlib algorithms](https://docs.ray.io/en/latest/rllib-algorithms.xhtml).
+  prefs: []
+  type: TYPE_NORMAL
+- en: The common configuration of algorithms can be further split into the following
+    types.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Resource Configuration
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Whether you use Ray RLlib locally or on a cluster, you can specify the resources
+    used for the training process. Here are the most important options to consider:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`num_gpus`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Specify the number of GPUs to use for training. It’s important to check whether
+    your algorithm of choice supports GPUs first. This value can also be fractional.
+    For example, if using four rollout workers in `DQN` (`num_workers` = 4), you can
+    set `num_gpus=0.25` to pack all four workers on the same GPU, so that all trainers
+    benefit from the potential speedup.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`num_cpus_per_worker`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Set the number of CPUs to use for each worker.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Debugging and Logging Configuration
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Debugging your applications is crucial for any project, and machine learning
+    is no exception. RLlib allows you to configure the way it logs information and
+    how you can access it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`log_level`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Set the level of logging to use. This can be either `DEBUG`, `INFO`, `WARN`,
+    or `ERROR` and defaults to `WARN`. You should experiment with the different levels
+    to see what suits your needs best in practice.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`callbacks`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: You can specify custom *callback functions* to be called at various points during
+    training. We will take a closer look at this topic in [Chapter 5](ch05.xhtml#chapter_05).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`ignore_worker_failures`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: For testing it might be useful to ignore worker failures by setting this property
+    to `True` (defaults to `False`).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`logger_config`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: You can specify a custom logger configuration, passed in as a nested dictionary.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Rollout Worker and Evaluation Configuration
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Of course, you can also specify how many workers are used for rollouts during
+    training and evaluation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`num_workers`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: You’ve seen this one already. It’s used to specify the number of Ray workers
+    to use.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`num_envs_per_worker`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Specify the number of environments to evaluate per worker. This setting allows
+    you to “batch” evaluation of environments. In particular, if your models take
+    a long time to evaluate, grouping environments like this can speed up training.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`create_env_on_driver`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you’ve set `num_workers` at least to 1, then the driver process does not
+    need to create an environment, since there are rollout workers for that. If you
+    set this property to `True` you create an additional environment on the driver.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`explore`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Set to `True` by default, this property allows you to turn off exploration,
+    for instance during evaluation of your algorithms.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`evaluation_num_workers`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Specify the number of parallel evaluation workers to use, which defaults to
+    0.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Environment Configuration
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: '`env`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Specify the environment you want to use for training. This can either be a string
+    of an environment known to Ray RLlib, such as any `gym` environment, or the class
+    name of a custom environment you’ve implemented. There’s also a way to *register*
+    your environments so that you can refer to them by name, but this requires using
+    Ray Tune. We will learn about this feature in [Chapter 5](ch05.xhtml#chapter_05).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`observation_space` and `action_space`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: You can specify the observation and action spaces of your environment. If you
+    don’t specify them, they will be inferred from the environment.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`env_config`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: You can optionally specify a dictionary of configuration options for your environment
+    that will be passed to the environment constructor.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`render_env`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`False` by default, this property allows you to turn on rendering of the environment,
+    which requires you to implement the `render` method of your environment.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note that we left out many available configuration options for each of the types
+    we listed. On top of that, there’s a class of common configuration options to
+    modify the behavior of the RL training procedure, like modifying the underlying
+    model to use. These properties are the most important in a sense, while at the
+    same time require the most specific knowledge of reinforcement learning. For this
+    introduction to RLlib, we can’t go into any more details. But the good news is
+    that if you’re a regular user of RL software, you will have no trouble identifying
+    the relevant training configuration options.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Working With RLlib Environments
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: So far we’ve only introduced you to `gym` environments, but RLlib supports a
+    wide variety of environments. After giving you a quick overview of all available
+    options, we’ll show you two concrete examples of advanced RLlib environments in
+    action.
+  prefs: []
+  type: TYPE_NORMAL
+- en: An Overview of RLlib Environments
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: All available RLlib Environments extend a common `BaseEnv` class. If you want
+    to work with several copies of the same `gym.Env` environment, you can use RLlib’s
+    `VectorEnv` wrapper. Vectorized environments are useful, but also straightforward
+    generalizations of what you’ve seen already. The two other types of environments
+    available in RLlib are more interesting and deserve more attention.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The first is called `MultiAgentEnv`, which allows you to train a model with
+    *multiple agents*. Working with multiple agents can be tricky, because you have
+    to take care of defining your agents within your environment with a suitable interface
+    and account for the fact that each agent might have a completely different way
+    of interacting with its environment. What’s more is that agents might interact
+    with each other, and have to respect each other’s actions. In more advanced setting
+    there might even be a *hierarchy* of agents, which explicitly depend on each other.
+    In short, running multi-agent RL experiments is difficult, and we’ll see how RLlib
+    handles this in the next example.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The other type of environment we will look at is called `ExternalEnv`, which
+    can be used to connect external simulators to RLlib. For instance, imagine our
+    simple maze problem from earlier was a simulation of an actual robot navigating
+    a maze. It might not be suitable in such scenarios to co-locate the robot (or
+    its simulation, implemented in a different software stack) with RLlib’s learning
+    agents. To account for that, RLlib provides you with a simple client-server architecture
+    for communicating with external simulators, which allows communication over a
+    REST API.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In figure [Figure 4-1](#fig_envs) we summarize all available RLlib environments
+    for you:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![RLlib envs](assets/rllib_envs.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4-1\. An overview of all available RLlib environments
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Working with Multiple Agents
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The basic idea of defining multi-agent environments in RLlib is simple. Whatever
+    you define as a single value in a gym environment, you now define as a dictionary
+    with values for each agent, and each agent has its unique key. Of course, the
+    details are a little more complicated than that in practice. But once you have
+    defined an environment hosting several agents, what’s necessary is to define how
+    these agents should learn.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In a single-agent environment there’s one agent and one policy to learn. In
+    a multi-agent environment there are multiple agents that might map to one or several
+    policies. For instance, if you have a group of homogenous agents in your environment,
+    then you could define a single policy for all of them. If they all *act* the same
+    way, then their behavior can be learnt the same way. In contrast, you might have
+    situations with heterogeneous agents in which each of them has to learn a separate
+    policy. Between these two extremes, there’s a spectrum of possibilities displayed
+    in figure [Figure 4-2](#fig_policy_mapping):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Mapping envs](assets/mapping_envs.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4-2\. Mapping agents to policies in multi-agent reinforcement learning
+    problems
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'We continue to use our maze game as a running example for this chapter. This
+    way you can check for yourself how the interfaces differ in practice. So, to put
+    the ideas we just outlined into code, let’s define a multi-agent version of the
+    `GymEnvironment` class. Our `MultiAgentEnv` class will have precisely two agents,
+    which we encode in a Python dictionary called `agents`, but in principle this
+    works with any number of agents. We start be initializing and resetting our new
+    environment:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_reinforcement_learning_with_ray_rllib_CO9-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We now have two seekers with `(0, 4)` and `(4, 0)` starting positions in an
+    `agents` dictionary.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_reinforcement_learning_with_ray_rllib_CO9-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: For the `info` object we’re using agent IDs as keys.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_reinforcement_learning_with_ray_rllib_CO9-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Action and observation spaces stay exactly the same as before.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](assets/4.png)](#co_reinforcement_learning_with_ray_rllib_CO9-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Observations are now per-agent dictionaries.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Notice that compared to the single-agent situation we had to modify neither
+    action nor observation spaces, since we’re using two essentially identical agents
+    here that can use the same spaces. In more complex situations you’d have to account
+    for the fact that the actions and observations might look different for some agents.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To continue, let’s generalize our helper methods `get_observation`, `get_reward`,
+    and `is_done` to work with multiple agents. We do this by passing in an `action_id`
+    to their signatures and handling each agent the same way as before.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_reinforcement_learning_with_ray_rllib_CO10-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Getting a specific agent from its ID.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_reinforcement_learning_with_ray_rllib_CO10-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Redefining each helper method to work per-agent.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Next, to port the `step` method to our multi-agent setup, you have to know that
+    `MultiAgentEnv` now expects the `action` passed to a `step` to be a dictionary
+    with keys corresponding to the agent IDs, too. We define a step by looping through
+    all available agents and acting on their behalf^([7](ch04.xhtml#idm44990028443184)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_reinforcement_learning_with_ray_rllib_CO11-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Actions in a `step` are now per-agent dictionaries.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_reinforcement_learning_with_ray_rllib_CO11-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: After applying the correct action for each seeker, we set the correct states
+    of all `agents`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_reinforcement_learning_with_ray_rllib_CO11-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`observations`, `rewards`, and `dones` are also dictionaries with agent IDs
+    as keys.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](assets/4.png)](#co_reinforcement_learning_with_ray_rllib_CO11-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Additionally, RLlib needs to know when all agents are done.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The last step is to modify rendering the environment, which we do by denoting
+    each agent by its ID when printing the maze to the screen.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE22]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Randomly rolling out an episode until *one* of the agents reaches the goal
+    can for instance be done by the following code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE23]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note how we have to make sure to pass two random samples by means of a Python
+    dictionary into the `step` method, and how we check if any of the agents are `done`
+    yet. We use this `break` condition for simplicity, as it’s highly unlikely that
+    both seekers find their way to the goal at the same time by chance. But of course
+    we’d like both agents to complete the maze eventually.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In any case, equipped with our `MultiAgentMaze`, training an RLlib `Trainer`
+    works *exactly* the same way as before.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE24]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This covers the most simple case of training a multi-agent reinforcement learning
+    (MARL) problem. But if you remember what we said earlier, when using multiple
+    agents there’s always a mapping between agents and policies. By not specifying
+    such a mapping, both of our seekers were implicitly assigned to the same policy.
+    This can be changed by modifying the `multiagent` dictionary in our trainer `config`
+    as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 4-1\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE25]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_reinforcement_learning_with_ray_rllib_CO12-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We first define multiple policies for our agents.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_reinforcement_learning_with_ray_rllib_CO12-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Each agent can then be mapped to a policy with a custom `policy_mapping_fn`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As you can see, running multi-agent RL experiments is a first-class citizen
+    of RLlib, and there’s a lot more that could be said about it. The support of MARL
+    problems is one of RLlib’s strongest features.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Working with Policy Servers and Clients
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: For the last example in this section on environments, let’s assume our original
+    `GymEnvironment` can only be simulated on a machine that can’t run RLlib, for
+    instance because it doesn’t have enough resources available. We can run the environment
+    on a `PolicyClient` that can ask a respective *server* for suitable next actions
+    to apply to the environment. The server, in turn, does not know about the environment.
+    It only knows how to ingest input data from a `PolicyClient`, and it is responsible
+    for running all RL related code, in particular it defines an RLlib `config` object
+    and trains a `Trainer`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Defining a server
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'Let’s start by defining the server-side of such an application first. We define
+    a so-called `PolicyServerInput` that runs on `localhost` on port `9900`. This
+    policy input is what the client will provide later on. With this `policy_input`
+    defined as `input` to our trainer configuration, we can define yet another `DQNTrainer`
+    to run on the server:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE26]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_reinforcement_learning_with_ray_rllib_CO13-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `policy_input` function returns a `PolicyServerInput` object running on
+    localhost on port 9900.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_reinforcement_learning_with_ray_rllib_CO13-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We explicitly set the `env` to `None` because this server does not need one.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_reinforcement_learning_with_ray_rllib_CO13-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: To make this work, we need to feed our `policy_input` into the experiment’s
+    `input`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'With this `trainer` defined ^([8](ch04.xhtml#idm44990027406144)), we can now
+    start a training session on the server like so:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE27]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_reinforcement_learning_with_ray_rllib_CO14-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We train for a maximum of 100 iterations and store checkpoints after each iteration.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_reinforcement_learning_with_ray_rllib_CO14-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: If training surpasses 10.000 time steps, we stop the training.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In what follows we assume that you store the last two code snippets in a file
+    called `policy_server.py`. If you want to, you can now start this policy server
+    on your local machine by running `python policy_server.py` in a terminal.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Defining a client
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Next, to define the corresponding client-side of the application, we define
+    a `PolicyClient` that connects to the server we just started. Since we can’t assume
+    that you have several computers at home (or available in the cloud), contrary
+    to what we said prior, we will start this client on the same machine. In other
+    words, the client will connect to `http://localhost:9900`, but if you can run
+    the server on different machine, you could replace `localhost` with the IP address
+    of that machine, provided it’s available in the network.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Policy clients have a fairly lean interface. They can trigger the server to
+    start or end an episode, get next actions from it, and log reward information
+    to it (that it would otherwise not have). With that said, here’s how you define
+    such a client.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE28]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_reinforcement_learning_with_ray_rllib_CO15-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We start a policy client on the server address with `remote` inference mode.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_reinforcement_learning_with_ray_rllib_CO15-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Then we tell the server to start an episode.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_reinforcement_learning_with_ray_rllib_CO15-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: For given environment observations, we can get the next action from the server.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](assets/4.png)](#co_reinforcement_learning_with_ray_rllib_CO15-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: It’s mandatory for the `client` to log reward information to the server.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![5](assets/5.png)](#co_reinforcement_learning_with_ray_rllib_CO15-5)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: If a certain condition is reached, we can stop the client process.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![6](assets/6.png)](#co_reinforcement_learning_with_ray_rllib_CO15-6)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: If the environment is `done`, we have to inform the server about episode completion.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Assuming you store this code under `policy_client.py` and start it by running
+    `python policy_client.py`, then the server that we started earlier will start
+    learning with environment information solely obtained from the client.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Advanced Concepts
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: So far we’ve been working with simple environments that were easy enough to
+    tackle with the most basic RL algorithm settings in RLlib. Of course, in practice
+    you’re not always that lucky and might have to come up with other ideas to tackle
+    harder environments. In this section we’re going to introduce a slightly harder
+    version of the maze environment and discuss some advanced concepts that help you
+    solve this environment.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Building an Advanced Environment
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Let’s make our maze `GymEnvironment` a bit more challenging. First, we increase
+    its size from a `5x5` to a `11x11` grid. Then we introduce obstacles in the maze
+    that the agent can pass through, but only by incurring a penalty, a negative reward
+    of `-1`. This way our seeker agent will have to learn to avoid obstacles, while
+    still finding the goal. Also, we randomize the starting position of the agent.
+    All of this makes the RL problem harder to solve. Let’s have a look at the initialization
+    of this new `AdvancedEnv` first:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE29]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_reinforcement_learning_with_ray_rllib_CO16-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We can now set the `seeker` position upon initialization.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_reinforcement_learning_with_ray_rllib_CO16-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We introduce `punish_states` as obstacles for the agent.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Next, when resetting the environment, we want to make sure to reset the agent’s
+    position to a random state. We also increase the positive reward for reaching
+    the goal to `5`, to offset the negative reward for passing through an obstacle
+    (which will happen a lot before the RL trainer picks up on the obstacle locations).
+    Balancing rewards like this is a crucial task in calibrating your RL experiments.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE30]'
+  prefs: []
+  type: TYPE_PRE
+- en: There are many other ways you could make this environment harder, like making
+    it much bigger, introducing a negative reward for every step the agent takes in
+    a certain direction, or punishing the agent for trying to walk off the grid. By
+    now you should understand the problem setting well enough to customize the maze
+    yourself further.
+  prefs: []
+  type: TYPE_NORMAL
+- en: While you might have success training this environment, this is a good opportunity
+    to introduce some advanced concepts that you can apply to other RL problems.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Applying Curriculum Learning
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: One of the most interesting features of RLlib is to provide a `Trainer` with
+    a *curriculum* to learn from. What that means is that, instead of letting the
+    trainer learn from arbitrary environment setups, we cherry pick states that are
+    much easier to learn from and then slowly but surely introduce more difficult
+    states. Building a learning curriculum this way is a great way to make your experiments
+    converge on solutions quicker. The only thing you need to apply curriculum learning
+    is a view on which starting states are easier than others. For many environments
+    that can actually be a challenge, but it’s easy to come up with a simple curriculum
+    for our advanced maze. Namely, the distance of the seeker from the goal can be
+    used as a measure of difficulty. The distance measure we’ll use for simplicity
+    is the sum of the absolute distance of both seeker coordinates from the goal to
+    define a `difficulty`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To run curriculum learning with RLlib, we define a `CurriculumEnv` that extends
+    both our `AdvancedEnv` and a so-called `TaskSettableEnv` from RLLib. The interface
+    of `TaskSettableEnv` is very simple, in that you only have to define how get the
+    current difficulty (`get_task`) and how to set a required difficulty (`set_task`).
+    Here’s the full definition of this `CurriculumEnv`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE31]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'To use this environment for curriculum learning, we need to define a curriculum
+    function that tells the trainer when and how to set the task difficulty. We have
+    many options here, but we use a schedule that simply increases the difficulty
+    by one every `1000` time steps trained:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE32]'
+  prefs: []
+  type: TYPE_PRE
+- en: To test this curriculum function, we need to add it to our RLlib trainer `config`,
+    namely by setting the `env_task_fn` property to our `curriculum_fn`. Note that
+    before training a `DQNTrainer` for `15` iterations, we also set an `output` folder
+    in our config. This will store experience data of our training run to the specified
+    temp folder.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE33]'
+  prefs: []
+  type: TYPE_PRE
+- en: Running this trainer, you should see how the task difficulty increases over
+    time, thereby giving the trainer easy examples to start with so that in can learn
+    from them and progress to more difficult tasks as it progresses.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Curriculum learning is a great technique to be aware of and RLlib allows you
+    to easily incorporate it into your experiments through the curriculum API we just
+    discussed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Working with Offline Data
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: In our previous curriculum learning example we stored training data to a temporary
+    folder. What’s interesting is that you already know from [Chapter 3](ch03.xhtml#chapter_03)
+    that in Q-learning you can collect experience data first, and decide when to use
+    it in a training step later. This separation of data collection and training opens
+    up many possibilities. For instance, maybe you have a good heuristic that can
+    solve your problem in an imperfect, yet reasonable manner. Or you have records
+    of human interaction with your environment, demonstrating how to solve the problem
+    by example.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The topic of collecting experience data for later training is often discussed
+    as working with *offline data*. It’s called offline, as it’s not directly generated
+    by a policy interacting online with the environment. Algorithms that don’t rely
+    on training on their own policy output are called off-policy algorithms, and Q-Learning,
+    respectively DQN, is just one such example. Algorithms that don’t share this property
+    are accordingly called on-policy algorithms. In other words, off-policy algorithms
+    can be used to train on offline data^([9](ch04.xhtml#idm44990026103120)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: To use the data we stored in the `/tmp/env-out` folder before, we can create
+    a new training configuration that takes this folder as `input`. Note how we set
+    `exploration` to `False` in the following configuration, since we simply want
+    to exploit the data previously collected for training - the algorithm will not
+    explore according to its own policy.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE34]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Using this `input_config` for training works exactly as before, which we demonstrate
+    by training an agent for `10` iterations and evaluating it:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE35]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note that we called the trainer `imitation_trainer`. That’s because this training
+    procedure intends to *imitate* the behavior reflected in the data we collected
+    before. This type of learning by demonstration in RL is therefore often called
+    *imitation learning* or *behavior cloning*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Other Advanced Topics
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Before concluding this chapter, let’s have a look at a few other advanced topics
+    that RLlib has to offer. You’ve already seen how flexible RLlib is, from working
+    with a range of different environments, to configuring your experiments, training
+    on a curriculum, or running imitation learning. To give you a taste of what else
+    is possible, you can also do the following things with RLlib:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: You can completely customize the models and policies used under the hood. If
+    you’ve worked with deep learning before, you know how important it can be to have
+    a good model architecture in place. In RL this is often not as crucial as in supervised
+    learning, but still a vital part of running advanced experiments successfully.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: You can change the way your observations are preprocessed by providing custom
+    preprocessors. For our simple maze examples there was nothing to preprocess, but
+    when working with image or video data, preprocessing is often a crucial step.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: In our `AdvancedEnv` we introduced states to avoid. Our agents had to learn
+    to do this, but RLlib has a feature to automatically avoid them through so-called
+    *parametric action spaces*. Loosely speaking, what you can do is to “mask out”
+    all undesired actions from the action space for each point in time.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: In some cases it can also be necessary to have variable observation spaces,
+    which is also fully supported by RLlib.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: We only briefly touched on the topic of offline data. Rllib has a full-fledged
+    Python API for reading and writing experience data that can be used in various
+    situation.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Lastly, I want to stress again that we have solely worked with `DQNTrainer`
+    here for simplicity, but RLlib has an impressive range of training algorithms.
+    To name just one, the MARWIL algorithm is a complex hybrid algorithm with which
+    you can run imitation learning from offline data, while also mixing in regular
+    training on data generated “online”.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: To summarize, you’ve seen a selection of interesting features of RLlib in this
+    chapter. We covered training multi-agent environments, working with offline data
+    generated by another agent, setting up a client-server architecture to split simulations
+    from RL training, and using curriculum learning to specify increasingly difficult
+    tasks.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We’ve also given you a quick overview of the main concepts underlying RLlib,
+    and how to use its CLI and Python API. In particular, we’ve shown how to configure
+    your RLlib trainers and environments to your needs. As we’ve only covered a small
+    part of the possibilities of RLlib, we encourage you to read its [documentation
+    and explore its API](https://docs.ray.io/en/master/rllib/index.xhtml).
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the next chapter you’re going to learn how to tune the hyperparameters of
+    your RLlib models and policies with Ray Tune.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([1](ch04.xhtml#idm44990030106000-marker)) We simply used a simple game to
+    illustrate the process of RL. There is a multitude of interesting industry applications
+    of RL that are not games.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([2](ch04.xhtml#idm44990029718176-marker)) We should mention that the RLlib
+    CLI uses Ray Tune under the hood, among many other things for checkpointing models.
+    You will learn more about this integration in [Chapter 5](ch05.xhtml#chapter_05)
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([3](ch04.xhtml#idm44990029687616-marker)) Of course, configuring your models
+    is a crucial part of RL experiments. We will discuss configuration of RLlib trainers
+    in more detail in the next section.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([4](ch04.xhtml#idm44990029518816-marker)) If you set `num_workers` to `0`,
+    only the local worker on the head node will be created, and all training is done
+    there. This is particularly useful for debugging, as no additional Ray actor processes
+    are spawned.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([5](ch04.xhtml#idm44990029092880-marker)) If you want to learn more about
+    customizing your RLlib models, check out [the guide to custom models](https://docs.ray.io/en/latest/rllib-models.xhtml#custom-models-implementing-your-own-forward-logic)
+    on the Ray documentation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '^([6](ch04.xhtml#idm44990028855872-marker)) For the experts, our DQNs are dueling
+    double Q-learning models via the `"dueling": True` and `"double_q": True` default
+    arguments, for example.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([7](ch04.xhtml#idm44990028443184-marker)) Note how this can lead to issues
+    like deciding which agent gets to act first. In our simple maze problem the order
+    of actions is irrelevant, but in more complex scenarios this becomes a crucial
+    part of modeling the RL problem correctly.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([8](ch04.xhtml#idm44990027406144-marker)) For technical reasons we do have
+    to specify observation and action spaces here, which might not be necessary in
+    future iterations of this project, as it leaks environment information. Also note
+    that we need to set `input_evaluation` to an empty list to make this server work.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([9](ch04.xhtml#idm44990026103120-marker)) Note that RLlib has a wide range
+    of on-policy algorithms like `PPO` as well.
+  prefs: []
+  type: TYPE_NORMAL

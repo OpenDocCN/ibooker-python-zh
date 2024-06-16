@@ -1,0 +1,515 @@
+- en: Chapter 14\. Runtime Checking With pydantic
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The central theme of robust code is making it easier to detect errors. Errors
+    are an inevitable part of developing complex systems; you can’t avoid them. By
+    writing your own types, you create a vocabulary that makes it harder to introduce
+    inconsistencies. Using type annotations provides you a safety net, letting you
+    catch mistakes as you are developing. Both of these are examples of *shifting
+    errors left*; instead of finding errors during testing (or worse, in production),
+    you find them earlier, ideally as you develop code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: However, not every error is easily found through code inspection and static
+    analysis. There is a whole class of errors that will only be detectable at runtime.
+    Any time you interact with data supplied from outside your program (such as databases,
+    config files, network requests), you run the risk of inputting invalid data. Your
+    code can be rock-solid in how you retrieve and parse data, but there’s not much
+    you can do to prevent users from passing in invalid data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Your first inclination might be to write a lot of *validation logic*: `if`
+    statements and checks to see if all of the data passed in is correct. The problem
+    is that validation logic is often complex, sprawling, and tough to understand
+    at a glance. The more comprehensive your validation, the worse it gets. If your
+    goal is to find errors, reading all the code (and tests) will be your best shot.
+    In that case, you need to minimize the amount of code you look at. Herein lies
+    the rub: you will understand more of the code the more you read, but the more
+    you read, the higher the cognitive burden you will have, decreasing your chances
+    of finding an error.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this chapter, you’ll learn how using the pydantic library will fix this problem.
+    pydantic lets you define modeled classes, reducing the amount of validation logic
+    you need to write, without sacrificing readability. pydantic will easily parse
+    user-supplied data, providing guarantees about output data structures. I’ll go
+    through a few basic examples of what you can do with it, and then end the chapter
+    with some advanced pydantic usage.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Dynamic Configuration
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'In this chapter, I’m going to build out types describing restaurants. I’ll
+    start by providing a way for a user to specify restaurants through configuration
+    files. Here is a list of configurable fields (and their constraints) per restaurant:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Name of the restaurant
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: For legacy reasons, the name must be less than 32 characters long, and only
+    contain letters, numbers, quotation marks, and spaces (no Unicode, sorry).
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Owner’s full name
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Address
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: List of employees
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: There must be at least one chef and one server.
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Each employee has a name and position (chef, server, host, sous chef, or delivery
+    driver).
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Each employee either has a mailing address for a check or direct deposit details.
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: List of dishes
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Each dish has a name, price, and description. The name is limited to 16 characters,
+    and the description is limited to 80 characters. Optionally, there is a picture
+    (in the form of a filename) with each dish.
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Each dish must have a unique name.
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: There must be at least three dishes on the menu.
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Number of seats
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Offers to-go orders (Boolean)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Offers delivery (Boolean)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'This information is stored in a [YAML file](https://yaml.org) that looks like
+    this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The pip-installable library `yaml` makes it easy to read this file, providing
+    a dictionary:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: I want you to put on your tester hat for a second. The requirements I’ve just
+    given are certainly not exhaustive; how would you refine them? I want you to take
+    a few minutes and list out all the different constraints you can think of with
+    just the dictionary given. Assuming the YAML file parses and returns a dictionary,
+    how many invalid test cases can you think of?
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: You may notice that the routing number and account numbers are strings in the
+    example above. This is intentional. Despite being a string of numerals, I do not
+    want this to be a numeric type. Numeric operations (such as addition or multiplication)
+    do not make sense, and I do not want an account number of 000000001234 to be truncated
+    to 1234.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here are some ideas to think about when enumerating test cases:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Python is a dynamic language. Are you sure that everything is the right type?
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Dictionaries don’t require any sort of required fields—are you sure every field
+    is present?
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Are all the constraints from the problem statement tested for?
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: What about additional constraints (correct routing numbers, account numbers,
+    and addresses?)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: What about negative numbers where there shouldn’t be?
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'I came up with 67 different test cases with invalid data in about five minutes.
+    Some of my test cases included (the full list is included in the [GitHub repo
+    for this book](https://github.com/pviafore/RobustPython)):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Name is zero characters.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Name is not a string.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: There are no chefs.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Employee has no bank details or address.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Employee’s routing number is truncated (0000123 becomes 123).
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Number of seats is negative.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: This, admittedly, is not a very complex class. Could you imagine the number
+    of test cases for a much more involved class? Even with 67 test cases, could you
+    imagine opening up a constructor of a type and checking 67 different conditions?
+    In most of the codebases I’ve worked on, the validation logic is nowhere near
+    as comprehensive. However, this is user-configurable data and I want errors to
+    be caught as early as possible in runtime. You should prefer catching the errors
+    at data injection over first use. After all, the first use of these values might
+    not happen until you are in a separate system, decoupled from your parse logic.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Discussion Topic
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Think about some user data represented as data types in your system. How complex
+    is that data? How many ways can you construct it incorrectly? Discuss the impact
+    of creating this data incorrectly and how confident you are that your code will
+    catch all the errors.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Throughout this chapter, I’ll show you how to create a type that is easy to
+    read and models all the constraints listed. Since I’ve focused on type annotations
+    so much, it’d be nice if I can catch missing fields or wrong types at typecheck
+    time. A first idea is to use a `TypedDict` (see [Chapter 5](part0008_split_000.html#collections)
+    for more information on `TypedDict`):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This is a huge step in readability; you can tell exactly what types are needed
+    to construct your type. You could write the following function:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Downstream consumers would automatically benefit from the types I’ve just laid
+    out. However, there are a few problems with this approach:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: I can’t control construction of a `TypedDict`, so I can’t validate any fields
+    as part of type construction. I must force consumers to do the validation.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`TypedDict` cannot have additional methods on it.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`TypedDict` does no validation implicitly. If you create the wrong dictionary
+    from YAML, the typechecker will not complain.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'That last point is important. In fact, I could have the following contents
+    as the entirety of my YAML file, and the code will still typecheck:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: Typechecking will not catch errors at runtime. You need something stronger.
+    Enter pydantic.
+  prefs: []
+  type: TYPE_NORMAL
+- en: pydantic
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: '[*pydantic*](https://pydantic-docs.helpmanual.io) is a library that provides
+    runtime checking of your types without sacrificing readability. You can use pydantic
+    to model your classes like so:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: You decorate each class with a `pydantic.dataclasses.dataclass` instead of inheriting
+    from `TypedDict`. Once you have this, pydantic does validation upon type construction.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To construct the pydantic type, I’ll change my load function as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'If a future developer violates any constraint, pydantic will throw an exception.
+    Here are some example exceptions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If a field is missing, such as a missing description:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'When an invalid type is provided, such as putting the number 3 as an employee’s
+    position:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: Warning
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'Pydantic can work with mypy, but you may need to enable the pydantic plug-in
+    for typechecking in your *mypy.ini* to take advantage of all the features. Your
+    *mypy.ini* will need the following in it:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: For more information, check out the [pydantic documentation](https://oreil.ly/FBQXX).
+  prefs: []
+  type: TYPE_NORMAL
+- en: By modeling types with pydantic, I can catch entire classes of errors without
+    writing my own validation logic. The pydantic data classes above catch 38 of the
+    67 test cases that I came up with earlier. But I can do better. This code still
+    is missing functionality for those other 29 test cases, but I can use pydantic’s
+    built-in validators to catch even more errors on type construction.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Validators
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Pydantic offers a ton of built-in *validators*. Validators are custom types
+    that will check for specific constraints upon a field. For instance, if I wanted
+    to make sure that strings were a certain size or that all integers were positive,
+    I could use pydantic’s constrained types:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](../images/00002.gif)](part0018_split_004.html#co_runtime_checking_with_pydantic_CO1-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: I’m constraining a string to be a certain length.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](../images/00005.gif)](part0018_split_004.html#co_runtime_checking_with_pydantic_CO1-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: I’m constraining a string to match a regular expression (in this case, only
+    alphanumeric characters and spaces).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If I pass in an invalid type (such as a restaurant name with special characters
+    or a negative number of seats), I get the following error:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: I can even constrain lists to enforce further restrictions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](../images/00002.gif)](part0018_split_004.html#co_runtime_checking_with_pydantic_CO2-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This list is constrained to `Employee` types and must have at least two employees.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](../images/00005.gif)](part0018_split_004.html#co_runtime_checking_with_pydantic_CO2-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This list is constrained to `Dish` types and must have at least three dishes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If I pass in something that doesn’t follow these constraints (such as forgetting
+    a dish):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: With constrained types, I catch an additional 17 of my previously thought-up
+    test cases, bringing my total up to 55 out of 67 test cases covered. Pretty nice,
+    isn’t it?
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To catch the remaining set of errors, I can use custom validators to embed
+    those last pieces of validation logic:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'If I then fail to provide at least one chef and server:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: I will leave it up to you to write custom validators for other error cases (such
+    as valid addresses, valid routing numbers, or a valid image that exists on a filesystem).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Validation Versus Parsing
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Admittedly, pydantic is not strictly a validation library, but also a *parsing*
+    library. The difference is slight, but needs to be called out. In all my examples,
+    I have been using pydantic to check arguments and types, but it is not a strict
+    validator. Pydantic advertises itself as a *parsing library*, which means it is
+    providing a guarantee of what comes *out* of the data model, not what goes in.
+    That is, when you are defining pydantic models, pydantic will do whatever it can
+    to coerce data into the types you defined.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If you were to have a model:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'There is no problem passing in a string or a float into this model; pydantic
+    will do its best to coerce the value to an integer (or throw an exception if the
+    value is not coercible). This code throws no exceptions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: Pydantic is parsing these values, not validating them. You are not guaranteed
+    to pass an integer into the model, but you are always guaranteed an `int` comes
+    out on the other side (or an exception is thrown).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If you’d like to restrict this sort of behavior, you can use pydantic’s strict
+    fields:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: Now, when constructing from another type,
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'you will get an error:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: So, while pydantic advertises itself as a parsing library, it is possible to
+    enforce more strict behavior in your data models.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Closing Thoughts
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: I’ve been harping on the importance of typecheckers throughout this book, but
+    that doesn’t mean catching errors at runtime is meaningless. While typecheckers
+    catch their fair share of errors and reduce runtime checks, they can’t catch everything.
+    You still need validation logic to fill in the gaps.
+  prefs: []
+  type: TYPE_NORMAL
+- en: For these sorts of checks, the pydantic library is a great tool in your toolbox.
+    By embedding your validation logic directly into your types (without writing tons
+    of tedious `if` statements), you improve robustness twofold. First, you dramatically
+    increase readability; developers reading your type definition will know exactly
+    what constraints are imposed upon it. Second, it gives you that much-needed layer
+    of protection with runtime checking.
+  prefs: []
+  type: TYPE_NORMAL
+- en: I find that pydantic also helps fill in the middle ground between a data class
+    and a class. Each constraint is technically fulfilling invariants about that class.
+    I normally advise not to give your data classes an invariant because you can’t
+    protect it; you don’t control construction and property access is public. However,
+    pydantic protects the invariant even when you call a constructor or set a field.
+    But, if you have fields that are interdependent (such as needing to set both at
+    the same time or needing to set only one field based on the value of another),
+    stick with a class.
+  prefs: []
+  type: TYPE_NORMAL
+- en: That’s it for [Part II](part0011.html#part_2). You’ve learned how to create
+    your own types with `Enums`, data classes, and classes. Each of these fits a specific
+    use case, so be mindful about your intentions when writing types. You learned
+    how types can model *is-a* relationships with subtyping. You also learned why
+    your API is so important to each class; it’s the first chance other developers
+    get to understand what you’re doing. You finished up with this chapter, learning
+    about the need to do runtime validation in addition to static typechecking.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the next part, I’m going to take a step back and look at robustness from
+    a much broader viewpoint. Pretty much all of the guidance in the first two parts
+    of this book has focused on type annotations and typecheckers. Readability and
+    error checking are important benefits of robustness, but they are not all there
+    is. Other maintainers need to be able to make big changes to your codebase to
+    introduce new functionality, not just small changes interacting with your types.
+    They need to extend your codebase. [Part III](part0019.html#part_3) will focus
+    on extensibility.
+  prefs: []
+  type: TYPE_NORMAL

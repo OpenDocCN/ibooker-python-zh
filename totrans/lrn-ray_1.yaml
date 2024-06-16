@@ -1,0 +1,931 @@
+- en: Chapter 2\. Getting Started With Ray Core
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: For a book on distributed Python, it’s not without a certain irony that Python
+    on its own is largely ineffective for distributed computing. Its interpreter is
+    effectively single threaded which makes it difficult to, for example, leverage
+    multiple CPUs on the same machine, let alone a whole cluster of machines, using
+    plain Python. That means you need extra tooling, and luckily the Python ecosystem
+    has some options for you. For instance, libraries like `multiprocessing` can help
+    you distribute work on a single machine, but not beyond.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this chapter you’ll understand how Ray core handles distributed computing
+    by spinning up a local cluster, and you’ll learn how to use Ray’s lean and powerful
+    API to parallelize some interesting computations. For instance, you’ll build an
+    example that runs a data-parallel task efficiently and asynchronously on Ray,
+    in a convenient way that’s not easily replicable with other tooling. We discuss
+    how *tasks* and *actors* work as distributed versions of functions and classes
+    in Python. You’ll also learn about all the fundamental concepts underlying Ray
+    and what its architecture looks like. In other words, we’ll give you a look under
+    the hood of Ray’s engine.
+  prefs: []
+  type: TYPE_NORMAL
+- en: An Introduction To Ray Core
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The bulk of this chapter is an extended Ray core example that we’ll build together.
+    Many of Ray’s concepts can be explained with a good example, so that’s exactly
+    what we’ll do. As before, you can follow this example by typing the code yourself
+    (which is highly recommended), or by following the [notebook for this chapter](https://github.com/maxpumperla/learning_ray/blob/main/notebooks/ch_02_ray_core.ipynb).
+  prefs: []
+  type: TYPE_NORMAL
+- en: In [Chapter 1](ch01.xhtml#chapter_01) we’ve introduced you to the very basics
+    of Ray clusters and showed you how start a local cluster simply by typing
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 2-1\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: You’ll need a running Ray cluster to run the examples in this chapter, so make
+    sure you’ve started one before continuing. The goal of this section is to give
+    you a quick introduction to the Ray Core API, which we’ll simply refer to as the
+    Ray API from now on.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As a Python programmer, the great thing about the Ray API is that it hits so
+    close to home. It uses familiar concepts such as decorators, functions and classes
+    to provide you with a fast learning experience. The Ray API aims to provide a
+    universal programming interface for distributed computing. That’s certainly no
+    easy feat, but I think Ray succeeds in this respect, as it provides you with good
+    abstractions that are intuitive to learn and use. Ray’s engine does all the heavy
+    lifting for you in the background. This design philosophy is what enables Ray
+    to be used with existing Python libraries and systems.
+  prefs: []
+  type: TYPE_NORMAL
+- en: A First Example Using the Ray API
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: To give you an example, take the following function which retrieves and processes
+    data from a database. Our dummy `database` is a plain Python list containing the
+    words of the title of this book. We act as if retrieving an individual `item`
+    from this database and further processing it is expensive by letting Python `sleep`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 2-2\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_getting_started_with_ray_core_CO1-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: A dummy database containing string data with the title of this book.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_getting_started_with_ray_core_CO1-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We emulate a data-crunching operation that takes a long time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Our database has eight items, from `database[0]` for “Learning” to `database[7]`
+    for “Science”. If we were to retrieve all items sequentially, how long should
+    that take? For the item with index `5` we wait for half a second (`5 / 10.`) and
+    so on. In total, we can expect a runtime of around `(0+1+2+3+4+5+6+7)/10\. = 2.8`
+    seconds. Let’s see if that’s what we actually get:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 2-3\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_getting_started_with_ray_core_CO2-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We use a list comprehension to retrieve all eight items.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_getting_started_with_ray_core_CO2-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Then we unpack the data to print each item on its own line.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If you run this code, you should see the following output:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: We cut off the output of the program after one decimal number. There’s a little
+    overhead that brings the total closer to `2.82` seconds. On your end this might
+    be slightly less, or much more, depending on your computer. The important take-away
+    is that our naive Python implementation is not able to run this function in parallel.
+    This may not come as a surprise to you, but you could have at least suspected
+    that Python list comprehensions are more efficient in that regard. The runtime
+    we got is pretty much the worst case scenario, namely the `2.8` seconds we calculated
+    prior to running the code. If you think about it, it might even be a bit frustrating
+    to see that a program that essentially sleeps most of its runtime is that slow
+    overall. Ultimately you can blame the *Global Interpreter Lock* (GIL) for that,
+    but it gets enough of it already.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Functions and Remote Ray Tasks
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'It’s reasonable to assume that such a task can benefit from parallelization.
+    Perfectly distributed, the runtime should not take much longer than the longest
+    subtask, namely `7/10\. = 0.7` seconds. So, let’s see how you can extend this
+    example to run on Ray. To do so, you start by using the `@ray.remote` decorator
+    as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 2-4\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_getting_started_with_ray_core_CO3-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: With just this decorator we make any Python function a Ray task.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_getting_started_with_ray_core_CO3-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: All else remains unchanged. `retrieve_task` just passes through to `retrieve`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this way, the function `retrieve_task` becomes a so-called Ray task. That’s
+    an extremely convenient design choice, as you can focus on your Python code first,
+    and don’t have to completely change your mindset or programming paradigm to use
+    Ray. Note that in practice you would have simply added the `@ray.remote` decorator
+    to your original `retrieve` function (after all, that’s the intended use of decorators),
+    but we didn’t want to touch previous code to keep things as clear as possible.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Easy enough, so what do you have to change in the code that retrieves the data
+    and measures performance? It turns out, not much. Let’s have a look at how you’d
+    do that:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 2-5\. Measuring performance of your Ray task.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_getting_started_with_ray_core_CO4-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: To run `retrieve_task` on your local Ray cluster, you use `.remote()` and pass
+    in your data as before. You’ll get a list of object references.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_getting_started_with_ray_core_CO4-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: To get back data, and not just Ray object references, you use `ray.get`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Did you spot the differences? You have to execute your Ray task remotely using
+    the `remote` function. When tasks get executed remotely, even on your local cluster,
+    Ray does so *asynchronously*. The list items in `data_references` in the last
+    code snippet do not contain the results directly. In fact, if you check the Python
+    type of the first item with `type(data_references[0])` you’ll see that it’s in
+    fact an `ObjectRef`. These object references correspond to *futures* which you
+    need to ask the result of. This is what the call to `ray.get(...)` is for.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We still want to work more on this example^([2](ch02.xhtml#idm44990033491152)),
+    but let’s take a step back here and recap what we did so far. You started with
+    a Python function and decorated it with `@ray.remote`. This made your function
+    a Ray task. Then, instead of calling the original function in your code straight-up,
+    you called `.remote(...)` on the Ray task. The last step was to `.get(...)` the
+    results back from your Ray cluster. I think this procedure is so intuitive that
+    I’d bet you could already create your own Ray task from another function without
+    having to look back at this example. Why don’t you give it a try right now?
+  prefs: []
+  type: TYPE_NORMAL
+- en: Coming back to our example, by using Ray tasks, what did we gain in terms of
+    performance? On my machine the runtime clocks in at `0.71` seconds, which is just
+    slightly more than the longest subtask, which comes in at `0.7` seconds. That’s
+    great and much better than before, but we can further improve our program by leveraging
+    more of Ray’s API.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using the object store with put and get
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: One thing you might have noticed is that in the definition of `retrieve` we
+    *directly* accessed items from our `database`. Working on a local Ray cluster
+    this is fine, but imagine you’re running on an actual cluster comprising several
+    computers. How would all those computers access the same data? Remember from [Chapter 1](ch01.xhtml#chapter_01)
+    that in a Ray cluster there is one head node with a driver process (running `ray.init()`)
+    and many worker nodes with worker processes executing your tasks. My laptop has
+    a total of 8 CPU cores, so Ray will create 8 worker processes on my one-node local
+    cluster. Our `database` is currently defined on the driver only, but the workers
+    running your tasks need to have access to it to run the `retrieve` task. Luckily,
+    Ray provides an easy way to share data between the driver and workers (or between
+    workers). You can simply use `put` to place your data into Ray’s *distributed
+    object store* and then use `get` on the workers to retrieve it as follows.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 2-6\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_getting_started_with_ray_core_CO5-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`put` your `database` into the object store and receive a reference to it.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_getting_started_with_ray_core_CO5-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This allows your workers to `get` the data, no matter where they are located
+    in the cluster.
+  prefs: []
+  type: TYPE_NORMAL
+- en: By using the object store this way, you can let Ray handle data access across
+    the whole cluster. We’ll talk about how exactly data is passed between nodes and
+    within workers when talking about Ray’s infrastructure. While the interaction
+    with the object store requires some overhead, Ray is really smart about storing
+    the data, which gives you performance gains when working with larger, more realistic
+    datasets. For now, the important part is that this step is essential in a truly
+    distributed setting. If you like, try to re-run [Example 2-5](#code_duration_remote)
+    with this new `retrieve_task` function and confirm that it still runs, as expected.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using Ray’s wait function for non-blocking calls
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'Note how in [Example 2-5](#code_duration_remote) we used `ray.get(data_references)`
+    to access results. This call is *blocking*, which means that our driver has to
+    wait for all the results to be available. That’s not a big deal in our case, the
+    program now finishes in under a second. But imagine processing of each data item
+    would take several minutes. In that case you would want to free up the driver
+    process for other tasks, instead of sitting idly by. Also, it would be great to
+    process results as they come in (some finish much quicker than others), rather
+    than waiting for all data to be processed. One more question to keep in mind is
+    what happens if one of the data items can’t be retrieved as expected? Let’s say
+    there’s a deadlock somewhere in the database connection. In that case, the driver
+    will simply hang and never retrieve all items. For that reason it’s a good idea
+    to work with reasonable timeouts. In our scenario, we should not wait longer than
+    10 times the longest data retrieval task before stopping the task. Here’s how
+    you can do that with Ray by using `wait`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 2-7\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_getting_started_with_ray_core_CO6-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Instead of blocking, we loop through unfinished `data_references`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_getting_started_with_ray_core_CO6-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We asynchronously `wait` for finished data with a reasonable `timeout`. `data_references`
+    gets overridden here, to prevent an infinite loop.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_getting_started_with_ray_core_CO6-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We print results as they come in, namely in blocks of two.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](assets/4.png)](#co_getting_started_with_ray_core_CO6-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Then we `append` new `data` to the `all_data` until finished.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As you can see `ray.wait` returns two arguments, namely finished data and futures
+    that still need to be processed. We use the `num_returns` argument, which defaults
+    to `1`, to let `wait` return whenever a new pair of data items is available. On
+    my laptop this results in the following output:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note how in the `while` loop, instead of just printing results, we could have
+    done many other things, like starting entirely new tasks on other workers with
+    the data already retrieved up to this point.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Handling task dependencies
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: So far our example program has been fairly easy on a conceptual level. It consists
+    of a single step, namely retrieving a bunch of data. Now, imagine that once your
+    data is loaded you want to run a follow-up processing task on it. To be more concrete,
+    let’s say we want to use the result of our first retrieve task to query other,
+    related data (pretend that you’re querying data from a different table in the
+    same database). The following code sets up such a task and runs both our `retrieve_task`
+    and `follow_up_task` consecutively.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 2-8\. Running a follow-up task that depends on another Ray task
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_getting_started_with_ray_core_CO7-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using the result of `retrieve_task` we compute another Ray task on top of it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_getting_started_with_ray_core_CO7-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Leveraging the `original_item` from the first task, we `retrieve` more data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_getting_started_with_ray_core_CO7-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Then we return both the original and the follow-up data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](assets/4.png)](#co_getting_started_with_ray_core_CO7-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We pass the object references from the first task into the second task.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Running this code results in the following output.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: If you don’t have a lot of experience with asynchronous programming, you might
+    not be impressed by [Example 2-8](#code_task_dependency). But I hope to convince
+    you that it’s at least a bit surprising^([3](ch02.xhtml#idm44990033068688)) that
+    this code snippet runs at all. So, what’s the big deal? After all, the code reads
+    like regular Python - a function definition and a few list comprehensions. The
+    point is that the function body of `follow_up_task` expects a Python `tuple` for
+    its input argument `retrieve_result`, which we unpack in the first line of the
+    function definition.
+  prefs: []
+  type: TYPE_NORMAL
+- en: But by invoking `[follow_up_task.remote(ref) for ref in retrieve_refs]` we do
+    *not* pass in tuples to the follow-up task at all. Instead, we pass in Ray *object
+    references* with `retrieve_refs`. What happens under the hood is that Ray knows
+    that `follow_up_task` requires actual values, so internally in this task it will
+    call `ray.get` to resolve the futures. Ray builds a dependency graph for all tasks
+    and executes them in an order that respects the dependencies. You do not have
+    to tell Ray explicitly when to wait for a previous task to finish, it will infer
+    that information for you.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The follow-up tasks will only be scheduled, once the individual retrieve tasks
+    have finished. If you ask me, that’s an incredible feature. In fact, if I had
+    called `retrieve_refs` something like `retrieve_result`, you may not even have
+    noticed this important detail. That’s by design. Ray wants you to focus on your
+    work, not on the details of cluster computing. In figure [Figure 2-1](#fig_task_dependency)
+    you can see the dependency graph for the two tasks visualized.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Task Dependency](assets/task_dependency.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 2-1\. Running two dependent tasks asynchronously and in parallel with
+    Ray
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: If you feel like it, try to rewrite [Example 2-8](#code_task_dependency) so
+    that it explicitly uses `get` on the first task before passing values into the
+    follow-up task. That does not only introduce more boilerplate code, but it’s also
+    a bit less intuitive to write and understand.
+  prefs: []
+  type: TYPE_NORMAL
+- en: From classes to actors
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Before wrapping up this example, let’s discuss one more important concept of
+    Ray Core. Notice how in our example everything is essentially a function. We just
+    used the `ray.remote` decorator to make some of them remote functions, and other
+    than that simply used plain Python. Let’s say we wanted to track how often our
+    `database` has been queried? Sure, we could simply count the results of our retrieve
+    tasks, but is there a better way to do this? We want to track this in a “distributed”
+    way that will scale. For that, Ray has the concept of *actors*. Actors allow you
+    to run *stateful* computations on your cluster. They can also communicate between
+    each other^([4](ch02.xhtml#idm44990033053088)). Much like Ray tasks were simply
+    decorated functions, Ray actors are decorated Python classes. Let’s write a simple
+    counter to track our database calls.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 2-9\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_getting_started_with_ray_core_CO8-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We can make any Python class a Ray actor by using the same `ray.remote` decorator
+    as before.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This `DataTracker` class is already an actor, since we equipped it with the
+    `ray.remote` decorator. This actor can track state, here just a simple counter,
+    and its methods are Ray tasks that get invoked precisely like we did with functions
+    before, namely using `.remote()`. Let’s see how we can modify our existing `retrieve_task`
+    to incorporate this new actor.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 2-10\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_getting_started_with_ray_core_CO9-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We pass in the `tracker` actor into this task.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_getting_started_with_ray_core_CO9-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `tracker` receives an `increment` for each call.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_getting_started_with_ray_core_CO9-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We instantiate our `DataTracker` actor by calling `.remote()` on the class.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](assets/4.png)](#co_getting_started_with_ray_core_CO9-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The actor gets passed into the retrieve task.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![5](assets/5.png)](#co_getting_started_with_ray_core_CO9-5)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Afterwards we can get the `counts` state from our `tracker` from another remote
+    invocation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Unsurprisingly, the result of this computation is in fact `8`. We didn’t need
+    actors to compute this, but I hope you can see how useful it can be to have a
+    mechanism to track state across the cluster, potentially spanning multiple tasks.
+    In fact, we could pass our actor into any dependent task, or even pass it into
+    the constructor of yet another actor. There is no limitation to what you can do,
+    and it’s this flexibility that makes the Ray API so powerful. It’s also worth
+    mentioning that it’s not very common for distributed Python tools to allow for
+    stateful computations like this. This feature can come in very handy, especially
+    when running complex distributed algorithms, for instance when using reinforcement
+    learning. This completes our extensive first Ray API example. Let’s see if we
+    can concisely summarize the Ray API next.
+  prefs: []
+  type: TYPE_NORMAL
+- en: An Overview of the Ray Core API
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: If you recall what exactly we did in the previous example, you’ll notice that
+    we used a total of just six API methods^([5](ch02.xhtml#idm44990032795376)). You
+    used `ray.init()` to start the cluster and `@ray.remote` to turn functions and
+    classes into tasks and actors. Then we used `ray.put()` to pass data into Ray’s
+    object store and `ray.get()` to retrieve data from the cluster. Finally, we used
+    `.remote()` on actor methods or tasks to run code on our cluster, and `ray.wait`
+    to avoid blocking calls.
+  prefs: []
+  type: TYPE_NORMAL
+- en: While six API methods might not seem like much, those are the only ones you’ll
+    likely ever care about when using the Ray API^([6](ch02.xhtml#idm44990032790816)).
+    Let’s briefly summarize them in a table, so you can easily reference them in the
+    future.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Table 2-1\. The six major API methods of Ray Core
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| API call | Description |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `ray.init()` | Initializes your Ray cluster. Pass in an `address` to connect
+    to an existing cluster. |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `@ray.remote` | Turns functions into tasks and classes into actors. |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `ray.put()` | Puts data into Ray’s object store. |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `ray.get()` | Gets data from the object store. Returns data you’ve `put`
+    there or that was computed by a task or actor. |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `.remote()` | Runs actor methods or tasks on your Ray cluster and is used
+    to instantiate actors. |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `ray.wait()` | Returns two lists of object references, one with finished
+    tasks we’re waiting for and one with unfinished tasks. |'
+  prefs: []
+  type: TYPE_TB
+- en: Now that you’ve seen the Ray API in action, let’s quickly discuss Ray’s design
+    philosophy, before moving on to discussing its system architecture.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Design Principles
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Ray is built with several design principles in mind, most of which you’ve got
+    a taste of already. Its API is designed for simplicity and generality. Its compute
+    model banks on flexibility. And its system architecture is designed for performance
+    and scalability. Let’s look at each of these in more detail.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Simplicity and abstraction
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: As you’ve seen, Ray’s API does not only bank on simplicity, it’s also intuitive
+    to pick up. It doesn’t matter whether you just want to use all the CPU cores on
+    your laptop or leverage all the machines in your cluster. You might have to change
+    a line of code or two, but the Ray code you use stays essentially the same. And
+    as with any good distributed system, Ray manages task distribution and coordination
+    under the hood. That’s great, because you’re not bogged down by reasoning about
+    the mechanics of distributed computing. A good abstraction layer allows you to
+    focus on your work, and I think Ray has done a great job of giving you one.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Since Ray’s API is so generally applicable and pythonic, it’s easy to integrate
+    with other tools. For instance, Ray actors can call into or be called by existing
+    distributed Python workloads. In that sense Ray makes for good “glue code” for
+    distributed workloads, too, as its performant and flexible enough to communicate
+    between different systems and frameworks.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Flexibility
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: For AI workloads, in particular when dealing with paradigms like reinforcement
+    learning, you need a flexible programming model. Ray’s API is designed to make
+    it easy to write flexible and composable code. Simply put, if you can express
+    your workload in Python, you can distribute it with Ray. Of course, you still
+    need to make sure you have enough resources available and be mindful of what you
+    want to distribute. But Ray doesn’t limit you in what you can do with it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Ray is also flexible when it comes to *heterogenity* of computations. For instance,
+    let’s say you work on a complex simulation. Simulations can usually be decomposed
+    into several tasks or steps. Some of these steps might take hours to run, others
+    just a few milliseconds, but they always need to be scheduled and executed quickly.
+    Sometimes a single task in a simulation can take a long time, but other, smaller
+    tasks should be able to run in parallel without blocking it. Also, subsequent
+    tasks may depend on the outcome of an upstream task, so you need a framework to
+    allow for *dynamic execution* that deals well with task dependencies. In the example
+    we discussed in this chapter you’ve seen that Ray’s API is built for that.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You also need to ensure you are flexible in your resource usage. For instance,
+    some tasks might have to run on a GPU, while others run best on a couple of CPU
+    cores. Ray provides you with that flexibility.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Speed and scalability
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Another of Ray’s design principles is the speed at which Ray executes its heterogeneous
+    tasks. It can handle millions of tasks per second. What’s more is that you only
+    incur very low latencies with Ray. It’s build to execute its tasks with just milliseconds
+    of latency.
+  prefs: []
+  type: TYPE_NORMAL
+- en: For a distributed system to be fast, it also needs to scale well. Ray is efficient
+    at distributing and scheduling your tasks across your compute cluster. And it
+    does so in a fault tolerant way, too. In distributed systems it’s not a question
+    of if, but when things go wrong. A machine might have an outage, abort a task
+    or simply go up in flames.^([7](ch02.xhtml#idm44990032763840)) In any case, Ray
+    is built to recover quickly from failures, which contributes to its overall speed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Understanding Ray System Components
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: You’ve seen how the Ray API can be used and understand the design philosophy
+    behind Ray. Now it’s time to get a better understanding of the underlying system
+    components. In other words, how does Ray work and how does it achieve what it
+    does?
+  prefs: []
+  type: TYPE_NORMAL
+- en: Scheduling and Executing Work on a Node
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: You know that Ray clusters consist of nodes. We’ll first look at what happens
+    on individual nodes, before we zoom out and discuss how the whole cluster interoperates.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As we’ve already discussed, a worker node consists of several worker processes
+    or simply workers. Each worker has a unique ID, an IP address and a port by which
+    they can be referenced. Workers are called as they are for a reason, they’re components
+    that blindly execute the work you give them. But who tells them what to do and
+    when? A worker might be busy already, it may not have the proper resources to
+    run a task (e.g. access to a GPU), and it might not even have the data it needs
+    to run a given task. On top of that, workers have no knowledge of what happens
+    before or after they’ve executed their workload, there’s no coordination.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To address these issues, each worker node has a component called *Raylet*. Think
+    of Raylets as the smart components of a node, which manage the worker processes.
+    Raylets are shared between jobs and consist of two components, namely a task scheduler
+    and an object store.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s talk about object stores first. In the running example in this chapter
+    we’ve already used the concept of an object store loosely, without really specifying
+    it. Each node of a Ray cluster is equipped with an object store, within that node’s
+    Raylet, and all object stored collectively form the distributed object store of
+    a cluster. An object store has *shared memory* across the node, so that each worker
+    process has easy access to it. The object store is implemented in [Plasma](https://arrow.apache.org/docs/python/plasma.xhtml),
+    which now belongs to the Apache Arrow project. Functionally, the object store
+    takes care of memory management and ultimately makes sure workers have access
+    to the data they need.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The second component of a Raylet is its scheduler. The scheduler takes care
+    of resource management, among other things. For instance, if a task requires access
+    to 4 CPUs, the scheduler needs to make sure it can find a free worker process
+    that it can *grant access* to said resources. By default, the scheduler knows
+    about and acquires information about the number of CPUs and GPUs and the amount
+    of memory available on its node, but you can register custom resources, if you
+    want to. If it can’t provide the required resources, it can’t schedule execution
+    of a task.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Apart from resources, the other requirement the scheduler takes care of is *dependency
+    resolution*. That means it needs to ensure that each worker has all the input
+    data it needs to execute a task. For that to work, the scheduler will first resolve
+    local dependencies by looking up data in its object store. If the required data
+    is not available on this node’s object store, the scheduler will have to communicate
+    with other nodes (we’ll tell you how in a bit) and pull in remote dependencies.
+    Once the scheduler has ensured enough resources for a task, resolved all needed
+    dependencies, and found a worker for a task, it can schedule said task for execution.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Task scheduling is a very difficult topic, even if we’re only talking about
+    single nodes. I think you can easily imagine scenarios in which an incorrectly
+    or naively planned task execution can “block” downstream tasks because there are
+    not enough resources left. Especially in a distributed context assigning work
+    like this can be become very tricky very quickly.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now that you know about Raylets, let’s briefly come back to worker processes,
+    so that we can wrap up the discussion around worker nodes. An important concept
+    that contributed to the performance or Ray overall is that of *ownership*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Ownership means that a process that runs something is responsible for it. This
+    makes for a decentralized overall design, since individual tasks have a unique
+    owner. In concrete terms this means that each worker process owns the tasks it
+    submits, which includes proper execution and availability of results (i.e., correct
+    resolution of object references). Also, anything that gets registered through
+    `ray.put()` is owned by the caller. You should understand ownership in contrast
+    to dependency, which we’ve already covered by example when discussing task dependencies.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To give you a concrete example, let’s say we have a program that starts a `task`
+    which takes an input value `val` and internally calls another task. That could
+    look as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 2-11\.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: From this point on we won’t mention it again, but this example assumes that
+    you have a running Ray cluster started with `ray.init()`. Let’s quickly analyse
+    ownership and dependency for this example. We defined two tasks in `task` and
+    `task_owned`, and we have three variables in total, namely `val`, `res` and `rew_owned`.
+    Our main program defines both `val` (which puts `"value"` into the object store)
+    and `res`, the final result of th whole program, and it also calls `task`. In
+    other words, the driver *owns* `task`, `val` and `res` according to Ray’s ownership
+    definition. In contrast, `res` depends on `task`, but there’s no ownership relationship
+    between the two. When `task` gets called, it takes `val` as a dependency. It then
+    calls `task_owned` and assigns `res_owned`, and hence owns them both. Lastly,
+    `task_owned` itself does not own anything, but certainly `rew_owned` depends on
+    it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Ownership is important to know about, but it’s not a concept you encounter all
+    that often when working with Ray. The reason we brought it up in this context
+    is that worker processes need to track what they own. In fact, they possess a
+    so-called *ownership table* exactly for that reason. If a task fails and needs
+    to be recomputed, the worker already owns all the information it needs to do so.
+    On top of that, workers also have an in-process store for small objects, which
+    has a default limit of 100KB. Workers have that store so that small data can be
+    directly accessed and stored without incurring communication overhead with the
+    Raylet object store, which is reserved for large objects.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To sum up this discussion about worker nodes, figure [Figure 2-2](#fig_workers)
+    gives you an overview of all involved components.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Worker](assets/worker_node.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 2-2\. The system components comprising a Ray worker node
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: The Head Node
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: We’ve already indicated in [Chapter 1](ch01.xhtml#chapter_01) that each Ray
+    cluster has one special node called head node. So far you know that this is the
+    node that has the driver process^([8](ch02.xhtml#idm44990032658080)). Drivers
+    can submit tasks themselves, but can’t execute them. You also know that the head
+    node can have some worker processes, which is important to be able to run local
+    clusters constisting of a single node. In other words, the head node has everything
+    a worker node has (including a Raylet), but it also has a driver process.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Additionally, the head node comes with a component called *Global Control Store*
+    (GCS). The GCS is a key-value store currently implemented in Redis. It’s an important
+    component that carries global information about the cluster, such as system-level
+    metadata. For instance, it has a table with heart beat signals for each Raylet,
+    to ensure they are still reachable. Raylets, in turn, send heart beat signals
+    to the GCS to indicate that they are alive. The GCS also stores the locations
+    of Ray actors and large objects in respective tables, and knows about the dependencies
+    between objects.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Distributed Scheduling and Execution
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Let’s briefly talk about cluster orchestration and how nodes manage, plan and
+    execute tasks. When talking about worker nodes, we’ve indicated that there are
+    several components to distributing workloads with Ray. Here’s an overview of the
+    steps and intricacies involved in this process.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Distributed memory: The object stores of individual Raylets share their memory
+    on a node. But sometimes data needs to be transferred between nodes, which is
+    called *distributed object transfer*. This is needed for remote dependency resolution,
+    so that workers have the data they need to run tasks.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Communication
+  prefs: []
+  type: TYPE_NORMAL
+- en: Most of the communication in a Ray cluster, such as object transfer, takes place
+    via the [*gRPC*](https://grpc.io/) protocol.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Resource management and fulfillment
+  prefs: []
+  type: TYPE_NORMAL
+- en: On a node, Raylets are responsible to grant resources and *lease* worker processes
+    to task owners. All schedulers across nodes form the distributed scheduler. Through
+    communication with the GCS, local schedulers know about other nodes’ resources.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Task execution
+  prefs: []
+  type: TYPE_NORMAL
+- en: Once a task has been submitted for execution, all its dependencies (local and
+    remote data) need to be resolved, e.g. by retrieving large data from the object
+    store, before execution can begin.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If the last few sections seem a bit involved technically, that’s because they
+    are. In my view it’s important to understand the basic patterns and ideas of the
+    software you’re using, but I’ll admit that the details of Ray’s architecture can
+    be a bit tough to wrap your head around in the beginning. In fact, it’s one of
+    Ray’s design principles to trade-off usability for architectural complexity. If
+    you want to delve deeper into Ray’s architecture, a good place to start is [their
+    architecture white paper](https://docs.google.com/document/d/1lAy0Owi-vPz2jEqBSaHNQcy2IBSDEHyXNOQZlGuj93c/preview).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To wrap things up, let’s summarize all we know in a concise architecture overview
+    with figure [Figure 2-3](#fig_architecture):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Architecture](assets/architecture.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 2-3\. An overview of Ray’s architectural components
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: You’ve seen the basics of the Ray API in action in this chapter. You know how
+    to `put` data to the object store, and how to `get` it back. Also, you’re familiar
+    with declaring Python functions as Ray tasks with the `@ray.remote` decorator,
+    and you know how to run them on a Ray cluster with the `.remote()` call. In much
+    the same way, you understand how to declare a Ray actor from a Python class, how
+    to instantiate it and leverage it for stateful, distributed computations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: On top of that, you also know the basics of Ray clusters. After starting them
+    with `ray.init(...)` you know that you can submit jobs consisting of tasks to
+    your cluster. The driver process, sitting on the head node, will then distribute
+    the tasks to the worker nodes. Raylets on each node will schedule the tasks and
+    worker processes will execute them. This quick tour through Ray core should get
+    you started with writing your own distributed programs, and in the next chapter
+    we’ll test your knowledge by implementing a basic machine learning application
+    together.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([1](ch02.xhtml#idm44990033684416-marker)) I still don’t know how to pronounce
+    this acronym, but I get the feeling that the same people who pronounce GIF like
+    “giraffe” also say GIL like “guitar”. Just pick one, or spell it out, if you feel
+    insecure.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([2](ch02.xhtml#idm44990033491152-marker)) This example has been adapted from
+    Dean Wampler’s fantastic report [“What is Ray?”](https://www.oreilly.com/library/view/what-is-ray/9781492085768/).
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([3](ch02.xhtml#idm44990033068688-marker)) According to [Clarke’s third law](https://en.wikipedia.org/wiki/Clarke%27s_three_laws)
+    any sufficiently advanced technology is indistinguishable from magic. For me,
+    this example has a bit of magic to it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([4](ch02.xhtml#idm44990033053088-marker)) The actor model is an established
+    concept in computer science, which you can find implemented e.g. in Akka or Erlang.
+    However, the history and specifics of actors are not relevant to our discussion.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([5](ch02.xhtml#idm44990032795376-marker)) To paraphrase [Alan Kay](https://www.youtube.com/watch?v=NdSD07U5uBs),
+    to get simplicity, you need to find slightly more sophisticated building blocks.
+    In my eyes, the Ray API does just that for distributed Python.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([6](ch02.xhtml#idm44990032790816-marker)) You can check out the [API reference](https://docs.ray.io/en/latest/package-ref.xhtml)
+    to see that there are in fact quite a bit more methods available. At some point
+    you should invest in understanding the arguments of `init`, but all other methods
+    likely won’t be of interest to you, if you’re not an administrator of your Ray
+    cluster.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([7](ch02.xhtml#idm44990032763840-marker)) This might sound drastic, but it’s
+    not a joke. To name just one example, in March 2021 a French data center powering
+    millions of websites burnt down completely, which you can read about [in this
+    article](https://www.reuters.com/article/us-france-ovh-fire-idUSKBN2B20NU). If
+    your whole cluster burns down, I’m afraid Ray can’t help you.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([8](ch02.xhtml#idm44990032658080-marker)) In fact, it could have multiple
+    drivers, but this is inessential for our discussion.
+  prefs: []
+  type: TYPE_NORMAL

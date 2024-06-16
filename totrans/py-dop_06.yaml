@@ -1,0 +1,604 @@
+- en: Chapter 6\. Continuous Integration and Continuous Deployment
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: '*Author: Noah*'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The practices of continuous integration (CI) and continuous deployment (CD)
+    are essential to a modern software development life cycle process. A CI system
+    clones the codebase for the software under consideration from a source control
+    system such as GitHub, builds the software into an artifact that can be a binary,
+    a tar archive, or a Docker image, and, very importantly, also runs unit and/or
+    integration tests for the software. A CD system deploys the artifacts built by
+    the CI system to a target environment. This deployment can be automated for nonproduction
+    environments, but usually includes a manual approval step for production. A more
+    advanced type of such systems is a continuous delivery platform, which automates
+    the deployment step to production and is capable of rolling back the deployment
+    based on metrics obtained from monitoring and logging platforms.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Real-World Case Study: Converting a Poorly Maintained WordPress Site to Hugo'
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: A while back, a friend asked for a favor fixing their company website. The company
+    sold very expensive, used scientific equipment and its inventory was served via
+    a WordPress site that was frequently hacked, performed horribly, or was down for
+    days. Typically I try to avoid getting sucked into projects like this, but since
+    it was a friend, I decided to help. You can reference the code for the conversion
+    project at this [Git repository](https://oreil.ly/myos1).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Each step of the conversion process is covered in the GitHub repo. The steps
+    include:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Backup
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Convert
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Upgrade
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Deploy
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: The story had a funny ending. After creating a bulletproof, “tank” of a website
+    that had incredible performance, security, auto-deployment, and incredible SEO,
+    it ran for years with zero vulnerabilities or downtime. Long after I had forgotten
+    about the project, I got a text from my friend. It had been a couple years since
+    I had last talked with him. He said the website was down and he needed my help.
+  prefs: []
+  type: TYPE_NORMAL
+- en: I texted back to him to ask how this was possible. It is running off Amazon
+    S3 which has 99.999999999% uptime. He texted back that he had recently converted
+    it back to WordPress because it was “easier” to make changes. I laughed and told
+    him I wasn’t a good fit for his project. As they say, no good deed is left unpunished.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Some of the requirements I considered were:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: It needed to be continuously deployed.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: It needed to be fast to run and develop against!
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: It should be a static site hosted from a cloud provider.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: There should be a reasonable workflow for converting from WordPress.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: It should be possible to create a reasonable search interface using Python.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: In the end I decided to use [Hugo](https://gohugo.io), [AWS](https://aws.amazon.com),
+    and [Algolia](https://www.algolia.com). The general architecture looked like [Figure 6-1](#Figure-6-1).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![pydo 0601](assets/pydo_0601.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6-1\. Continuous deployment with Hugo
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Setting Up Hugo
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Getting started with Hugo is very straightforward (see the [getting started
+    Hugo guide](https://oreil.ly/r_Rcg)). First, install the software. On my OS X
+    machine I did it this way:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'If you already installed Hugo, you may need to upgrade:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'If you are on another platform, you can follow [instructions here](https://oreil.ly/FfWdo).
+    To verify things are working, run `hugo version`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The only thing left to do is to initialize a skeleton Hugo app and install
+    a theme:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: This creates a new site called `quickstart`. You can build this site again,
+    VERY QUICKLY, by running `hugo`. This compiles the markdown files to HTML and
+    CSS.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Converting WordPress to Hugo Posts
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Next, I converted the WordPress database to JSON via a raw dump. Then I wrote
+    a Python script to convert this data into Hugo posts in markdown format. Here
+    is that code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: Creating an Algolia Index and Updating It
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: With the database products converted to markdown posts, the next step is to
+    write some Python code that creates an Algolia index and syncs it. [Algolia](https://www.algolia.com)
+    is a great tool to use because it quickly solves the search engine problem and
+    has nice Python support as well.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This script crawls through all of the markdown files and generates a search
+    index that can be uploaded to Algolia:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Finally, the index can be sent to Algolia with this snippet:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: Orchestrating with a Makefile
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Using a `Makefile` allows you to replicate the steps your deployment process
+    will use later. I typically set up a `Makefile` to orchestrate this locally. Here
+    is what the entire build and deploy process looks like:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: Deploying with AWS CodePipeline
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Amazon Web Services (AWS) is a common deployment target for hosting a static
+    website via Amazon S3, Amazon Route 53, and Amazon CloudFront. AWS CodePipeline,
+    their build server service, works very well as the deployment mechanism for these
+    sites. You can log into AWS CodePipeline, set up a new build project, and tell
+    it to use a *buildspec.yml* file. The code can be customized and the portions
+    that are templated out can be replaced with actual values.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As soon as GitHub gets a change event, CodePipeline runs the install in a container.
+    First it grabs the specific version of Hugo specified. Next it builds the Hugo
+    pages. Thousands of Hugo pages can be rendered subsecond because of the speed
+    of Go.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Finally, the HTML pages are synced to Amazon S3\. Because this is running inside
+    of AWS and is synced, it is also extremely fast. The final step is that CloudFront
+    is invalidated:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Real-World Case Study: Deploying a Python App Engine Application with Google
+    Cloud Build'
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Back in 2008 I wrote the very first article on using Google App Engine. You
+    have to use the Wayback Machine to get it from the [O’Reilly blog](https://oreil.ly/8LoIf).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here is a reboot for the modern era. This is another version of Google App
+    Engine, but this time it uses [Google Cloud Build](https://oreil.ly/MllhM). The
+    Google Cloud Platform (GCP) Cloud Build works a lot like AWS CodePipeline. Here
+    is a config file that is checked into a GitHub repo. The config file is named
+    *cloudbuild.yaml*. You can see all of the source code for this project [in this
+    Git repository](https://oreil.ly/vxsnc):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Note that the *cloudbuild.yaml* file installs the packages seen here in the
+    *requirements.txt* file and also runs `gcloud app deploy`, which deploys the App
+    Engine application on check-in to GitHub:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Here is a walk-through of how to set up this entire project:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Create the project.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Activate the cloud shell.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Refer to the [hello world docs for the Python 3 App Engine](https://oreil.ly/zgf5J).
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'Run `describe`:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE11]bash'
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: gcloud projects describe $GOOGLE_CLOUD_PROJECT
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: '[PRE12]bash'
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: 'createTime: ''2019-05-29T21:21:10.187Z'''
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: 'lifecycleState: ACTIVE'
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: 'name: helloml'
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: 'projectId: helloml-xxxxx'
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: 'projectNumber: ''881692383648'''
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'You may want to verify that you have the correct project. If not, do this to
+    switch:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'Create the App Engine app:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: This will ask for the region. Go ahead and pick `us-central [12]`.
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'Clone the hello world sample app repo:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: '`cd` into the repo:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'Update the Cloudshell image (note that this is optional):'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'Create and source the virtual environment:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'Double-check that it works:'
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: '[PRE21]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: Activate the cloud shell editor.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'Install the packages:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE22]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'This should install Flask:'
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: '[PRE23]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'Run Flask locally. This runs Flask locally in the GCP shell:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE24]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: Use the web preview (see [Figure 6-2](#Figure-6-2)).
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![pydo 0602](assets/pydo_0602.png)'
+  prefs:
+  - PREF_IND
+  type: TYPE_IMG
+- en: Figure 6-2\. Web preview
+  prefs:
+  - PREF_IND
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'Update *main.py*:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE25]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'Test out passing in parameters to exercise this function:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE26]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'For example, calling this route will take the word *lion* and pass it into
+    the name function in Flask:'
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: '[PRE27]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'Returns a value in the web browser:'
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: '[PRE28]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'Now deploy the app:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE29]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: Be warned! The first deploy could take about 10 minutes. You might also need
+    to enable the cloud build API.
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: '[PRE30]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'Now stream the log files:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE31]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'The production app is deployed and should like this:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE32]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'Add a new route and test it out:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE33]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'Install Pandas and return JSON results. At this point, you may want to consider
+    creating a `Makefile` and doing this:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE34]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'You also may want to set up lint:'
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: '[PRE35]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'The web route syntax looks like the following block. Add Pandas import at the
+    top:'
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: '[PRE36]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: When you call the route https://<yourapp>.appspot.com/pandas, you should get
+    something like [Figure 6-3](#Figure-6-3).
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: '![pydo 0603](assets/pydo_0603.png)'
+  prefs:
+  - PREF_IND
+  type: TYPE_IMG
+- en: Figure 6-3\. Example of JSON out
+  prefs:
+  - PREF_IND
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'Add this Wikipedia route:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE37]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'Add NLP to the app:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Run [IPython Notebook](https://oreil.ly/c564z).
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Enable the Cloud Natural Language API.
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'Run `pip install google-cloud-language`:'
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE38]'
+  prefs:
+  - PREF_IND
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'Here is an end-to-end AI API example:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE39]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: This section has shown how to both set up an App Engine application from scratch
+    in the Google Cloud Shell, as well as how to do continuous delivery using GCP
+    Cloud Build.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Real-World Case Study: NFSOPS'
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: NFOPS is an operational technique that uses NFS (Network File System) mount
+    points to manage clusters of computers. It sounds like it is a new thing, but
+    it has been around since Unix has been around. Noah used NFS mount points on Caltech’s
+    Unix systems back in 2000 to manage and maintain software. What is old is new
+    again.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As a part-time consultant at a virtual reality startup in San Francisco, one
+    problem I faced was how to build a jobs framework, quickly, that would dispatch
+    work to thousands of AWS Spot Instances.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The solution that ultimately worked was to use NFSOPS ([Figure 6-4](#Figure-6-4))
+    to deploy Python code to thousands of Computer Vision Spot Instances subsecond.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![pydo 0604](assets/pydo_0604.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6-4\. NFSOPS
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'NFSOPS works by using a build server, in this case Jenkins, to mount several
+    Amazon Elastic File System (EFS) mount points (DEV, STAGE, PROD). When a continuous
+    integration build is performed, the final step is an `rsync` to the respective
+    mount point:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE40]'
+  prefs: []
+  type: TYPE_PRE
+- en: The “deploy” is then subsecond to the mount point. When spot instances are launched
+    by the thousands, they are preconfigured to mount EFS (the NFS mount points) and
+    use the source code. This is a handy deployment pattern that optimizes for simplicity
+    and speed. It can also work quite well in tandom with IAC, Amazon Machine Image
+    (AMI), or Ansible.
+  prefs: []
+  type: TYPE_NORMAL

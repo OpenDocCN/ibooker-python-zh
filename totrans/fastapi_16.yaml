@@ -1,0 +1,438 @@
+- en: Chapter 13\. Production
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: If builders built buildings the way programmers wrote programs, the first woodpecker
+    that came along would destroy civilization.
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: ''
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: Gerald Weinberg, computer scientist
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: Preview
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: You have an application running on your local machine, and now you’d like to
+    share it. This chapter presents many scenarios on how to move your application
+    to production, and keep it running correctly and efficiently. Because some of
+    the details can be *very* detailed, in some cases I’ll refer to helpful external
+    documents rather than stuffing them in here.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Deployment
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'All the code examples in this book so far have used a single instance of `uvicorn`
+    running on `localhost`, port `8000`. To handle lots of traffic, you want multiple
+    servers, running on the multiple cores that modern hardware provides. You’ll also
+    need something above these servers to do the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Keep them running (a *supervisor*)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Gather and feed external requests (a *reverse proxy*)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Return responses
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Provide HTTPS *termination* (SSL decryption)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Multiple Workers
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: You’ve probably seen another Python server called [Gunicorn](https://gunicorn.org).
+    This can supervise multiple workers, but it’s a WSGI server, and FastAPI is based
+    on ASGI. Luckily, there’s a special Uvicorn worker class that can be managed by
+    Gunicorn.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Example 13-1](#ex-13-1) sets up these Uvicorn workers on `localhost`, port
+    `8000` (this is adapted from the [official documentation](https://oreil.ly/Svdhx)).
+    The quotes protect the shell from any special interpretation.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 13-1\. Use Gunicorn with Uvicorn workers
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'You’ll see many lines as Gunicorn does your bidding. It will start a top-level
+    Gunicorn process, talking to four Uvicorn worker subprocesses, all sharing port
+    `8000` on `localhost` (`0.0.0.0`). Change the host, port, or number of workers
+    if you want something else. The `main:app` refers to *main.py* and the FastAPI
+    object with the variable name `app`. The Gunicorn [docs](https://oreil.ly/TxYIy)
+    claim the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Gunicorn should only need 4-12 worker processes to handle hundreds or thousands
+    of requests per second.
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: It turns out that Uvicorn itself can also fire up multiple Uvicorn workers,
+    as in [Example 13-2](#ex-13-2).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 13-2\. Use Uvicorn with Uvicorn workers
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'But this method doesn’t do process management, so the gunicorn method is usually
+    preferred. Other process managers exist for Uvicorn: see its [official docs](https://www.uvicorn.org/deployment).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This handles three of the four jobs mentioned in the previous section, but not
+    HTTPS encryption.
+  prefs: []
+  type: TYPE_NORMAL
+- en: HTTPS
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The official FastAPI [HTTPS docs](https://oreil.ly/HYRW7), like all of the official
+    FastAPI docs, are extremely informative. I recommend reading them, followed by
+    Ramírez’s [description](https://oreil.ly/zcUWS) of how to add HTTPS support to
+    FastAPI by using [Traefik](https://traefik.io). Traefik sits “above” your web
+    servers, similar to nginx as a reverse proxy and load balancer, but it includes
+    that HTTPS magic.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Although the process has many steps, it’s still much simpler than it used to
+    be. In particular, you used to regularly pay big bucks to a certificate authority
+    for a digital certificate that you could use to provide HTTPS for your site. Luckily,
+    those authorities have been largely replaced by the free service [Let’s Encrypt](https://letsencrypt.org).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Docker
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: When Docker burst on the scene (in a five-minute [lightning talk](https://oreil.ly/25oef)
+    by Solomon Hykes of dotCloud at PyCon 2013), it was the first time most of us
+    had ever heard of Linux containers. Over time, we learned that Docker was faster
+    and lighter than virtual machines. Instead of emulating a full operating system,
+    each container shared the server’s Linux kernel, and isolated processes and networks
+    into their own namespaces. Suddenly, by using the free Docker software, you could
+    host multiple independent services on a single machine, without worrying about
+    them stepping all over one another.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Ten years later, Docker is universally recognized and supported. If you want
+    to host your FastAPI application on a cloud service, you’ll usually need to create
+    a *Docker image* of it first. The [official FastAPI docs](https://oreil.ly/QnwOW)
+    include a thorough description of how to build a Dockerized version of your FastAPI
+    application. One step is to write a *Dockerfile*: a text file containing Docker
+    configuration info, like what application code to use and what processes to run.
+    Just to prove that this isn’t brain surgery during a rocket launch, here’s the
+    Dockerfile from that page:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: I recommend reading the official docs, or other links that a Google search of
+    `fastapi docker` will produce, such as [“The Ultimate FastAPI Tutorial Part 13—Using
+    Docker to Deploy Your App”](https://oreil.ly/7TUpR) by Christopher Samiullah.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Cloud Services
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Many sources of paid or free hosting are available on the Net. Some walk-throughs
+    on how to host FastAPI with them include the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[“FastAPI—Deployment” by Tutorials Point](https://oreil.ly/DBZcm)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[“The Ultimate FastAPI Tutorial Part 6b—Basic Deployment on Linode” by Christopher
+    Samiullah](https://oreil.ly/s8iar)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[“How to Deploy a FastAPI App on Heroku for Free” by Shinichi Okada](https://oreil.ly/A6gij)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Kubernetes
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Kubernetes grew from internal Google code for managing internal systems that
+    were becoming ever more godawfully complex. System administrators (as they were
+    called then) used to manually configure tools like load balancers, reverse proxies,
+    humidors^([1](ch13.html#id831)) and so on. Kubernetes aimed to take much of this
+    knowledge and automate it: don’t tell me *how* to handle this; tell me what you
+    *want*. This included tasks like keeping a service running, or firing up more
+    servers if traffic spikes.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: There are many descriptions of how to deploy FastAPI on Kubernetes, including
+    [“Deploying a FastAPI Application on Kubernetes” by Sumanta Mukhopadhyay](https://oreil.ly/ktTNu).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Performance
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: FastAPI’s performance is currently [among the highest](https://oreil.ly/mxabf)
+    of any Python web framework, even comparable to frameworks in faster languages
+    like Go. But much of this is due to ASGI, avoiding I/O waiting with async. Python
+    itself is a relatively slow language. The following are some tips and tricks to
+    improve overall performance.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Async
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Often a web server doesn’t need to be really fast. It spends much of its time
+    getting HTTP network requests and returning results (the Web layer in this book).
+    In between, a web service performs business logic (the Service layer) and accesses
+    data sources (the Data layer), and again spends much of its time on network I/O.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Whenever code in the web service has to wait for a response, it’s a good candidate
+    to use an async function (`async def` rather than `def`). This lets FastAPI and
+    Starlette schedule the async function and do other things while waiting for it
+    to get its response. This is one of the reasons FastAPI’s benchmarks are better
+    than WSGI-based frameworks like Flask and Django.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Performance has two aspects:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The time to handle a single request
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The number of requests that can be handled at once
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Caches
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: If you have a web endpoint that ultimately gets data from a static source (like
+    a database record that changes rarely or never), it’s possible to *cache* the
+    data in a function. This could be in any of the layers. Python provides the standard
+    [functools module](https://oreil.ly/8Kg4V) and the functions `cache()` and `lru_cache()`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Databases, Files, and Memory
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: One of the most common causes of a slow website is a missing index for a database
+    table of sufficient size. Often you won’t see the problem until your table has
+    grown to a particular size, and then queries suddenly become much slower. In SQL,
+    any column in a `WHERE` clause should be indexed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In many examples in this book, the primary key of the `creature` and `explorer`
+    tables has been the text field `name`. When the tables were created, `name` was
+    declared the `primary key`. For the tiny tables that you’ve seen so far in this
+    book, SQLite would ignore that key anyhow, since it’s faster just to scan the
+    table. But once a table gets to a decent size—say a million rows—a missing index
+    will make a noticeable difference. The solution: run a [query optimizer](https://oreil.ly/YPR3Q).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Even if you have a small table, you can do database load testing with Python
+    scripts or open source tools. If you’re making numerous sequential database queries,
+    it may be possible to combine them in a single batch. If you’re uploading or downloading
+    a large file, use the streaming versions rather than a giant gulp.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Queues
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: If you’re performing any task that takes longer than a fraction of a second
+    (like sending a confirmation email or downsizing an image), it may be worth handing
+    it off to a job queue like [Celery](https://docs.celeryq.dev).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Python Itself
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'If your web service seems slow because it does significant computing with Python,
+    you may want a “faster Python.” Alternatives include the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Use [PyPy](https://www.pypy.org) instead of the standard CPython.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Write a Python [extension](https://oreil.ly/BElJa) in C, C++, or Rust.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Convert the slow Python code to [Cython](https://cython.org) (used by Pydantic
+    and Uvicorn themselves).
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: A very intriguing recent announcement was the [Mojo language](https://oreil.ly/C96kx).
+    It aims to be a complete superset of Python, with new features (using the same
+    friendly Python syntax) that can speed up a Python example by *thousands* of times.
+    The main author, Chris Lattner, had previously worked on compiler tools like [LLVM](https://llvm.org),
+    [Clang](https://clang.llvm.org), and [MLIR](https://mlir.llvm.org), plus the [Swift](https://www.swift.org)
+    language at Apple.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Mojo aims to be a single-language solution to AI development, which now (in
+    PyTorch and TensorFlow) requires Python/C/C++ sandwiches that are hard to develop,
+    manage, and debug. But Mojo also would be a good general-purpose language aside
+    from AI.
+  prefs: []
+  type: TYPE_NORMAL
+- en: I coded in C for years and kept waiting for a successor that was as performant
+    but as easy to use as Python. D, Go, Julia, Zig, and Rust were possibilities,
+    but if Mojo can live up to its [goals](https://oreil.ly/EojvA), I would use Mojo
+    extensively.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Troubleshooting
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Look bottom-up from the time and place where you encounter a problem. This includes
+    time and space performance issues, but also logic and async traps.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Kinds of Problems
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: At a first glance, what HTTP response code did you get?
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`404`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: An authentication or authorization error.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`422`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Usually a Pydantic complaint about use of a model.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`500`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The failure of a service behind your FastAPI one.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Logging
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Uvicorn and other web servers typically write logs to stdout. You can check
+    the log to see what call was actually made, including the HTTP verb and URL, but
+    not data in the body, headers, or cookies.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If a particular endpoint returns a 400-level status code, you can try feeding
+    the same input back and see if the error reoccurs. If so, my first caveman debugging
+    instinct is to add `print()` statements in the relevant Web, Service, and Data
+    functions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Also, wherever you raise an exception, add details. If a database lookup fails,
+    include the input values and specific error, like an attempt to double a unique
+    key field.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Metrics
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'The terms *metrics*, *monitoring*, *observability*, and *telemetry* may seem
+    to overlap. It’s common practice in Pythonland to use the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Prometheus](https://prometheus.io) to gather metrics'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[Grafana](https://grafana.com) to display them'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[OpenTelemetry](https://opentelemetry.io) to measure timing'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'You can apply these to all your site’s layers: Web, Service, and Data. The
+    Service ones may be more business-oriented, and the others more technical, and
+    useful for site developers and maintainers.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here are some links to gather FastAPI metrics:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Prometheus FastAPI Instrumentator](https://oreil.ly/EYJwR)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[“Getting Started: Monitoring a FastAPI App with Grafana and Prometheus—A Step-by-Step
+    Guide” by Zoo Codes](https://oreil.ly/Gs90t)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[“FastAPI Observability” page of Grafana Labs website](https://oreil.ly/spKwe)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[OpenTelemetry FastAPI Instrumentation](https://oreil.ly/wDSNv)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[“OpenTelemetry FastAPI Tutorial—Complete Implementation Guide” by Ankit Anand](https://oreil.ly/ZpSXs)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[OpenTelemetry Python documentation](https://oreil.ly/nSD4G)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Review
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: It’s pretty clear that production is not easy. Problems include the web machinery
+    itself, network and disk overloading, and database problems. This chapter offered
+    hints on how to get the information you need, and where to start digging when
+    problems pop up.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([1](ch13.html#id831-marker)) Wait, those keep cigars fresh.
+  prefs: []
+  type: TYPE_NORMAL

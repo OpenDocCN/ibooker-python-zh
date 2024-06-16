@@ -1,0 +1,1086 @@
+- en: Chapter 9\. Linting with Ruff and pre-commit
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'In 1978, Stephen C. Johnson, a researcher at Bell Labs, wrote a program that
+    could detect a number of bugs and obscurities in C code. He named the program
+    after the fluff on your pullover when you take it out of the washing machine:
+    Lint. It was to become the first in a long line of *linters*, programs that analyze
+    source code and point out problematic constructs.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Linters don’t *run* a program to discover issues with it; they read and analyze
+    its source code. This process is known as *static analysis*, as opposed to *runtime*
+    (or *dynamic*) *analysis*. It makes linters both fast and safe—​you needn’t worry
+    about side effects, such as requests to production systems. Static checks can
+    be smart and also fairly complete—​you needn’t hit the right combination of edge
+    cases to dig up a latent bug.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Static analysis is powerful, but you should still write tests for your programs.
+    Where static checks use deduction, tests use observation. Linters verify a limited
+    set of generic code properties, while tests can validate that a program satisfies
+    its requirements.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Linters are also great at enforcing a readable and consistent style, with a
+    preference for idiomatic and modern constructs over obscure and deprecated syntax.
+    Organizations have adopted style guides for years, such as the recommendations
+    in [PEP 8](https://peps.python.org/pep-0008/) or the [Google Style Guide for Python](https://google.github.io/styleguide/pyguide.html).
+    Linters can function as *executable* style guides: by flagging offending constructs
+    automatically, they keep code review focused on the meaning of a change, rather
+    than stylistic nitpicks.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This chapter has three parts:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The first part introduces the Ruff linter, a Rust implementation of Python linters
+    that automatically fixes many of the issues it detects.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The second part describes pre-commit, a linter framework with Git integration.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The third part presents the Ruff code formatter, a Rust implementation of the
+    Black code style.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: But first, let’s look at a typical problem that linters help you solve.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Linting Basics
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The constructs flagged by linters may not be outright illegal. More often, they
+    just trigger your spider sense that something might be wrong. Consider the Python
+    code in [Example 9-1](#example_linting_mutable_default).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 9-1\. Can you spot the problem?
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'If you haven’t been bitten by this bug before, you may be surprised to find
+    that the function sometimes passes `--force` to the command when it shouldn’t:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: The bug is known as a *mutable argument default*. Python evaluates argument
+    defaults when a function is defined, not when you call it. In other words, both
+    of your calls used the same list as the default for `args`. The first call appended
+    the item `"--force"`, so that item got passed to the second call, as well.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Linters can detect pitfalls like this, warn you about them, and even fix them
+    for you. Let’s use a linter named Ruff on the function—​you’ll hear a lot more
+    about it in this chapter. For now, just take note of its error message, which
+    identifies the bug:^([1](ch09.html#id311))
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: The Ruff Linter
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Ruff is a blazingly fast open-source Python linter and code formatter, written
+    in the Rust programming language. Ruff’s linter re-implements dozens of Python
+    linters—​including many Flake8 plugins, Pylint, Pyupgrade, Bandit, Isort, and
+    more.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Astral, the company behind Ruff, also created the Python packaging tool uv (see
+    [“Managing Environments with uv”](ch02.html#section_environments_uv)), and they’ve
+    assumed the stewardship of Rye, a Python project manager (see [“Managing Packages
+    with Rye”](ch03.html#section_packages_rye)). All of these tools are implemented
+    in Rust.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: If you manage your project with Rye, the Ruff linter and code formatter is available
+    under the commands `rye lint` and `rye fmt`, respectively.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Install Ruff globally with pipx:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: But wait—​how can pipx install a Rust program? The Ruff binary is available
+    as a wheel on PyPI, so Python folks like you and me can install it with good old
+    pip and pipx. You could even run it with `py -m ruff`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s look at another example of working with Ruff. Consider this refactoring
+    of HTTP headers, which replaces a list with a dictionary:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 9-2\. Converting a list of HTTP headers to a dictionary
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: When you refactor f-strings, it’s easy to leave the `f` prefix behind after
+    removing placeholders. Ruff flags f-strings without placeholders—​they’re noisy,
+    they confuse readers, and somebody might have forgotten to include a placeholder.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Run the command `ruff check`—the front-end for Ruff’s linter. Without arguments,
+    the command lints every Python file under your current directory, unless it’s
+    listed in a *.gitignore* file:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[Figure 9-1](#figure_ruff_codes) takes a closer look at Ruff’s diagnostic message.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![The diagram shows an example warning from Ruff and identifies its parts.
+    The first part is the location ''example.py:1:7:'', which consists of a filename,
+    line, and column. The second part is the rule code ''F541'', which is composed
+    of the linter prefix ''F'' and the numeric code ''541'' for a specific rule of
+    that linter. The third part is the sign ''[*]'', which informs you that a fix
+    is available. The fourth and last part is the summary ''f-string without any placeholders''.](assets/hmpt_0901.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 9-1\. A diagnostic message from Ruff
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'Ruff tells you where the violation occurred—​the file, line, and line offset—​and
+    gives you a short summary of what went wrong: *f-string without any placeholders*.
+    Two interesting bits are sandwiched between the location and the summary: An alphanumeric
+    code (`F541`) identifies the linter rule, and the sign `[*]` indicates that Ruff
+    can automatically fix the issue.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If you’re ever confused why you’re getting a warning, you can ask Ruff to explain
+    it using the command `ruff rule`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Rule codes have a prefix of one or more letters, followed by three or more
+    digits. The prefix identifies a specific linter—​for example, the `F` in `F541`
+    stands for the Pyflakes linter. Ruff re-implements many more Python code-quality
+    tools—​as of this writing, it ships over 50 built-in plugins modeled after existing
+    tools. You can find out which linters are available using the command `ruff linter`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'You can activate linters and individual rules for your project in its *pyproject.toml*
+    file. The setting `tool.ruff.lint.select` enables any rules whose code starts
+    with one of the given prefixes. Out of the box, Ruff enables some basic all-around
+    checks from Pyflakes and Pycodestyle:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: Pyflakes and Pycodestyle
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Pyflakes (`F`) flags constructs that are almost certainly mistakes, such as
+    unused imports or the pointless f-strings you’ve seen above. It steers clear of
+    any questions of style. Pycodestyle (whose rules use the prefixes `E` and `W`),
+    detects violations of PEP 8, the style guide originally written by Python’s inventor,
+    Guido van Rossum, together with Barry Warsaw and Alyssa Coghlan.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Ruff enables only a subset of Pycodestyle by default, because code formatters
+    have obviated many of its checks. Still, PEP 8 makes style recommendations that
+    go beyond mere code formatting. Would you agree that `x is not None` sounds more
+    natural than `not x is None`? The default rules detect and fix a number of such
+    issues, leading to code that’s easier to read and understand.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'If you aren’t using an opinionated code formatter, consider enabling the entire
+    `E` and `W` blocks. Their automatic fixes help ensure minimal PEP 8 compliance.
+    They’re similar to, but not yet as feature-complete as, the Autopep8 formatter
+    (see [“Approaches to Code Formatting: Autopep8”](#section_linting_autopep8)).^([3](ch09.html#id313))'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Fantastic Linters and Where to Find Them
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Ruff has too many rules to describe in this book, and more are being added all
+    the time. How do you find the good ones for your project? Try them out! Depending
+    on your project, you may want to enable individual rules (`"B006"`), groups of
+    rules (`"E4"`), entire plugins (`"B"`), or even every existing plugin at the same
+    time (`"ALL"`).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Warning
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'Reserve the special `ALL` code for experimentation: it will implicitly enable
+    new linters whenever you upgrade Ruff. Beware: some plugins require configuration
+    to produce useful results, and some rules conflict with other rules.^([4](ch09.html#id314))'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Besides `select`, Ruff has an `extend-select` directive which selects rules
+    in addition to the default set (see [“Linting Basics”](#section_linting_basics)).
+    Generally, you should prefer the `select` directive, because it keeps your configuration
+    self-contained and explicit:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: If you’re unsure where to start, [Table 9-1](#table_linting_ruff_plugins) describes
+    a dozen built-in plugins to try.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Table 9-1\. A dozen widely useful Ruff plugins
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| Prefix | Name | Description |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `RUF` | Ruff-specific rules | A collection of lints native to Ruff |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `I` | `isort` | Group and sort import statements |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `UP` | `pyupgrade` | Use modern language features compatible with your target
+    Python version |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `SIM` | `flake8-simplify` | Use idiomatic constructs to simplify code |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `FURB` | `refurb` | Use idiomatic constructs to make good code even better
+    |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `PIE` | `flake8-pie` | A collection of miscellaneous lints |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `PERF` | `Perflint` | Avoid performance antipatterns |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `C4` | `flake8-comprehensions` | Use `list`, `set`, and `dict` comprehensions
+    |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `B` | `flake8-bugbear` | Eliminate likely bugs and design problems |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `PL` | `Pylint` | A large collection of rules from the mother of all Python
+    linters |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `D` | `pydocstyle` | Require well-formed docstrings for your functions, classes,
+    and modules |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `S` | `flake8-bandit` | Detect potential security vulnerabilities |'
+  prefs: []
+  type: TYPE_TB
+- en: 'When onboarding legacy projects to Ruff, your first task will be to decide
+    which linters provide the most useful feedback. At this stage, individual diagnostics
+    can be quite overwhelming. It helps to zoom out using the `--statistics` option:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: At this point, you have two options. First, if a linter is particularly noisy,
+    hide it from the output using the `--ignore` option. For example, if you’re not
+    ready to add type annotations and docstrings, exclude `flake8-annotations` and
+    `pydocstyle` with `--ignore ANN,D`. Second, if you see a linter with interesting
+    findings, enable it permanently in *pyproject.toml* and fix its warnings. Rinse
+    and repeat.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Work towards enforcing the same set of linters for all your projects, with the
+    same configurations, and prefer default configurations over customizations. This
+    will make your codebase more consistent and accessible across the entire organization.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Disabling Rules and Warnings
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'The `select` setting is flexible, but purely additive: it lets you opt into
+    rules whose code starts with a given prefix. The `ignore` setting lets you fine-tune
+    in the other direction: it disables individual rules and rule groups. Like `select`,
+    it matches rule codes by their prefixes.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The subtractive method is handy when you need most, but not all, of a linter’s
+    rules, and when you’re adopting a linter gradually. The `pydocstyle` plugin (`D`)
+    checks that every module, class, and function has a well-formed docstring. Your
+    project may be *almost* there, with the exception of module docstrings (`D100`).
+    Use the `ignore` setting to disable all warnings about missing module docstrings
+    until you’ve fully onboarded your project:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The `per-file-ignore` setting lets you disable rules for a part of your codebase.
+    Here’s another example: The `bandit` plugin (`S`) has a rich inventory of checks
+    to help you detect security vulnerabilities in your code. Its rule `S101` flags
+    every use of the `assert` keyword.^([5](ch09.html#id315)) But you still need `assert`
+    to express expectations in pytest (see [Chapter 6](ch06.html#chapter_testing)).
+    If your test suite lives in a *tests* directory, disable `S101` for its files
+    like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: Disabling rules should be a last resort. It’s usually better to suppress individual
+    warnings by adding a special comment to offending lines. This comment has the
+    form `# noqa:` followed by one or more rule codes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Warning
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Always include rule codes in your `noqa` comments. Blanket `noqa` comments can
+    hide unrelated issues. Marking violations also makes them easier to find when
+    you’re ready to fix them. Use the rule `PGH004` from the `pygrep-hooks` linter
+    to require rule codes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The `noqa` system lets you silence false positives as well as legitimate warnings
+    that you choose not to prioritize at this point in time. For example, the MD5
+    message-digest algorithm is generally agreed to be insecure, and Bandit’s `S324`
+    flags its uses. But if your code interacts with a legacy system that requires
+    you to compute an MD5 hash, you may not have much of a choice. Disable the warning
+    with a `noqa` comment:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: Bandit’s checks often flag constructs that deserve close scrutiny, without meaning
+    to outright ban them. The idea is that you will vet the offending lines one by
+    one and suppress the warning if you determine the specific usage to be innocuous.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'It can be reasonable to enable a rule and suppress *all* of its warnings. This
+    lets you enforce a rule going forward only—​that is, only when you touch a region
+    of code. Ruff supports this workflow with the `--add-noqa` option, which inserts
+    `noqa` comments to all offending lines on your behalf:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: Like every comment, `noqa` comments can become outdated—​for example, a refactoring
+    may have inadvertently fixed the suppressed warning. Stale `noqa` comments are
+    noisy and create friction when you’re out to squash linter violations. Luckily,
+    Ruff is in an excellent position to remediate this. Its rule `RUF100` automatically
+    removes `noqa` comments that no longer apply.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Automation with Nox
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Without corrective measures, the code quality of large projects degrades over
+    time. Linting, as an automated, mandatory check, helps to counteract that natural
+    entropy. Nox (see [Chapter 8](ch08.html#chapter_nox)) is an automation framework
+    that lets you run linters as a part of your mandatory checks.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here’s a Nox session that runs Ruff on every Python file in the current directory:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Nox is a valid choice here, but when it comes to linting, there’s a more convenient
+    and powerful alternative: pre-commit, a cross-language linter framework with Git
+    integration.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The pre-commit Framework
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Pre-commit is a tool and framework that lets you add third-party linters to
+    a project with minimal boilerplate. Linters in various languages come with ready-to-use
+    integrations for pre-commit, called *hooks*. You can run these hooks explicitly
+    from the command line, or you can configure your local repository to run them
+    whenever you commit changes (and on some other events).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Install pre-commit globally using pipx:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: First Steps with pre-commit
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Let’s add a pre-commit hook for Ruff to your project. Create a file named *.pre-commit-config.yaml*
+    in the top-level directory, with contents as in [Example 9-3](#example_linting_pre_commit_config).
+    You’ll find a short YAML fragment like this in the public documentation of most
+    linters that support pre-commit.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 9-3\. A *.pre-commit-config.yaml* file with a hook for Ruff
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: Authors distribute their pre-commit hooks via Git repositories. In the *.pre-commit-config.yaml*
+    file, you specify the URL, revision, and hooks for each repository you want to
+    use. The URL can be any location Git can clone from. The revision is most commonly
+    a Git tag pointing to the latest release of the linter. A repository can have
+    more than one hook—​for example, Ruff provides `ruff` and `ruff-format` hooks
+    for its linter and code formatter, respectively.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Pre-commit is intimately tied to Git, and you must invoke it from within a
+    Git repository. Let’s establish a baseline by linting every file in the repository,
+    using the command `pre-commit run` with the `--all-files` option:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'When you run a hook for the first time, pre-commit clones the hook repository
+    and installs the linter into an isolated environment. This can take some time,
+    but you don’t have to do it often: Pre-commit caches the linter environments across
+    multiple projects.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: A Hook Up Close
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: If you’re curious how a pre-commit hook works under the hood, take a peek at
+    Ruff’s [hook repository](https://github.com/astral-sh/ruff-pre-commit). The file
+    *.pre-commit-hooks.yaml* in the repository defines the hooks. [Example 9-4](#example_linting_hook_definition)
+    shows an excerpt from the file.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 9-4\. An excerpt from the .pre-commit-hooks.yaml file for Ruff
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: Every hook comes with a unique identifier and a friendly name (`id` and `name`).
+    Refer to hooks by their unique identifier when you interact with pre-commit. Their
+    names only appear in console messages from the tool.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The hook definition tells pre-commit how to install and run the linter by specifying
+    its implementation language (`language`) and its command and command-line arguments
+    (`entry` and `args`). The Ruff hook is a Python package, so it specifies Python
+    as the language. The `--force-exclude` option ensures that you can exclude files
+    from linting. It tells Ruff to honor its `exclude` setting even when pre-commit
+    passes excluded source files explicitly.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: You can override the `args` key in your *.pre-commit-config.yaml* file to pass
+    custom command-line options to a hook. By contrast, command-line arguments in
+    the `entry` key are mandatory—​you can’t override them.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Finally, the hook declares which file types the linter understands (`types_or`).
+    The `python` file type matches files with *.py* or related extensions and executable
+    scripts with a Python shebang. The `pyi` file type refers to stub files with type
+    annotations (see [“Distributing Types with Python Packages”](ch10.html#section_typing_distributing)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: For a Python hook, pre-commit creates a virtual environment in its cache directory.
+    It installs the hook by running, essentially, `pip install .` inside the hook
+    repository. When it’s time to run the hook, pre-commit activates the virtual environment
+    and invokes the command with any selected source files.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Figure 9-2](#figure_pre_commit) shows a developer machine with three Python
+    projects using pre-commit hooks. Pre-commit clones the hook repositories into
+    its cache directory and installs the hooks into isolated environments. Hook repositories
+    define hooks in *.pre-commit-hooks.yaml* files, while projects reference the hooks
+    in *.pre-commit-config.yaml* files.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![The diagram shows repositories with pre-commit hooks for Ruff, Flake8, and
+    Black, as well as a developer machine with three projects referencing these hooks.
+    At the bottom, the diagram shows the pre-commit cache with cloned repositories
+    and environments with installed hooks.](assets/hmpt_0902.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 9-2\. Three projects with pre-commit hooks for Ruff, Black, and Flake8.
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Automatic Fixes
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Modern linters can fix many violations by modifying the offending source files
+    in place. Linters with automatic fixes eliminate entire classes of bugs and code
+    smells^([6](ch09.html#id316)) at nearly zero cost. Like code formatters, they
+    have caused a paradigm shift in software development, letting you focus on higher-level
+    concerns without compromising on code quality.
+  prefs: []
+  type: TYPE_NORMAL
+- en: By convention, most pre-commit hooks enable automatic fixes by default. Thanks
+    to Git, they can apply fixes with relative safety, without risk of overwriting
+    your work irreversibly. That said, they work best if you commit early and often.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Warning
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'Automatic fixes bring tremendous benefits, but they assume some basic Git hygiene:
+    Don’t pile up uncommitted changes in your repository (or stash them before linting).
+    Pre-commit saves and restores your local modifications in some contexts, but not
+    all.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s try this out. When Ruff detects the mutable argument default, it indicates
+    that you can enable a “hidden” fix. (Ruff asks you to opt into the fix because
+    people might conceivably depend on mutable defaults, say, for caching.) First,
+    enable the linter rule and the fix in *pyproject.toml*:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: Ruff’s pre-commit hook requires you to opt in with the `--fix` option, as shown
+    in [Example 9-5](#example_linting_ruff_fix). The options `--show-fixes` and `--exit-non-zero-on-fix`
+    ensure that all violations are displayed in the terminal and result in a non-zero
+    exit status, even if Ruff was able to fix them.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 9-5\. Enabling automatic fixes for the Ruff hook
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Save [Example 9-1](#example_linting_mutable_default) in a file called *bad.py*,
+    commit the file, and run pre-commit:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE22]'
+  prefs: []
+  type: TYPE_PRE
+- en: If you inspect the modified file, you’ll see that Ruff has replaced the argument
+    default with `None`. The empty list is now assigned inside the function, giving
+    every call its own instance of `args`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE23]'
+  prefs: []
+  type: TYPE_PRE
+- en: Instead of inspecting the modified files, you can also run `git diff` to see
+    the changes applied to your code. Alternatively, you can tell pre-commit to show
+    you a diff of the fixes right away, using the option `--show-diff-on-fail`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Running pre-commit from Nox
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Pre-commit gives you access to production-ready integrations for linters in
+    many languages. For this reason alone, I recommend running linters from pre-commit
+    instead of Nox. (If you still need convincing, bear with me for the next section,
+    which presents another compelling reason to use pre-commit.)
+  prefs: []
+  type: TYPE_NORMAL
+- en: That said, you should still include a Nox session for pre-commit itself. This
+    ensures that you can run all the checks for your project with a single command,
+    `nox`. [Example 9-6](#example_linting_nox) shows how to define the session. If
+    your *noxfile.py* sets `nox.options.sessions`, add the session to that list, as
+    well.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 9-6\. A Nox session for linting with pre-commit
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE24]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'By default, pre-commit runs every hook you’ve configured for your project.
+    You can run specific hooks by passing them as additional command-line arguments.
+    This comes in handy when addressing complaints from a specific linter. Thanks
+    to `session.posargs` (see [“Session Arguments”](ch08.html#section_nox_session_arguments)),
+    this also works from Nox:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE25]'
+  prefs: []
+  type: TYPE_PRE
+- en: Having a single entry point to checks and tasks, including linters, greatly
+    reduces friction for everybody working on a project. But you shouldn’t stop there.
+    Pre-commit was designed to be triggered from Git on every commit. The next section
+    explains how to set up projects to lint changes as you commit them (and why it’s
+    great).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Running pre-commit from Git
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Running linters on each commit is a game changer, for three reasons:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: You remove the overhead and distraction of invoking checks manually. Linters
+    run in the background, alerting you only if a violation is found.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: You run checks as early as possible. As a general rule, the earlier you spot
+    an issue, the cheaper it is to fix. (Say goodbye to CI failures due to stylistic
+    nitpicks.)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'It’s fast: You only lint files staged for a commit, instead of the entire codebase.^([7](ch09.html#id317))'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Set up Git to invoke pre-commit on every commit by running the following command
+    inside your project:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE26]'
+  prefs: []
+  type: TYPE_PRE
+- en: This command installs a short wrapper script into the *.git/hooks* directory
+    that transfers control to pre-commit ([Figure 9-3](#figure_pre_commit_git)). Programs
+    in the *.git/hooks* directory are known as *Git hooks*. When you run `git commit`,
+    Git invokes the *pre-commit* Git hook. The hook, in turn, invokes pre-commit,
+    which runs Ruff and any other pre-commit hooks you have.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![The diagram shows how Git hooks invoke pre-commit hooks, using pre-commit
+    as a switch board.](assets/hmpt_0903.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 9-3\. Git hooks and pre-commit hooks
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Git hooks let you trigger actions at predefined points during Git’s execution.
+    For example, the *pre-commit* and *post-commit* Git hooks run before and after
+    Git creates a commit. You’ve probably guessed by now which of these Git hooks
+    pre-commit installs by default—​but it supports the other Git hooks as well, if
+    you need them.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Figure 9-4](#figure_pre_commit_flow) depicts a typical workflow with pre-commit.
+    On the left, there’s a file you’re editing in your project (*worktree*); the center
+    represents the staging area for the next commit (*index*); and the current commit
+    is on the right (`HEAD`).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![The diagram shows how pre-commit rejects a commit.](assets/hmpt_0904.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 9-4\. Workflow with pre-commit
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Initially, the three areas are in sync. Suppose you remove the placeholder from
+    the f-string, but forget to remove the `f` prefix from the string literal (marked
+    as *1* in [Figure 9-4](#figure_pre_commit_flow)). You stage your edit using `git
+    add` *(2)* and run `git commit` to create a commit *(3a)*. Before your editor
+    can pop up for the commit message, Git transfers control to pre-commit. Ruff promptly
+    catches your mistake and fixes the string literal in your worktree *(3b)*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: At this point, all three areas have different contents. Your worktree contains
+    your change with Ruff’s fix, the staging area has your change without the fix,
+    and `HEAD` still points to the commit before your change. This lets you audit
+    the fix by comparing the worktree to the staging area, using `git diff`. If you’re
+    happy with what you see, you can stage the fix with `git add` *(4)* and retry
+    the commit with `git commit` *(5)*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'With automatic fixes, this workflow reduces the interference of linters to
+    a minimum, rerunning the commit. But sometimes you don’t want to be distracted
+    by linters at all—​for example, you may want to record some work in progress.
+    Git and pre-commit give you two options to get your commit past a stubborn linter.
+    First, you can skip Git hooks entirely using the `--no-verify` or `-n` option:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE27]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Alternatively, you can skip a specific pre-commit hook using the `SKIP` environment
+    variable (which also takes a comma-separated list, if you need to skip more than
+    one hook):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE28]'
+  prefs: []
+  type: TYPE_PRE
+- en: Git hooks control which changes enter your local repository, but they’re voluntary—​they
+    don’t replace CI checks as a gatekeeper for the default branch in your shared
+    repository. If you already run Nox in CI, the session in [Example 9-6](#example_linting_nox)
+    takes care of that.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Skipping hooks doesn’t help with false positives or when you want to deploy
+    a critical fix despite minor nits: your mandatory checks would still fail in CI.
+    In these cases, you’ll need to advise the linter to ignore the specific violation
+    (see [“Disabling Rules and Warnings”](#section_linting_ruff_ignore)).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The Ruff Formatter
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Over the course of months, Ruff reimplemented a plethora of Python linters behind
+    the `ruff check` command and saw wide adoption in the Python world. A bit over
+    a year in, Ruff acquired the `ruff format` command.^([8](ch09.html#id318)) The
+    Ruff formatter reimplements the de-facto standard of Python code formatting, Black,
+    in Rust. It provides yet another building block for the integrated and highly
+    performant toolchain that Ruff has become for Python.
+  prefs: []
+  type: TYPE_NORMAL
+- en: But let’s start at the beginning.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Approaches to Code Formatting: Autopep8'
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Consider the following gem of Python code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE29]'
+  prefs: []
+  type: TYPE_PRE
+- en: The function showcases various formatting issues, such as inconsistent alignment,
+    lack or excess of whitespace, and single-line `if` constructs. Some of these clearly
+    hurt readability. Others, such as two-space indentation, deviate from a widely
+    accepted practice codified in PEP 8.
+  prefs: []
+  type: TYPE_NORMAL
+- en: A minimal approach for dealing with stylistic issues of this sort is Autopep8,
+    an early pioneer of automatic linter fixes and still in use. Building on Pycodestyle,
+    it surgically corrects offenses while preserving the code layout otherwise.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s run Autopep8 on the code example with default settings:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE30]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Here’s the function as formatted by Autopep8:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE31]'
+  prefs: []
+  type: TYPE_PRE
+- en: You’ll likely find this easier on the eye. For better or worse, Autopep8 didn’t
+    touch some other questionable stylistic choices, such as the rogue blank line
+    in the `return` statement and the inconsistent quote characters. Autopep8 uses
+    Pycodestyle to detect issues, and Pycodestyle had no complaint here.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Unlike most code formatters, Autopep8 lets you apply selected fixes by passing
+    `--select` with appropriate rule codes. For example, you can run `autopep8 --select=E111`
+    to enforce four-space indentation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Approaches to Code Formatting: YAPF'
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Developed at Google in 2015, the YAPF formatter borrows its design and sophisticated
+    formatting algorithm from `clang-format`. The name YAPF stands for “Yet Another
+    Python Formatter.”^([9](ch09.html#id319)) YAPF reformats a codebase according
+    to a wealth of configuration options.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Run it like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE32]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Here’s YAPF’s version of the code, using default settings:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE33]'
+  prefs: []
+  type: TYPE_PRE
+- en: YAPF’s formatting rules touch more ground than Autopep8—​for example, it arranges
+    the function parameters in a consistent way and removes the bogus empty line.
+    YAPF respects existing formatting choices as long as they’re compatible with your
+    configuration. For example, it didn’t split the single-line `if` statements or
+    eliminate parentheses around `if` conditions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: An Uncompromising Code Formatter
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'In 2018, a new code formatter named Black entered the scene. Its core principle:
+    minimal configurability!'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s try Black on the code example:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE34]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Black formats the function as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE35]'
+  prefs: []
+  type: TYPE_PRE
+- en: Black doesn’t fix individual style offenses like Autopep8, nor does it enforce
+    your style preferences like YAPF. Rather, Black reduces the source code into a
+    canonical form, using a deterministic algorithm—​mostly without taking existing
+    formatting into account. In a certain sense, Black makes code style “disappear.”
+    This normalization massively reduces the cognitive overhead of working with Python
+    code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Black promotes a form of universal readability across the Python ecosystem.
+    Code is read more often than it’s being written—​a transparent style helps. At
+    the same time, Black makes code more “writable,” too. When you’re contributing
+    to other people’s code, there’s no need to conform to a bespoke and manual code
+    style. Even in a solo project, Black boosts your productivity: if you configure
+    your editor to reformat on save, you can reduce your keystrokes to a minimum while
+    coding.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Black took the Python world by storm, with project after project deciding to
+    “blacken” their source files.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The Black Code style
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Black’s code style becomes invisible once you’ve worked with it for a while.
+    Inevitably, though, some of its choices have led to controversy, even forks. To
+    understand its formatting rules, it helps to look at Black’s goal of producing
+    readable and consistent source code in a predictable and repeatable way.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Take the default of double quotes for string literals, for example. According
+    to the style recommendations of PEP 257 and PEP 8, both docstrings and English
+    text with apostrophes already require double quotes. Choosing double quotes over
+    single quotes therefore results in a more consistent style overall.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Sometimes Black places a lone `):` after the parameters of a function. Nicknamed
+    the “sad face,” it clearly demarcates the function signature from the body without
+    indenting parameters beyond the standard four spaces. This layout also treats
+    parameter lists like any other bracketed constructs, such as tuples, lists, and
+    set literals.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Black also caps lines at 88 characters (one of its few configurable settings).
+    This tradeoff between lateral eye movement and vertical scrolling is based on
+    a data-driven approach, tested on millions of lines of Python code at Meta.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Another goal of Black is to avoid *merge conflicts*, when concurrent changes
+    to the same region of code cannot be combined without human intervention. The
+    trailing comma—​placing a comma behind the last item in a sequence—​serves this
+    purpose: it lets you insert before and after the last item without conflict.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Reducing dependencies between edits helps different people work on the same
+    code. But it also lets you separate or reorder drive-by bugfixes or refactorings
+    and back out tentative commits before submitting your changes for code review.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As mentioned above, Black’s algorithm is deterministic, and existing layouts
+    hardly affect it. A “blackened” file may look as if it was generated straight
+    from the AST.^([11](ch09.html#id321)) In reality, this can’t be the case, though.
+    For one thing, the AST doesn’t include comments, since they don’t affect program
+    execution.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Black takes some cues from the formatted source code besides comments. One
+    example is the blank lines that divide a function body into logical partitions.
+    Likely the most powerful way of affecting Black’s output, however, is the *magic
+    trailing comma*: if a sequence contains a trailing comma, Black splits its elements
+    across multiple lines, even if they would fit on a single line.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Black provides an escape hatch to let you disable formatting for a region of
+    code ([Example 9-7](#example_linting_black_fmt_off)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 9-7\. Disabling formatting for a region of code
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE36]'
+  prefs: []
+  type: TYPE_PRE
+- en: Hand-formatting can be useful for program data, such as large tables with properly
+    aligned columns.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Formatting Code with Ruff
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Code formatters can process millions of lines of code in a batch, or run in
+    quick succession when triggered from your editor or on a busy CI server. Being
+    fast was an explicit goal of Black from the start—​it ships binary wheels with
+    native code generated by `mypyc`, a compiler for type-annotated Python. While
+    Black is fast, the Ruff formatter further improves performance thirtyfold, thanks
+    to its efficient Rust implementation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Ruff aims for full compatibility with the Black code style. Unlike Black, Ruff
+    lets you opt into single quotes and indentation using tabs. However, I’d recommend
+    adhering to Black’s widely adopted style nonetheless.
+  prefs: []
+  type: TYPE_NORMAL
+- en: When run without arguments, `ruff format` processes any Python files beneath
+    the current directory. Instead of invoking Ruff manually, add it to your pre-commit
+    hooks, as shown in [Example 9-8](#example_linting_ruff_format).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 9-8\. Running Ruff from pre-commit as a linter and code formatter
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE37]'
+  prefs: []
+  type: TYPE_PRE
+- en: The pre-commit hook for the code formatter comes last. This gives it an opportunity
+    to reformat any automatic fixes made by linters.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter, you’ve seen how to improve and preserve the code quality in
+    your projects using linters and code formatters. Ruff is an efficient reimplementation
+    of many Python code-quality tools in Rust, including Flake8 and Black. While it’s
+    possible to run Ruff and other tools manually, you should automate this process
+    and include it as a mandatory check in CI. One of the best options is pre-commit,
+    a cross-language linter framework with Git integration. Invoke pre-commit from
+    a Nox session to keep a single entry point to your suite of checks.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([1](ch09.html#id311-marker)) The `B` short code activates a group of checks
+    pioneered by `flake8-bugbear`, a plugin for the Flake8 linter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '^([2](ch09.html#id312-marker)) Charlie Marsh: [“Python tooling could be much,
+    much faster”](https://notes.crmarsh.com/python-tooling-could-be-much-much-faster),
+    August 30, 2022.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([3](ch09.html#id313-marker)) As of this writing, you’ll also need to enable
+    Ruff’s preview mode. Set `tool.ruff.lint.preview` to `true`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([4](ch09.html#id314-marker)) My reviewer Hynek disagrees. He sets his projects
+    to `ALL` and opts out of rules that don’t apply to him. “Otherwise, you’ll miss
+    new rules. If something starts failing after an update, you can take action.”
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([5](ch09.html#id315-marker)) What’s wrong with assertions? Nothing, but Python
+    skips them when run with `-O` for optimizations—a common way to speed up production
+    environments. So don’t use `assert` to validate untrusted input!
+  prefs: []
+  type: TYPE_NORMAL
+- en: '^([6](ch09.html#id316-marker)) Kent Beck and Martin Fowler describe *code smells*
+    as “certain structures in the code that suggest—​sometimes, scream for—​the possibility
+    of refactoring.” Martin Fowler: *Refactoring: Improving the Design of Existing
+    Code*, Second Edition, Boston: Addison-Wesley, 2019.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '^([7](ch09.html#id317-marker)) Running pre-commit from Git is the safest way
+    to run linters with automatic fixes: Pre-commit saves and restores any changes
+    you haven’t staged, and it rolls back the fixes if they conflict with your changes.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '^([8](ch09.html#id318-marker)) Charlie Marsh: [“The Ruff Formatter”](https://astral.sh/blog/the-ruff-formatter),
+    October 24, 2023.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([9](ch09.html#id319-marker)) Stephen C. Johnson, the author of Lint, also
+    established this infamous naming convention by writing Yacc (Yet Another Compiler-Compiler)
+    in the early 1970s at Bell Labs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '^([10](ch09.html#id320-marker)) [“AST before and after formatting,”](https://black.readthedocs.io/en/stable/the_black_code_style/current_style.html#labels-ast-changes)
+    *Black documentation*. Last accessed: March 22, 2024.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([11](ch09.html#id321-marker)) You can inspect the AST of a source file with
+    the standard `ast` module, using `py -m ast example.py`.
+  prefs: []
+  type: TYPE_NORMAL

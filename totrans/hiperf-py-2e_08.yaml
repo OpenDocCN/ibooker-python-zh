@@ -1,0 +1,1125 @@
+- en: Chapter 8\. Asynchronous I/O
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: So far we have focused on speeding up code by increasing the number of compute
+    cycles that a program can complete in a given time. However, in the days of big
+    data, getting the relevant data to your code can be the bottleneck, as opposed
+    to the actual code itself. When this is the case, your program is called *I/O
+    bound*; in other words, the speed is bounded by the efficiency of the input/output.
+  prefs: []
+  type: TYPE_NORMAL
+- en: I/O can be quite burdensome to the flow of a program. Every time your code reads
+    from a file or writes to a network socket, it must pause to contact the kernel,
+    request that the actual read happens, and then wait for it to complete. This is
+    because it is not your program but the kernel that does the actual read operation,
+    since the kernel is responsible for managing any interaction with hardware. The
+    additional layer may not seem like the end of the world, especially once you realize
+    that a similar operation happens every time memory is allocated; however, if we
+    look back at [Figure 1-3](ch01_split_000.xhtml#FIG-performant-connection-speed),
+    we see that most of the I/O operations we perform are on devices that are orders
+    of magnitude slower than the CPU. So even if the communication with the kernel
+    is fast, we’ll be waiting quite some time for the kernel to get the result from
+    the device and return it to us.
+  prefs: []
+  type: TYPE_NORMAL
+- en: For example, in the time it takes to write to a network socket, an operation
+    that typically takes about 1 millisecond, we could have completed 2,400,000 instructions
+    on a 2.4 GHz computer. Worst of all, our program is halted for much of this 1
+    millisecond of time—our execution is paused, and then we wait for a signal that
+    the write operation has completed. This time spent in a paused state is called
+    *I/O wait*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Asynchronous I/O helps us utilize this wasted time by allowing us to perform
+    other operations while we are in the I/O wait state. For example, in [Figure 8-1](#conn_serial_vs_concurrent)
+    we see a depiction of a program that must run three tasks, all of which have periods
+    of I/O wait within them. If we run them serially, we suffer the I/O wait penalty
+    three times. However, if we run these tasks concurrently, we can essentially hide
+    the wait time by running another task in the meantime. It is important to note
+    that this is all still happening on a single thread and still uses only one CPU
+    at a time!
+  prefs: []
+  type: TYPE_NORMAL
+- en: This is possible because while a program is in I/O wait, the kernel is simply
+    waiting for whatever device we’ve requested to read from (hard drive, network
+    adapter, GPU, etc.) to send a signal that the requested data is ready. Instead
+    of waiting, we can create a mechanism (the event loop) so that we can dispatch
+    requests for data, continue performing compute operations, and be notified when
+    the data is ready to be read. This is in stark contrast to the multiprocessing/multithreading
+    ([Chapter 9](ch09_split_000.xhtml#multiprocessing)) paradigm, where a new process
+    is launched that does experience I/O wait but uses the multi-tasking nature of
+    modern CPUs to allow the main process to continue. However, the two mechanisms
+    are often used in tandem, where we launch multiple processes, each of which is
+    efficient at asynchronous I/O, in order to fully take advantage of our computer’s
+    resources.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Since concurrent programs run on a single thread, they are generally easier
+    to write and manage than standard multithreaded programs. All concurrent functions
+    share the same memory space, so sharing data between them works in the normal
+    ways you would expect. However, you still need to be careful about race conditions
+    since you can’t be sure which lines of code get run when.
+  prefs: []
+  type: TYPE_NORMAL
+- en: By modeling a program in this event-driven way, we are able to take advantage
+    of I/O wait to perform more operations on a single thread than would otherwise
+    be possible.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![hpp2 0801](Images/hpp2_0801.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 8-1\. Comparison of serial and concurrent programs
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Introduction to Asynchronous Programming
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Typically, when a program enters I/O wait, the execution is paused so that the
+    kernel can perform the low-level operations associated with the I/O request (this
+    is called a *context switch*), and it is not resumed until the I/O operation is
+    completed. Context switching is quite a heavy operation. It requires us to save
+    the state of our program (losing any sort of caching we had at the CPU level)
+    and give up the use of the CPU. Later, when we are allowed to run again, we must
+    spend time reinitializing our program on the motherboard and getting ready to
+    resume (of course, all this happens behind the scenes).
+  prefs: []
+  type: TYPE_NORMAL
+- en: With concurrency, on the other hand, we typically have an *event loop* running
+    that manages what gets to run in our program, and when. In essence, an event loop
+    is simply a list of functions that need to be run. The function at the top of
+    the list gets run, then the next, etc. [Example 8-1](#conn_toy_eventloop) shows
+    a simple example of an event loop.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 8-1\. Toy event loop
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: This may not seem like a big change; however, we can couple event loops with
+    asynchronous (async) I/O operations for massive gains when performing I/O tasks.
+    In this example, the call `eventloop.put(do_world)` approximates an asynchronous
+    call to the `do_world` function. This operation is called `nonblocking`, meaning
+    it will return immediately but guarantee that `do_world` is called at some point
+    later. Similarly, if this were a network write with an async function, it will
+    return right away even though the write has not happened yet. When the write has
+    completed, an event fires so our program knows about it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Putting these two concepts together, we can have a program that, when an I/O
+    operation is requested, runs other functions while waiting for the original I/O
+    operation to complete. This essentially allows us to still do meaningful calculations
+    when we otherwise would have been in I/O wait.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Switching from function to function does have a cost. The kernel must take the
+    time to set up the function to be called in memory, and the state of our caches
+    won’t be as predictable. It is because of this that concurrency gives the best
+    results when your program has a lot of I/O wait—the cost associated with switching
+    can be much less than what is gained by making use of I/O wait time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Generally, programming using event loops can take two forms: callbacks or futures.
+    In the callback paradigm, functions are called with an argument that is generally
+    called the *callback*. Instead of the function returning its value, it calls the
+    callback function with the value instead. This sets up long chains of functions
+    that are called, with each function getting the result of the previous function
+    in the chain (these chains are sometimes referred to as “callback hell”). [Example 8-2](#example8-2)
+    is a simple example of the callback paradigm.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 8-2\. Example with callbacks
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](Images/1.png)](#co_asynchronous_i_o_CO1-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`save_result_to_db` is an asynchronous function; it will return immediately,
+    and the function will end and allow other code to run. However, once the data
+    is ready, `print_response` will be called.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Before Python 3.4, the callback paradigm was quite popular. However, the `asyncio`
+    standard library module and PEP 492 made the future’s mechanism native to Python.
+    This was done by creating a standard API for dealing with asynchronous I/O and
+    the new `await` and `async` keywords, which define an asynchronous function and
+    a way to wait for a result.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In this paradigm, an asynchronous function returns a `Future` object, which
+    is a promise of a future result. Because of this, if we want the result at some
+    point we must wait for the future that is returned by this sort of asynchronous
+    function to complete and be filled with the value we desire (either by doing an
+    `await` on it or by running a function that explicitly waits for a value to be
+    ready). However, this also means that the result can be available in the callers
+    context, while in the callback paradigm the result is available only in the callback
+    function. While waiting for the `Future` object to be filled with the data we
+    requested, we can do other calculations. If we couple this with the concept of
+    generators—functions that can be paused and whose execution can later be resumed—we
+    can write asynchronous code that looks very close to serial code in form:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](Images/1.png)](#co_asynchronous_i_o_CO2-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this case, `save_result_to_db` returns a `Future` type. By `await`ing it,
+    we ensure that `save_value` gets paused until the value is ready and then resumes
+    and completes its operations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: It’s important to realize that the `Future` object returned by `save_result_to_db`
+    holds the *promise* of a `Future` result and doesn’t hold the result itself or
+    even call any of the `save_result_to_db` code. In fact, if we simply did `db_response_future
+    = save_result_to_db(result)`, the statement would complete immediately and we
+    could do other things with the `Future` object. For example, we could collect
+    a list of futures and wait for all of them at the same time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: How Does async/await Work?
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: An `async` function (defined with `async def`) is called a *coroutine*. In Python,
+    coroutines are implemented with the same philosophies as generators. This is convenient
+    because generators already have the machinery to pause their execution and resume
+    later. Using this paradigm, an `await` statement is similar in function to a `yield`
+    statement; the execution of the current function gets paused while other code
+    is run. Once the `await` or `yield` resolves with data, the function is resumed.
+    So in the preceding example, our `save_result_to_db` will return a `Future` object,
+    and the `await` statement pauses the function until that `Future` contains a result.
+    The event loop is responsible for scheduling the resumption of `save_value` after
+    the `Future` is ready to return a result.
+  prefs: []
+  type: TYPE_NORMAL
+- en: For Python 2.7 implementations of future-based concurrency, things can get a
+    bit strange when we’re trying to use coroutines as actual functions. Remember
+    that generators cannot return values, so libraries deal with this issue in various
+    ways. The in Python 3.4, new machinery has been introduced in order to easily
+    create coroutines and have them still return values. However, many asynchronous
+    libraries that have been around since Python 2.7 have legacy code meant to deal
+    with this awkward transition (in particular, `tornado`’s `gen` module).
+  prefs: []
+  type: TYPE_NORMAL
+- en: It is critical to realize our reliance on an event loop when running concurrent
+    code. In general, this leads to most fully concurrent code’s main code entry point
+    consisting mainly of setting up and starting the event loop. However, this assumes
+    that your entire program is concurrent. In other cases, a set of futures is created
+    within the program, and then a temporary event loop is started simply to manage
+    the existing futures, before the event loop exits and the code can resume normally.
+    This is generally done with either the `loop.run_until_complete(coro)` or `loop.run_forever()`
+    method from the `asyncio.loop` module. However, asyncio also provides a convenience
+    function (`asyncio.run(coro)`) to simplify this process.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this chapter we will analyze a web crawler that fetches data from an HTTP
+    server that has latency built into it. This represents the general response-time
+    latency that will occur whenever dealing with I/O. We will first create a serial
+    crawler that looks at the naive Python solution to this problem. Then we will
+    build up to a full `aiohttp` solution by iterating through `gevent` and then `tornado`.
+    Finally, we will look at combining async I/O tasks with CPU tasks in order to
+    effectively hide any time spent doing I/O.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: The web server we implemented can support multiple connections at a time. This
+    will be true for most services that you will be performing I/O with—most databases
+    can support multiple requests at a time, and most web servers support 10,000+
+    simultaneous connections. However, when interacting with a service that cannot
+    handle multiple connections at a time, we will always have the same performance
+    as the serial case.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Serial Crawler
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: For the control in our experiment with concurrency, we will write a serial web
+    scraper that takes a list of URLs, fetches them, and sums the total length of
+    the content from the pages. We will use a custom HTTP server that takes two parameters,
+    `name` and `delay`. The `delay` field will tell the server how long, in milliseconds,
+    to pause before responding. The `name` field is for logging purposes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: By controlling the `delay` parameter, we can simulate the time it takes a server
+    to respond to our query. In the real world, this could correspond to a slow web
+    server, a strenuous database call, or any I/O call that takes a long time to perform.
+    For the serial case, this leads to more time that our program is stuck in I/O
+    wait, but in the concurrent examples later on, it will provide an opportunity
+    to spend the I/O wait time doing other tasks.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In [Example 8-3](#conn_serial_http), we chose to use the `requests` module to
+    perform the HTTP call. We made this choice because of the simplicity of the module.
+    We use HTTP in general for this section because it is a simple example of I/O
+    and can be performed easily. In general, any call to a HTTP library can be replaced
+    with any I/O.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 8-3\. Serial HTTP scraper
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: When running this code, an interesting metric to look at is the start and stop
+    time of each request as seen by the HTTP server. This tells us how efficient our
+    code was during I/O wait—since our task is to launch HTTP requests and then sum
+    the number of characters that were returned, we should be able to launch more
+    HTTP requests, and process any responses, while waiting for other requests to
+    complete.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We can see in [Figure 8-2](#conn_serial_request_time) that, as expected, there
+    is no interleaving of our requests. We do one request at a time and wait for the
+    previous request to happen before we move to the next request. In fact, the total
+    runtime of the serial process makes perfect sense knowing this. Since each request
+    takes 0.1 seconds (because of our `delay` parameter) and we are doing 500 requests,
+    we expect this runtime to be about 50 seconds.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Request times for serial scraper](Images/hpp2_0802.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 8-2\. Request time for [Example 8-3](#conn_serial_http)
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Gevent
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: One of the simplest asynchronous libraries is `gevent`. It follows the paradigm
+    of having asynchronous functions return futures, which means most of the logic
+    in your code can stay the same. In addition, `gevent` monkey patches the standard
+    I/O functions to be asynchronous, so most of the time you can simply use the standard
+    I/O packages and benefit from asynchronous behavior.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Gevent provides two mechanisms to enable asynchronous programming—as mentioned
+    before, it patches the standard library with asynchronous I/O functions, and it
+    has a `Greenlets` object that can be used for concurrent execution. A *greenlet*
+    is a type of coroutine and can be thought of as a thread (see [Chapter 9](ch09_split_000.xhtml#multiprocessing)
+    for a discussion of threads); however, all greenlets run on the same physical
+    thread. Instead of using multiple CPUs to run all the greenlets, we have an event
+    loop on a single CPU that is able to switch between them during I/O wait. For
+    the most part, `gevent` tries to make the handling of the event loop as transparent
+    as possible through the use of `wait` functions. The `wait` function will start
+    an event loop and run it as long as is needed for all greenlets to finish. Because
+    of this, most of your `gevent` code will run serially; then at some point you
+    will set up many greenlets to do a concurrent task and start the event loop with
+    the `wait` function. While the `wait` function is executing, all of the concurrent
+    tasks you have queued up will run until completion (or some stopping condition),
+    and then your code will go back to being serial again.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The futures are created with `gevent.spawn`, which takes a function and the
+    arguments to that function and launches a greenlet that is responsible for running
+    that function. The greenlet can be thought of as a future since, once the function
+    we specified completes, its value will be contained within the greenlet’s `value`
+    field.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This patching of Python standard modules can make it harder to control the subtleties
+    of what is going on. For example, one thing we want to ensure when doing async
+    I/O is that we don’t open too many files or connections at one time. If we do,
+    we can overload the remote server or slow down our process by having to context-switch
+    between too many operations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To limit the number of open files manually, we use a semaphore to only do HTTP
+    requests from one hundred greenlets at a time. A semaphore works by making sure
+    that only a certain number of coroutines can enter the context block at a time.
+    As a result, we launch all the greenlets that we need to fetch the URLs right
+    away; however, only one hundred of them can make HTTP calls at a time. Semaphores
+    are one type of locking mechanism used a lot in various parallel code flows. By
+    restricting the progression of your code based on various rules, locks can help
+    you make sure that the various components of your program don’t interfere with
+    one another.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now that we have all the futures set up and have put in a locking mechanism
+    to control the flow of the greenlets, we can wait until we start having results
+    by using the `gevent.iwait` function, which will take a sequence of futures and
+    iterate over the ready items. Conversely, we could have used `gevent.wait`, which
+    would block execution of our program until all requests are done.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We go through the trouble of grouping our requests with the semaphore instead
+    of sending them all at once because overloading the event loop can cause performance
+    decreases (and this is true for all asynchronous programming). In addition, the
+    server we are communicating with will have a limit to the number of concurrent
+    requests it can respond to at the same time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: From experimentation (shown in [Figure 8-3](#conn_num_concurrent_requests)),
+    we generally see that one hundred or so open connections at a time is optimal
+    for requests with a reply time of about 50 milliseconds. If we were to use fewer
+    connections, we would still have wasted time during I/O wait. With more, we are
+    switching contexts too often in the event loop and adding unnecessary overhead
+    to our program. We can see this effect come into play with four hundred concurrent
+    requests for 50-millisecond requests. That being said, this value of one hundred
+    depends on many things—the computer the code is being run on, the implementation
+    of the event loop, the properties of the remote host, the expected time to respond
+    of the remote server, and so on. We recommend doing some experimentation before
+    settling on a choice.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Experimenting with different numbers of concurrent requests for various request
+    times](Images/hpp2_0803.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 8-3\. Experimenting with different numbers of concurrent requests for
+    various request times
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: In [Example 8-4](#conn_grequest_http), we implement the `gevent` scraper by
+    using a semaphore to ensure only 100 requests at a time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 8-4\. `gevent` HTTP scraper
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](Images/1.png)](#co_asynchronous_i_o_CO3-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Here we generate a semaphore that lets `chunk_size` downloads happen.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](Images/2.png)](#co_asynchronous_i_o_CO3-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: By using the semaphore as a context manager, we ensure that only `chunk_size`
+    greenlets can run the body of the context at one time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](Images/3.png)](#co_asynchronous_i_o_CO3-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We can queue up as many greenlets as we need, knowing that none of them will
+    run until we start an event loop with `wait` or `iwait`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](Images/4.png)](#co_asynchronous_i_o_CO3-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`response_futures` now holds a generator over completed futures, all of which
+    have our desired data in the `.value` property.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: An important thing to note is that we have used `gevent` to make our I/O requests
+    asynchronous, but we are not doing any non-I/O computations while in I/O wait.
+    However, in [Figure 8-4](#conn_gevent_request_time) we can see the massive speedup
+    we get (see [Table 8-1](#conn_runtime_comparison)). By launching more requests
+    while waiting for previous requests to finish, we are able to achieve a 90× speedup!
+    We can explicitly see that requests are being sent out before previous requests
+    finish through the stacked horizontal lines representing the requests. This is
+    in sharp contrast to the case of the serial crawler ([Figure 8-2](#conn_serial_request_time)),
+    where a line starts only when the previous line finishes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Furthermore, we can see more interesting effects reflected in the shape of
+    the `gevent` request timeline in [Figure 8-4](#conn_gevent_request_time). For
+    example, at around the 100th request, we see a pause where new requests are not
+    launched. This is because it is the first time that our semaphore is hit, and
+    we are able to lock the semaphore before any previous requests finish. After this,
+    the semaphore goes into an equilibrium: it locks just as another request finishes
+    and unlocks it.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Request times for gevent scraper. The red line highlights the 100th request
+    where we can see a pause before subsequent requests are issued.](Images/hpp2_0804.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 8-4\. Request times for `gevent` scraper—the red line highlights the
+    100th request, where we can see a pause before subsequent requests are issued
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: tornado
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Another frequently used package for asynchronous I/O in Python is `tornado`,
+    originally developed by Facebook primarily for HTTP clients and servers. This
+    framework has been around since Python 3.5, when `async/await` was introduced,
+    and originally used a system of callbacks to organize asynchronous calls. Recently,
+    however, the maintainers of the project have chosen to embrace the use of coroutines
+    and in general have been critical in the architecture of the `asyncio` module.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Currently, `tornado` can be used either by using `async`/`await` syntax, as
+    is standard in Python, or by using Python’s `tornado.gen` module. This module
+    was provided as a precursor to the native coroutines in Python. It did so by providing
+    a decorator to turn a method into a coroutine (i.e., a way to get the same result
+    as defining a function with `async def`) and various utilities to manage the runtime
+    of coroutines. Currently this decorator approach is necessary only if you intend
+    on providing support to Python versions older than 3.5.^([1](ch08.xhtml#idm46122412293032))
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: When using `tornado`, make sure to have `pycurl` installed. It is an optional
+    backend for tornado but performs better, especially with DNS requests, than the
+    default backend.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In [Example 8-5](#conn_tornado_http), we implement the same web crawler as we
+    did for `gevent`, but we use the `tornado` I/O loop (its version of an event loop)
+    and HTTP client. This saves us the trouble of having to batch our requests and
+    deal with other, more low-level aspects of our code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 8-5\. `tornado` HTTP scraper
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](Images/1.png)](#co_asynchronous_i_o_CO4-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We can configure our HTTP client and pick what backend library we wish to use
+    and how many requests we would like to batch together. Tornado defaults to a max
+    of 10 concurrent requests.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](Images/2.png)](#co_asynchronous_i_o_CO4-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We generate many `Future` objects to queue the task of fetching the URL contents.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](Images/3.png)](#co_asynchronous_i_o_CO4-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This will run all of the coroutines that are queued in the `tasks` list and
+    yield them as they complete.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](Images/4.png)](#co_asynchronous_i_o_CO4-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Since the coroutine is already completed, the `await` statement here returns
+    immediately with the result of the earliest completed task.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![5](Images/5.png)](#co_asynchronous_i_o_CO4-5)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`ioloop.run_sync` will start the `IOLoop` just for the duration of the runtime
+    of the specified function. `ioloop.start()`, on the other hand, starts an `IOLoop`
+    that must be terminated manually.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: An important difference between the `tornado` code in [Example 8-5](#conn_tornado_http)
+    and the `gevent` code in [Example 8-4](#conn_grequest_http) is when the event
+    loop runs. For `gevent`, the event loop is running only while the `iwait` function
+    is running. On the other hand, in `tornado` the event loop is running the entire
+    time and controls the complete execution flow of the program, not just the asynchronous
+    I/O parts.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This makes `tornado` ideal for any application that is mostly I/O-bound and
+    where most, if not all, of the application should be asynchronous. This is where
+    `tornado` makes its biggest claim to fame, as a performant web server. In fact,
+    Micha has on many occasions written `tornado`-backed databases and data structures
+    that require a lot of I/O.^([2](ch08.xhtml#idm46122411776344))
+  prefs: []
+  type: TYPE_NORMAL
+- en: On the other hand, since `gevent` makes no requirements of your program as a
+    whole, it is an ideal solution for mainly CPU-based problems that sometimes involve
+    heavy I/O—for example, a program that does a lot of computations over a dataset
+    and then must send the results back to the database for storage. This becomes
+    even simpler with the fact that most databases have simple HTTP APIs, which means
+    you can even use `grequests`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Another interesting difference between `gevent` and `tornado` is the way the
+    internals change the request call graphs. Compare [Figure 8-5](#conn_tornado_request_time)
+    with [Figure 8-4](#conn_gevent_request_time). For the `gevent` call graph, we
+    see a very uniform call graph in which new requests are issued the second a slot
+    in the semaphore opens up. On the other hand, the call graph for tornado is very
+    stop-and-go. This means that the internal mechanism limiting the number of open
+    connects is not reacting fast enough to request finishing. These areas of the
+    call graph in which the line seems to be thinner/thicker than usual represent
+    times when the event loop isn’t doing its job optimally—times when we are either
+    underutilizing or overutilizing our resources.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: For all libraries that use `asyncio` to run the event loop, we can actually
+    change the backend library that is being used. For example, the [`uvloop`](https://oreil.ly/Qvgq6)
+    project supplies a drop-in replacement to `asyncio`’s event loop that claims massive
+    speedups. These speedups are mainly seen server-side; in the client-side examples
+    outlined in this chapter, they provide only a small performance boost. However,
+    since it takes only two extra lines of code to use this event loop, there aren’t
+    many reasons not to use it!
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We can start to understand this slowdown in light of the lesson we’ve been
+    learning over and over again: that generalized code is useful because it solves
+    all problems well but no individual problem perfectly. The mechanism to limit
+    one hundred ongoing connections is fantastic when working with a large web app
+    or a code base that may make HTTP requests in many different places. One simple
+    configuration guarantees that overall we won’t have more than the defined connections
+    opened. However, in our situation we can benefit from being very specific as to
+    how this is handled (as we did in the `gevent` example).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Request times for tornado scraper](Images/hpp2_0805.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 8-5\. Chronology of HTTP requests for [Example 8-5](#conn_tornado_http)
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: aiohttp
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: In response to the popularity of using async functionality to deal with heavy
+    I/O systems, Python 3.4+ introduced a revamping of the old `asyncio` standard
+    library module. At the time, however, this module was quite low level, providing
+    all of the low-level mechanisms for third-party libraries to create easy-to-use
+    asynchronous libraries. `aiohttp` arose as the first popular library built entirely
+    on the new `asyncio` library. It provides both HTTP client and server functionality
+    and uses a similar API to those familiar with `tornado`. The entire project, [`aio-libs`](https://oreil.ly/c0dgk),
+    provides native asynchronous libraries for a wide variety of uses. In [Example 8-6](#conn_asyncio_http),
+    we show how to implement the `asyncio` scraper using `aiohttp`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 8-6\. `asyncio` HTTP scraper
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](Images/1.png)](#co_asynchronous_i_o_CO5-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: As in the `gevent` example, we must use a semaphore to limit the number of requests.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](Images/2.png)](#co_asynchronous_i_o_CO5-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We return a new coroutine that will asynchronously download files and respect
+    the locking of the semaphore.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](Images/3.png)](#co_asynchronous_i_o_CO5-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `http_client` function returns futures. To keep track of progress, we save
+    the futures into a list.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](Images/4.png)](#co_asynchronous_i_o_CO5-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: As with `gevent`, we can wait for futures to become ready and iterate over them.
+  prefs: []
+  type: TYPE_NORMAL
+- en: One immediate reaction to this code is the number of `async with`, `async def`,
+    and `await` calls. In the definition for `http_get`, we use the async context
+    manager to get access to shared resources in a concurrent-friendly way. That is
+    to say, by using `async with`, we allow other coroutines to run while waiting
+    to acquire the resources we are requesting. As a result, sharing things such as
+    open semaphore slots or already opened connections to our host can be done more
+    efficiently than we experienced with `tornado`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In fact, the call graph in [Figure 8-6](#conn_asyncio_request_time) shows a
+    smooth transition similar to that of `gevent` in [Figure 8-4](#conn_gevent_request_time).
+    Furthermore, the `asyncio` code runs slightly faster than the `gevent` code overall
+    (1.10 seconds versus 1.14 seconds—see [Table 8-1](#conn_runtime_comparison)),
+    even though the time for each request is slightly longer. This can be explained
+    only by a faster resumption of coroutines paused by the semaphore or waiting for
+    the HTTP client.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Request times for AsyncIO scraper](Images/hpp2_0806.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 8-6\. Chronology of HTTP requests for [Example 8-6](#conn_asyncio_http)
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: The code sample also shows a big difference between using `aiohttp` and using
+    `tornado` in that with `aiohttp`, we are very much in control of the event loop
+    and the various subtleties of the request we are making. For example, we manually
+    acquire the client session, which is responsible for caching open connections,
+    and we manually read from the connection. If we wanted, we could change what time
+    of connection caching is happening or decide to only write to the server and never
+    read its response.
+  prefs: []
+  type: TYPE_NORMAL
+- en: While this control may be a bit of overkill for such a simple example, in real-world
+    applications we can use this to really tune the performance of our applications.
+    Tasks can easily be added to the event loop without waiting for their response,
+    and we can easily add time-outs to tasks so that their runtime is limited; we
+    can even add functions that automatically get triggered when a task is completed.
+    This allows us to create complicated runtime patterns that optimally utilize the
+    time we gain by being able to run code during I/O wait. In particular, when we
+    are running a web service (such as an API that may need to perform computational
+    tasks for each request), this control can allow us to write “defensive” code that
+    knows how to concede runtime to other tasks if a new request comes in. We will
+    discuss this aspect more in [“Full Async”](#full-async).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Table 8-1\. Comparison of total runtime for crawlers
+  prefs: []
+  type: TYPE_NORMAL
+- en: '|  | serial | gevent | tornado | aiohttp |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- | --- | --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Runtime (s) | 102.684 | 1.142 | 1.171 | 1.101 |'
+  prefs: []
+  type: TYPE_TB
+- en: Shared CPU–I/O Workload
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'To make the preceding examples more concrete, we will create another toy problem
+    in which we have a CPU-bound problem that needs to communicate frequently with
+    a database to save results. The CPU workload can be anything; in this case, we
+    are taking the `bcrypt` hash of a random string with larger and larger workload
+    factors to increase the amount of CPU-bound work (see [Table 8-2](#time-per-difficulty)
+    to understand how the “difficulty” parameter affects runtime). This problem is
+    representative of any sort of problem in which your program has heavy calculations
+    to do, and the results of those calculations must be stored into a database, potentially
+    incurring a heavy I/O penalty. The only restrictions we are putting on our database
+    are as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: It has an HTTP API so we can use code like that in the earlier examples.^([3](ch08.xhtml#idm46122411089528))
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Response times are on the order of 100 milliseconds.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The database can satisfy many requests at a time.^([4](ch08.xhtml#idm46122411087272))
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The response time of this “database” was chosen to be higher than usual in order
+    to exaggerate the turning point in the problem, where the time to do one of the
+    CPU tasks is longer than one of the I/O tasks. For a database that is being used
+    only to store simple values, a response time greater than 10 milliseconds should
+    be considered slow!
+  prefs: []
+  type: TYPE_NORMAL
+- en: Table 8-2\. Time to calculate a single hash
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| Difficulty parameter | 8 | 10 | 11 | 12 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- | --- | --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Seconds per iteration | 0.0156 | 0.0623 | 0.1244 | 0.2487 |'
+  prefs: []
+  type: TYPE_TB
+- en: Serial
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'We start with some simple code that calculates the `bcrypt` hash of a string
+    and makes a request to the database’s HTTP API every time a result is calculated:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](Images/1.png)](#co_asynchronous_i_o_CO6-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We generate a random 10-character byte array.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](Images/2.png)](#co_asynchronous_i_o_CO6-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `difficulty` parameter sets how hard it is to generate the password by increasing
+    the CPU and memory requirements of the hashing algorithm.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Just as in our serial example ([Example 8-3](#conn_serial_http)), the request
+    times for each database save (100 milliseconds) do not stack, and we must pay
+    this penalty for each result. As a result, iterating six hundred times with a
+    task difficulty of 8 takes 71 seconds. We know, however, that because of the way
+    our serial requests work, we are spending 40 seconds at minimum doing I/O! 56%
+    of our program’s runtime is being spent doing I/O and, moreover, just sitting
+    around in “I/O wait,” when it could be doing something else!
+  prefs: []
+  type: TYPE_NORMAL
+- en: Of course, as the CPU problem takes more and more time, the relative slowdown
+    of doing this serial I/O decreases. This is simply because the cost of having
+    a 100-millisecond pause after each task pales in comparison to the long amount
+    of time needed to do this computation (as we can see in [Figure 8-7](#serial_code_CPU)).
+    This fact highlights how important it is to understand your workload before considering
+    which optimizations to make. If you have a CPU task that takes hours and an I/O
+    task that takes only seconds, work done to speed up the I/O task will not bring
+    the huge speedups you may be looking for!
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Comparison of the serial code to the CPU task with no I/O](Images/hpp2_08in01.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 8-7\. Comparison of the serial code to the CPU task with no I/O
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Batched Results
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Instead of immediately going to a full asynchronous solution, let’s try an
+    intermediate solution. If we don’t need to know the results in our database right
+    away, we can batch up the results and send them to the database asynchronously.
+    To do this, we create an object, `AsyncBatcher`, that will take care of queuing
+    results to be sent to the database in small asynchronous bursts. This will still
+    pause the program and put it into I/O wait with no CPU tasks; however, during
+    this time we can issue many concurrent requests instead of issuing them one at
+    a time:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](Images/1.png)](#co_asynchronous_i_o_CO7-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We are able to start up an event loop just to run a single asynchronous function.
+    The event loop will run until the asynchronous function is complete, and then
+    the code will resume as normal.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](Images/2.png)](#co_asynchronous_i_o_CO7-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This function is nearly identical to that of [Example 8-6](#conn_asyncio_http).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Now we can proceed almost in the same way as we did before. The main difference
+    is that we add our results to our `AsyncBatcher` and let it take care of when
+    to send the requests. Note that we chose to make this object into a context manager
+    so that once we are done batching, the final `flush()` gets called. If we didn’t
+    do this, there would be a chance that we still have some results queued that didn’t
+    trigger a flush:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](Images/1.png)](#co_asynchronous_i_o_CO8-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We choose to batch at 100 requests, for reasons similar to those illustrated
+    in [Figure 8-3](#conn_num_concurrent_requests).
+  prefs: []
+  type: TYPE_NORMAL
+- en: With this change, we are able to bring our runtime for a difficulty of 8 down
+    to 10.21 seconds. This represents a 6.95× speedup without our having to do much
+    work. In a constrained environment such as a real-time data pipeline, this extra
+    speed could mean the difference between a system being able to keep up with demand
+    and that system falling behind (in which case a queue will be required; you’ll
+    learn about these in [Chapter 10](ch10.xhtml#clustering)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: To understand what is happening in this timing, let’s consider the variables
+    that could affect the timings of this batched method. If our database had infinite
+    throughput (i.e., if we could send an infinite number of requests at the same
+    time without penalty), we could take advantage of the fact that we get only the
+    100-millisecond penalty when our `AsyncBatcher` is full and does a flush. In this
+    case, we’d get the best performance by just saving all of our requests to the
+    database and doing them all at once when the calculation was finished.
+  prefs: []
+  type: TYPE_NORMAL
+- en: However, in the real world, our databases have a maximum throughput that limits
+    the number of concurrent requests they can process. In this case, our server is
+    limited at 100 requests a second, which means we must flush our batcher every
+    one hundred results and take the 100-millisecond penalty then. This is because
+    the batcher still pauses the execution of the program, just as the serial code
+    did; however, in that paused time it performs many requests instead of just one.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If we tried to save all our results to the end and then issued them all at once,
+    the server would only *process* one hundred at a time, and we’d have an extra
+    penalty in terms of the overhead to making all those requests at the same time
+    in addition to overloading our database, which can cause all sorts of unpredictable
+    slowdowns.
+  prefs: []
+  type: TYPE_NORMAL
+- en: On the other hand, if our server had terrible throughput and could deal with
+    only one request at a time, we may as well run our code in serial! Even if we
+    kept our batching at one hundred results per batch, when we actually go to make
+    the requests, only one would get responded to at a time, effectively invalidating
+    any batching we made.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This mechanism of batching results, also known as *pipelining*, can help tremendously
+    when trying to lower the burden of an I/O task (as seen in [Figure 8-8](#batching_results_vs_no_IO)).
+    It offers a good compromise between the speeds of asynchronous I/O and the ease
+    of writing serial programs. However, a determination of how much to pipeline at
+    a time is very case-dependent and requires some profiling and tuning to get the
+    best performance.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Comparison of batching requests versus not doing any I/O](Images/hpp2_08in02.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 8-8\. Comparison of batching requests versus not doing any I/O
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Full Async
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: In some cases, we may need to implement a full asynchronous solution. This may
+    happen if the CPU task is part of a larger I/O-bound program, such as an HTTP
+    server. Imagine that you have an API service that, in response to some of its
+    endpoints, has to perform heavy computational tasks. We still want the API to
+    be able to handle concurrent requests and be performant in its tasks, but we also
+    want the CPU task to run quickly.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The implementation of this solution in [Example 8-7](#async_CPU_workload) uses
+    code very similar to that of [Example 8-6](#conn_asyncio_http).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 8-7\. Async CPU workload
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](Images/1.png)](#co_asynchronous_i_o_CO9-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Instead of `await`ing our database save immediately, we queue it into the event
+    loop using `asyncio.create_task` and keep track of it so we can ensure that the
+    task has completed before the end of the function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](Images/2.png)](#co_asynchronous_i_o_CO9-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This is arguably the most important line in the function. Here, we pause the
+    main function to allow the event loop to take care of any pending tasks. Without
+    this, none of our queued tasks would run until the end of the function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](Images/3.png)](#co_asynchronous_i_o_CO9-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Here we wait for any tasks that haven’t completed yet. If we had not done the
+    `asyncio.sleep` in the `for` loop, all the saves would happen here!
+  prefs: []
+  type: TYPE_NORMAL
+- en: Before we go into the performance characteristics of this code, we should first
+    talk about the importance of the `asyncio.sleep(0)` statement. It may seem strange
+    to be sleeping for zero seconds, but this statement is a way to force the function
+    to defer execution to the event loop and allow other tasks to run. In general
+    in asynchronous code, this deferring happens every time an `await` statement is
+    run. Since we generally don’t `await` in CPU-bound code, it’s important to force
+    this deferment, or else no other task will run until the CPU-bound code is complete.
+    In this case, if we didn’t have the sleep statement, all the HTTP requests would
+    be paused until the `asyncio.wait` statement, and then all the requests would
+    be issued at once, which is definitely not what we want!
+  prefs: []
+  type: TYPE_NORMAL
+- en: One nice thing about having this control is that we can choose the best times
+    to defer back to the event loop. There are many considerations when doing this.
+    Since the run state of the program changes when we defer, we don’t want to do
+    it in the middle of a calculation and potentially change our CPU cache. In addition,
+    deferring to the event loop has an overhead cost, so we don’t want to do it too
+    frequently. However, while we are bound up doing the CPU task, we cannot do any
+    I/O tasks. So if our full application is an API, no requests can be handled during
+    the CPU time!
+  prefs: []
+  type: TYPE_NORMAL
+- en: Our general rule of thumb is to try to issue an `asyncio.sleep(0)` at any loop
+    that we expect to iterate every 50 to 100 milliseconds or so. Some applications
+    use `time.perf_counter` and allow the CPU task to have a specific amount of runtime
+    before forcing a sleep. For a situation such as this, though, since we have control
+    of the number of CPU and I/O tasks, we just need to make sure that the time between
+    sleeps coincides with the time needed for pending I/O tasks to complete.
+  prefs: []
+  type: TYPE_NORMAL
+- en: One major performance benefit to the full asynchronous solution is that we can
+    perform all of our I/O *while* we are doing our CPU work, effectively hiding it
+    from our total runtime (as we can see from the overlapping lines in [Figure 8-9](#graph_aiohttp_solution)).
+    While it will never be completely hidden because of the overhead costs of the
+    event loop, we can get very close. In fact, for a difficulty of 8 with 600 iterations,
+    our code runs 7.3× faster than the serial code and performs its total I/O workload
+    2× faster than the batched code (and this benefit over the batched code would
+    only get better as we do more iterations, since the batched code loses time versus
+    the asynchronous code every time it has to pause the CPU task to flush a batch).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Call graph for 25 difficulty-8 CPU tasks using the aiohttp solution. The
+    red lines represents time working on a CPU task while blue lines represent time
+    sending a result to the server](Images/hpp2_08in03.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 8-9\. Call graph for 25 difficulty-8 CPU tasks using the `aiohttp` solution—the
+    red lines represent time working on a CPU task, while blue lines represent time
+    sending a result to the server
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: In the call timeline, we can really see what is going on. What we’ve done is
+    to mark the beginning and end of each CPU and I/O task for a short run of 25 CPU
+    tasks with difficulty 8\. The first several I/O tasks are the slowest, taking
+    a while to make the initial connection to our server. Because of our use of `aiohttp`’s
+    `ClientSession`, these connections are cached, and all subsequent connections
+    to the same server are much faster.
+  prefs: []
+  type: TYPE_NORMAL
+- en: After this, if we just focus on the blue lines, they seem to happen very regularly
+    without much of a pause between CPU tasks. Indeed, we don’t see the 100-millisecond
+    delay from the HTTP request between tasks. Instead, we see the HTTP request being
+    issued quickly at the end of each CPU task and later being marked as completed
+    at the end of another CPU task.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We do see, though, that each individual I/O task takes longer than the 100-millisecond
+    response time from the server. This longer wait time is given by the frequency
+    of our `asyncio.sleep(0)` statements (since each CPU task has one `await`, while
+    each I/O task has three) and the way the event loop decides which tasks come next.
+    For the I/O task, this extra wait time is OK because it doesn’t interrupt the
+    CPU task at hand. In fact, at the end of the run we can see the I/O runtimes shorten
+    until the final I/O task is run. This final blue line is triggered by the `asyncio.wait`
+    statement and runs incredibly quickly since it is the only remaining task and
+    never needs to switch to other tasks.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In Figures [8-10](#conn_workload_all) and [8-11](#conn_workload_async), we can
+    see a summary of how these changes affect the runtime of our code for different
+    workloads. The speedup in the async code over the serial code is significant,
+    although we are still a ways away from the speeds achieved in the raw CPU problem.
+    For this to be completely remedied, we would need to use modules like `multiprocessing`
+    to have a completely separate process that can deal with the I/O burden of our
+    program without slowing down the CPU portion of the problem.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Processing time difference between serial I/O, batched async I/O, full async
+    I/O, and a control case where I/O is completely disabled](Images/hpp2_0807.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 8-10\. Processing time difference between serial I/O, batched async I/O,
+    full async I/O, and a control case where I/O is completely disabled
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: '![Processing time difference between batched async, full async I/O, and I/O
+    disabled](Images/hpp2_0808.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 8-11\. Processing time difference between batched async, full async I/O,
+    and I/O disabled
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Wrap-Up
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: When solving problems in real-world and production systems, it is often necessary
+    to communicate with an outside source. This outside source could be a database
+    running on another server, another worker computer, or a data service that is
+    providing the raw data that must be processed. Whenever this is the case, your
+    problem can quickly become I/O-bound, meaning that most of the runtime is dominated
+    by dealing with input/output.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Concurrency helps with I/O-bound problems by allowing you to interleave computation
+    with potentially multiple I/O operations. This allows you to exploit the fundamental
+    difference between I/O and CPU operations in order to speed up overall runtime.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As we saw, `gevent` provides the highest-level interface for asynchronous I/O.
+    On the other hand, `tornado` and `aiohttp` allow full control of an asynchronous
+    I/O stack. In addition to the various levels of abstraction, every library uses
+    a different paradigm for its syntax. However, `asyncio` is the binding glue for
+    the asynchronous solutions and provides the fundamental mechanisms to control
+    them all.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We also saw how to mesh CPU and I/O tasks together and how to consider the various
+    performance characteristics of each to come up with a good solution to the problem.
+    While it may be appealing to go to a full asynchronous code immediately, sometimes
+    intermediate solutions work almost as well without having quite the engineering
+    burden.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the next chapter, we will take this concept of interleaving computation from
+    I/O-bound problems and apply it to CPU-bound problems. With this new ability,
+    we will be able to perform not only multiple I/O operations at once but also many
+    computational operations. This capability will allow us to start to make fully
+    scalable programs where we can achieve more speed by simply adding more computer
+    resources that can each handle a chunk of the problem.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([1](ch08.xhtml#idm46122412293032-marker)) Which we’re sure you’re not doing!
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([2](ch08.xhtml#idm46122411776344-marker)) For example, [`fuggetaboutit`](http://bit.ly/fuggetaboutit)
+    is a special type of probabilistic data structure (see [“Probabilistic Data Structures”](ch11_split_001.xhtml#less_ram_prob_ds))
+    that uses the `tornado IOLoop` to schedule time-based tasks.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([3](ch08.xhtml#idm46122411089528-marker)) This is not necessary; it just serves
+    to simplify our code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([4](ch08.xhtml#idm46122411087272-marker)) This is true for all distributed
+    databases and other popular databases, such as Postgres, MongoDB, and so on.
+  prefs: []
+  type: TYPE_NORMAL

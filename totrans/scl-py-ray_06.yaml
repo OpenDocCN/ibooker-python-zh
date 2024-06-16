@@ -1,0 +1,988 @@
+- en: Chapter 5\. Ray Design Details
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Now that you’ve created and worked with remote functions and actors, it’s time
+    to learn what’s happening behind the scenes. In this chapter, you will learn about
+    important distributed system concepts, like fault tolerance, Ray’s resource management,
+    and ways to speed up your remote functions and actors. Many of these details are
+    most important when using Ray in a distributed fashion, but even local users benefit.
+    Having a solid grasp of the way Ray works will help you decide how and when to
+    use it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Fault Tolerance
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: '*Fault tolerance* refers to how a system will handle failures of everything
+    from user code to the framework itself or the machines it runs on. Ray has a different
+    fault tolerance mechanism tailored for each system. Like many systems, Ray cannot
+    recover from the head node failing.^([1](ch05.html#idm45354777621488))'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Warning
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Some nonrecoverable errors exist in Ray, which you cannot (at present) configure
+    away. If the head node, GCS, or connection between your application and the head
+    node fails, your application will fail and cannot be recovered by Ray. If you
+    require fault tolerance for these situations, you will have to roll your own high
+    availability, likely using ZooKeeper or similar lower-level tools.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Overall, Ray’s [architecture](https://oreil.ly/eHV9H) (see [Figure 5-1](#overall-ray-architecture))
+    consists of an application layer and a system layer, both of which can handle
+    failures.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![spwr 0501](assets/spwr_0501.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5-1\. Overall Ray architecture
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'The *system layer* consists of three major components: a GCS, a distributed
+    scheduler, and a distributed object store. Except for the GCS, all components
+    are horizontally scalable and fault-tolerant.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: At the heart of Ray’s architecture is the GCS that maintains the entire control
+    state of the system. Internally, the GCS is a key/value store with pub/sub functionality.^([2](ch05.html#idm45354777611152))
+    At present, the GCS is a single point of failure and runs on the head node.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using GCS, which centrally maintains Ray’s state, significantly simplifies overall
+    architecture by enabling the rest of the system layer components to be stateless.
+    This design is fundamental for fault tolerance (i.e., on failure, components simply
+    restart and read the lineage from the GCS) and makes it easy to scale the distributed
+    object store and scheduler independently, as all components share the needed state
+    via the GCS.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Since remote functions do not contain any persistent state, recovering from
+    their failure is relatively simple. Ray will try again until it succeeds or reaches
+    a maximum number of retries. As seen in the previous chapter, you can control
+    the number of retries through the `max_retries` parameter in the `@ray.remote`
+    annotation. To try out and better understand Ray’s fault tolerance, write a flaky
+    remote function that fails a certain percentage of the time, as shown in [Example 5-1](#ex_flaky_ray).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-1\. [Auto retry remote function](https://oreil.ly/ytqOu)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: If your flaky function fails, you will see `WARNING worker.py:1215 -- A worker
+    died or was killed while executing a task by an unexpected system error.` output
+    to stderr. You’ll still get back the correct value when you execute `ray.get`,
+    demonstrating Ray’s fault tolerance.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Alternatively, to see fault tolerance in action, if you’re running a distributed
+    Ray cluster, you can find the node running your remote function by returning the
+    hostname and then shut down the node while running a request.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Remote actors are a complicated case for fault tolerance as they contain state
+    within them. This is why in [Chapter 4](ch04.html#ch04) you explored options for
+    persisting and recovering that state. Actors can experience failure at any stage:
+    setup, message processing, or between messages.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Unlike for remote functions, if an actor fails while processing a message, Ray
+    does not automatically retry it. This is true even if you have set `max_restarts`.
+    Ray will restart your actor for processing the next message. On error, you will
+    get back a `RayActorError` exception.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Ray actors are lazily initialized, so failure during the init stage is the same
+    as failing on the first message.
+  prefs: []
+  type: TYPE_NORMAL
+- en: When an actor fails between messages, Ray automatically attempts to recover
+    the actor the next time it is called, up to `max_retries` times. If you’ve written
+    your state recovery code well, failures between messages are generally invisible
+    besides slightly slower processing times. If you don’t have state recovery, each
+    restart will reset the actor to the initial values.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If your application fails, nearly all of the resources your application was
+    using will eventually be garbage collected. The one exception is detached resources,
+    such as detached actors or detached placement groups. Ray will restart these as
+    configured beyond the life of your current program, provided the cluster does
+    not fail. This can prevent your cluster from scaling down, as Ray will not release
+    the resources.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Ray does not automatically attempt to re-create lost objects after they are
+    first stored. You can configure Ray to try to re-create lost objects when accessed.
+    In the next section, you’ll learn more about Ray objects and how to configure
+    that resiliency.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Ray Objects
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: '*Ray objects* can contain anything serializable (covered in the next section),
+    including references to other Ray objects, called `ObjectRef`s. An `ObjectRef`
+    is essentially a unique ID that refers to a remote object and is conceptually
+    similar to futures. Ray objects are created automatically for task results, and
+    large parameters of actors and remote functions. You can manually create objects
+    by calling `ray.put`, which will return an immediately ready `ObjectRef`—for example,
+    `o = ray.put(1)`.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: In general, small objects are initially stored in their owner’s in-process store,
+    while Ray stores large objects on the worker that generates them. This allows
+    Ray to balance each object’s memory footprint and resolution time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The owner of an object is the worker that created the initial `ObjectRef`, by
+    submitting the creating task or calling `ray.put`. The owner manages the lifetime
+    of the object through reference counting.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Reference counting makes it especially important when defining objects to set
+    them to `None` when you are done with them or make sure they go out of scope.
+    Ray’s reference counting is susceptible to circular references, where objects
+    refer to each other. Printing the objects stored in the cluster by running `ray
+    memory --group-by STACK_TRACE` can be a good way to find objects Ray cannot garbage
+    collect.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Ray objects are immutable; they cannot be modified. It’s important to note that
+    if you change an object you’ve read from Ray (e.g., with `ray.get`) or stored
+    in Ray (e.g., with `ray.put`), that change won’t be reflected in the object store.
+    See [Example 5-2](#ex_ray_immuteable).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-2\. [Immutable Ray objects](https://oreil.ly/ytqOu)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: When you run this code, you can see that while you can mutate a value, the change
+    won’t propagate to the object store.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If a parameter or return value is large and used more than once, or medium-sized
+    and used frequently, storing it explicitly as an object can be worthwhile. You
+    can then use the `ObjectRef` in place of the regular parameter, and Ray will automatically
+    translate the `ObjectRef` into a Python type for you, as shown in [Example 5-3](#ex_use_ray_put).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-3\. [Using `ray.put`](https://oreil.ly/ytqOu)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: When another node needs an object, it asks the owner who has any copies of the
+    object and then fetches and creates a local copy of that object. Therefore, many
+    copies of the same object can exist in object stores on different nodes. Ray does
+    not proactively replicate objects, so it is also possible that Ray may have only
+    one copy of an object.
+  prefs: []
+  type: TYPE_NORMAL
+- en: By default, Ray will raise an `ObjectLostError` when you attempt to get a lost
+    object. You can enable recomputing by providing `enable_object_reconstruction=True`
+    to `ray.init` or adding `--enable-object-reconstruction` to `ray start`. This
+    recomputation, which uses information in the GCS, will happen only when the object
+    is needed (reconstruction is lazy on resolution).
+  prefs: []
+  type: TYPE_NORMAL
+- en: We can lose an object in two ways. Since the owner is responsible for reference
+    counting, if the owner is lost, the object is lost, regardless of whether other
+    copies of the object exist. If no copies of an object remain (e.g., all the nodes
+    storing it die), Ray also loses the object. (This case is distinct because the
+    object may be stored only on nodes different from the owner.)
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Ray will follow the `max_retries` limit discussed previously during reconstruction.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Ray’s object store uses reference-counting garbage collection to clean up objects
+    that your program doesn’t need anymore.^([3](ch05.html#idm45354777330896)) The
+    object store keeps track of both direct and indirect references.^([4](ch05.html#idm45354777330208))
+  prefs: []
+  type: TYPE_NORMAL
+- en: Even with garbage collection, an object store can fill up with objects. When
+    an object store fills up, Ray will first execute garbage collection, removing
+    objects with no references. If memory pressure remains, the object store will
+    attempt to spill to disk. *Spilling to disk* copies objects from memory to disk
+    and is called `spilling` since it happens when memory usage overflows.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Earlier versions of Ray had the capability to evict objects per actor by setting
+    an `object_store_memory` limit.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You might want to fine-tune the object store settings. Depending on your use
+    case, you may need more or less memory for the object store. You configure the
+    object store through the `_system_config` settings. Two important configuration
+    options include the minimum aggregate size to spill to disk, `min_spilling_size`,
+    and total memory allocated to the object store, `object_store_memory_mb`. You
+    can set these when calling `ray.init`, as shown in [Example 5-4](#ray_obj_store_config).
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you have a mixture of fast and slow disks—​for example, solid-state drive
+    (SSD), hard disk drive (HDD), and network—​you should consider using the faster
+    storage for spilled objects. Unlike the rest of the storage configs, you configure
+    the spilled object storage location with a nested JavaScript Object Notation (JSON)
+    blob. Like the rest of the object store settings, `object_spilling_config` is
+    stored under `_system_config`. This is a bit counterintuitive, but if your machine
+    had fast temporary storage at */tmp/fast*, you would configure Ray to use it as
+    in [Example 5-4](#ray_obj_store_config).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-4\. [Ray object store configuration](https://oreil.ly/ytqOu)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: Frameworks like Ray use serialization to pass both data and functions among
+    workers. Before Ray can transfer an object into the object store, it must serialize
+    the object.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Serialization/Pickling
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Ray, and systems like it, depend on serialization to be able to store and move
+    data (and functions) among processes. (These processes can be on the same or different
+    nodes.) Not all objects are serializable, and as a result, cannot move among workers.
+    In addition to the object store and IPC, fault tolerance depends on serialization,
+    so the same restrictions apply.
+  prefs: []
+  type: TYPE_NORMAL
+- en: There are many kinds of serialization, from multilanguage data-only tools like
+    JSON and Arrow to Python’s internal pickle. Serializing with pickle is called
+    *pickling*. Pickling can handle a wider range of types than JSON, but can be used
+    only between Python processes. Pickling does not work for all objects—​in most
+    cases, there is no good way to serialize (like a network connection), and in other
+    cases, this is because no one has had the time to implement one.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In addition to communicating among processes, Ray also has a shared in-memory
+    object store. This object store allows multiple processes on the same computer
+    to share objects.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Ray uses a few serialization techniques, depending on the use case. With some
+    exceptions, Ray’s Python libraries generally use a fork of cloudpickle, an improved
+    pickle. For datasets, Ray tries to use Arrow and will fall back to cloudpickle
+    when Arrow does not work. Ray’s Java libraries use a variety of serializers, including
+    Fast Serialization and MessagePack. Internally, Ray uses Google Protocol Buffers
+    between workers. As a Ray Python developer, you will benefit the most from an
+    in-depth understanding of the cloudpickle and Arrow serialization tools.
+  prefs: []
+  type: TYPE_NORMAL
+- en: cloudpickle
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The cloudpickle tool serializes the functions, actors, and most of the data
+    in Ray. Most nondistributed Python code doesn’t depend on serializing functions.
+    However, cluster computing often does require serializing functions. The cloudpickle
+    project is designed for cluster computing and can serialize and deserialize more
+    functions than Python’s built-in pickle.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: If you are uncertain why some data is not serializable, you can either try looking
+    at the stack traces or use the Ray function `ray.util.inspect_serializability`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: When pickling classes, cloudpickle still uses the same extension mechanisms
+    (`get​ne⁠wargs`, `getstate`, `setstate`, etc.) as pickling. You can write a custom
+    serializer if you have a class with nonserializable components, such as a database
+    connection. While this won’t allow you to serialize things like database connections,
+    you can instead serialize the information required to create a similar object.
+    [Example 5-5](#custom_serializer) takes this approach by serializing a class containing
+    a thread pool.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-5\. [Custom serializer](https://oreil.ly/ytqOu)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: Alternatively, Ray allows you to register serializers for classes. This approach
+    allows you to change the serialization of classes that are not your own, as shown
+    in [Example 5-6](#custom_serializer_not_own_class).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-6\. [Custom serializer, external class](https://oreil.ly/ytqOu)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: Otherwise, you would need to subclass and extend the classes, which can make
+    your code difficult to read when working with external libraries.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: cloudpickle requires that the version of Python loading and the version of Python
+    reading are exactly the same. This requirement carries forward and means that
+    all of Ray’s workers must have the same Python version.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Apache Arrow
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: As mentioned before, Ray uses Apache Arrow to serialize datasets when possible.
+    Ray DataFrames can have types that are not supported by Arrow. Under the hood,
+    Ray performs schema inference or translation when loading data into datasets.
+    If Arrow cannot represent a type, Ray serializes the dataset by using lists via
+    cloudpickle.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Arrow works with many data processing and ML tools, including pandas, PySpark,
+    TensorFlow, and Dask. Arrow is a columnar format with a strongly typed schema.
+    It is generally more space-efficient than pickling, and it can be used not only
+    between different versions of Python but also between programming languages—​for
+    example, Rust, C, Java, Python, and Compute Unified Device Architecture (CUDA).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Not all tools using Arrow support all the same data types. For example, Arrow
+    supports nested columns, which pandas does not.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Resources / Vertical Scaling
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: By default, Ray assumes that all functions and actors have the same resource
+    requirements (e.g., one CPU). For actors or functions with different resource
+    requirements, you can specify the resources needed. The scheduler will attempt
+    to find a node that has these resources available, and if there are none, the
+    autoscaler, covered next, will attempt to allocate a node that meets those requirements.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `ray.remote` decorator takes `num_cpus`, `num_gpus`, and `memory` as parameters
+    to indicate the amount of resources an actor or remote function will consume.
+    The defaults are one CPU and zero GPUs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: When no CPU requirements are specified, the resource allocation behavior is
+    different for remote functions and actors. For remote functions, one CPU is required
+    for both allocation and running. Alternatively, for actors, if no CPU resources
+    are specified, Ray uses one CPU for scheduling and zero CPUs for running. This
+    means the actor cannot get scheduled on a zero-CPU node, but an infinite number
+    can run on any nonzero-CPU node. On the other hand, if resources are specified
+    explicitly, they are required for both scheduling and running. We recommend always
+    explicitly specifying CPU resource requirements and not relying on defaults.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To override the default resource value, specify required resources in the `@ray.remote`
+    annotation. For example, using the annotation `@ray.remote(num_cpus=4, num_gpus=2)`
+    will request four CPUs and two GPUs for function execution.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Most resource requests in Ray are *soft*, which means that Ray does not enforce
+    or guarantee the limits, but does its best to try to meet them.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you know the amount of memory a task or actor requires, you can specify it
+    in the resource requirements of its `ray.remote` annotation to enable memory-aware
+    scheduling.^([5](ch05.html#idm45354776874752)) For example, `@ray.remote(memory=500
+    * 1024 * 1024)` will request 500 MiB of memory for this task.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Ray can also keep track of and assign custom resources by using the same mechanism
+    as memory and CPU resources. When the worker process is starting, it needs to
+    know all of the resources that are present. For manually launched workers, you
+    specify the custom resources with a `--resources` argument. For example, on a
+    mixed architecture cluster, you might want to add `--resources=\{"x86": "1"}`
+    to the x86 nodes and `--resources\{"arm64":"1"}` to the ARM nodes. See [Appendix B](app02.html#appB)
+    to configure resources with your deployment mechanism.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: These resources don’t need to be limited to hardware. If you have certain libraries
+    or datasets available on only some nodes because of licensing, you can use the
+    same technique.
+  prefs: []
+  type: TYPE_NORMAL
+- en: So far we’ve focused on horizontal scaling, but you can also use Ray to get
+    more resources for each process. Scaling by using machines with more resources
+    is known as *vertical scaling*. You can request different amounts of memory, CPU
+    cores, or even GPUs from Ray for your tasks and actors. The default Ray configuration
+    supports only machines of the same size, but as covered in [Appendix B](app02.html#appB),
+    you can create multiple node types. If you create node or container types of different
+    sizes, these can be used for vertical scaling.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Autoscaler
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'One of the important components of Ray is the *autoscaler*, which is responsible
+    for managing workers. More specifically, the autoscaler is responsible for the
+    following three functions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Launching new workers (based on demand)
+  prefs: []
+  type: TYPE_NORMAL
+- en: Includes uploading user-defined files or directories and running init/setup/start
+    commands on the started worker
+  prefs: []
+  type: TYPE_NORMAL
+- en: Terminating worker nodes
+  prefs: []
+  type: TYPE_NORMAL
+- en: Occurs if the node is idle, the node is failing to start up / initialize, or
+    the node configuration changed
+  prefs: []
+  type: TYPE_NORMAL
+- en: Restarting workers
+  prefs: []
+  type: TYPE_NORMAL
+- en: Occurs if the Raylet running a worker crashes or the worker’s setup / startup
+    / file mount changes
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The autoscaler creates new nodes in response to the following events:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Cluster creation with the `min-nodes` configuration
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this case, the autoscaler creates the required number of nodes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Resource demands
+  prefs: []
+  type: TYPE_NORMAL
+- en: For remote functions with resource requirements, the autoscaler checks whether
+    a cluster can satisfy additional resource requirements and, if not, creates one
+    or more new worker nodes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Placement groups
+  prefs: []
+  type: TYPE_NORMAL
+- en: Similar to resource demand, for new placement groups, the autoscaler checks
+    whether the cluster has enough resources and, if not, creates new worker node(s).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[An SDK `request_resources` function call](https://oreil.ly/S9wHA)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This is similar to the cluster creation request, but these resources are never
+    released for the life of the cluster.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Ray’s autoscaler works with different node/computer types, which can map to
+    different physical instance types (e.g., different AWS node types) or accelerators
+    (e.g., GPUs).
+  prefs: []
+  type: TYPE_NORMAL
+- en: For more information on the autoscaler, refer to the video [“A Glimpse into
+    the Ray Autoscaler”](https://oreil.ly/CB5Gl) by Ameer Haj Ali. For more information
+    on creating worker nodes for different platforms, refer to Ray’s [cloud VM documentation](https://oreil.ly/u7h4m).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Placement Groups: Organizing Your Tasks and Actors'
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Ray applications use *placement groups* to organize tasks as well as preallocate
+    resources. Organizing tasks is sometimes important for reusing resources and increased
+    data locality.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Ray uses node-based data storage, so running multiple functions with large data
+    exchanges on the same node leads to data locality and thus can often improve overall
+    execution performance.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Data locality* can reduce the amount of data to be transferred, and is based
+    on the idea that it’s often faster to serialize a function than your data.^([6](ch05.html#idm45354776812096))
+    On the flip side, data locality can also be used to minimize impact of hardware
+    failure by ensuring that work is spread across many computers. Preallocating resources
+    can speed up your work by allowing the autoscaler to request multiple machines
+    before they are needed.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: When you start a remote function or actor, Ray may need to start an additional
+    node to meet the resource needs, which delays the function/actor creation. If
+    you try to create several large functions/actors in a series, Ray creates the
+    workers sequentially, which slows down your job even more. You can force parallel
+    allocation with Ray’s placement groups, which often reduces resources’ waiting
+    time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Ray creates placement groups atomically, so if you have a minimum number of
+    resources required before your task can run, you can also use placement groups
+    for this effect. Note, though, that placement groups can experience partial restarts.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'You can use placement groups for a few purposes:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Preallocating resources
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[Gang scheduling](https://oreil.ly/d6wxR), to ensure that all tasks and actors
+    will be scheduled and start at the same time'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Organizing your tasks and actors inside your cluster to support either of the
+    following strategies:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Maximizing data locality
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: Ensuring the placement of all your tasks and actors close to your data to avoid
+    object-transfer overhead
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: Load balancing
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: Improving application availability by placing your actors or tasks into different
+    physical machines as much as possible
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: Placement groups consist of the desired resources for each worker as well as
+    the placement strategy.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Since a placement group can span multiple workers, you must specify the desired
+    resources (or resource bundle) for each worker. Each group of resources for a
+    worker is known as a *resource bundle* and must be able to fit inside a single
+    machine. Otherwise, the autoscaler will be unable to create the node types, and
+    the placement group will never be scheduled.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Placement groups are collections of resource bundles, where a resource bundle
+    is a collection of resources (CPU, GPU, etc.). You define the resource bundles
+    with the same arguments. Each resource bundle must fit on a single machine.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'You control the way Ray schedules your resource group by setting placement
+    strategies. Your placement strategy can either try to reduce the number of nodes
+    (improving locality) or spread the work out more (improving reliability and load
+    balancing). You have a few variations on these core strategies to choose from:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`STRICT_PACK`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: All bundles must be placed into a single node on the cluster.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`PACK`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: All provided bundles are packed onto a single node on a best effort basis. If
+    strict packing is not feasible, bundles can be placed onto other nodes. This is
+    the default placement group strategy.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`STRICT_SPREAD`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Each bundle must be scheduled in a separate node.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`SPREAD`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Each bundle will be spread onto separate nodes on a best effort basis. If strict
+    spreading is not feasible, some bundles can be collocated on nodes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Multiple remote functions or actors can be in the same resource bundle. Any
+    functions or actors using the same bundle will always be on the same node.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The lifecycle of placement groups has the following stages:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Creation
+  prefs: []
+  type: TYPE_NORMAL
+- en: The placement group creation request is sent to the GCS, which calculates how
+    to distribute the bundles and sends resource reservation requests to all the nodes.
+    Ray guarantees that placement groups are placed *atomically*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Allocation
+  prefs: []
+  type: TYPE_NORMAL
+- en: Placement groups are pending creation. If existing Ray nodes can satisfy resource
+    requirements for a given strategy, placement groups are allocated and success
+    is returned. Otherwise, the result depends on whether Ray is able to add nodes.
+    If the autoscaler is not present or the node limit is reached, placement group
+    allocation fails and the error is returned. Otherwise, the autoscaler scales the
+    cluster to ensure that pending groups can be allocated.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Node’s failure
+  prefs: []
+  type: TYPE_NORMAL
+- en: When worker nodes that contain some bundles of a placement group die, all the
+    bundles will be rescheduled on different nodes by GCS.^([7](ch05.html#idm45354776784176))
+    The placement group creation *atomicity* applies only to initial placement creation.
+    Once a placement group is created, it can become partial because of node failures.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Cleanup
+  prefs: []
+  type: TYPE_NORMAL
+- en: Ray automatically removes placement groups when the job that created the placement
+    group is finished. If you’d like to keep the placement group alive regardless
+    of the job that created it, you should specify `lifetime="detached"` during placement
+    group creation. You can also explicitly free a placement group at any time by
+    calling `remove_placement_group`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To make a placement group, you will need a few extra imports, shown in [Example 5-7](#placement_group_imports).
+    If you are working with Ray in local mode, seeing the effect of placement groups
+    is harder because there is only one node. You can still create CPU-only bundles
+    together into a placement group. Once you’ve created the placement group, you
+    can use `options` to run a function or actor in a specific bundle, as shown in
+    [Example 5-8](#placement_group).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-7\. [Placement group imports](https://oreil.ly/ytqOu)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: Example 5-8\. [CPU-only placement group](https://oreil.ly/ytqOu)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: If you are running Ray on a cluster, you can create a more complex resource
+    group. If you have some GPU nodes in your cluster, you can create more complex
+    placement groups. When we run [Example 5-9](#mixed_placement_group) on our test
+    cluster, the autoscaler allocates a node with a GPU. Once you’re finished with
+    your placement group, you can delete it with `remove_placement_group(pg)`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-9\. [Mixed CPU and GPU placement group](https://oreil.ly/Wxxdo)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: You can assign placement group names. You can achieve this by specifying a parameter
+    `name="desired_name"` at the point of placement group creation. This allows you
+    to retrieve and use the placement group from any job in the Ray cluster by name
+    rather than passing a placement group handle.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Namespaces
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: A *namespace* is a logical grouping of jobs and actors that provides limited
+    isolation. By default, each Ray program runs in its own anonymous namespace. The
+    anonymous namespace cannot be accessed from another Ray program. To share actors
+    among your Ray applications, you’ll need to put both of your programs in the same
+    namespace. When constructing your Ray context with `ray.init`, just add the `namespace`
+    named parameter—​for example, `ray.init(namespace="timbit")`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Namespaces are not intended to provide security isolation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You can get the current namespace by calling `ray.get_runtime_context().namespace`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Managing Dependencies with Runtime Environments
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: One of the big draws of Python is the amazing ecosystem of tools available.
+    Ray supports managing dependencies with both Conda and Virtualenv. Ray dynamically
+    creates these virtual environments inside your larger container as needed and
+    launches workers using the matching environment.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The fastest way to add a few packages to your runtime context is by specifying
+    a list of needed packages from [PyPI](https://oreil.ly/IS5mx). Looking at the
+    web-crawler example from [Chapter 2](ch02.html#ch02), where you used the Beautiful
+    Soup library, you can ensure that this package is available in a distributed environment
+    by creating an execution context with it, as shown in [Example 5-10](#pip_pkg_list).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-10\. [pip package list](https://oreil.ly/ytqOu)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: This works well for a few dependencies, but if you have a *requirements.txt*
+    file like Holden’s [print-the-world project](https://oreil.ly/xBDkK), you can
+    also just point this to your local *requirements.txt*, as shown in [Example 5-11](#pip_pkg_reqs).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-11\. [pip package requirements file](https://oreil.ly/ytqOu)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: If you have an even more complex setup using Conda, you can make a runtime context
+    by passing the path to your Conda environment file or package list with `conda=`
+    instead of `pip=`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Once you’ve created a runtime context, you can specify it either globally when
+    creating your Ray client, as in [Example 5-12](#runtime_env_init), or inside the
+    `ray.remote` decorator, as in [Example 5-13](#ex_local_ctx).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-12\. [Using a runtime environment for an entire program](https://oreil.ly/ytqOu)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: Example 5-13\. [Using a runtime environment for a specific function](https://oreil.ly/ytqOu)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: Warning
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Not all dependencies are well suited to the dynamically created execution context.
+    Anything involving large native code compilation without a preexisting wheel takes
+    too long (e.g., TensorFlow on ARM).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Adding certain packages to a runtime execution context can result in a slower
+    start and scale-up. Think of, for example, how long it takes to install TensorFlow
+    without a wheel. If Ray had to do that each time it started another worker, this
+    would be much slower. You can solve this by creating Conda environments in your
+    cluster or container. We discuss how to do this in [Appendix B](app02.html#appB).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Deploying Ray Applications with the Ray Job API
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'In addition to connecting your job to an existing cluster with `ray.init`,
+    Ray offers a job API. The job API provides a lightweight mechanism to submit jobs
+    without having to worry about library mismatches and avoids the issue of flaky
+    networks between the remote cluster and the head node. The three main methods
+    of the job API that you will use do the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Submit a new job to the cluster, returning a job ID
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Get a job’s status based on the execution ID, which returns the status of the
+    submitted job
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Obtain the execution logs based on a job for an execution ID
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'A job request consists of the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: A directory containing a collection of files and configurations that defines
+    an application
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: An entrypoint for the execution
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: A runtime environment consisting of any needed files, Python libraries, and
+    environment variables
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[Example 5-14](#ex-job-submission) shows you how to run your code on a Ray
+    cluster with the job API. This is the Ray code that we want to submit to the cluster.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-14\. [Job submission](https://oreil.ly/qptxx)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'In addition to the Ray code itself, this example shows several other things:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Getting variables that can be used during job submission
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Accessing environment variables that can be set during job submission
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Getting versions of libraries that are installed during job submission
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'With this in place, you can now submit your job to the Ray cluster [as follows](https://oreil.ly/LMiEB):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: Conclusion
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter, you’ve gained a deeper understanding of the way Ray works.
+    Your knowledge of serialization will help you understand which work to distribute
+    and which to keep in the same process. You now know your options and how to choose
+    the right scaling technique. You have a few techniques for managing Python dependencies,
+    even conflicting ones, on your Ray cluster. You are well set up to learn about
+    the higher-level building blocks covered in the next part of the book.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([1](ch05.html#idm45354777621488-marker)) Some distributed systems can survive
+    failure of head nodes; systems such as Apache ZooKeeper and algorithms like Paxos
+    or Raft use multiple computers to monitor and restart jobs with a voting system.
+    If you need to handle head node failure, you can write your own recovery logic,
+    but this is complicated to do right. Instead, a system like Spark, which has integrated
+    job restarts, may be a better option.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([2](ch05.html#idm45354777611152-marker)) Pub/sub systems allow processes to
+    subscribe to updates by categories.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([3](ch05.html#idm45354777330896-marker)) This process uses the same algorithm
+    as Python.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([4](ch05.html#idm45354777330208-marker)) This has the same cycle problem as
+    Python.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([5](ch05.html#idm45354776874752-marker)) Specifying a memory requirement does
+    *not* impose any limits on memory usage. The requirements are used for admission
+    control during scheduling only (similar to the way CPU scheduling works in Ray).
+    It is up to the task itself to not use more memory than it requested.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([6](ch05.html#idm45354776812096-marker)) Systems before Ray, like Apache Spark
+    and Hadoop, take advantage of data locality.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([7](ch05.html#idm45354776784176-marker)) Ray’s head node is a single point
+    of failure, so if it fails, the whole cluster will fail, as mentioned in [“Fault
+    Tolerance”](#fault_tolerance).
+  prefs: []
+  type: TYPE_NORMAL

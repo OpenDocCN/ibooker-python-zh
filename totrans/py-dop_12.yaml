@@ -1,0 +1,1003 @@
+- en: 'Chapter 12\. Container Orchestration: Kubernetes'
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: If you are experimenting with Docker, or if running a set of Docker containers
+    on a single machine is all you need, then Docker and Docker Compose would be sufficient
+    for your needs. However, as soon as you move from the number `1` (single machine)
+    to the number `2` (multiple machines), you need to start worrying about orchestrating
+    the containers across the network. For production scenarios, this is a given.
+    You need at least two machines to achieve fault tolerance/high availability.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In our age of cloud computing, the recommended way of scaling an infrastructure
+    is “out” (also referred to as “horizontal scalability”), by adding more instances
+    to your overall system, as opposed to the older way of scaling “up” (or “vertical
+    scalability”), by adding more CPUs and memory to a single instance. A Docker orchestration
+    platform uses these many instances or nodes as sources of raw resources (CPU,
+    memory, network) that it then allocates to individual containers running within
+    the platform. This ties into what we mentioned in [Chapter 11](ch11.html#containers-docker)
+    in regards to the advantages of using containers over classic virtual machines
+    (VMs): the raw resources at your disposal will be better utilized because containers
+    can get these resources allocated to them on a much more granular basis than VMs,
+    and you will get more bang for your infrastructure buck.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: There has also been a shift from provisioning servers for specific purposes
+    and running specific software packages on each instance (such as web server software,
+    cache software, database software) to provisioning them as generic units of resource
+    allocation and running Docker containers on them, coordinated by a Docker orchestration
+    platform. You may be familiar with the distinction between looking at servers
+    as “pets” versus looking at them as “cattle.” In the early days of infrastructure
+    design, each server had a definite function (such as the mail server), and many
+    times there was only one server for each specific function. There were naming
+    schemes for such servers (Grig remembers using a planetary system naming scheme
+    in the dot-com days), and a lot of time was spent on their care and feeding, hence
+    the pet designation. When configuration management tools such as Puppet, Chef,
+    and Ansible burst onto the scene, it became easier to provision multiple servers
+    of the same type (for example, a web server farm) at the same time, by using an
+    identical installation procedure on each server. This coincided with the rise
+    of cloud computing, with the concept of horizontal scalability mentioned previously,
+    and also with more concern for fault tolerance and high availability as critical
+    properties of well-designed system infrastructure. The servers or cloud instances
+    were considered cattle, disposable units that have value in their aggregate.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The age of containers and serverless computing also brought about another designation,
+    “insects.” Indeed, one can look at the coming and going of containers as a potentially
+    short existence, like an ephemeral insect. Functions-as-a-service are even more
+    fleeting than Docker containers, with a short but intense life coinciding with
+    the duration of their call.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the case of containers, their ephemerality makes their orchestration and
+    interoperability hard to achieve at a large scale. This is exactly the need that
+    has been filled by container orchestration platforms. There used to be multiple
+    Docker orchestration platforms to choose from, such as Mesosphere and Docker Swarm,
+    but these days we can safely say that Kubernetes has won that game. The rest of
+    the chapter is dedicated to a short overview of Kubernetes, followed by an example
+    of running the same application described in [Chapter 11](ch11.html#containers-docker)
+    and porting it from `docker-compose` to Kubernetes. We will also show how to use
+    Helm, a Kubernetes package manager, to install packages called charts for the
+    monitoring and dashboarding tools Prometheus and Grafana, and how to customize
+    these charts.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Short Overview of Kubernetes Concepts
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The best starting point for understanding the many parts comprising a Kubernetes
+    cluster is [the official Kubernetes documentation](https://oreil.ly/TYpdE).
+  prefs: []
+  type: TYPE_NORMAL
+- en: At a high level, a Kubernetes cluster consists of nodes that can be equated
+    to servers, be they bare-metal or virtual machines running in a cloud. Nodes run
+    pods, which are collections of Docker containers. A pod is the unit of deployment
+    in Kubernetes. All containers in a pod share the same network and can refer to
+    each other as if they were running on the same host. There are many situations
+    in which it is advantageous to run more than one container in a pod. Typically,
+    your application container runs as the main container in the pod, and if needed
+    you will run one or more so-called “sidecar” containers for functionality, such
+    as logging or monitoring. One particular case of sidecar containers is an “init
+    container,” which is guaranteed to run first and can be used for housekeeping
+    tasks, such as running database migrations. We’ll explore this later in this chapter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: An application will typically use more than one pod for fault tolerance and
+    performance purposes. The Kubernetes object responsible for launching and maintaining
+    the desired number of pods is called a deployment. For pods to communicate with
+    other pods, Kubernetes provides another kind of object called a service. Services
+    are tied to deployments through selectors. Services are also exposed to external
+    clients, either by exposing a NodePort as a static port on each Kubernetes node,
+    or by creating a LoadBalancer object that corresponds to an actual load balancer,
+    if it is supported by the cloud provider running the Kubernetes cluster.
+  prefs: []
+  type: TYPE_NORMAL
+- en: For managing sensitive information such as passwords, API keys, and other credentials,
+    Kubernetes offers the Secret object. We will see an example of using a Secret
+    for storing a database password.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using Kompose to Create Kubernetes Manifests from docker-compose.yaml
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Let’s take another look at the *docker_compose.yaml* file for the Flask example
+    application discussed in [Chapter 11](ch11.html#containers-docker):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: We will use a tool called `Kompose` to translate this YAML file into a set of
+    Kubernetes manifests.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To get a new version of `Kompose` on a macOS machine, first download it from
+    [the Git repository](https://oreil.ly/GUqaq), then move it to */usr/local/bin/kompose*,
+    and make it executable. Note that if you rely on your operating system’s package
+    management system (for example, `apt` on Ubuntu systems or `yum` on Red Hat systems)
+    for installing `Kompose`, you may get a much older version that may not be compatible
+    to these instructions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Run the `kompose convert` command to create the Kubernetes manifest files from
+    the existing *docker-compose.yaml* file:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'At this point, remove the *docker-compose.yaml* file:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: Deploying Kubernetes Manifests to a Local Kubernetes Cluster Based on minikube
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Our next step is to deploy the Kubernetes manifests to a local Kubernetes cluster
+    based on `minikube`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'A prerequisite to running `minikube` on macOS is to install *VirtualBox*. Download
+    the VirtualBox package for macOS from its [download page](https://oreil.ly/BewRq),
+    install it, and then move it to */usr/local/bin/minikube* to make it executable.
+    Note that at the time of this writing, `minikube` installed a Kubernetes cluster
+    with version 1.15\. If you want to follow along with these examples, specify the
+    version of Kubernetes you want to install with `minikube`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: The main command for interacting with a Kubernetes cluster is `kubectl`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Install `kubectl` on a macOS machine by downloading it from [the release page](https://oreil.ly/f9Wv0),
+    then moving it to */usr/local/bin/kubectl* and making it executable.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'One of the main concepts you will use when running `kubectl` commands is *context*,
+    which signifies a Kubernetes cluster that you want to interact with. The installation
+    process for `minikube` already created a context for us called *minikube*. One
+    way to point `kubectl` to a specific context is with the following command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'A different, and more handy, way is to install the `kubectx` utility from [the
+    Git repository](https://oreil.ly/SIf1U), then run:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'Another handy client utility for your Kubernetes work is [kube-ps1](https://oreil.ly/AcE32).
+    For a macOS setup based on Zsh, add this snippet to the file *~/.zshrc*:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: These lines change the shell prompt to show the current Kubernetes context and
+    namespace. As you start interacting with multiple Kubernetes clusters, this will
+    be a lifesaver for distinguishing between a production and a staging cluster.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Now run `kubectl` commands against the local `minikube` cluster. For example,
+    the `kubectl get nodes` command shows the nodes that are part of the cluster.
+    In this case, there is only one node with the role of `master`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Start by creating the Persistent Volume Claim (PVC) object from the file *dbdata-persistentvolumeclaim.yaml*
+    that was created by `Kompose`, and which corresponds to the local volume allocated
+    for the PostgreSQL database container, when running it with `docker-compose`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'To create this object in Kubernetes, use the `kubectl create` command and specify
+    the file name of the manifest with the `-f` flag:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'List all the PVCs with the `kubectl get pvc` command to verify that our PVC
+    is there:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The next step is to create the Deployment object for PostgreSQL. Use the manifest
+    file *db-deployment.yaml* created previously by the `Kompose` utility:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'To create the deployment, use the `kubectl create -f` command and point it
+    to the manifest file:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'To verify that the deployment was created, list all deployments in the cluster
+    and list the pods that were created as part of the deployment:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Next, create the database for the example Flask application. Use a similar
+    command to `docker exec` to run the `psql` command inside a running Docker container.
+    The form of the command in the case of a Kubernetes cluster is `kubectl exec`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The next step is to create the Service object corresponding to the `db` deployment,
+    that will expose the deployment to the other services running inside the cluster,
+    such as the Redis worker service and the main application service. Here is the
+    manifest file for the `db` service:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'One thing to note is the following section:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: This section appears in both the deployment manifest and the service manifest
+    and is indeed the way to tie the two together. A service will be associated with
+    any deployment that has the same label.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Create the Service object with the `kubectl create -f` command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'List all services and notice that the `db` service was created:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The next service to deploy is Redis. Create the Deployment and Service objects
+    based on the manifest files generated by `Kompose`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: So far, the two services that have been deployed, `db` and `redis`, are independent
+    of each other. The next part of the application is the worker process, which needs
+    to talk to both PostgreSQL and Redis. This is where the advantage of using Kubernetes
+    services comes into play. The worker deployment can refer to the endpoints for
+    PostgreSQL and Redis by using the service names. Kubernetes knows how to route
+    the requests from the client (the containers running as part of the pods in the
+    worker deployment) to the servers (the PostgreSQL and Redis containers running
+    as part of the pods in the `db` and `redis` deployments, respectively).
+  prefs: []
+  type: TYPE_NORMAL
+- en: One of the environment variables used in the worker deployment is `DATABASE_URL`.
+    It contains the database password used by the application. The password should
+    not be exposed in clear text in the deployment manifest file, because this file
+    needs to be checked into version control. Instead, create a Kubernetes Secret
+    object.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'First, encode the password string in `base64`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Then, create a manifest file describing the Kubernetes Secret object that you
+    want to create. Since the `base64` encoding of the password is not secure, use
+    `sops` to edit and save an encrypted manifest file *secrets.yaml.enc*:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Inside the editor, add these lines:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE22]'
+  prefs: []
+  type: TYPE_PRE
+- en: The *secrets.yaml.enc* file can now be checked in because it contains the encrypted
+    version of the `base64` value of the password.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To decrypt the encrypted file, use the `sops -d` command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE23]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Pipe the output of `sops -d` to `kubectl create -f` to create the Kubernetes
+    Secret object:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE24]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Inspect the Kubernetes Secrets and describe the Secret that was created:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE25]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'To get the `base64`-encoded Secret back, use:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE26]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'To get the plain-text password back, use the following command on a macOS machine:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE27]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'On a Linux machine, the proper flag for `base64` decoding is `-d`, so the correct
+    command would be:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE28]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The secret can now be used in the deployment manifest of the worker. Modify
+    the *worker-deployment.yaml* file generated by the `Kompose` utility and add two
+    environment variables:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`DBPASS` is the database password that will be retrieved from the fbe-secret
+    Secret object.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`DATABASE_URL` is the full database connection string for PostgreSQL, which
+    includes the database password and references it as `${DBPASS}`.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'This is the modified version of *worker-deployment.yaml*:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE29]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Create the worker Deployment object in the same way as for the other deployments,
+    by calling `kubectl create -f`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE30]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'List the pods:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE31]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Note that the worker pod is shown with status `Init:ErrImagePull`. To see details
+    about this status, run `kubectl describe`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE32]'
+  prefs: []
+  type: TYPE_PRE
+- en: The deployment tried to pull the `griggheo/flask-by-example:v1` private Docker
+    image from Docker Hub, and it lacked the appropriate credentials to access the
+    private Docker registry. Kubernetes includes a special type of object for this
+    very scenario, called an *imagePullSecret*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Create an encrypted file with `sops` containing the Docker Hub credentials
+    and the call to `kubectl create secret`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE33]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The contents of the file are:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE34]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Decode the encrypted file with `sops` and run it through `bash`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE35]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Inspect the Secret:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE36]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The only change to the worker deployment manifest is to add these lines:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE37]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Include it right after this line:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE38]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Delete the worker deployment and recreate it:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE39]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now the worker pod is in a Running state, with no errors:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE40]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Inspect the worker pod’s logs with the `kubectl logs` command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE41]'
+  prefs: []
+  type: TYPE_PRE
+- en: The next step is to tackle the application deployment. When the application
+    was deployed in a `docker-compose` setup in [Chapter 11](ch11.html#containers-docker),
+    a separate Docker container was employed to run the migrations necessary to update
+    the Flask database. This type of task is a good candidate for running as a sidecar
+    container in the same pod as the main application container. The sidecar will
+    be defined as a Kubernetes [`initContainer`](https://oreil.ly/80L5L) inside the
+    application deployment manifest. This type of container is guaranteed to run inside
+    the pod it belongs to before the start of the other containers included in the
+    pod.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Add this section to the *app-deployment.yaml* manifest file that was generated
+    by the `Kompose` utility, and delete the *migrations-deployment.yaml* file:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE42]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Reuse the `fbe-secret` Secret object created for the worker deployment in the
+    application deployment manifest:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE43]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Create the application deployment with `kubectl create -f`, then list the pods
+    and describe the application pod:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE44]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The last piece in the deployment of the application to `minikube` is to ensure
+    that a Kubernetes service is created for the application and that it is declared
+    as type `LoadBalancer`, so it can be accessed from outside the cluster:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE45]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'Similar to the `db` service, the `app` service is tied to the `app` deployment
+    through a label declaration that exists in both the deployment and the service
+    manifest for the application:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE46]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Create the service with `kubectl create`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE47]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Next, run:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE48]'
+  prefs: []
+  type: TYPE_PRE
+- en: This command opens the default browser with the URL [*http://192.168.99.100:30097/*](http://192.168.99.100:30097/)
+    and shows the home page of the Flask site.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In our next section, we will take the same Kubernetes manifest files for our
+    application and deploy them to a Kubernetes cluster that will be provisioned with
+    Pulumi in the Google Cloud Platform (GCP).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Launching a GKE Kubernetes Cluster in GCP with Pulumi
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this section, we’ll make use of the [Pulumi GKE example](https://oreil.ly/VGBfF)
+    and also of the [GCP setup documentation](https://oreil.ly/kRsFA), so use these
+    links to obtain the necessary documents before proceeding.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Start by creating a new directory:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE49]'
+  prefs: []
+  type: TYPE_PRE
+- en: Set up the Google Cloud SDK using the [macOS instructions](https://oreil.ly/f4pPs).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Initialize the GCP environment using the `gcloud init` command. Create a new
+    configuration and a new project named *pythonfordevops-gke-pulumi*:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE50]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Log in to the GCP account:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE51]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Log in to the default application, which is `pythonfordevops-gke-pulumi`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE52]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Create a new Pulumi project by running the `pulumi new` command, specifying
+    *gcp-python* as your template and *pythonfordevops-gke-pulumi* as the name of
+    the project:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE53]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The following files were created by the `pulumi new` command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE54]'
+  prefs: []
+  type: TYPE_PRE
+- en: We are going to make use of the `gcp-py-gke` example from the [Pulumi examples](https://oreil.ly/SIT-v)
+    GitHub repository.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Copy **.py* and *requirements.txt* from *examples/gcp-py-gke* to our current
+    directory:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE55]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Configure GCP-related variables needed for Pulumi to operate in GCP:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE56]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Create and use a Python `virtualenv`, install the dependencies declared in
+    *requirements.txt*, and then bring up the GKE cluster defined in *mainpy* by running
+    the `pulumi up` command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE57]'
+  prefs: []
+  type: TYPE_PRE
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Make sure you enable the Kubernetes Engine API by associating it with a Google
+    billing account in the GCP web console.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The GKE cluster can now be seen in the [GCP console](https://oreil.ly/Su5FZ).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To interact with the newly provisioned GKE cluster, generate the proper `kubectl`
+    configuration and use it. Handily, the `kubectl` configuration is being exported
+    as `output` by the Pulumi program:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE58]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'List the nodes comprising the GKE cluster:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE59]'
+  prefs: []
+  type: TYPE_PRE
+- en: Deploying the Flask Example Application to GKE
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Take the same Kubernetes manifests used in the `minikube` example and deploy
+    them to the Kubernetes cluster in GKE, via the `kubectl` command. Start by creating
+    the `redis` deployment and service:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE60]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Create a PersistentVolumeClaim to be used as the data volume for the PostgreSQL
+    database:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE61]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Create the `db` deployment:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE62]'
+  prefs: []
+  type: TYPE_PRE
+- en: We hit a snag when trying to create the `db` deployment. GKE provisioned a persistent
+    volume that was mounted as */var/lib/postgresql/data*, and according to the error
+    message above, was not empty.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Delete the failed `db` deployment:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE63]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Create a new temporary pod used to mount the same `dbdata` PersistentVolumeClaim
+    as */data* inside the pod, so its filesystem can be inspected. Launching this
+    type of temporary pod for troubleshooting purposes is a useful technique to know
+    about:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE64]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Use `kubectl exec` to open a shell inside the pod so */data* can be inspected:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE65]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note how */data* contained a directory called *lost+found* that needed to be
+    removed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Delete the temporary pod:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE66]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Create the `db` deployment again, which completes successfully this time:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE67]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Create `wordcount` database and role:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE68]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Create the `db` service:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE69]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE70]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Create the Secret object based on the `base64` value of the database password.
+    The plain-text value for the password is stored in a file encrypted with `sops`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE71]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Create another Secret object representing the Docker Hub credentials:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE72]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Since the scenario under consideration is a production-type deployment of the
+    appication to GKE, set `replicas` to `3` in *worker-deployment.yaml* to ensure
+    that three worker pods are running at all times:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE73]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Make sure that three worker pods are running:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE74]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Similarly, set `replicas` to two in *app-deployment.yaml*:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE75]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Make sure that two app pods are running:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE76]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Create the `app` service:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE77]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Note that a service of type LoadBalancer was created:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE78]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Test the application by accessing the endpoint URL based on the IP address
+    corresponding to `LoadBalancer Ingress`: [*http://34.83.242.171:5000*](http://34.83.242.171:5000).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We have demonstrated how to create Kubernetes objects such as Deployments, Services,
+    and Secrets from raw Kubernetes manifest files. As your application becomes more
+    complicated, this approach will start showing its limitations, because it will
+    get harder to customize these files per environment (for example, for staging
+    versus integration versus production). Each environment will have its own set
+    of environment values and secrets that you will need to keep track of. In general,
+    it will become more and more complicated to keep track of which manifests have
+    been installed at a given time. Many solutions to this problem exist in the Kubernetes
+    ecosystem, and one of the most common ones is to use the [Helm](https://oreil.ly/duKVw)
+    package manager. Think of Helm as the Kubernetes equivalent of the `yum` and `apt`
+    package managers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The next section shows how to use Helm to install and customize Prometheus and
+    Grafana inside the GKE cluster.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Installing Prometheus and Grafana Helm Charts
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In its current version (v2 as of this writing), Helm has a server-side component
+    called Tiller that needs certain permissions inside the Kubernetes cluster.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Create a new Kubernetes Service Account for Tiller and give it the proper permissions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE79]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Download and install the Helm binary for your operating system from the official
+    [Helm release](https://oreil.ly/sPwDO) page, and then install Tiller with the
+    `helm init` command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE80]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Create a namespace called `monitoring`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE81]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Install the Prometheus [Helm chart](https://oreil.ly/CSaSo) in the `monitoring`
+    namespace:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE82]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'List pods, services, and configmaps in the `monitoring` namespace:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE83]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Connect to Prometheus UI via the `kubectl port-forward` command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE84]'
+  prefs: []
+  type: TYPE_PRE
+- en: Go to localhost:9090 in a browser and see the Prometheus UI.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Install the Grafana [Helm chart](https://oreil.ly/--wEN) in the `monitoring`
+    namespace:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE85]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'List Grafana-related pods, services, configmaps, and secrets in the `monitoring`
+    namespace:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE86]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Retrieve the password for the `admin` user for the Grafana web UI:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE87]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Connect to the Grafana UI using the `kubectl port-forward` command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE88]'
+  prefs: []
+  type: TYPE_PRE
+- en: Go to localhost:3000 in a browser and see the Grafana UI. Log in as user admin
+    with the password retrieved above.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'List the charts currently installed with `helm list`. When a chart is installed,
+    the current installation is called a “Helm release”:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE89]'
+  prefs: []
+  type: TYPE_PRE
+- en: Most of the time you will need to customize a Helm chart. It is easier to do
+    that if you download the chart and install it from the local filesystem with `helm`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Get the latest stable Prometheus and Grafana Helm charts with the `helm fetch`
+    command, which will download `tgz` archives of the charts:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE90]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Unarchive the `tgz` files, then remove them:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE91]'
+  prefs: []
+  type: TYPE_PRE
+- en: The templatized Kubernetes manifests are stored by default in a directory called
+    *templates* under the chart directory, so in this case these locations would be
+    *prometheus/templates* and *grafana/templates*. The configuration values for a
+    given chart are declared in the *values.yaml* file in the chart directory.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As an example of a Helm chart customization, let’s add a persistent volume to
+    Grafana, so we don’t lose the data when we restart the Grafana pods.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Modify the file *grafana/values.yaml* and set the the value of the `enabled`
+    subkey under the `persistence` parent key to `true` (by default it is `false`)
+    in this section:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE92]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Upgrade the existing `grafana` Helm release with the `helm upgrade` command.
+    The last argument of the command is the name of the local directory containing
+    the chart. Run this command in the parent directory of the *grafana* chart directory:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE93]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Verify that a PVC has been created for Grafana in the `monitoring` namespace:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE94]'
+  prefs: []
+  type: TYPE_PRE
+- en: Another example of a Helm chart customization, this time for Prometheus, is
+    modifying the default retention period of 15 days for the data stored in Prometheus.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Change the `retention` value in *prometheus/values.yaml* to 30 days:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE95]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Upgrade the existing Prometheus Helm release by running `helm upgrade`. Run
+    this command in the parent directory of the *prometheus* chart directory:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE96]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Verify that the retention period was changed to 30 days. Run `kubectl describe`
+    against the running Prometheus pod in the `monitoring` namespace and look at the
+    `Args` section of the output:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE97]'
+  prefs: []
+  type: TYPE_PRE
+- en: Destroying the GKE Cluster
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: It pays (literally) to remember to delete any cloud resources you’ve been using
+    for testing purposes if you do not need them anymore. Otherwise, you may have
+    an unpleasant surprise when you receive the billing statement from your cloud
+    provider at the end of the month.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Destroy the GKE cluster via `pulumi destroy`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE98]'
+  prefs: []
+  type: TYPE_PRE
+- en: Exercises
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Use Google Cloud SQL for PostgreSQL, instead of running PostgreSQL in a Docker
+    container in GKE.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Use the [AWS Cloud Development Kit](https://aws.amazon.com/cdk) to launch an
+    Amazon EKS cluster, and deploy the example application to that cluster.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Use Amazon RDS PostgreSQL instead of running PostgreSQL in a Docker container
+    in EKS.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Experiment with [Kustomize](https://oreil.ly/ie9n6) as an alternative to Helm
+    for managing Kubernetes manifest YAML files.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL

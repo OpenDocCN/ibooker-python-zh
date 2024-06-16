@@ -1,0 +1,359 @@
+- en: Appendix C. Debugging with Ray
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Depending on your debugging techniques, moving to distributed systems could
+    require a new set of techniques. Thankfully, tools like Pdb and PyCharm allow
+    you to connect remote debuggers, and Ray’s local mode can allow you to use your
+    existing debugging tools in many other situations. Some errors happen outside
+    Python, making them more difficult to debug, like container out-of-memory (OOM)
+    errors, segmentation faults, and other native errors.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Some components of this appendix are shared with [*Scaling Python with Dask*](https://oreil.ly/Fk0I6),
+    as they are general good advice for debugging all types of distributed systems.
+  prefs: []
+  type: TYPE_NORMAL
+- en: General Debugging Tips with Ray
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'You likely have your own standard debugging techniques for working with Python
+    code, and this appendix is not meant to replace them. Here are some general tech­ni⁠ques
+    that make more sense with Ray:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Break up failing functions into smaller functions. Since `ray.remote` schedules
+    on the block of a function, smaller functions make it easier to isolate the problem.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Be careful about any unintended scope capture.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Sample data and try to reproduce it locally (local debugging is often easier).
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Use Mypy for type checking. While we haven’t included types in all our examples,
+    liberal type usage can catch tricky errors in production code.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: When issues appear regardless of parallelization, debug your code in single-threaded
+    mode, where it can be easier to understand what’s going on.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Now, with those additional general tips, it’s time to learn more about the tools
+    and techniques to help your Ray debugging.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Serialization Errors
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Serialization plays an important part in Ray, but can also be a source of headaches
+    as small changes can result in unintended variable capture and serialization failure.
+    Thankfully, Ray has a util function `inspect_serializability` in `ray.util` that
+    you can use to debug serialization errors. If you intentionally define a function
+    that captures nonserializable data, like [Example C-1](#bad_ser_ex), you can run
+    `inspect_serializability` and see how it reports the failure (as in [Example C-2](#bad_ser_result)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example C-1\. [Bad serialization example](https://oreil.ly/eygeJ)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: Example C-2\. Bad serialization result
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: In this example, Ray checks the elements for serializability and calls out that
+    the nonserializable value `pool` is coming in from the global scope.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Local Debugging with Ray Local
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Using Ray in local mode allows you to use the tools you are accustomed to without
+    having to deal with the complexity of setting up remote debugging. We won’t cover
+    the variety of local Python debugging tools, so this section exists just to remind
+    you to try to reproduce the problem in local mode first before you start using
+    the fancy debugging techniques covered in the rest of this appendix.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Remote Debugging
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Remote debugging can be an excellent tool but requires more access to the cluster,
+    something that may not always be available. Ray’s own special integrated `ray
+    debug` tool supports tracing across the entire cluster. Unfortunately, other remote
+    Python debuggers attach to only one machine at a time, so you can’t simply point
+    your debugger at an entire cluster.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Warning
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Remote debugging can result in large performance changes and security implications.
+    It is important to notify all users before enabling remote debugging on a cluster.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you control your own environment, setting up remote debugging is comparatively
+    straightforward, but in an enterprise deployment, you may find resistance to enabling
+    this. In those situations, using a local cluster or asking for a development cluster
+    to debug on are your best options.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: For interactive debuggers, you may need to work with your systems administrator
+    to expose additional ports from your cluster.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Ray’s Integrated Debugger (via Pdb)
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Ray has integrated support for debugging with Pdb, allowing you to trace code
+    across your cluster. You still need to change the launch command (`ray start`)
+    to include (`ray start --ray-debugger-external`) to load the debugger. With Ray’s
+    external debugger enabled on the workers, Pdb will listen on an additional port
+    (without any authentication) for debuggers to connect.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Once your cluster is configured and launched, you can start the Ray debugger
+    on the head node.^([1](app03.html#idm45354756146752)) To start the debugger, you
+    just need to run `ray debug`, and then you can use all of your favorite [Pdb debugging
+    commands](https://oreil.ly/mR50g).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Other Tools
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: For nonintegrated tools, since each call to a remote function can be scheduled
+    on a different worker, you may find it easier to (temporarily) convert your stateless
+    function into an actor. This will have real performance considerations, so may
+    not be suitable for a production environment, but does mean that repeated calls
+    will be routed to the same machine, making the task of debugging simpler.
+  prefs: []
+  type: TYPE_NORMAL
+- en: PyCharm
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: PyCharm is a popular Python IDE with an integrated debugger. While it is not
+    integrated like Pdb, you can still make it work with a few simple changes. The
+    first step is to add the `pydevd-pycharm` package to your container/requirements.
+    Then, in the actor you want to debug, you can enable PyCharm debugging as shown
+    in [Example C-3](#ex_pydev_charm).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example C-3\. [Enabled PyCharm remote debugging](https://oreil.ly/eygeJ)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: Your actor will then create a connection back from the executor to your PyCharm
+    IDE.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Python profilers
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Python profilers can help track down memory leaks, hot code paths, and other
+    important-to-address non-error states.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Profilers are less problematic than live remote debugging from a security point
+    of view, as they do not require a direct connection from your machine to the cluster.
+    Instead, the profiler runs and generates a report, which you can look at offline.
+    Profiling still introduces performance overhead, so be careful when deciding whether
+    to enable it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To enable Python memory profiling on the executors, you can change the launch
+    command to have the prefix `mprof run -E --include-children, -o memory​_pro⁠file.dat
+    --python`. You can then collect the `memory_profile` and plot them with `matplotlib`
+    on your machine to see if anything sticks out.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Similarly, you can enable function profiling in your `ray execute` by replacing
+    `ray start` in your launch command with `echo "from ray.scripts.scripts import
+    main; main()" > launch.py; python -m cProfile -o stats launch.py`. This is a bit
+    more complicated than using `mprof` since the default Ray launch script does not
+    play nice with the `cProfile`, so you need to create a different entry point—​but
+    conceptually it is equivalent.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Warning
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: The `line_profiler` package used for annotation-based profiling does not work
+    well with Ray, so you must use whole program profiling.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Ray and Container Exit Codes
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: '*Exit codes* are numeric codes that are set when a program exits, with any
+    value besides 0 normally indicating failure. These codes (by convention) generally
+    have meaning but are not 100% consistent. The following are some common exit codes:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '0'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Success (but often misreported, especially in shell scripts)
+  prefs: []
+  type: TYPE_NORMAL
+- en: '1'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Generic error
+  prefs: []
+  type: TYPE_NORMAL
+- en: '127'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Command not found (in a shell script)
+  prefs: []
+  type: TYPE_NORMAL
+- en: '130'
+  prefs: []
+  type: TYPE_NORMAL
+- en: User terminated (Ctrl-C or kill)
+  prefs: []
+  type: TYPE_NORMAL
+- en: '137'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Out-of-memory error *or* kill -9 (force kill, not ignorable)
+  prefs: []
+  type: TYPE_NORMAL
+- en: '139'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Segmentation fault (often null pointer dereference in native code)
+  prefs: []
+  type: TYPE_NORMAL
+- en: You can print out the exit code of the last command run with `echo $?`. In a
+    script running in strict mode (like some Ray launch scripts), you can print out
+    the exit code while still propagating the error with `[raycommand] || (error=$?;
+    echo $error; exit $error)`.^([2](app03.html#idm45354756002752))
+  prefs: []
+  type: TYPE_NORMAL
+- en: Ray Logs
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Ray’s logs behave differently from those of many other distributed applications.
+    Since Ray tends to launch worker processes on the container separate from the
+    initial container startup,^([3](app03.html#idm45354755996784)) the stdout and
+    stderr associated with the container will (most often) not contain the debugging
+    information you need. Instead, you can access the worker container logs on the
+    head node by looking for the latest session directory to which Ray creates a symbolic
+    link at */tmp/ray/session_latest*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Container Errors
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Debugging container errors can be especially challenging, as many of the standard
+    debugging techniques explored so far have challenges. These errors can range from
+    common occurrences, like OOM errors, to the more esoteric. It can be difficult
+    to distinguish the cause of the container error or exit as the container exit
+    sometimes removes the logs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: On Kubernetes, you can sometimes get the logs of a container that has already
+    exited by adding `-p` to your log request (e.g., `kubectl logs -p`). You can also
+    configure `terminationMessagePath` to point to a file that contains information
+    regarding termination exit. If your Ray worker is exiting, it can make sense to
+    customize the Ray container launch script to add more logging. Common types of
+    additional logging include the last few lines from *syslog* or *dmesg* (looking
+    for OOMs) to a file location that you can use to debug later.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The most common kind of container error, native memory leaks, can be challenging
+    to debug. Tools like [Valgrind](https://oreil.ly/8E9iG) can sometimes track down
+    native memory leaks. The details of using tools like Valgrind are beyond the scope
+    of this book, so check out the [Python Valgrind documentation](https://oreil.ly/jzRwT).
+    Another “trick” you might want to try is effectively bisecting your code; since
+    native memory leaks happen most frequently in library calls, you can try commenting
+    them out and running tests to see which library call is the source of the leak.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Native Errors
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Native errors and core dumps can be challenging to debug for the same reasons
+    as container errors. Since these types of errors often result in the container
+    exiting, accessing the debugging information can become challenging. A “quick”
+    solution to this is to add `sleep` to the Ray launch script (on failure) so that
+    you can connect to the container (e.g., `[raylaunchcommand] || sleep 100000`)
+    and use native debugging tools.
+  prefs: []
+  type: TYPE_NORMAL
+- en: However, accessing the internals of a container can be easier said than done.
+    In many production environments, you may not be able to get remote access (e.g.,
+    `kubectly exec` on Kubernetes) for security reasons. If that is the case, you
+    can (sometimes) add a shutdown script to your container specification that copies
+    the core files to a location that persists after the container shuts down (e.g.,
+    s3, HDFS, or NFS).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Conclusion
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: You will have a bit more work to get started with your debugging tools in Ray,
+    and when possible, Ray’s local mode offers a great alternative to remote debugging.
+    You can take advantage of Ray actors to make remote functions schedule more predictably,
+    making it easier to know where to attach your debugging tools. Not all errors
+    are created equal, and some errors, like segmentation faults in native code, are
+    especially challenging to debug. Good luck finding the bug(s)! We believe in you.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([1](app03.html#idm45354756146752-marker)) Ray has the `ray attach` command
+    to create an SSH connection to the head node; however, not all head nodes will
+    have an SSH server. On Ray on Kubernetes, you can get to the head node by running
+    `kubectl exec -it -n [rayns] [podname] – /bin/bash`. Each cluster manager is slightly
+    different here, so you may have to check your cluster manager’s documentation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([2](app03.html#idm45354756002752-marker)) The exact details of where to configure
+    this change depends on the cluster manager being used. For Ray on Kube with the
+    autoscaler, you can change `workerStartRayCommands`. For Ray on AWS, change `worker_start_ray_commands`,
+    etc.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([3](app03.html#idm45354755996784-marker)) This is done either by `ssh` or
+    `kubectl exec`.
+  prefs: []
+  type: TYPE_NORMAL

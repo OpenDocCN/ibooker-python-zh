@@ -1,0 +1,2311 @@
+- en: Chapter 7\. Compiling to C
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The easiest way to get your code to run faster is to make it do less work. Assuming
+    you’ve already chosen good algorithms and you’ve reduced the amount of data you’re
+    processing, the easiest way to execute fewer instructions is to compile your code
+    down to machine code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Python offers a number of options for this, including pure C-based compiling
+    approaches like Cython; LLVM-based compiling via Numba; and the replacement virtual
+    machine PyPy, which includes a built-in just-in-time (JIT) compiler. You need
+    to balance the requirements of code adaptability and team velocity when deciding
+    which route to take.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Each of these tools adds a new dependency to your toolchain, and Cython requires
+    you to write in a new language type (a hybrid of Python and C), which means you
+    need a new skill. Cython’s new language may hurt your team’s velocity, as team
+    members without knowledge of C may have trouble supporting this code; in practice,
+    though, this is probably a minor concern, as you’ll use Cython only in well-chosen,
+    small regions of your code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: It is worth noting that performing CPU and memory profiling on your code will
+    probably start you thinking about higher-level algorithmic optimizations that
+    you might apply. These algorithmic changes (such as additional logic to avoid
+    computations or caching to avoid recalculation) could help you avoid doing unnecessary
+    work in your code, and Python’s expressivity helps you to spot these algorithmic
+    opportunities. Radim Řehůřek discusses how a Python implementation can beat a
+    pure C implementation in [“Making Deep Learning Fly with RadimRehurek.com (2014)”](ch12.xhtml#lessons-from-field-radim).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In this chapter we’ll review the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Cython, the most commonly used tool for compiling to C, covering both `numpy`
+    and normal Python code (requires some knowledge of C)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Numba, a new compiler specialized for `numpy` code
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: PyPy, a stable just-in-time compiler for non-`numpy` code that is a replacement
+    for the normal Python executable
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Later in the chapter we’ll look at foreign function interfaces, which allow
+    C code to be compiled into extension modules for Python. Python’s native API is
+    used with `ctypes` or with `cffi` (from the authors of PyPy), along with the `f2py`
+    Fortran-to-Python converter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: What Sort of Speed Gains Are Possible?
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Gains of an order of magnitude or more are quite possible if your problem yields
+    to a compiled approach. Here, we’ll look at various ways to achieve speedups of
+    one to two orders of magnitude on a single core, along with using multiple cores
+    through OpenMP.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Python code that tends to run faster after compiling is mathematical, and it
+    has lots of loops that repeat the same operations many times. Inside these loops,
+    you’re probably making lots of temporary objects.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Code that calls out to external libraries (such as regular expressions, string
+    operations, and calls to database libraries) is unlikely to show any speedup after
+    compiling. Programs that are I/O-bound are also unlikely to show significant speedups.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Similarly, if your Python code focuses on calling vectorized `numpy` routines,
+    it may not run any faster after compilation—it’ll run faster only if the code
+    being compiled is mainly Python (and probably if it is mainly looping). We looked
+    at `numpy` operations in [Chapter 6](ch06_split_000.xhtml#matrix_computation);
+    compiling doesn’t really help because there aren’t many intermediate objects.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Overall, it is very unlikely that your compiled code will run any faster than
+    a handcrafted C routine, but it is also unlikely to run much slower. It is quite
+    possible that the generated C code from your Python will run as fast as a handwritten
+    C routine, unless the C coder has particularly good knowledge of ways to tune
+    the C code to the target machine’s architecture.
+  prefs: []
+  type: TYPE_NORMAL
+- en: For math-focused code, it is possible that a handcoded Fortran routine will
+    beat an equivalent C routine, but again, this probably requires expert-level knowledge.
+    Overall, a compiled result (probably using Cython) will be as close to a handcoded-in-C
+    result as most programmers will need.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Keep the diagram in [Figure 7-1](#FIG-04b-diminishing-returns) in mind when
+    you profile and work on your algorithm. A small amount of work understanding your
+    code through profiling should enable you to make smarter choices at an algorithmic
+    level. After this, some focused work with a compiler should buy you an additional
+    speedup. It will probably be possible to keep tweaking your algorithm, but don’t
+    be surprised to see increasingly small improvements coming from increasingly large
+    amounts of work on your part. Know when additional effort isn’t useful.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/hpp2_0701.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 7-1\. Some effort profiling and compiling brings a lot of reward, but
+    continued effort tends to pay increasingly less
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: If you’re dealing with Python code and batteries-included libraries without
+    `numpy`, Cython and PyPy are your main choices. If you’re working with `numpy`,
+    Cython and Numba are the right choices. These tools all support Python 3.6+.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Some of the following examples require a little understanding of C compilers
+    and C code. If you lack this knowledge, you should learn a little C and compile
+    a working C program before diving in too deeply.
+  prefs: []
+  type: TYPE_NORMAL
+- en: JIT Versus AOT Compilers
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The tools we’ll look at split roughly into two sets: tools for compiling ahead
+    of time, or AOT (Cython), and tools for compiling “just in time,” or JIT (Numba,
+    PyPy).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: By compiling AOT, you create a static library that’s specialized to your machine.
+    If you download `numpy`, `scipy`, or scikit-learn, it will compile parts of the
+    library using Cython on your machine (or you’ll use a prebuilt compiled library,
+    if you’re using a distribution like Continuum’s Anaconda). By compiling ahead
+    of use, you’ll have a library that can instantly be used to work on solving your
+    problem.
+  prefs: []
+  type: TYPE_NORMAL
+- en: By compiling JIT, you don’t have to do much (if any) work up front; you let
+    the compiler step in to compile just the right parts of the code at the time of
+    use. This means you have a “cold start” problem—if most of your program could
+    be compiled and currently none of it is, when you start running your code, it’ll
+    run very slowly while it compiles. If this happens every time you run a script
+    and you run the script many times, this cost can become significant. PyPy suffers
+    from this problem, so you may not want to use it for short but frequently running
+    scripts.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The current state of affairs shows us that compiling ahead of time buys us the
+    best speedups, but often this requires the most manual effort. Just-in-time compiling
+    offers some impressive speedups with very little manual intervention, but it can
+    also run into the problem just described. You’ll have to consider these trade-offs
+    when choosing the right technology for your problem.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Why Does Type Information Help the Code Run Faster?
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Python is dynamically typed—a variable can refer to an object of any type, and
+    any line of code can change the type of the object that is referred to. This makes
+    it difficult for the virtual machine to optimize how the code is executed at the
+    machine code level, as it doesn’t know which fundamental datatype will be used
+    for future operations. Keeping the code generic makes it run more slowly.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In the following example, `v` is either a floating-point number or a pair of
+    floating-point numbers that represent a `complex` number. Both conditions could
+    occur in the same loop at different points in time, or in related serial sections
+    of code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The `abs` function works differently depending on the underlying datatype.
+    Using `abs` for an integer or a floating-point number turns a negative value into
+    a positive value. Using `abs` for a complex number involves taking the square
+    root of the sum of the squared components:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math alttext="left-bracket dollar-sign a b s left-parenthesis c right-parenthesis
+    equals StartRoot c period r e a l squared plus c period i m a g squared EndRoot
+    dollar-sign right-bracket"><mrow><mi>a</mi> <mi>b</mi> <mi>s</mi> <mrow><mo>(</mo>
+    <mi>c</mi> <mo>)</mo></mrow> <mo>=</mo> <msqrt><mrow><mi>c</mi> <mo>.</mo> <mi>r</mi>
+    <mi>e</mi> <mi>a</mi> <msup><mi>l</mi> <mn>2</mn></msup> <mo>+</mo> <mi>c</mi>
+    <mo>.</mo> <mi>i</mi> <mi>m</mi> <mi>a</mi> <msup><mi>g</mi> <mn>2</mn></msup></mrow></msqrt></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: The machine code for the `complex` example involves more instructions and will
+    take longer to run. Before calling `abs` on a variable, Python first has to look
+    up the type of the variable and then decide which version of a function to call—this
+    overhead adds up when you make a lot of repeated calls.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Inside Python, every fundamental object, such as an integer, will be wrapped
+    up in a higher-level Python object (e.g., an `int` for an integer). The higher-level
+    object has extra functions like `__hash__` to assist with storage and `__str__`
+    for printing.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Inside a section of code that is CPU-bound, it is often the case that the types
+    of variables do not change. This gives us an opportunity for static compilation
+    and faster code execution.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If all we want are a lot of intermediate mathematical operations, we don’t need
+    the higher-level functions, and we may not need the machinery for reference counting
+    either. We can drop down to the machine code level and do our calculations quickly
+    using machine code and bytes, rather than manipulating the higher-level Python
+    objects, which involves greater overhead. To do this, we determine the types of
+    our objects ahead of time so we can generate the correct C code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using a C Compiler
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In the following examples, we’ll use `gcc` and `g++` from the GNU C Compiler
+    toolset. You could use an alternative compiler (e.g., Intel’s `icc` or Microsoft’s
+    `cl`) if you configure your environment correctly. Cython uses `gcc`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`gcc` is a very good choice for most platforms; it is well supported and quite
+    advanced. It is often possible to squeeze out more performance by using a tuned
+    compiler (e.g., Intel’s `icc` may produce faster code than `gcc` on Intel devices),
+    but the cost is that you have to gain more domain knowledge and learn how to tune
+    the flags on the alternative compiler.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: C and C++ are often used for static compilation rather than other languages
+    like Fortran because of their ubiquity and the wide range of supporting libraries.
+    The compiler and the converter, such as Cython, can study the annotated code to
+    determine whether static optimization steps (like inlining functions and unrolling
+    loops) can be applied.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Aggressive analysis of the intermediate abstract syntax tree (performed by Numba
+    and PyPy) provides opportunities to combine knowledge of Python’s way of expressing
+    things to inform the underlying compiler how best to take advantage of the patterns
+    that have been seen.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Reviewing the Julia Set Example
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Back in [Chapter 2](ch02.xhtml#chapter-profiling) we profiled the Julia set
+    generator. This code uses integers and complex numbers to produce an output image.
+    The calculation of the image is CPU-bound.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The main cost in the code was the CPU-bound nature of the inner loop that calculates
+    the `output` list. This list can be drawn as a square pixel array, where each
+    value represents the cost to generate that pixel.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The code for the inner function is shown in [Example 7-1](#compiling-review-julia).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-1\. Reviewing the Julia function’s CPU-bound code
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: On Ian’s laptop, the original Julia set calculation on a 1,000 × 1,000 grid
+    with `maxiter=300` takes approximately 8 seconds using a pure Python implementation
+    running on CPython 3.7.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Cython
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: '[Cython](http://cython.org) is a compiler that converts type-annotated Python
+    into a compiled extension module. The type annotations are C-like. This extension
+    can be imported as a regular Python module using `import`. Getting started is
+    simple, but a learning curve must be climbed with each additional level of complexity
+    and optimization. For Ian, this is the tool of choice for turning calculation-bound
+    functions into faster code, because of its wide usage, its maturity, and its OpenMP
+    support.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: With the OpenMP standard, it is possible to convert parallel problems into multiprocessing-aware
+    modules that run on multiple CPUs on one machine. The threads are hidden from
+    your Python code; they operate via the generated C code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Cython (announced in 2007) is a fork of Pyrex (announced in 2002) that expands
+    the capabilities beyond the original aims of Pyrex. Libraries that use Cython
+    include SciPy, scikit-learn, lxml, and ZeroMQ.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Cython can be used via a *setup.py* script to compile a module. It can also
+    be used interactively in IPython via a “magic” command. Typically, the types are
+    annotated by the developer, although some automated annotation is possible.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Compiling a Pure Python Version Using Cython
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'The easy way to begin writing a compiled extension module involves three files.
+    Using our Julia set as an example, they are as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The calling Python code (the bulk of our Julia code from earlier)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The function to be compiled in a new *.pyx* file
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: A *setup.py* that contains the instructions for calling Cython to make the extension
+    module
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Using this approach, the *setup.py* script is called to use Cython to compile
+    the *.pyx* file into a compiled module. On Unix-like systems, the compiled module
+    will probably be a *.so* file; on Windows it should be a *.pyd* (DLL-like Python
+    library).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'For the Julia example, we’ll use the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*julia1.py* to build the input lists and call the calculation function'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*cythonfn.pyx*, which contains the CPU-bound function that we can annotate'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*setup.py*, which contains the build instructions'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The result of running *setup.py* is a module that can be imported. In our *julia1.py*
+    script in [Example 7-2](#compiling-cython-import), we need only to make some tiny
+    changes to `import` the new module and call our function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-2\. Importing the newly compiled module into our main code
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: In [Example 7-3](#compiling-cython-pure-python), we will start with a pure Python
+    version without type annotations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-3\. Unmodified pure Python code in cythonfn.pyx (renamed from .py)
+    for Cython’s setup.py
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: The *setup.py* script shown in [Example 7-4](#compiling-cython-setup) is short;
+    it defines how to convert *cythonfn.pyx* into *calculate.so*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-4\. setup.py, which converts cythonfn.pyx into C code for compilation
+    by Cython
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: When we run the *setup.py* script in [Example 7-5](#compiling-cython-setup-build)
+    with the argument `build_ext`, Cython will look for *cythonfn.pyx* and build *cythonfn[…].so*.
+    The `language_level` is hardcoded to `3` here to force Python 3.*x* support.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Remember that this is a manual step—if you update your *.pyx* or *setup.py*
+    and forget to rerun the build command, you won’t have an updated *.so* module
+    to import. If you’re unsure whether you compiled the code, check the timestamp
+    for the *.so* file. If in doubt, delete the generated C files and the *.so* file
+    and build them again.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-5\. Running setup.py to build a new compiled module
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: The `--inplace` argument tells Cython to build the compiled module into the
+    current directory rather than into a separate *build* directory. After the build
+    has completed, we’ll have the intermediate *cythonfn.c*, which is rather hard
+    to read, along with *cythonfn[…].so*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now when the *julia1.py* code is run, the compiled module is imported, and the
+    Julia set is calculated on Ian’s laptop in 4.7 seconds, rather than the more usual
+    8.3 seconds. This is a useful improvement for very little effort.
+  prefs: []
+  type: TYPE_NORMAL
+- en: pyximport
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: A simplified build system has been introduced via `pyximport`. If your code
+    has a simple setup and doesn’t require third-party modules, you may be able to
+    do away with *setup.py* completely.
+  prefs: []
+  type: TYPE_NORMAL
+- en: By importing `pyximport` as seen in [Example 7-6](#compiling-cython-pyximport)
+    and calling `install`, any subsequently imported *.pyx* file will be automatically
+    compiled. This *.pyx* file can include annotations, or in this case, it can be
+    the unannotated code. The result runs in 4.7 seconds, as before; the only difference
+    is that we didn’t have to write a *setup.py* file.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-6\. Using `pyximport` to replace setup.py
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: Cython Annotations to Analyze a Block of Code
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The preceding example shows that we can quickly build a compiled module. For
+    tight loops and mathematical operations, this alone often leads to a speedup.
+    Obviously, though, we should not optimize blindly—we need to know which lines
+    of code take a lot of time so we can decide where to focus our efforts.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Cython has an annotation option that will output an HTML file we can view in
+    a browser. We use the command `cython -a cythonfn.pyx`, and the output file *cythonfn.html*
+    is generated. Viewed in a browser, it looks something like [Figure 7-2](#FIG-04b-cython-lists-1).
+    A similar image is available in the [Cython documentation](http://bit.ly/cythonize).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/hpp2_0702.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 7-2\. Colored Cython output of unannotated function
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Each line can be expanded with a double-click to show the generated C code.
+    More yellow means “more calls into the Python virtual machine,” while more white
+    means “more non-Python C code.” The goal is to remove as many of the yellow lines
+    as possible and end up with as much white as possible.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Although “more yellow lines” means more calls into the virtual machine, this
+    won’t necessarily cause your code to run slower. Each call into the virtual machine
+    has a cost, but the cost of those calls will be significant only if the calls
+    occur inside large loops. Calls outside large loops (for example, the line used
+    to create `output` at the start of the function) are not expensive relative to
+    the cost of the inner calculation loop. Don’t waste your time on the lines that
+    don’t cause a slowdown.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In our example, the lines with the most calls back into the Python virtual machine
+    (the “most yellow”) are lines 4 and 8\. From our previous profiling work, we know
+    that line 8 is likely to be called over 30 million times, so that’s a great candidate
+    to focus on.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Lines 9, 10, and 11 are almost as yellow, and we also know they’re inside the
+    tight inner loop. In total they’ll be responsible for the bulk of the execution
+    time of this function, so we need to focus on these first. Refer back to [“Using
+    line_profiler for Line-by-Line Measurements”](ch02.xhtml#profiling-line-profiler)
+    if you need to remind yourself of how much time is spent in this section.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Lines 6 and 7 are less yellow, and since they’re called only 1 million times,
+    they’ll have a much smaller effect on the final speed, so we can focus on them
+    later. In fact, since they are `list` objects, there’s actually nothing we can
+    do to speed up their access except, as you’ll see in [“Cython and numpy”](#compiling-cython-and-numpy),
+    to replace the `list` objects with `numpy` arrays, which will buy a small speed
+    advantage.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To better understand the yellow regions, you can expand each line. In [Figure 7-3](#FIG-04b-cython-lists-1-expanded),
+    we can see that to create the `output` list, we iterate over the length of `zs`,
+    building new Python objects that are reference-counted by the Python virtual machine.
+    Even though these calls are expensive, they won’t really affect the execution
+    time of this function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To improve the execution time of our function, we need to start declaring the
+    types of objects that are involved in the expensive inner loops. These loops can
+    then make fewer of the relatively expensive calls back into the Python virtual
+    machine, saving us time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In general, the lines that probably cost the most CPU time are those:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Inside tight inner loops
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Dereferencing `list`, `array`, or `np.array` items
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Performing mathematical operations
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '![](Images/hpp2_0703.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 7-3\. C code behind a line of Python code
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: If you don’t know which lines are most frequently executed, using a profiling
+    tool—`line_profiler`, discussed in [“Using line_profiler for Line-by-Line Measurements”](ch02.xhtml#profiling-line-profiler),
+    would be the most appropriate. You’ll learn which lines are executed most frequently
+    and which lines cost the most inside the Python virtual machine, so you’ll have
+    clear evidence of which lines you need to focus on to get the best speed gain.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Adding Some Type Annotations
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: '[Figure 7-2](#FIG-04b-cython-lists-1) shows that almost every line of our function
+    is calling back into the Python virtual machine. All of our numeric work is also
+    calling back into Python as we are using the higher-level Python objects. We need
+    to convert these into local C objects, and then, after doing our numerical coding,
+    we need to convert the result back to a Python object.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In [Example 7-7](#compiling-cython-primitive-types), we see how to add some
+    primitive types by using the `cdef` syntax.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: It is important to note that these types will be understood only by Cython and
+    *not* by Python. Cython uses these types to convert the Python code to C objects,
+    which do not have to call back into the Python stack; this means the operations
+    run at a faster speed, but they lose flexibility and development speed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The types we add are as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`int` for a signed integer'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`unsigned int` for an integer that can only be positive'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`double complex` for double-precision complex numbers'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The `cdef` keyword lets us declare variables inside the function body. These
+    must be declared at the top of the function, as that’s a requirement from the
+    C language specification.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-7\. Adding primitive C types to start making our compiled function
+    run faster by doing more work in C and less via the Python virtual machine
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: When adding Cython annotations, you’re adding non-Python code to the *.pyx*
+    file. This means you lose the interactive nature of developing Python in the interpreter.
+    For those of you familiar with coding in C, we go back to the code-compile-run-debug
+    cycle.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You might wonder if we could add a type annotation to the lists that we pass
+    in. We can use the `list` keyword, but this has no practical effect for this example.
+    The `list` objects still have to be interrogated at the Python level to pull out
+    their contents, and this is very slow.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The act of giving types to some of the primitive objects is reflected in the
+    annotated output in [Figure 7-4](#FIG-04b-cython-lists-2). Critically, lines 11
+    and 12—two of our most frequently called lines—have now turned from yellow to
+    white, indicating that they no longer call back to the Python virtual machine.
+    We can anticipate a great speedup compared to the previous version.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/hpp2_0704.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 7-4\. Our first type annotations
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: After compiling, this version takes 0.49 seconds to complete. With only a few
+    changes to the function, we are running at 15 times the speed of the original
+    Python version.
+  prefs: []
+  type: TYPE_NORMAL
+- en: It is important to note that the reason we are gaining speed is that more of
+    the frequently performed operations are being pushed down to the C level—in this
+    case, the updates to `z` and `n`. This means that the C compiler can optimize
+    the way the lower-level functions are operating on the bytes that represent these
+    variables, without calling into the relatively slow Python virtual machine.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As noted earlier in this chapter, `abs` for a complex number involves taking
+    the square root of the sum of the squares of the real and imaginary components.
+    In our test, we want to see if the square root of the result is less than 2\.
+    Rather than taking the square root, we can instead square the other side of the
+    comparison, so we turn `< 2` into `< 4`. This avoids having to calculate the square
+    root as the final part of the `abs` function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In essence, we started with
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math display="block"><mrow><msqrt><mrow><mi>c</mi> <mo>.</mo> <mi>r</mi> <mi>e</mi>
+    <mi>a</mi> <msup><mi>l</mi> <mn>2</mn></msup> <mo>+</mo> <mi>c</mi> <mo>.</mo>
+    <mi>i</mi> <mi>m</mi> <mi>a</mi> <msup><mi>g</mi> <mn>2</mn></msup></mrow></msqrt>
+    <mo><</mo> <msqrt><mn>4</mn></msqrt></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: and we have simplified the operation to
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math display="block"><mrow><mi>c</mi> <mo>.</mo> <mi>r</mi> <mi>e</mi> <mi>a</mi>
+    <msup><mi>l</mi> <mn>2</mn></msup> <mo>+</mo> <mi>c</mi> <mo>.</mo> <mi>i</mi>
+    <mi>m</mi> <mi>a</mi> <msup><mi>g</mi> <mn>2</mn></msup> <mo><</mo> <mn>4</mn></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: If we retained the `sqrt` operation in the following code, we would still see
+    an improvement in execution speed. One of the secrets to optimizing code is to
+    make it do as little work as possible. Removing a relatively expensive operation
+    by considering the ultimate aim of a function means that the C compiler can focus
+    on what it is good at, rather than trying to intuit the programmer’s ultimate
+    needs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Writing equivalent but more specialized code to solve the same problem is known
+    as *strength reduction*. You trade worse flexibility (and possibly worse readability)
+    for faster execution.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This mathematical unwinding leads to [Example 7-8](#augmentingwithtypes-cython-expanding-abs),
+    in which we have replaced the relatively expensive `abs` function with a simplified
+    line of expanded mathematics.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-8\. Expanding the `abs` function by using Cython
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: By annotating the code, we see that the `while` on line 10 ([Figure 7-5](#FIG-04b-cython-lists-4))
+    has become a little more yellow—it looks as though it might be doing more work
+    rather than less. It isn’t immediately obvious how much of a speed gain we’ll
+    get, but we know that this line is called over 30 million times, so we anticipate
+    a good improvement.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This change has a dramatic effect—by reducing the number of Python calls in
+    the innermost loop, we greatly reduce the calculation time of the function. This
+    new version completes in just 0.19 seconds, an amazing 40× speedup over the original
+    version. As ever, take a guide from what you see, but *measure* to test all of
+    your changes!
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/hpp2_0705.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 7-5\. Expanded math to get a final win
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Cython supports several methods of compiling to C, some easier than the full-type-annotation
+    method described here. You should familiarize yourself with the [pure Python mode](https://oreil.ly/5y9_a)
+    if you’d like an easier start to using Cython, and look at `pyximport` to ease
+    the introduction of Cython to colleagues.
+  prefs: []
+  type: TYPE_NORMAL
+- en: For a final possible improvement on this piece of code, we can disable bounds
+    checking for each dereference in the list. The goal of the bounds checking is
+    to ensure that the program does not access data outside the allocated array—in
+    C it is easy to accidentally access memory outside the bounds of an array, and
+    this will give unexpected results (and probably a segmentation fault!).
+  prefs: []
+  type: TYPE_NORMAL
+- en: By default, Cython protects the developer from accidentally addressing outside
+    the list’s limits. This protection costs a little bit of CPU time, but it occurs
+    in the outer loop of our function, so in total it won’t account for much time.
+    Disabling bounds checking is usually safe unless you are performing your own calculations
+    for array addressing, in which case you will have to be careful to stay within
+    the bounds of the list.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Cython has a set of flags that can be expressed in various ways. The easiest
+    is to add them as single-line comments at the start of the *.pyx* file. It is
+    also possible to use a decorator or compile-time flag to change these settings.
+    To disable bounds checking, we add a directive for Cython inside a comment at
+    the start of the *.pyx* file:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: As noted, disabling the bounds checking will save only a little bit of time
+    as it occurs in the outer loop, not in the inner loop, which is more expensive.
+    For this example, it doesn’t save us any more time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Try disabling bounds checking and wraparound checking if your CPU-bound code
+    is in a loop that is dereferencing items frequently.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Cython and numpy
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: '`list` objects (for background, see [Chapter 3](ch03.xhtml#chapter-lists-tuples))
+    have an overhead for each dereference, as the objects they reference can occur
+    anywhere in memory. In contrast, `array` objects store primitive types in contiguous
+    blocks of RAM, which enables faster addressing.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Python has the `array` module, which offers 1D storage for basic primitives
+    (including integers, floating-point numbers, characters, and Unicode strings).
+    NumPy’s `numpy.array` module allows multidimensional storage and a wider range
+    of primitive types, including complex numbers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: When iterating over an `array` object in a predictable fashion, the compiler
+    can be instructed to avoid asking Python to calculate the appropriate address
+    and instead to move to the next primitive item in the sequence by going directly
+    to its memory address. Since the data is laid out in a contiguous block, it is
+    trivial to calculate the address of the next item in C by using an offset, rather
+    than asking CPython to calculate the same result, which would involve a slow call
+    back into the virtual machine.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You should note that if you run the following `numpy` version *without* any
+    Cython annotations (that is, if you just run it as a plain Python script), it’ll
+    take about 21 seconds to run—far in excess of the plain Python `list` version,
+    which takes around 8 seconds. The slowdown is because of the overhead of dereferencing
+    individual elements in the `numpy` lists—it was never designed to be used this
+    way, even though to a beginner this might feel like the intuitive way of handling
+    operations. By compiling the code, we remove this overhead.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Cython has two special syntax forms for this. Older versions of Cython had a
+    special access type for `numpy` arrays, but more recently the generalized buffer
+    interface protocol has been introduced through the `memoryview`—this allows the
+    same low-level access to any object that implements the buffer interface, including
+    `numpy` arrays and Python arrays.
+  prefs: []
+  type: TYPE_NORMAL
+- en: An added bonus of the buffer interface is that blocks of memory can easily be
+    shared with other C libraries, without any need to convert them from Python objects
+    into another form.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The code block in [Example 7-9](#augmentingwithtypes-cython-numpy) looks a little
+    like the original implementation, except that we have added `memoryview` annotations.
+    The function’s second argument is `double complex[:] zs`, which means we have
+    a double-precision `complex` object using the buffer protocol as specified using
+    `[]`, which contains a one-dimensional data block specified by the single colon
+    `:`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-9\. Annotated `numpy` version of the Julia calculation function
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: In addition to specifying the input arguments by using the buffer annotation
+    syntax, we also annotate the `output` variable, assigning a 1D `numpy` array to
+    it via `empty`. The call to `empty` will allocate a block of memory but will not
+    initialize the memory with sane values, so it could contain anything. We will
+    overwrite the contents of this array in the inner loop so we don’t need to reassign
+    it with a default value. This is slightly faster than allocating and setting the
+    contents of the array with a default value.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We also expanded the call to `abs` by using the faster, more explicit math version.
+    This version runs in 0.18 seconds—a slightly faster result than the original Cythonized
+    version of the pure Python Julia example in [Example 7-8](#augmentingwithtypes-cython-expanding-abs).
+    The pure Python version has an overhead every time it dereferences a Python `complex`
+    object, but these dereferences occur in the outer loop and so don’t account for
+    much of the execution time. After the outer loop, we make native versions of these
+    variables, and they operate at “C speed.” The inner loop for both this `numpy`
+    example and the former pure Python example are doing the same work on the same
+    data, so the time difference is accounted for by the outer loop dereferences and
+    the creation of the `output` arrays.
+  prefs: []
+  type: TYPE_NORMAL
+- en: For reference, if we use the preceding code but don’t expand the `abs` math,
+    then the Cythonized result takes 0.49 seconds. This result makes it identical
+    to the earlier equivalent pure Python version’s runtime.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Parallelizing the Solution with OpenMP on One Machine
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: As a final step in the evolution of this version of the code, let’s look at
+    the use of the OpenMP C++ extensions to parallelize our embarrassingly parallel
+    problem. If your problem fits this pattern, you can quickly take advantage of
+    multiple cores in your computer.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Open Multi-Processing (OpenMP is a well-defined cross-platform API that supports
+    parallel execution and memory sharing for C, C++, and Fortran. It is built into
+    most modern C compilers, and if the C code is written appropriately, the parallelization
+    occurs at the compiler level, so it comes with relatively little effort to the
+    developer through Cython.
+  prefs: []
+  type: TYPE_NORMAL
+- en: With Cython, OpenMP can be added by using the `prange` (parallel range) operator
+    and adding the `-fopenmp` compiler directive to *setup.py*. Work in a `prange`
+    loop can be performed in parallel because we disable the (GIL). The GIL protects
+    access to Python objects, preventing multiple threads or processes from accessing
+    the same memory simultaneously, which might lead to corruption. By manually disabling
+    the GIL, we’re asserting that we won’t corrupt our own memory. Be careful when
+    you do this, and keep your code as simple as possible to avoid subtle bugs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: A modified version of the code with `prange` support is shown in [Example 7-10](#augmentingwithtypes-cython-omp1).
+    `with nogil:` specifies the block, where the GIL is disabled; inside this block,
+    we use `prange` to enable an OpenMP parallel `for` loop to independently calculate
+    each `i`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Warning
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: When disabling the GIL, we must *not* operate on regular Python objects (such
+    as lists); we must operate only on primitive objects and objects that support
+    the `memoryview` interface. If we operated on normal Python objects in parallel,
+    we’d have to solve the associated memory-management problems that the GIL deliberately
+    avoids. Cython doesn’t prevent us from manipulating Python objects, and only pain
+    and confusion can result if you do this!
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-10\. Adding `prange` to enable parallelization using OpenMP
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: To compile *cythonfn.pyx*, we have to modify the *setup.py* script as shown
+    in [Example 7-11](#compiling-cython-openmp-setup). We tell it to inform the C
+    compiler to use `-fopenmp` as an argument during compilation to enable OpenMP
+    and to link with the OpenMP libraries.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-11\. Adding the OpenMP compiler and linker flags to setup.py for Cython
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: With Cython’s `prange`, we can choose different scheduling approaches. With
+    `static`, the workload is distributed evenly across the available CPUs. Some of
+    our calculation regions are expensive in time, and some are cheap. If we ask Cython
+    to schedule the work chunks equally using `static` across the CPUs, the results
+    for some regions will complete faster than others, and those threads will then
+    sit idle.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Both the `dynamic` and `guided` schedule options attempt to mitigate this problem
+    by allocating work in smaller chunks dynamically at runtime, so that the CPUs
+    are more evenly distributed when the workload’s calculation time is variable.
+    The correct choice will vary depending on the nature of your workload.
+  prefs: []
+  type: TYPE_NORMAL
+- en: By introducing OpenMP and using `schedule="guided"`, we drop our execution time
+    to approximately 0.05 seconds—the `guided` schedule will dynamically assign work,
+    so fewer threads will wait for new work.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We also could have disabled the bounds checking for this example by using `#cython:
+    boundscheck=False`, but it wouldn’t improve our runtime.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Numba
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: '[Numba](http://numba.pydata.org) from Continuum Analytics is a just-in-time
+    compiler that specializes in `numpy` code, which it compiles via the LLVM compiler
+    (*not* via `g++` or `gcc++`, as used by our earlier examples) at runtime. It doesn’t
+    require a precompilation pass, so when you run it against new code, it compiles
+    each annotated function for your hardware. The beauty is that you provide a decorator
+    telling it which functions to focus on and then you let Numba take over. It aims
+    to run on all standard `numpy` code.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Numba has been rapidly evolving since the first edition of this book. It is
+    now fairly stable, so if you use `numpy` arrays and have nonvectorized code that
+    iterates over many items, Numba should give you a quick and very painless win.
+    Numba does not bind to external `C` libraries (which Cython can do), but it can
+    automatically generate code for GPUs (which Cython cannot).
+  prefs: []
+  type: TYPE_NORMAL
+- en: One drawback when using Numba is the toolchain—it uses LLVM, and this has many
+    dependencies. We recommend that you use Continuum’s Anaconda distribution, as
+    everything is provided; otherwise, getting Numba installed in a fresh environment
+    can be a very time-consuming task.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Example 7-12](#augmentingwithtypes-numba1) shows the addition of the `@jit`
+    decorator to our core Julia function. This is all that’s required; the fact that
+    `numba` has been imported means that the LLVM machinery kicks in at execution
+    time to compile this function behind the scenes.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-12\. Applying the `@jit` decorator to a function
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: If the `@jit` decorator is removed, this is just the `numpy` version of the
+    Julia demo running with Python 3.7, and it takes 21 seconds. Adding the `@jit`
+    decorator drops the execution time to 0.75 seconds. This is very close to the
+    result we achieved with Cython, but without all of the annotation effort.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If we run the same function a second time in the same Python session, it runs
+    even faster at 0.47 seconds—there’s no need to compile the target function on
+    the second pass if the argument types are the same, so the overall execution speed
+    is faster. On the second run, the Numba result is equivalent to the Cython with
+    `numpy` result we obtained before (so it came out as fast as Cython for very little
+    work!). PyPy has the same warm-up requirement.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you’d like to read another view on what Numba offers, see [“Numba”](ch12.xhtml#lesson-from-field-numba),
+    where core developer Valentin Haenel talks about the `@jit` decorator, viewing
+    the original Python source, and going further with parallel options and the `typed
+    List` and `typed Dict` for pure Python compiled interoperability.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Just as with Cython, we can add OpenMP parallelization support with `prange`.
+    [Example 7-13](#augmentingwithtypes-numba1-prange) expands the decorator to require
+    `nopython` and `parallel`. The `nopython` specifier means that if Numba cannot
+    compile all of the code, it will fail. Without this, Numba can silently fall back
+    on a Python mode that is slower; your code will run correctly, but you won’t see
+    any speedups. Adding `parallel` enables support for `prange`. This version drops
+    the general runtime from 0.47 seconds to 0.06 seconds. Currently Numba lacks support
+    for OpenMP scheduling options (and with Cython, the `guided` scheduler runs slightly
+    faster for this problem), but we expect support will be added in a future version.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-13\. Using `prange` to add parallelization
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: When debugging with Numba, it is useful to note that you can ask Numba to show
+    both the intermediate representation and the types for the function call. In [Example 7-14](#augmentingwithtypes-numba2),
+    we can see that `calculate_z` takes an `int64` and three `array` types.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-14\. Debugging inferred types
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[Example 7-15](#augmentingwithtypes-numba3) shows the continued output from
+    the call to `inspect_types()`, where each line of compiled code is shown augmented
+    by type information. This output is invaluable if you find that you can’t get
+    `nopython=True` to work; here, you’ll be able to discover where your code isn’t
+    recognized by Numba.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-15\. Viewing the intermediate representation from Numba
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: Numba is a powerful JIT compiler that is now maturing. Do not expect magic on
+    your first attempt—you may have to introspect the generated code to figure out
+    how to make your code compile in `nopython` mode. Once you’ve solved this, you’ll
+    likely see good wins. Your best approach will be to break your current code into
+    small (<10 line) and discrete functions and to tackle these one at a time. Do
+    not try to throw a large function into Numba; you can debug the process far more
+    quickly if you have only small, discrete chunks to review individually.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Numba to Compile NumPy for Pandas
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: In [“Pandas”](ch06_split_001.xhtml#pandas-ols), we looked at solving the slope
+    calculation task for 100,000 rows of data in a Pandas DataFrame using Ordinary
+    Least Squares. We can make that approach an order of magnitude faster by using
+    Numba.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We can take the `ols_lstsq_raw` function that we used before and, decorated
+    with `numba.jit` as shown in [Example 7-16](#pandas_ols_functions_numba), can
+    generate a compiled variant. Note the `nopython=True` argument—this forces Numba
+    to raise an exception if we pass in a datatype that it doesn’t understand, where
+    it would otherwise fall back to a pure Python mode silently. We don’t want it
+    to run correctly but slowly on the wrong datatype if we pass in a Pandas Series;
+    here we want to be informed that we’ve passed in the wrong data. In this edition,
+    Numba can compile only NumPy datatypes, not Pandas types like Series.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-16\. Solving Ordinary Least Squares with `numpy` on a Pandas DataFrame
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: The first time we call this function in, we get the expected short delay while
+    the function is compiled; processing 100,000 rows takes 2.3 seconds including
+    compilation time. Subsequent calls to process 100,000 rows are very fast—the noncompiled
+    `ols_lstsq_raw` takes 5.3 seconds per 100,000 rows, whereas after using Numba
+    it takes 0.58 seconds. That’s nearly a tenfold speedup!
+  prefs: []
+  type: TYPE_NORMAL
+- en: PyPy
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: '[PyPy](http://pypy.org) is an alternative implementation of the Python language
+    that includes a tracing just-in-time compiler; it is compatible with Python 3.5+.
+    Typically, it lags behind the most recent version of Python; at the time of writing
+    this second edition Python 3.7 is standard, and PyPy supports up to Python 3.6.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: PyPy is a drop-in replacement for CPython and offers all the built-in modules.
+    The project comprises the RPython Translation Toolchain, which is used to build
+    PyPy (and could be used to build other interpreters). The JIT compiler in PyPy
+    is very effective, and good speedups can be seen with little or no work on your
+    part. See [“PyPy for Successful Web and Data Processing Systems (2014)”](ch12.xhtml#lessons-from-field-marko)
+    for a large PyPy deployment success story.
+  prefs: []
+  type: TYPE_NORMAL
+- en: PyPy runs our pure Python Julia demo without any modifications. With CPython
+    it takes 8 seconds, and with PyPy it takes 0.9 seconds. This means that PyPy achieves
+    a result that’s very close to the Cython example in [Example 7-8](#augmentingwithtypes-cython-expanding-abs),
+    without *any effort at all*—that’s pretty impressive! As we observed in our discussion
+    of Numba, if the calculations are run again *in the same session*, then the second
+    and subsequent runs are faster than the first one, as they are already compiled.
+  prefs: []
+  type: TYPE_NORMAL
+- en: By expanding the math and removing the call to `abs`, the PyPy runtime drops
+    to 0.2 seconds. This is equivalent to the Cython versions using pure Python and
+    `numpy` without any work! Note that this result is true only if you’re not using
+    `numpy` with PyPy.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The fact that PyPy supports all the built-in modules is interesting—this means
+    that `multiprocessing` works as it does in CPython. If you have a problem that
+    runs with the batteries-included modules and can run in parallel with `multiprocessing`,
+    you can expect that all the speed gains you might hope to get will be available.
+  prefs: []
+  type: TYPE_NORMAL
+- en: PyPy’s speed has evolved over time. The older chart in [Figure 7-6](#FIG-speed-pypy-org)
+    (from [*speed.pypy.org*](http://speed.pypy.org/)) will give you an idea about
+    PyPy’s maturity. These speed tests reflect a wide range of use cases, not just
+    mathematical operations. It is clear that PyPy offers a faster experience than
+    CPython.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/hpp2_0706.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 7-6\. Each new version of PyPy offers speed improvements
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Garbage Collection Differences
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: PyPy uses a different type of garbage collector than CPython, and this can cause
+    some nonobvious behavior changes to your code. Whereas CPython uses reference
+    counting, PyPy uses a modified mark-and-sweep approach that may clean up an unused
+    object much later. Both are correct implementations of the Python specification;
+    you just have to be aware that code modifications might be required when swapping.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Some coding approaches seen in CPython depend on the behavior of the reference
+    counter—particularly the flushing of files, if you open and write to them without
+    an explicit file close. With PyPy the same code will run, but the updates to the
+    file might get flushed to disk later, when the garbage collector next runs. An
+    alternative form that works in both PyPy and Python is to use a context manager
+    using `with` to open and automatically close files. The [Differences Between PyPy
+    and CPython page](http://bit.ly/PyPy_CPy_diff) on the PyPy website lists the details.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Running PyPy and Installing Modules
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: If you’ve never run an alternative Python interpreter, you might benefit from
+    a short example. Assuming you’ve downloaded and extracted PyPy, you’ll now have
+    a folder structure containing a *bin* directory. Run it as shown in [Example 7-17](#compiling-pypy-run)
+    to start PyPy.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-17\. Running PyPy to see that it implements Python 3.6
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note that PyPy 7.1 runs as Python 3.6\. Now we need to set up `pip`, and we’ll
+    want to install IPython. The steps shown in [Example 7-18](#compiling-pypy-pip)
+    are the same as you might have performed with CPython if you’ve installed `pip`
+    without the help of an existing distribution or package manager. Note that when
+    running IPython, we get the same build number as we see when running `pypy3` in
+    the preceding example.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You can see that IPython runs with PyPy just the same as with CPython, and using
+    the `%run` syntax, we execute the Julia script inside IPython to achieve 0.2-second
+    runtimes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-18\. Installing `pip` for PyPy to install third-party modules like
+    IPython
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE22]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note that PyPy supports projects like `numpy` that require C bindings through
+    the CPython extension compatibility layer [`cpyext`](http://bit.ly/PyPy_compatibility),
+    but it has an overhead of 4–6×, which generally makes `numpy` too slow. If your
+    code is mostly pure Python with only a few calls to `numpy`, you may still see
+    significant overall gains. If your code, like the Julia example, makes many calls
+    to `numpy`, then it’ll run significantly slower. The Julia benchmark here with
+    `numpy` arrays runs 6× slower than when it is run with CPython.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you need other packages, they should install thanks to the `cpyext` compatibility
+    module, which is essentially PyPy’s version of `python.h`. It handles the different
+    memory management requirements of PyPy and CPython; however, this management incurs
+    a cost of 4–6× per managed call, so the speed advantages of `numpy` can be negated
+    by this overhead. A new project named `HPy` (formerly `PyHandle`) aims to remove
+    this overhead by providing a higher-level object handle—one not tied to CPython’s
+    implementation—which can be shared with other projects like Cython.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you want to understand PyPy’s performance characteristics, look at the `vmprof`
+    lightweight sampling profiler. It is thread-safe and supports a web-based user
+    interface.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Another downside of PyPy is that it can use a lot of RAM. Each release is better
+    in this respect, but in practice it may use more RAM than CPython. RAM is fairly
+    cheap, though, so it makes sense to try to trade it for enhanced performance.
+    Some users have also reported *lower* RAM usage when using PyPy. As ever, perform
+    an experiment using representative data if this is important to you.
+  prefs: []
+  type: TYPE_NORMAL
+- en: A Summary of Speed Improvements
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: To summarize the previous results, in [Table 7-1](#table_compiler_results1)
+    we see that PyPy on a pure Python math-based code sample is approximately 9× faster
+    than CPython with no code changes, and it’s even faster if the `abs` line is simplified.
+    Cython runs faster than PyPy in both instances but requires annotated code, which
+    increases development and support effort.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Table 7-1\. Julia (no `numpy`) results
+  prefs: []
+  type: TYPE_NORMAL
+- en: '|   | Speed |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| CPython | 8.00s |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Cython | 0.49s |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Cython on expanded math | 0.19s |'
+  prefs: []
+  type: TYPE_TB
+- en: '| PyPy | 0.90s |'
+  prefs: []
+  type: TYPE_TB
+- en: '| PyPy on expanded math | 0.20s |'
+  prefs: []
+  type: TYPE_TB
+- en: The Julia solver with `numpy` enables the investigation of OpenMP. In [Table 7-2](#table_compiler_results2),
+    we see that both Cython and Numba run faster than the non-`numpy` versions with
+    expanded math. When we add OpenMP, both Cython and Numba provide further speedups
+    for very little additional coding.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Table 7-2\. Julia (with `numpy` and expanded math) results
+  prefs: []
+  type: TYPE_NORMAL
+- en: '|  | Speed |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| CPython | 21.00s |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Cython | 0.18s |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Cython and OpenMP “guided” | 0.05s |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Numba (2nd & subsequent runs) | 0.17s |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Numba and OpenMP | 0.06s |'
+  prefs: []
+  type: TYPE_TB
+- en: For pure Python code, PyPy is an obvious first choice. For `numpy` code, Numba
+    is a great first choice.
+  prefs: []
+  type: TYPE_NORMAL
+- en: When to Use Each Technology
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: If you’re working on a numeric project, then each of these technologies could
+    be useful to you. [Table 7-3](#table_compiler_summary) summarizes the main options.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Table 7-3\. Compiler options
+  prefs: []
+  type: TYPE_NORMAL
+- en: '|  | Cython | Numba | PyPy |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- | --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Mature | Y | Y | Y |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Widespread | Y | – | – |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `numpy` support | Y | Y | Y |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Nonbreaking code changes | – | Y | Y |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Needs C knowledge | Y | – | – |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Supports OpenMP | Y | Y | – |'
+  prefs: []
+  type: TYPE_TB
+- en: Numba may offer quick wins for little effort, but it too has limitations that
+    might stop it working well on your code. It is also a relatively young project.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Cython probably offers the best results for the widest set of problems, but
+    it does require more effort and has an additional “support tax” due to mixing
+    Python with C annotations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: PyPy is a strong option if you’re not using `numpy` or other hard-to-port C
+    extensions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you’re deploying a production tool, you probably want to stick with well-understood
+    tools—Cython should be your main choice, and you may want to check out [“Making
+    Deep Learning Fly with RadimRehurek.com (2014)”](ch12.xhtml#lessons-from-field-radim).
+    PyPy is also being used in production settings (see [“PyPy for Successful Web
+    and Data Processing Systems (2014)”](ch12.xhtml#lessons-from-field-marko)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you’re working with light numeric requirements, note that Cython’s buffer
+    interface accepts `array.array` matrices—this is an easy way to pass a block of
+    data to Cython for fast numeric processing without having to add `numpy` as a
+    project dependency.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Overall, Numba is maturing and is a promising project, whereas Cython is mature.
+    PyPy is regarded as being fairly mature now and should definitely be evaluated
+    for long-running processes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In a class run by Ian, a capable student implemented a C version of the Julia
+    algorithm and was disappointed to see it execute more slowly than his Cython version.
+    It transpired that he was using 32-bit floats on a 64-bit machine—these run more
+    slowly than 64-bit doubles on a 64-bit machine. The student, despite being a good
+    C programmer, didn’t know that this could involve a speed cost. He changed his
+    code, and the C version, despite being significantly shorter than the autogenerated
+    Cython version, ran at roughly the same speed. The act of writing the raw C version,
+    comparing its speed, and figuring out how to fix it took longer than using Cython
+    in the first place.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This is just an anecdote; we’re not suggesting that Cython will generate the
+    best code, and competent C programmers can probably figure out how to make *their*
+    code run faster than the version generated by Cython. It is worth noting, though,
+    that the assumption that handwritten C will be faster than converted Python is
+    not a safe assumption. You must always benchmark and make decisions using evidence.
+    C compilers are pretty good at converting code into fairly efficient machine code,
+    and Python is pretty good at letting you express your problem in an easy-to-understand
+    language—combine these two powers sensibly.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Other Upcoming Projects
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The [PyData compilers page](http://compilers.pydata.org) lists a set of high
+    performance and compiler tools.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Pythran](https://oreil.ly/Zi4r5) is an AOT compiler aimed at scientists who
+    are using `numpy`. Using few annotations, it will compile Python numeric code
+    to a faster binary—it produces speedups that are very similar to `Cython` but
+    for much less work. Among other features, it always releases the GIL and can use
+    both SIMD instructions and OpenMP. Like Numba, it doesn’t support classes. If
+    you have tight, locally bound loops in Numpy, Pythran is certainly worth evaluating.
+    The associated FluidPython project aims to make Pythran even easier to write and
+    provides JIT capability.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Transonic](https://oreil.ly/tT4Sf) attempts to unify Cython, Pythran, and
+    Numba, and potentially other compilers, behind one interface to enable quick evaluation
+    of multiple compilers without having to rewrite code.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[ShedSkin](https://oreil.ly/BePH-) is an AOT compiler aimed at nonscientific,
+    pure Python code. It has no `numpy` support, but if your code is pure Python,
+    ShedSkin produces speedups similar to those seen by PyPy (without using `numpy`).
+    It supports Python 2.7 with some Python 3.*x* support.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PyCUDA](https://oreil.ly/Lg4H3) and [PyOpenCL](https://oreil.ly/8e3OA) offer
+    CUDA and OpenCL bindings into Python for direct access to GPUs. Both libraries
+    are mature and support Python 3.4+.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Nuitka](https://oreil.ly/dLPEw) is a Python compiler that aims to be an alternative
+    to the usual CPython interpreter, with the option of creating compiled executables.
+    It supports all of Python 3.7, though in our testing it didn’t produce any noticeable
+    speed gains for our plain Python numerical tests.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Our community is rather blessed with a wide array of compilation options. While
+    they all have trade-offs, they also offer a lot of power so that complex projects
+    can take advantage of the full power of CPUs and multicore architectures.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Graphics Processing Units (GPUs)
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Graphics Processing Units (GPUs) are becoming incredibly popular as a method
+    to speed up arithmetic-heavy computational workloads. Originally designed to help
+    handle the heavy linear algebra requirements of 3D graphics, GPUs are particularly
+    well suited for solving easily parallelizable problems.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Interestingly, GPUs themselves are slower than most CPUs if we just look at
+    clock speeds. This may seem counterintuitive, but as we discussed in [“Computing
+    Units”](ch01_split_000.xhtml#computing-units), clock speed is just one measurement
+    of hardware’s ability to compute. GPUs excel at massively parallelize tasks because
+    of the staggering number of compute cores they have. CPUs generally have on the
+    order of 12 cores, while modern-day GPUs have thousands. For example, on the machine
+    used to run benchmarks for this section, the AMD Ryzen 7 1700 CPU has 8 cores,
+    each at 3.2 GHz, while the NVIDIA RTX 2080 TI GPU has 4,352 cores, each at 1.35
+    GHz.^([1](ch07.xhtml#idm46122415613752))
+  prefs: []
+  type: TYPE_NORMAL
+- en: This incredible amount of parallelism can speed up many numerical tasks by a
+    staggering amount. However, programming on these devices can be quite tough. Because
+    of the amount of parallelism, data locality needs to be considered and can be
+    make-or-break in terms of getting speedups. There are many tools out there to
+    write native GPU code (also called `kernels`) in Python, such as [CuPy](https://cupy.chainer.org).
+    However, the needs of modern deep learning algorithms have been pushing new interfaces
+    into GPUs that are easy and intuitive to use.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The two front-runners in terms of easy-to-use GPU mathematics libraries are
+    TensorFlow and PyTorch. We will focus on PyTorch for its ease of use and great
+    speed.^([2](ch07.xhtml#idm46122415607560))
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Dynamic Graphs: PyTorch'
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: '[PyTorch](https://pytorch.org) is a static computational graph tensor library
+    that is particularly user-friendly and has a very intuitive API for anyone familiar
+    with `numpy`. In addition, since it is a tensor library, it has all the same functionality
+    as `numpy`, with the added advantages of being able to create functions through
+    its static computational graph and calculate derivatives of those functions by
+    using a mechanism called `autograd`.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: The `autograd` functionality of PyTorch is left out since it isn’t relevant
+    to our discussion. However, this module is quite amazing and can take the derivative
+    of any arbitrary function made up of PyTorch operations. It can do it on the fly
+    and at any value. For a long time, taking derivatives of complex functions could
+    have been the makings of a PhD thesis; however, now we can do it incredibly simply
+    and efficiently. While this may also be off-topic for your work, we recommend
+    learning about `autograd` and automatic-differentiation in general, as it truly
+    is an incredible advancement in numerical computation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: By *static computational graph*, we mean that performing operations on PyTorch
+    objects creates a dynamic definition of a program that gets compiled to GPU code
+    in the background when it is executed (exactly like a JIT from [“JIT Versus AOT
+    Compilers”](#jit_vs_compiler)). Since it is dynamic, changes to the Python code
+    automatically get reflected in changes in the GPU code without an explicit compilation
+    step needed. This hugely aids debugging and interactivity, as compared to static
+    graph libraries like TensorFlow.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In a static graph, like TensorFlow, we first set up our computation, then compile
+    it. From then on, our compute is fixed in stone, and we can change it only by
+    recompiling the entire thing. With the dynamic graph of PyTorch, we can conditionally
+    change our compute graph or build it up iteratively. This allows us to have conditional
+    debugging in our code or lets us play with the GPU in an interactive session in
+    IPython. The ability to flexibly control the GPU is a complete game changer when
+    dealing with complex GPU-based workloads.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As an example of the library’s ease of use as well as its speed, in [Example 7-19](#compilation-diffusion-pytorch)
+    we port the `numpy` code from [Example 6-9](ch06_split_000.xhtml#matrix_numpy_naive)
+    to use the GPU using PyTorch.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-19\. PyTorch 2D diffusion
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE23]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](Images/1.png)](#co_compiling_to_c_CO1-1a), [![2](Images/2.png)](#co_compiling_to_c_CO1-2a)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The only changes needed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Most of the work is done in the modified import, where we changed `numpy` to
+    `torch`. In fact, if we just wanted to run our optimized code on the CPU, we could
+    stop here.^([3](ch07.xhtml#idm46122415458168)) To use the GPU, we simply need
+    to move our data to the GPU, and then `torch` will automatically compile all computations
+    we do on that data into GPU code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As we can see in [Figure 7-7](#pytorch_versus_numpy), this small code change
+    has given us an incredible speedup.^([4](ch07.xhtml#idm46122415455528)) For a
+    512 × 512 grid, we have a 5.3× speedup, and for a 4,096 × 4,096 grid we have a
+    102× speedup! It is interesting that the GPU code doesn’t seem to be as affected
+    by increases to grid size as the `numpy` code is.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Comparison of Numpy and PyTorch on CPU and GPU (using an NVIDIA RTX 2080TI)](Images/hpp2_0707.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 7-7\. PyTorch versus `numpy` performance
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: This speedup is a result of how parallelizable the diffusion problem is. As
+    we said before, the GPU we are using has 4,362 independent computation cores.
+    It seems that once the diffusion problem is parallelized, none of these GPU cores
+    are being fully utilized.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Warning
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: When timing the performance of GPU code, it is important to set the environmental
+    flag `CUDA_LAUNCH_BLOCKING=1`. By default, GPU operations are run asynchronously
+    to allow more operations to be pipelined together and thus to minimize the total
+    utilization of the GPU and increase parallelization. When the asynchronous behavior
+    is enabled, we can guarantee that the computations are done only when either the
+    data is copied to another device or a `torch.cuda.synchronize()` command is issued.
+    By enabling the preceding environmental variable, we can make sure that computations
+    are completed when they are issued and that we are indeed measuring compute time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Basic GPU Profiling
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'One way to verify exactly how much of the GPU we are utilizing is by using
+    the `nvidia-smi` command to inspect the resource utilization of the GPU. The two
+    values we are most interested in are the power usage and the GPU utilization:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE24]'
+  prefs: []
+  type: TYPE_PRE
+- en: GPU utilization, here at 95%, is a slightly mislabeled field. It tells us what
+    percentage of the last second has been spent running at least one kernel. So it
+    isn’t telling us what percentage of the GPU’s total computational power we’re
+    using but rather how much time was spent *not* being idle. This is a very useful
+    measurement to look at when debugging memory transfer issues and making sure that
+    the CPU is providing the GPU with enough work.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Power usage, on the other hand, is a good proxy for judging how much of the
+    GPU’s compute power is being used. As a rule of thumb, the more power the GPU
+    is drawing, the more compute it is currently doing. If the GPU is waiting for
+    data from the CPU or using only half of the available cores, power use will be
+    reduced from the maximum.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Another useful tool is [`gpustat`](https://oreil.ly/3Sa1r). This project provides
+    a nice view into many of NVIDIA’s stats using a much friendlier interface than
+    `nvidia-smi`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To help understand what specifically is causing slowdowns in your PyTorch code,
+    the project provides a special profiling tool. Running your code with `python
+    -m torch.utils.bottleneck` will show both CPU and GPU runtime stats to help you
+    identify potential optimizations to either portion of your code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Performance Considerations of GPUs
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Since a GPU is a completely auxiliary piece of hardware on the computer, with
+    its own architecture as compared with the CPU, there are many GPU-specific performance
+    considerations to keep in mind.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The biggest speed consideration for GPUs is the transfer time of data from the
+    system memory to the GPU memory. When we use `tensor.to(*DEVICE*)`, we are triggering
+    a transfer of data that may take some time depending on the speed of the GPU’s
+    bus and the amount of data being transferred.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Other operations may trigger a transfer as well. In particular, `tensor.items()`
+    and `tensor.tolist()` often cause problems when introduced for debugging purposes.
+    In fact, running `tensor.numpy()` to convert a PyTorch tensor into a `numpy` array
+    specifically requires an explicit copy out of the GPU, which ensures you understand
+    the potential penalty.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As an example, let’s add a `grid.cpu()` call inside the solver loop of our
+    diffusion code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE25]'
+  prefs: []
+  type: TYPE_PRE
+- en: To ensure that we have a fair comparison, we will also add `torch.cuda.synchronize()`
+    to the control code so that we are simply testing the time to copy the data from
+    the CPU. In addition to this slowing down your code by triggering a data transfer
+    from the GPU to the system memory, your code will slow down because the GPU will
+    pause code execution that would have continued in the background until the transfer
+    is complete.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This change to the code for a 2,048 × 2,048 grid slows down our code by 2.54×!
+    Even though our GPU has an advertised bandwidth of 616.0 GB/s, this overhead can
+    quickly add up. In addition, other overhead costs are associated with a memory
+    copy. First, we are creating a hard stop to any potential pipelining of our code
+    execution. Then, because we are no longer pipelining, our data on the GPU must
+    all be synchronized out of the memory of the individual CUDA cores. Finally, space
+    on system memory needs to be prepared to receive the new data from the GPU.
+  prefs: []
+  type: TYPE_NORMAL
+- en: While this seems like a ridiculous addition to make to our code, this sort of
+    thing happens all the time. In fact, one of the biggest things slowing down PyTorch
+    code when it comes to deep learning is copying training data from the host into
+    the GPU. Often the training data is simply too big to fit on the GPU, and doing
+    these constant data transfers is an unavoidable penalty.
+  prefs: []
+  type: TYPE_NORMAL
+- en: There are ways to alleviate the overhead from this inevitable data transfer
+    when the problem is going from CPU to GPU. First, the memory region can be marked
+    as `pinned`. This can be done by calling the `Tensor.pin_memory()` method, which
+    returns a copy of the CPU tensor that is copied to a “page locked” region of memory.
+    This page-locked region can be copied to the GPU much more quickly, and it can
+    be copied asynchronously so as to not disturb any computations being done by the
+    GPU. While training a deep learning model, data loading is generally done with
+    the `DataLoader` class, which conveniently has a `pin_memory` parameter that can
+    automatically do this for all your training data.^([5](ch07.xhtml#idm46122415396520))
+  prefs: []
+  type: TYPE_NORMAL
+- en: The most important step is to profile your code by using the tools outlined
+    in [“Basic GPU Profiling”](#gpu-profiling). When your code is spending most of
+    its time doing data transfers, you will see a low power draw, a smaller GPU utilization
+    (as reported by `nvidia-smi`), and most of your time being spent in the `to` function
+    (as reported by `bottleneck`). Ideally, you will be using the maximum amount of
+    power the GPU can support and have 100% utilization. This is possible even when
+    large amounts of data transfer are required—even when training deep learning models
+    with a large number of images!
+  prefs: []
+  type: TYPE_NORMAL
+- en: Caution
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: GPUs are not particularly good at running multiple tasks at the same time. When
+    starting up a task that requires heavy use of the GPU, ensure that no other tasks
+    are utilizing it by running `nvidia-smi`. However, if you are running a graphical
+    environment, you may have no choice but to have your desktop and GPU code use
+    the GPU at the same time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: When to Use GPUs
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: We’ve seen that GPUs can be incredibly quick; however, memory considerations
+    can be quite devastating to this runtime. This seems to indicate that if your
+    task requires mainly linear algebra and matrix manipulations (like multiplication,
+    addition, and Fourier transforms), then GPUs are a fantastic tool. This is particularly
+    true if the calculation can happen on the GPU uninterrupted for a period of time
+    before being copied back into system memory.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As an example of a task that requires a lot of branching, we can imagine code
+    where every step of the computation requires the previous result. If we compare
+    running [Example 7-20](#very-branching-no-gpu) using PyTorch versus using NumPy,
+    we see that NumPy is consistently faster (98% faster for the included example!).
+    This makes sense given the architecture of the GPU. While the GPU can run many
+    more tasks at once than the CPU can, each of those tasks runs more slowly on the
+    GPU than on the CPU. This example task can run only one computation at a time,
+    so having many compute cores doesn’t help at all; it’s better to simply have one
+    very fast core.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-20\. Highly branching task
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE26]'
+  prefs: []
+  type: TYPE_PRE
+- en: In addition, because of the limited memory of the GPU, it is not a good tool
+    for tasks that require exceedingly large amounts of data, many conditional manipulations
+    of the data, or changing data. Most GPUs made for computational tasks have around
+    12 GB of memory, which puts a significant limitation on “large amounts of data.”
+    However, as technology improves, the size of GPU memory increases, so hopefully
+    this limitation becomes less drastic in the future.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The general recipe for evaluating whether to use the GPU consists of the following
+    steps:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Ensure that the memory use of the problem will fit within the GPU (in [“Using
+    memory_profiler to Diagnose Memory Usage”](ch02.xhtml#memory_profiler), we explore
+    profiling memory use).
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Evaluate whether the algorithm requires a lot of branching conditions versus
+    vectorized operations. As a rule of thumb, `numpy` functions generally vectorize
+    very well, so if your algorithm can be written in terms of `numpy` calls, your
+    code probably will vectorize well! You can also check the `branches` result when
+    running `perf` (as explained in [“Understanding perf”](ch06_split_000.xhtml#understanding_perf)).
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Evaluate how much data needs to be moved between the GPU and the CPU. Some questions
+    to ask here are “How much computation can I do before I need to plot/save results?”
+    and “Are there times my code will have to copy the data to run in a library I
+    know isn’t GPU-compatible?”
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Make sure PyTorch supports the operations you’d like to do! PyTorch implements
+    a large portion of the `numpy` API, so this shouldn’t be an issue. For the most
+    part, the API is even the same, so you don’t need to change your code at all.
+    However, in some cases either PyTorch doesn’t support an operation (such as dealing
+    with complex numbers) or the API is slightly different (for example, with generating
+    random numbers).
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Considering these four points will help give you confidence that a GPU approach
+    would be worthwhile. There are no hard rules for when the GPU will work better
+    than the CPU, but these questions will help you gain some intuition. However,
+    PyTorch also makes converting code to use the GPU painless, so the barrier to
+    entry is quite low, even if you are just evaluating the GPU’s performance.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Foreign Function Interfaces
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Sometimes the automatic solutions just don’t cut it, and you need to write custom
+    C or Fortran code yourself. This could be because the compilation methods don’t
+    find some potential optimizations, or because you want to take advantage of libraries
+    or language features that aren’t available in Python. In all of these cases, you’ll
+    need to use foreign function interfaces, which give you access to code written
+    and compiled in another language.
+  prefs: []
+  type: TYPE_NORMAL
+- en: For the rest of this chapter, we will attempt to use an external library to
+    solve the 2D diffusion equation in the same way we did in [Chapter 6](ch06_split_000.xhtml#matrix_computation).^([6](ch07.xhtml#idm46122415229448))
+    The code for this library, shown in [Example 7-21](#c_diffusion_2d), could be
+    representative of a library you’ve installed or code that you have written. The
+    methods we’ll look at serve as great ways to take small parts of your code and
+    move them to another language in order to do very targeted language-based optimizations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-21\. Sample C code for solving the 2D diffusion problem
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE27]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: We fix the grid size to be 512 × 512 in order to simplify the example code.
+    To accept an arbitrarily sized grid, you must pass in the `in` and `out` parameters
+    as double pointers and include function arguments for the actual size of the grid.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To use this code, we must compile it into a shared module that creates a *.so*
+    file. We can do this using `gcc` (or any other C compiler) by following these
+    steps:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE28]'
+  prefs: []
+  type: TYPE_PRE
+- en: We can place this final shared library file anywhere that is accessible to our
+    Python code, but standard *nix organization stores shared libraries in */usr/lib*
+    and */usr/local/lib*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ctypes
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The most basic foreign function interface in CPython is through the `ctypes`
+    module.^([7](ch07.xhtml#idm46122415064632)) The bare-bones nature of this module
+    can be quite inhibitive at times—you are in charge of doing everything, and it
+    can take quite a while to make sure that you have everything in order. This extra
+    level of complexity is evident in our `ctypes` diffusion code, shown in [Example 7-22](#ctypes_2D_diffusion_code).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-22\. `ctypes` 2D diffusion code
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE29]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](Images/1.png)](#co_compiling_to_c_CO1-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This is similar to importing the `diffusion.so` library. Either this file is
+    in one of the standard system paths for library files or we can enter an absolute
+    path.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](Images/2.png)](#co_compiling_to_c_CO1-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`grid` and `out` are both `numpy` arrays.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](Images/3.png)](#co_compiling_to_c_CO1-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We finally have all the setup necessary and can call the C function directly.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This first thing we do is “import” our shared library. This is done with the
+    `ctypes.CDLL` call. In this line, we can specify any shared library that Python
+    can access (for example, the `ctypes-opencv` module loads the `libcv.so` library).
+    From this, we get a `_diffusion` object that contains all the members that the
+    shared library contains. In this example, `diffusion.so` contains only one function,
+    `evolve`, which is now made available to us as a property of the `_diffusion`
+    object. If `diffusion.so` had many functions and properties, we could access them
+    all through the `_diffusion` object.
+  prefs: []
+  type: TYPE_NORMAL
+- en: However, even though the `_diffusion` object has the `evolve` function available
+    within it, Python doesn’t know how to use it. C is statically typed, and the function
+    has a very specific signature. To properly work with the `evolve` function, we
+    must explicitly set the input argument types and the return type. This can become
+    quite tedious when developing libraries in tandem with the Python interface, or
+    when dealing with a quickly changing library. Furthermore, since `ctypes` can’t
+    check if you have given it the correct types, your code may silently fail or segfault
+    if you make a mistake!
+  prefs: []
+  type: TYPE_NORMAL
+- en: Furthermore, in addition to setting the arguments and return type of the function
+    object, we also need to convert any data we care to use with it (this is called
+    *casting*). Every argument we send to the function must be carefully casted into
+    a native C type. Sometimes this can get quite tricky, since Python is very relaxed
+    about its variable types. For example, if we had `num1 = 1e5`, we would have to
+    know that this is a Python `float`, and thus we should use a `ctype.c_float`.
+    On the other hand, for `num2 = 1e300`, we would have to use `ctype.c_double`,
+    because it would overflow a standard C `float`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: That being said, `numpy` provides a `.ctypes` property to its arrays that makes
+    it easily compatible with `ctypes`. If `numpy` didn’t provide this functionality,
+    we would have had to initialize a `ctypes` array of the correct type and then
+    find the location of our original data and have our new `ctypes` object point
+    there.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Warning
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Unless the object you are turning into a `ctype` object implements a buffer
+    (as do the `array` module, `numpy` arrays, `io.StringIO`, etc.), your data will
+    be copied into the new object. In the case of casting an `int` to a `float`, this
+    doesn’t mean much for the performance of your code. However, if you are casting
+    a very long Python list, this can incur quite a penalty! In these cases, using
+    the `array` module or a `numpy` array, or even building up your own buffered object
+    using the `struct` module, would help. This does, however, hurt the readability
+    of your code, since these objects are generally less flexible than their native
+    Python counterparts.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This memory management can get even more complicated if you have to send the
+    library a complicated data structure. For example, if your library expects a C
+    `struct` representing a point in space with the properties `x` and `y`, you would
+    have to define the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE30]'
+  prefs: []
+  type: TYPE_PRE
+- en: At this point you could start creating C-compatible objects by initializing
+    a `cPoint` object (i.e., `point = cPoint(10, 5)`). This isn’t a terrible amount
+    of work, but it can become tedious and results in some fragile code. What happens
+    if a new version of the library is released that slightly changes the structure?
+    This will make your code very hard to maintain and generally results in stagnant
+    code, where the developers simply decide never to upgrade the underlying libraries
+    that are being used.
+  prefs: []
+  type: TYPE_NORMAL
+- en: For these reasons, using the `ctypes` module is great if you already have a
+    good understanding of C and want to be able to tune every aspect of the interface.
+    It has great portability since it is part of the standard library, and if your
+    task is simple, it provides simple solutions. Just be careful because the complexity
+    of `ctypes` solutions (and similar low-level solutions) quickly becomes unmanageable.
+  prefs: []
+  type: TYPE_NORMAL
+- en: cffi
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Realizing that `ctypes` can be quite cumbersome to use at times, `cffi` attempts
+    to simplify many of the standard operations that programmers use. It does this
+    by having an internal C parser that can understand function and structure definitions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As a result, we can simply write the C code that defines the structure of the
+    library we wish to use, and then `cffi` will do all the heavy work for us: it
+    imports the module and makes sure we specify the correct types to the resulting
+    functions. In fact, this work can be almost trivial if the source for the library
+    is available, since the header files (the files ending in *.h*) will include all
+    the relevant definitions we need.^([8](ch07.xhtml#idm46122414779272)) [Example 7-23](#cffi_2D_diffusion_code)
+    shows the `cffi` version of the 2D diffusion code.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-23\. `cffi` 2D diffusion code
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE31]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](Images/1.png)](#co_compiling_to_c_CO2-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The contents of this definition can normally be acquired from the manual of
+    the library that you are using or by looking at the library’s header files.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](Images/2.png)](#co_compiling_to_c_CO2-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: While we still need to cast nonnative Python objects for use with our C module,
+    the syntax is very familiar to those with experience in C.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the preceding code, we can think of the `cffi` initialization as being two-stepped.
+    First, we create an `FFI` object and give it all the global C declarations we
+    need. This can include datatypes in addition to function signatures. These signatures
+    don’t necessarily contain any code; they simply need to define what the code will
+    look like. Then we can import a shared library containing the actual implementation
+    of the functions by using `dlopen`. This means we could have told `FFI` about
+    the function signature for the `evolve` function and then loaded up two different
+    implantations and stored them in different objects (which is fantastic for debugging
+    and profiling!).
+  prefs: []
+  type: TYPE_NORMAL
+- en: In addition to easily importing a shared C library, `cffi` allows you to write
+    C code and have it be dynamically compiled using the `verify` function. This has
+    many immediate benefits—for example, you can easily rewrite small portions of
+    your code to be in C without invoking the large machinery of a separate C library.
+    Alternatively, if there is a library you wish to use, but some glue code in C
+    is required to have the interface work perfectly, you can inline it into your
+    `cffi` code, as shown in [Example 7-24](#cffi_with_inline_2D_diffusion_code),
+    to have everything be in a centralized location. In addition, since the code is
+    being dynamically compiled, you can specify compile instructions to every chunk
+    of code you need to compile. Note, however, that this compilation has a one-time
+    penalty every time the `verify` function is run to actually perform the compilation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-24\. `cffi` with inline 2D diffusion code
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE32]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](Images/1.png)](#co_compiling_to_c_CO3-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Since we are just-in-time compiling this code, we can also provide relevant
+    compilation flags.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Another benefit of the `verify` functionality is that it plays nicely with complicated
+    `cdef` statements. For example, if we were using a library with a complicated
+    structure but wanted to use only a part of it, we could use the partial struct
+    definition. To do this, we add a `...` in the struct definition in `ffi.cdef`
+    and `#include` the relevant header file in a later `verify`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'For example, suppose we were working with a library with header `complicated.h`
+    that included a structure that looked like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE33]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'If we cared only about the `x` and `y` properties, we could write some simple
+    `cffi` code that cares only about those values:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE34]'
+  prefs: []
+  type: TYPE_PRE
+- en: We could then run the `do_calculation` function from the `complicated.h` library
+    and have returned to us a `Point` object with its `x` and `y` properties accessible.
+    This is amazing for portability, since this code will run just fine on systems
+    with a different implementation of `Point` or when new versions of `complicated.h`
+    come out, as long as they all have the `x` and `y` properties.
+  prefs: []
+  type: TYPE_NORMAL
+- en: All of these niceties really make `cffi` an amazing tool to have when you’re
+    working with C code in Python. It is much simpler than `ctypes`, while still giving
+    you the same amount of fine-grained control you may want when working directly
+    with a foreign function interface.
+  prefs: []
+  type: TYPE_NORMAL
+- en: f2py
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: For many scientific applications, Fortran is still the gold standard. While
+    its days of being a general-purpose language are over, it still has many niceties
+    that make vector operations easy to write and quite quick. In addition, many performance
+    math libraries are written in Fortran ([LAPACK](https://oreil.ly/WwULF), [BLAS](https://oreil.ly/9-pR7),
+    etc.), all of which are fundamental in libraries such as SciPy, and being able
+    to use them in your performance Python code may be critical.
+  prefs: []
+  type: TYPE_NORMAL
+- en: For such situations, [`f2py`](https://oreil.ly/h5cwN) provides a dead-simple
+    way of importing Fortran code into Python. This module is able to be so simple
+    because of the explicitness of types in Fortran. Since the types can be easily
+    parsed and understood, `f2py` can easily make a CPython module that uses the native
+    foreign function support within C to use the Fortran code. This means that when
+    you are using `f2py`, you are actually autogenerating a C module that knows how
+    to use Fortran code! As a result, a lot of the confusion inherent in the `ctypes`
+    and `cffi` solutions simply doesn’t exist.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In [Example 7-25](#f2py_diffusion), we can see some simple `f2py`-compatible
+    code for solving the diffusion equation. In fact, all native Fortran code is `f2py`-compatible;
+    however, the annotations to the function arguments (the statements prefaced by
+    `!f2py`) simplify the resulting Python module and make for an easier-to-use interface.
+    The annotations implicitly tell `f2py` whether we intend for an argument to be
+    only an output or only an input, or to be something we want to modify in place
+    or hidden completely. The hidden type is particularly useful for the sizes of
+    vectors: while Fortran may need those numbers explicitly, our Python code already
+    has this information on hand. When we set the type as “hidden,” `f2py` can automatically
+    fill those values for us, essentially keeping them hidden from us in the final
+    Python interface.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-25\. Fortran 2D diffusion code with `f2py` annotations
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE35]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'To build the code into a Python module, we run the following command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE36]'
+  prefs: []
+  type: TYPE_PRE
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: We specifically use `gfortran` in the preceding call to `f2py`. Make sure it
+    is installed on your system or that you change the corresponding argument to use
+    the Fortran compiler you have installed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This will create a library file pinned to your Python version and operating
+    system (*diffusion.cpython-37m-x86_64-linux-gnu.so*, in our case) that can be
+    imported directly into Python.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If we play around with the resulting module interactively, we can see the niceties
+    that `f2py` has given us, thanks to our annotations and its ability to parse the
+    Fortran code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE37]'
+  prefs: []
+  type: TYPE_PRE
+- en: This code shows that the result from the `f2py` generation is automatically
+    documented, and the interface is quite simplified. For example, instead of us
+    having to extract the sizes of the vectors, `f2py` has figured out how to automatically
+    find this information and simply hides it in the resulting interface. In fact,
+    the resulting `evolve` function looks exactly the same in its signature as the
+    pure Python version we wrote in [Example 6-14](ch06_split_000.xhtml#matrix_numpy_memory1).
+  prefs: []
+  type: TYPE_NORMAL
+- en: The only thing we must be careful of is the ordering of the `numpy` arrays in
+    memory. Since most of what we do with `numpy` and Python focuses on code derived
+    from C, we always use the C convention for ordering data in memory (called *row-major
+    ordering*). Fortran uses a different convention (*column-major ordering*) that
+    we must make sure our vectors abide by. These orderings simply state whether,
+    for a 2D array, columns or rows are contiguous in memory.^([9](ch07.xhtml#idm46122413870280))
+    Luckily, this simply means we specify the `order='F'` parameter to `numpy` when
+    declaring our vectors.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Caution
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: The difference in ordering basically changes which is the outer loop when iterating
+    over a multidimensional array. In Python and C, if you define an array as `array[X][Y]`,
+    your outer loop will be over `X` and your inner loop will be over `Y`. In `fortran`,
+    your outer loop will be over `Y` and your inner loop will be over `X`. If you
+    use the wrong loop ordering, you will at best suffer a major performance penalty
+    because of an increase in `cache-misses` (see [“Memory Fragmentation”](ch06_split_000.xhtml#matrix_memory_fragmentation))
+    and at worst access the wrong data!
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This results in the following code to use our Fortran subroutine. This code
+    looks exactly the same as what we used in [Example 6-14](ch06_split_000.xhtml#matrix_numpy_memory1),
+    except for the import from the `f2py`-derived library and the explicit Fortran
+    ordering of our data:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE38]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](Images/1.png)](#co_compiling_to_c_CO4-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Fortran orders numbers differently in memory, so we must remember to set our
+    `numpy` arrays to use that standard.
+  prefs: []
+  type: TYPE_NORMAL
+- en: CPython Module
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Finally, we can always go right down to the CPython API level and write a CPython
+    module. This requires us to write code in the same way that CPython is developed
+    and take care of all of the interactions between our code and the implementation
+    of CPython.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This has the advantage that it is incredibly portable, depending on the Python
+    version. We don’t require any external modules or libraries, just a C compiler
+    and Python! However, this doesn’t necessarily scale well to new versions of Python.
+    For example, CPython modules written for Python 2.7 won’t work with Python 3,
+    and vice versa.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: In fact, much of the slowdown in the Python 3 rollout was rooted in the difficulty
+    in making this change. When creating a CPython module, you are coupled very closely
+    to the actual Python implementation, and large changes in the language (such as
+    the change from 2.7 to 3) require large modifications to your module.
+  prefs: []
+  type: TYPE_NORMAL
+- en: That portability comes at a big cost, though—you are responsible for every aspect
+    of the interface between your Python code and the module. This can make even the
+    simplest tasks take dozens of lines of code. For example, to interface with the
+    diffusion library from [Example 7-21](#c_diffusion_2d), we must write 28 lines
+    of code simply to read the arguments to a function and parse them ([Example 7-26](#compiling_cpython_module)).
+    Of course, this does mean that you have incredibly fine-grained control over what
+    is happening. This goes all the way down to being able to manually change the
+    reference counts for Python’s garbage collection (which can be the cause of a
+    lot of pain when creating CPython modules that deal with native Python types).
+    Because of this, the resulting code tends to be minutely faster than other interface
+    methods.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Warning
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: All in all, this method should be left as a last resort. While it is quite informative
+    to write a CPython module, the resulting code is not as reusable or maintainable
+    as other potential methods. Making subtle changes in the module can often require
+    completely reworking it. In fact, we include the module code and the required
+    *setup.py* to compile it ([Example 7-27](#compiling_cpython_module_setup)) as
+    a cautionary tale.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-26\. CPython module to interface to the 2D diffusion library
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE39]'
+  prefs: []
+  type: TYPE_PRE
+- en: To build this code, we need to create a *setup.py* script that uses the `distutils`
+    module to figure out how to build the code such that it is Python-compatible ([Example 7-27](#compiling_cpython_module_setup)).
+    In addition to the standard `distutils` module, `numpy` provides its own module
+    to help with adding `numpy` integration in your CPython modules.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-27\. Setup file for the CPython module diffusion interface
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE40]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The result from this is a *cdiffusion.so* file that can be imported directly
+    from Python and used quite easily. Since we had complete control over the signature
+    of the resulting function and exactly how our C code interacted with the library,
+    we were able to (with some hard work) create a module that is easy to use:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE41]'
+  prefs: []
+  type: TYPE_PRE
+- en: Wrap-Up
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The various strategies introduced in this chapter allow you to specialize your
+    code to different degrees in order to reduce the number of instructions the CPU
+    must execute and to increase the efficiency of your programs. Sometimes this can
+    be done algorithmically, although often it must be done manually (see [“JIT Versus
+    AOT Compilers”](#jit_vs_compiler)). Furthermore, sometimes these methods must
+    be employed simply to use libraries that have already been written in other languages.
+    Regardless of the motivation, Python allows us to benefit from the speedups that
+    other languages can offer on some problems, while still maintaining verbosity
+    and flexibility when needed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We also looked into how to use the GPU to use purpose-specific hardware to solve
+    problems faster than a CPU could alone. These devices are very specialized and
+    can have very different performance considerations than classical high performance
+    programming. However, we’ve seen that new libraries like PyTorch make evaluating
+    the GPU much simpler than it ever has been.
+  prefs: []
+  type: TYPE_NORMAL
+- en: It is important to note, though, that these optimizations are done to optimize
+    the efficiency of compute instructions only. If you have I/O-bound processes coupled
+    to a compute-bound problem, simply compiling your code may not provide any reasonable
+    speedups. For these problems, we must rethink our solutions and potentially use
+    parallelism to run different tasks at the same time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([1](ch07.xhtml#idm46122415613752-marker)) The RTX 2080 TI also includes 544
+    tensor cores specifically created to help with mathematical operations that are
+    particularly useful for deep learning.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([2](ch07.xhtml#idm46122415607560-marker)) For comparisons of the performance
+    of TensorFlow and PyTorch, see [*https://oreil.ly/8NOJW*](https://oreil.ly/8NOJW)
+    and [*https://oreil.ly/4BKM5*](https://oreil.ly/4BKM5).
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([3](ch07.xhtml#idm46122415458168-marker)) PyTorch CPU performance isn’t terribly
+    great unless you install from source. When installing from source, optimized linear
+    algebra libraries are used to give speeds comparable to NumPy.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([4](ch07.xhtml#idm46122415455528-marker)) As with any JIT, the first time
+    a function is called, it will have the overhead of having to compile the code.
+    In [Example 7-19](#compilation-diffusion-pytorch), we profile the functions multiple
+    times and ignore the first time in order to measure only the runtime speeds.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([5](ch07.xhtml#idm46122415396520-marker)) The `DataLoader` object also supports
+    running with multiple workers. Having several workers is recommended if data is
+    being loaded from disk in order to minimize I/O time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([6](ch07.xhtml#idm46122415229448-marker)) For simplicity, we will not implement
+    the boundary conditions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([7](ch07.xhtml#idm46122415064632-marker)) This is CPython-dependent. Other
+    versions of Python may have their own versions of `ctypes`, which may work differently.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([8](ch07.xhtml#idm46122414779272-marker)) In Unix systems, header files for
+    system libraries can be found in */usr/include*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([9](ch07.xhtml#idm46122413870280-marker)) For more information, see [the Wikipedia
+    page](http://bit.ly/row-major_order) on row-major and column-major ordering.
+  prefs: []
+  type: TYPE_NORMAL

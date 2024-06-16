@@ -1,0 +1,400 @@
+- en: 'Chapter 6\. Improving Functional Tests: Ensuring Isolation and Removing Voodoo
+    Sleeps'
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Before we dive in and fix our single-global-list problem, let’s take care of
+    a couple of housekeeping items. At the end of the last chapter, we made a note
+    that different test runs were interfering with each other, so we’ll fix that.
+    I’m also not happy with all these `time.sleep`s peppered through the code; they
+    seem a bit unscientific, so we’ll replace them with something more reliable.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Both of these changes will be moving us towards testing “best practices”, making
+    our tests more deterministic and more reliable.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Ensuring Test Isolation in Functional Tests
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'We ended the last chapter with a classic testing problem: how to ensure *isolation*
+    between tests. Each run of our functional tests was leaving list items lying around
+    in the database, and that would interfere with the test results when you next
+    ran the tests.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: When we run *unit* tests, the Django test runner automatically creates a brand
+    new test database (separate from the real one), which it can safely reset before
+    each individual test is run, and then throw away at the end. But our functional
+    tests currently run against the “real” database, *db.sqlite3*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: One way to tackle this would be to “roll our own” solution, and add some code
+    to *functional_tests.py* which would do the cleaning up. The `setUp` and `tearDown`
+    methods are perfect for this sort of thing.
+  prefs: []
+  type: TYPE_NORMAL
+- en: But since this is a common problem, Django supplies a test class called `LiveServerTestCase`
+    which addresses this issue. It will automatically create a test database (just
+    like in a unit test run), and start up a development server for the functional
+    tests to run against. Although as a tool it has some limitations which we’ll need
+    to work around later, it’s dead useful at this stage, so let’s check it out.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`LiveServerTestCase` expects to be run by the Django test runner using *manage.py*,
+    which will run tests from any files whose name begins with *test_*. To keep things
+    neat and tidy, let’s make a folder for our functional tests, so that it looks
+    a bit like an app. All Django needs is for it to be a valid Python package directory
+    (i.e., one with a *___init___.py* in it):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: Now we want to *move* our functional tests, from being a standalone file called
+    *functional_tests.py*, to being the *tests.py* of the `functional_tests` app.
+    We use **`git mv`** so that Git keeps track of the fact that this is the same
+    file and should have a single history.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'At this point your directory tree should look like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: '*functional_tests.py* is gone, and has turned into *functional_tests/tests.py*.
+    Now, whenever we want to run our functional tests, instead of running `python
+    functional_tests.py`, we will use `python manage.py test functional_tests`.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: You could mix your functional tests into the tests for the `lists` app. I tend
+    to prefer to keep them separate, because functional tests usually have cross-cutting
+    concerns that run across different apps. FTs are meant to see things from the
+    point of view of your users, and your users don’t care about how you’ve split
+    work between different apps!
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Now let’s edit *functional_tests/tests.py* and change our `NewVisitorTest`
+    class to make it use `LiveServerTestCase`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: functional_tests/tests.py (ch06l001)
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Next, instead of hardcoding the visit to localhost port 8000, `LiveServerTestCase`
+    gives us an attribute called `live_server_url`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: functional_tests/tests.py (ch06l002)
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: We can also remove the `if __name__ == '__main__'` from the end if we want,
+    since we’ll be using the Django test runner to launch the FT.
+  prefs: []
+  type: TYPE_NORMAL
+- en: TODO — FIXES FROM HERE
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Now we are able to run our functional tests using the Django test runner, by
+    telling it to run just the tests for our new `functional_tests` app:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The FT still passes, reassuring us that our refactor didn’t break anything.
+    You’ll also notice that if you run the tests a second time, there aren’t any old
+    list items lying around from the previous test—​it has cleaned up after itself.
+    Success! We should commit it as an atomic change:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: Running Just the Unit Tests
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Now if we run `manage.py test`, Django will run both the functional and the
+    unit tests:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'In order to run just the unit tests, we can specify that we want to only run
+    the tests for the `lists` app:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Aside: Upgrading Selenium and Geckodriver'
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: As I was running through this chapter again today, I found the FTs hung when
+    I tried to run them.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'It turns out that Firefox had auto-updated itself overnight, and my versions
+    of Selenium and Geckodriver needed upgrading too. A quick visit to the [geckodriver
+    releases page](https://github.com/mozilla/geckodriver/releases) confirmed there
+    was a new version out. So a few downloads and upgrades were in order:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: A quick `pip install --upgrade selenium` first.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Then a quick download of the new geckodriver.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: I saved a backup copy of the old one somewhere, and put the new one in its place
+    somewhere on the `PATH`.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: And a quick check with `geckodriver --version` confirms the new one was ready
+    to go.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The FTs were then back to running the way I expected them to.
+  prefs: []
+  type: TYPE_NORMAL
+- en: There was no particular reason that it happened at this point in the book; indeed,
+    it’s quite unlikely that it’ll happen right now for you, but it may happen at
+    some point, and this seemed as good a place as any to talk about it, since we’re
+    doing some housekeeping.
+  prefs: []
+  type: TYPE_NORMAL
+- en: It’s one of the things you have to put up with when using Selenium. Although
+    it is possible to pin your browser and Selenium versions (on a CI server, for
+    example), browser versions don’t stand still out in the real world, and you need
+    to keep up with what your users have.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: If something strange is going on with your FTs, it’s always worth trying to
+    upgrade Selenium.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Back to our regular programming now.
+  prefs: []
+  type: TYPE_NORMAL
+- en: On Implicit and Explicit Waits, and Voodoo time.sleeps
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Let’s talk about the `time.sleep` in our FT:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: functional_tests/tests.py
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This is what’s called an “explicit wait”. That’s by contrast with “implicit
+    waits”: in certain cases, Selenium tries to wait “automatically” for you, when
+    it thinks the page is loading. It even provides a method called `implicitly_wait`
+    that lets you control how long it will wait if you ask it for an element that
+    doesn’t seem to be on the page yet.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In fact, in the first edition, I was able to rely entirely on implicit waits.
+    The problem is that implicit waits are always a little flakey, and with the release
+    of Selenium 4, implicit waits were disabled by default. At the same time, the
+    general opinion from the Selenium team was that implicit waits were just a bad
+    idea, and [to be avoided](https://www.selenium.dev/documentation/webdriver/waits/).
+  prefs: []
+  type: TYPE_NORMAL
+- en: So this edition has explicit waits from the very beginning. But the problem
+    is that those `time.sleep`s have their own issues.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Currently we’re waiting for one second, but who’s to say that’s the right amount
+    of time? For most tests we run against our own machine, one second is way too
+    long, and it’s going to really slow down our FT runs. 0.1s would be fine. But
+    the problem is that if you set it that low, every so often you’re going to get
+    a spurious failure because, for whatever reason, the laptop was being a bit slow
+    just then. And even at 1s you can never be quite sure you’re not going to get
+    random failures that don’t indicate a real problem, and false positives in tests
+    are a real annoyance (there’s lots more on this in [an article by Martin Fowler](https://martinfowler.com/articles/nonDeterminism.xhtml)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'TIP: Unexpected `NoSuchElementException` and `StaleElementException` errors
+    are often a sign that you need an explicit wait.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'So let’s replace our sleeps with a tool that will wait for just as long as
+    is needed, up to a nice long timeout to catch any glitches. We’ll rename `check_for_row_in_list_table`
+    to `wait_for_row_in_list_table`, and add some polling/retry logic to it:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: functional_tests/tests.py (ch06l004)
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_improving_functional_tests__ensuring_isolation_and_removing_voodoo_sleeps_CO1-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We’ll use a constant called `MAX_WAIT` to set the maximum amount of time we’re
+    prepared to wait. 5 seconds should be enough to catch any glitches or random slowness.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_improving_functional_tests__ensuring_isolation_and_removing_voodoo_sleeps_CO1-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Here’s the loop, which will keep going forever, unless we get to one of two
+    possible exit routes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_improving_functional_tests__ensuring_isolation_and_removing_voodoo_sleeps_CO1-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Here are our three lines of assertions from the old version of the method.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](assets/4.png)](#co_improving_functional_tests__ensuring_isolation_and_removing_voodoo_sleeps_CO1-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: If we get through them and our assertion passes, we return from the function
+    and escape the loop.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![5](assets/5.png)](#co_improving_functional_tests__ensuring_isolation_and_removing_voodoo_sleeps_CO1-5)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'But if we catch an exception, we wait a short amount of time and loop around
+    to retry. There are two types of exceptions we want to catch: `WebDriverException`
+    for when the page hasn’t loaded and Selenium can’t find the table element on the
+    page, and `AssertionError` for when the table is there, but it’s perhaps a table
+    from before the page reloads, so it doesn’t have our row in yet.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![6](assets/6.png)](#co_improving_functional_tests__ensuring_isolation_and_removing_voodoo_sleeps_CO1-6)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Here’s our second escape route. If we get to this point, that means our code
+    kept raising exceptions every time we tried it until we exceeded our timeout.
+    So this time, we re-raise the exception and let it bubble up to our test, and
+    most likely end up in our traceback, telling us why the test failed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Are you thinking this code is a little ugly, and makes it a bit harder to see
+    exactly what we’re doing? I agree. Later on ([Link to Come]), we’ll refactor out
+    a general `wait_for` helper, to separate the timing and re-raising logic from
+    the test assertions. But we’ll wait until we need it in multiple places.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: If you’ve used Selenium before, you may know that it has a few [helper functions
+    to do waits](https://www.selenium.dev/documentation/webdriver/waits/#explicit-wait).
+    I’m not a big fan of them, though not for any objective reason really. Over the
+    course of the book we’ll build a couple of wait helper tools which I think will
+    make for nice, readable code, but of course you should check out the homegrown
+    Selenium waits in your own time, and see if you prefer them.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Now we can rename our method calls, and remove the voodoo `time.sleep`s:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: functional_tests/tests.py (ch06l005)
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'And rerun the tests:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: Hooray we’re back to passing, and notice we’ve shaved a couple of seconds off
+    the execution time too. That might not seem like a lot right now, but it all adds
+    up.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Just to check we’ve done the right thing, let’s deliberately break the test
+    in a couple of ways and see some errors. First let’s check that if we look for
+    some row text that will never appear, we get the right error:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: functional_tests/tests.py (ch06l006)
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We see we still get a nice self-explanatory test failure message:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Did you get a bit bored waiting 5 seconds for the test to fail? That’s one of
+    the downsides of explicit waits. There’s a tricky tradeoff between waiting long
+    enough that little glitches don’t throw you, versus waiting so long that expected
+    failures are painfully slow to watch. Making MAX_WAIT configurable so that it’s
+    fast in local dev, but more conservative on Continuous Integration (CI) servers
+    can be a good idea. See [Link to Come] for an introduction to CI.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s put that back the way it was and break something else:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: functional_tests/tests.py (ch06l007)
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Sure enough, we get the errors for when the page doesn’t contain the element
+    we’re looking for too:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Everything seems to be in order. Let’s put our code back to way it should be,
+    and do one final test run:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: Great. With that little interlude over, let’s crack on with getting our application
+    actually working for multiple lists. Don’t forget to commit first!
+  prefs: []
+  type: TYPE_NORMAL

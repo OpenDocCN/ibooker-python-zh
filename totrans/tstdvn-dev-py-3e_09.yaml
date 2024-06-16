@@ -1,0 +1,1219 @@
+- en: 'Chapter 5\. Saving User Input: Testing the Database'
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: So far we’ve managed to return a static HTML page with an input box in it. Next
+    we want to take the text that the user types into that input box and send it to
+    the server, so that we can save it somehow and display it back to her later.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The first time I started writing code for this chapter, I immediately wanted
+    to skip to what I thought was the right design: multiple database tables for lists
+    and list items, a bunch of different URLs for adding new lists and items, three
+    new view functions, and about half a dozen new unit tests for all of the above.
+    But I stopped myself. Although I was pretty sure I was smart enough to handle
+    coding all those problems at once, the point of TDD is to allow you to do one
+    thing at a time, when you need to. So I decided to be deliberately short-sighted,
+    and at any given moment *only* do what was necessary to get the functional tests
+    a little further.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This will be a demonstration of how TDD can support an incremental, iterative
+    style of development—​it may not be the quickest route, but you do get there in
+    the end^([1](ch05.xhtml#id285)). There’s a neat side benefit, which is that it
+    allows me to introduce new concepts like models, dealing with POST requests, Django
+    template tags, and so on, *one at a time* rather than having to dump them on you
+    all at once.
+  prefs: []
+  type: TYPE_NORMAL
+- en: None of this says that you *shouldn’t* try to think ahead, and be clever. In
+    the next chapter we’ll use a bit more design and up-front thinking, and show how
+    that fits in with TDD. But for now let’s plough on mindlessly and just do what
+    the tests tell us to.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Wiring Up Our Form to Send a POST Request
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'At the end of the last chapter, the tests were telling us we weren’t able to
+    save the user’s input:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: To get it to the server, for now we’ll use a standard HTML POST request. A little
+    boring, but also nice and easy to deliver—​we can use all sorts of sexy HTML5
+    and JavaScript later in the book.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To get our browser to send a POST request, we need to do two things:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Give the `<input>` element a `name=` attribute.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Wrap it in a `<form>` tag^([2](ch05.xhtml#id287)) with `method="POST"`.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'Let’s adjust our template at *lists/templates/home.xhtml*:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: lists/templates/home.xhtml (ch05l001)
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now, running our FTs gives us a slightly cryptic, unexpected error:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Oh dear, we’re now failing two lines *earlier*, after we submit the form, but
+    before we are able to do the assert. Selenium seems to be unable to find our list
+    table. Why on Earth would that happen? Let’s take another look at our code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: functional_tests.py
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_saving_user_input__testing_the_database_CO1-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Our test unexpectedly fails on this line. How do we figure out what’s going
+    on?
+  prefs: []
+  type: TYPE_NORMAL
+- en: Debugging functional tests
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'When a functional test fails with an unexpected failure, there are several
+    things we can do to debug it:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Add `print` statements, to show, for example, what the current page text is.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Improve the *error message* to show more info about the current state.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Manually visit the site yourself.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Use `time.sleep` to pause the test during execution so you can inspect what
+    was happening.^([3](ch05.xhtml#id293))
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: We’ll look at all of these over the course of this book, but the `time.sleep`
+    option is the one that leaps to mind with this kind of error in an FT. Let’s try
+    it now.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Conveniently, we’ve already got a sleep just before the error occurs; let’s
+    just extend it a little:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: functional_tests.py (ch05l003)
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Depending on how fast Selenium runs on your PC, you may have caught a glimpse
+    of this already, but when we run the functional tests again, we’ve got time to
+    see what’s going on: you should see a page that looks like [Figure 5-1](#csrf_error_screenshot),
+    with lots of Django debug information.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Django DEBUG page showing CSRF error](assets/twp2_0501.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5-1\. Django DEBUG page showing CSRF error
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'Django’s CSRF protection involves placing a little auto-generated unique token
+    into each generated form, to be able to verify that POST requests have definitely
+    come from the form generated by the server. So far our template has been pure
+    HTML, and in this step we make the first use of Django’s template magic. To add
+    the CSRF token we use a *template tag*, which has the curly-bracket/percent syntax,
+    `{% ... %}`—famous for being the world’s most annoying two-key touch-typing combination:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: lists/templates/home.xhtml (ch05l004)
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Django will substitute the template tag during rendering with an `<input type="hidden">`
+    containing the CSRF token. Rerunning the functional test will now bring us back
+    to our previous (expected) failure:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: Since our long `time.sleep` is still there, the test will pause on the final
+    screen, showing us that the new item text disappears after the form is submitted,
+    and the page refreshes to show an empty form again. That’s because we haven’t
+    wired up our server to deal with the POST request yet—​it just ignores it and
+    displays the normal home page.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We can put our normal short `time.sleep` back now though:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: functional_tests.py (ch05l005)
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: Processing a POST Request on the Server
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Because we haven’t specified an `action=` attribute in the form, it is submitting
+    back to the same URL it was rendered from by default (i.e., `/`), which is dealt
+    with by our `home_page` function. That’s fine for now, let’s adapt the view to
+    be able to deal with a POST request.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'That means a new unit test for the `home_page` view. Open up *lists/tests.py*,
+    and add a new method to `HomePageTest`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: lists/tests.py (ch05l006)
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'To do a POST, we call `self.client.post`, and as you can see it takes a `data`
+    argument which contains the form data we want to send. Then we check that the
+    text from our POST request ends up in the rendered HTML. That gives us our expected
+    fail:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'In (slightly exaggerated) TDD style, we can single-mindedly do “the simplest
+    thing that could possibly work” to address this test failure, which is to add
+    an `if` and a new code path for POST requests, with a deliberately silly return
+    value:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: lists/views.py (ch05l007)
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: OK that gets our unit tests passing, but it’s not really what we want.^([4](ch05.xhtml#id305))
+  prefs: []
+  type: TYPE_NORMAL
+- en: What we really want to do is add the POST submission to the todo items table
+    in the home page template.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Passing Python Variables to Be Rendered in the Template
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: We’ve already had a hint of it, and now it’s time to start to get to know the
+    real power of the Django template syntax, which is to pass variables from our
+    Python view code into HTML templates.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s start by seeing how the template syntax lets us include a Python object
+    in our template. The notation is `{{ ... }}`, which displays the object as a string:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: lists/templates/home.xhtml (ch05l008)
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_saving_user_input__testing_the_database_CO2-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Here’s our template variable. `new_item_text` will be the variable name for
+    the user input we display in the template.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s adjust our unit test so that it checks whether we are still using the
+    template:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: lists/tests.py (ch05l009)
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'And that will fail as expected:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: Good, our deliberately silly return value is now no longer fooling our tests,
+    so we are allowed to rewrite our view, and tell it to pass the POST parameter
+    to the template. The `render` function takes, as its third argument, a dictionary
+    which maps template variable names to their values.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In theory we can use it for the POST case as well as the default GET case,
+    so let’s remove the `if request.method == "POST"` and simplify our view right
+    down to:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: lists/views.py (ch05l010)
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: What do the tests think?
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: An Unexpected Failure
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Oops, an *unexpected failure*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If you remember the rules for reading tracebacks, you’ll spot that it’s actually
+    a failure in a *different* test. We got the actual test we were working on to
+    pass, but the unit tests have picked up an unexpected consequence, a regression:
+    we broke the code path where there is no POST request.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This is the whole point of having tests. Yes, perhaps we could have predicted
+    this would happen, but imagine if we’d been having a bad day or weren’t paying
+    attention: our tests have just saved us from accidentally breaking our application,
+    and, because we’re using TDD, we found out immediately. We didn’t have to wait
+    for a QA team, or switch to a web browser and click through our site manually,
+    and we can get on with fixing it straight away. Here’s how:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: lists/views.py (ch05l011)
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: We use [`dict.get`](http://docs.python.org/3/library/stdtypes.xhtml#dict.get)
+    to supply a default value, for the case where we are doing a normal GET request,
+    when the POST dictionary is empty.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The unit tests should now pass. Let’s see what the functional tests say:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: If your functional tests show you a different error at this point, or at any
+    point in this chapter, complaining about a `StaleElementReferenceException`, you
+    may need to increase the `time.sleep` explicit wait—​try 2 or 3 seconds instead
+    of 1; then read on to the next chapter for a more robust solution.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Hmm, not a wonderfully helpful error. Let’s use another of our FT debugging
+    techniques: improving the error message. This is probably the most constructive
+    technique, because those improved error messages stay around to help debug any
+    future errors:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: functional_tests.py (ch05l012)
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'That gives us a more helpful error message:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Actually, you know what would be even better? Making that assertion a bit less
+    clever! As you may remember from [Chapter 4](ch04.xhtml#chapter_philosophy_and_refactoring),
+    I was very pleased with myself for using the `any()` function, but one of my Early
+    Release readers (thanks, Jason!) suggested a much simpler implementation. We can
+    replace all four lines of the `assertTrue` with a single `assertIn`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: functional_tests.py (ch05l013)
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: Much better. You should always be very worried whenever you think you’re being
+    clever, because what you’re probably being is *overcomplicated*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Now we get the error message for free:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: Consider me suitably chastened.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: If, instead, your FT seems to be saying the table is empty (“not found in ['']”),
+    check your `<input>` tag—​does it have the correct `name="item_text"` attribute?
+    And does it have `method="POST"`? Without them, the user’s input won’t be in the
+    right place in `request.POST`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The point is that the FT wants us to enumerate list items with a “1:” at the
+    beginning of the first list item.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The fastest way to get that to pass is with another quick “cheating” change
+    to the template:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: lists/templates/home.xhtml (ch05l014)
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE22]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now we get to the `self.fail(''Finish the test!'')`. If get rid of that and
+    finish writing our FT, to add the check for adding a second item to the table
+    (copy and paste is our friend), we begin to see that our first cut solution really
+    isn’t going to, um, cut it:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: functional_tests.py (ch05l015)
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE23]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Sure enough, the functional tests return an error:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE24]'
+  prefs: []
+  type: TYPE_PRE
+- en: Three Strikes and Refactor
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: But before we go further—​we’ve got a bad *code smell*^([5](ch05.xhtml#id319))
+    in this FT. We have three almost identical code blocks checking for new items
+    in the list table. When we want to apply the DRY principle, I like to follow the
+    mantra *three strikes and refactor*. You can copy and paste code once, and it
+    may be premature to try to remove the duplication it causes, but once you get
+    three occurrences, it’s time to tidy up.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s start by committing what we have so far. Even though we know our site
+    has a major flaw—​it can only handle one list item—​it’s still further ahead than
+    it was. We may have to rewrite it all, and we may not, but the rule is that before
+    you do any refactoring, always do a commit:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE25]'
+  prefs: []
+  type: TYPE_PRE
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Always do a commit before embarking on a refactor.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Onto our functional test refactor: let’s use a helper method—​remember, only
+    methods that begin with `test_` will get run as tests, so you can use other methods
+    for your own purposes:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: functional_tests.py (ch05l016)
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE26]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'I like to put helper methods near the top of the class, between the `tearDown`
+    and the first test. Let’s use it in the FT:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: functional_tests.py (ch05l017)
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE27]'
+  prefs: []
+  type: TYPE_PRE
+- en: We run the FT again to check that it still behaves in the same way…​
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE28]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Good. Now we can commit the FT refactor as its own small, atomic change:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE29]'
+  prefs: []
+  type: TYPE_PRE
+- en: And back to work. If we’re ever going to handle more than one list item, we’re
+    going to need some kind of persistence, and databases are a stalwart solution
+    in this area.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The Django ORM and Our First Model
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: An *Object-Relational Mapper* (ORM) is a layer of abstraction for data stored
+    in a database with tables, rows, and columns. It lets us work with databases using
+    familiar object-oriented metaphors which work well with code. Classes map to database
+    tables, attributes map to columns, and an individual instance of the class represents
+    a row of data in the database.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Django comes with an excellent ORM, and writing a unit test that uses it is
+    actually an excellent way of learning it, since it exercises code by specifying
+    how we want it to work.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s create a new class in *lists/tests.py*:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: lists/tests.py (ch05l018)
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE30]'
+  prefs: []
+  type: TYPE_PRE
+- en: You can see that creating a new record in the database is a relatively simple
+    matter of creating an object, assigning some attributes, and calling a `.save()`
+    function. Django also gives us an API for querying the database via a class attribute,
+    `.objects`, and we use the simplest possible query, `.all()`, which retrieves
+    all the records for that table. The results are returned as a list-like object
+    called a `QuerySet`, from which we can extract individual objects, and also call
+    further functions, like `.count()`. We then check the objects as saved to the
+    database, to check whether the right information was saved.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Django’s ORM has many other helpful and intuitive features; this might be a
+    good time to skim through the [Django tutorial](https://docs.djangoproject.com/en/4.2/intro/tutorial01/),
+    which has an excellent intro to them.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: I’ve written this unit test in a very verbose style, as a way of introducing
+    the Django ORM. I wouldn’t recommend writing your model tests like this “in real
+    life”, because it’s testing the framework, rather than testing our own code. We’ll
+    actually rewrite this test to be much more concise in [Link to Come] (specifically,
+    at [Link to Come]).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s try running the unit test. Here comes another unit-test/code cycle:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE31]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Very well, let’s give it something to import from *lists/models.py*. We’re
+    feeling confident so we’ll skip the `Item = None` step, and go straight to creating
+    a class:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: lists/models.py (ch05l019)
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE32]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'That gets our test as far as:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE33]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'To give our `Item` class a `save` method, and to make it into a real Django
+    model, we make it inherit from the `Model` class:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: lists/models.py (ch05l020)
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE34]'
+  prefs: []
+  type: TYPE_PRE
+- en: Our First Database Migration
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'The next thing that happens is a huuuuge traceback, the long and short of which
+    is that there’s a problem with the database:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE35]'
+  prefs: []
+  type: TYPE_PRE
+- en: In Django, the ORM’s job is to model and read and write from database tables,
+    but there’s a second system that’s in charge,of actually *creating* the tables
+    in the database called “migrations”. Its job is to let you to add, remove, and
+    modify tables and columns, based on changes you make to your *models.py* files.
+  prefs: []
+  type: TYPE_NORMAL
+- en: One way to think of it is as a version control system for your database. As
+    we’ll see later, it comes in particularly useful when we need to upgrade a database
+    that’s deployed on a live server.
+  prefs: []
+  type: TYPE_NORMAL
+- en: For now all we need to know is how to build our first database migration, which
+    we do using the `makemigrations` command:^([6](ch05.xhtml#id328))
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE36]'
+  prefs: []
+  type: TYPE_PRE
+- en: If you’re curious, you can go and take a look in the migrations file, and you’ll
+    see it’s a representation of our additions to *models.py*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the meantime, we should find our tests get a little further.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The Test Gets Surprisingly Far
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'The test actually gets surprisingly far:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE37]'
+  prefs: []
+  type: TYPE_PRE
+- en: That’s a full eight lines later than the last failure—​we’ve been all the way
+    through saving the two `Item`s, and we’ve checked that they’re saved in the database,
+    but Django just doesn’t seem to have “remembered” the `.text` attribute.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you’re new to Python, you might have been surprised that we were allowed
+    to assign the `.text` attribute at all. In a language like Java, you would probably
+    get a compilation error. Python is more relaxed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Classes that inherit from `models.Model` map to tables in the database. By
+    default they get an auto-generated `id` attribute, which will be a primary key
+    column^([7](ch05.xhtml#id329)) in the database, but you have to define any other
+    columns and attributes you want explicitly; here’s how we set up a text column:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: lists/models.py (ch05l022)
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE38]'
+  prefs: []
+  type: TYPE_PRE
+- en: Django has many other field types, like `IntegerField`, `CharField`, `DateField`,
+    and so on. I’ve chosen `TextField` rather than `CharField` because the latter
+    requires a length restriction, which seems arbitrary at this point. You can read
+    more on field types in the Django [tutorial](https://docs.djangoproject.com/en/4.2/intro/tutorial02/#creating-models)
+    and in the [documentation](https://docs.djangoproject.com/en/4.2/ref/models/fields/).
+  prefs: []
+  type: TYPE_NORMAL
+- en: A New Field Means a New Migration
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Running the tests gives us another database error:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE39]'
+  prefs: []
+  type: TYPE_PRE
+- en: It’s because we’ve added another new field to our database, which means we need
+    to create another migration. Nice of our tests to let us know!
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s try it:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE40]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Ah. It won’t let us add the column without a default value. Let’s pick option
+    2 and set a default in *models.py*. I think you’ll find the syntax reasonably
+    self-explanatory:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: lists/models.py (ch05l023)
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE41]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'And now the migration should complete:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE42]'
+  prefs: []
+  type: TYPE_PRE
+- en: So, two new lines in *models.py*, two database migrations, and as a result,
+    the `.text` attribute on our model objects is now recognised as a special attribute,
+    so it does get saved to the database, and the tests pass…​
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE43]'
+  prefs: []
+  type: TYPE_PRE
+- en: So let’s do a commit for our first ever model!
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE44]'
+  prefs: []
+  type: TYPE_PRE
+- en: Saving the POST to the Database
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Let’s adjust the test for our home page POST request, and say we want the view
+    to save a new item to the database instead of just passing it through to its response.
+    We can do that by adding three new lines to the existing test called `test_can_save_a_POST_request`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: lists/tests.py (ch05l025)
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE45]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_saving_user_input__testing_the_database_CO3-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We check that one new `Item` has been saved to the database. `objects.count()`
+    is a shorthand for `objects.all().count()`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_saving_user_input__testing_the_database_CO3-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`objects.first()` is the same as doing `objects.all()[0]`.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_saving_user_input__testing_the_database_CO3-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We check that the item’s text is correct.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This test is getting a little long-winded. It seems to be testing lots of different
+    things. That’s another *code smell*—a long unit test either needs to be broken
+    into two, or it may be an indication that the thing you’re testing is too complicated.
+    Let’s add that to a little to-do list of our own, perhaps on a piece of scrap
+    paper:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Writing it down on a scratchpad like this reassures us that we won’t forget,
+    so we are comfortable getting back to what we were working on. We rerun the tests
+    and see an expected failure:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE46]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Let’s adjust our view:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: lists/views.py (ch05l026)
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE47]'
+  prefs: []
+  type: TYPE_PRE
+- en: I’ve coded a very naive solution and you can probably spot a very obvious problem,
+    which is that we’re going to be saving empty items with every request to the home
+    page. Let’s add that to our list of things to fix later. You know, along with
+    the painfully obvious fact that we currently have no way at all of having different
+    lists for different people. That we’ll keep ignoring for now.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Remember, I’m not saying you should always ignore glaring problems like this
+    in “real life”. Whenever we spot problems in advance, there’s a judgement call
+    to make over whether to stop what you’re doing and start again, or leave them
+    until later. Sometimes finishing off what you’re doing is still worth it, and
+    sometimes the problem may be so major as to warrant a stop and rethink.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s see how the unit tests get on…​
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE48]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'They pass! Good. Let’s have a little look at our scratchpad. I’ve added a couple
+    of the other things that are on our mind:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s start with the first scratch pad item: *Don’t save blank items for every
+    request*. We could tack on an assertion to an existing test, but it’s best to
+    keep unit tests to testing one thing at a time, so let’s add a new one:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: lists/tests.py (ch05l027)
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE49]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'That gives us a `1 != 0` failure. Let’s fix it by bringing the `if request.method`
+    check back and putting the Item creation in there:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: lists/views.py (ch05l028)
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE50]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'And that gets the test passing:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE51]'
+  prefs: []
+  type: TYPE_PRE
+- en: Redirect After a POST
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'But, yuck, those duplicated `request.POST` accesses are making me pretty unhappy.
+    Thankfully we are about to have the opportunity to fix it. A view function has
+    two jobs: processing user input, and returning an appropriate response. We’ve
+    taken care of the first part, which is saving the user’s input to the database,
+    so now let’s work on the second part.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Always redirect after a POST](https://en.wikipedia.org/wiki/Post/Redirect/Get),
+    they say, so let’s do that. Once again we change our unit test for saving a POST
+    request: instead of expecting a response with the item in it, we want it to expect
+    a redirect back to the home page.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: lists/tests.py (ch05l029)
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE52]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_saving_user_input__testing_the_database_CO4-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We no longer expect a response with HTML content rendered by a template, so
+    we lose the `assertContains` calls that looked at that. Instead, we use Django’s
+    `assertRedirects` helper which checks that we return an HTTP 302 redirect, back
+    to the home URL.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'That gives us this expected failure:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE53]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We can now tidy up our view substantially:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: lists/views.py (ch05l030)
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE54]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'And the tests should now pass:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE55]'
+  prefs: []
+  type: TYPE_PRE
+- en: We’re at green, time for a little refactor!
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s have a look at *views.py* and see what opportunities for improvement
+    there might be:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: lists/views.py
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE56]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_saving_user_input__testing_the_database_CO5-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: There’s a quicker way to do these 3 lines with `.objects.create()`
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_saving_user_input__testing_the_database_CO5-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This line doesn’t seem quite right now, in fact it won’t work at all. Let’s
+    make a note on our scratchpad to sort out passing list items to the template.
+    It’s actually closely related to “Display multiple items”, so we’ll put it just
+    before that one:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'And here’s the refactored version of *views.py* using the `.objects.create()`
+    helper method that Django provides, for one-line creation of objects:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: lists/views.py (ch05l031)
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE57]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Better Unit Testing Practice: Each Test Should Test One Thing'
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Let’s address the “POST test is too long” code smell.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Good unit testing practice says that each test should only test one thing. The
+    reason is that it makes it easier to track down bugs. Having multiple assertions
+    in a test means that, if the test fails on an early assertion, you don’t know
+    what the statuses of the later assertions are. As we’ll see in the next chapter,
+    if we ever break this view accidentally, we want to know whether it’s the saving
+    of objects that’s broken, or the type of response.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'You may not always write perfect unit tests with single assertions on your
+    first go, but now feels like a good time to separate out our concerns:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: lists/tests.py (ch05l032)
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE58]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'And we should now see five tests pass instead of four:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE59]'
+  prefs: []
+  type: TYPE_PRE
+- en: Rendering Items in the Template
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Much better! Back to our to-do list:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Crossing things off the list is almost as satisfying as seeing tests pass!
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The third and fourth items are the last of the “easy” ones. Our view now does
+    the right thing for POST requests, it saves new list items to the database. Now
+    we want GET requests to load all currently existing list items, and pass them
+    to the template for rendering. Let’s have a new unit test for that:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: lists/tests.py (ch05l033)
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE60]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'That fails as expected:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE61]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The Django template syntax has a tag for iterating through lists, `{% for ..
+    in .. %}`; we can use it like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: lists/templates/home.xhtml (ch05l034)
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE62]'
+  prefs: []
+  type: TYPE_PRE
+- en: This is one of the major strengths of the templating system. Now the template
+    will render with multiple `<tr>` rows, one for each item in the variable `items`.
+    Pretty neat! I’ll introduce a few more bits of Django template magic as we go,
+    but at some point you’ll want to go and read up on the rest of them in the [Django
+    docs](https://docs.djangoproject.com/en/4.2/topics/templates/).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Just changing the template doesn’t get our tests to green; we need to actually
+    pass the items to it from our home page view:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: lists/views.py (ch05l035)
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE63]'
+  prefs: []
+  type: TYPE_PRE
+- en: That does get the unit tests to pass…​moment of truth, will the functional test
+    pass?
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE64]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Oops, apparently not. Let’s use another functional test debugging technique,
+    and it’s one of the most straightforward: manually visiting the site! Open up
+    *http://localhost:8000* in your web browser, and you’ll see a Django debug page
+    saying “no such table: lists_item”, as in [Figure 5-2](#operationalerror).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![OperationalError at / no such table: lists_item](assets/twp2_0502.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5-2\. Another helpful debug message
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Creating Our Production Database with migrate
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Another helpful error message from Django, which is basically complaining that
+    we haven’t set up the database properly. How come everything worked fine in the
+    unit tests, I hear you ask? Because Django creates a special *test database* for
+    unit tests; it’s one of the magical things that Django’s `TestCase` does.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To set up our “real” database, we need to explicitly create it. SQLite databases
+    are just a file on disk, and you’ll see in *settings.py* that Django, by default,
+    will just put it in a file called *db.sqlite3* in the base project directory:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: superlists/settings.py
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE65]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We’ve told Django everything it needs to create the database, first via *models.py*
+    and then when we created the migrations file. To actually apply it to creating
+    a real database, we use another Django Swiss Army knife *manage.py* command, `migrate`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE66]'
+  prefs: []
+  type: TYPE_PRE
+- en: Now we can refresh the page on *localhost*, see that our error is gone, and
+    try running the functional tests again:^([8](ch05.xhtml#id351))
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE67]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'So close! We just need to get our list numbering right. Another awesome Django
+    template tag, `forloop.counter`, will help here:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: lists/templates/home.xhtml (ch05l036)
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE68]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'If you try it again, you should now see the FT gets to the end:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE69]'
+  prefs: []
+  type: TYPE_PRE
+- en: Hooray!
+  prefs: []
+  type: TYPE_NORMAL
+- en: But, as it’s running, you may notice something is amiss, like in [Figure 5-3](#items_left_over_from_previous_run).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![There are list items left over from the last run of the test](assets/twp2_0503.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5-3\. There are list items left over from the last run of the test
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'Oh dear. It looks like previous runs of the test are leaving stuff lying around
+    in our database. In fact, if you run the tests again, you’ll see it gets worse:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE70]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Grrr. We’re so close! We’re going to need some kind of automated way of tidying
+    up after ourselves. For now, if you feel like it, you can do it manually, by deleting
+    the database and re-creating it fresh with `migrate` (you’ll need to shut down
+    your Django server first):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE71]'
+  prefs: []
+  type: TYPE_PRE
+- en: And then (after restarting your server!) reassure yourself that the FT still
+    passes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Apart from that little bug in our functional testing, we’ve got some code that’s
+    more or less working. Let’s do a commit.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Start by doing a **`git status`** and a **`git diff`**, and you should see
+    changes to *home.xhtml*, *tests.py*, and *views.py*. Let’s add them:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE72]'
+  prefs: []
+  type: TYPE_PRE
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: You might find it useful to add markers for the end of each chapter, like **`git
+    tag end-of-chapter-05`**.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Recap
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Where are we? How is progress on our app, and what have we learned?
+  prefs: []
+  type: TYPE_NORMAL
+- en: We’ve got a form set up to add new items to the list using POST.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: We’ve set up a simple model in the database to save list items.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: We’ve learned about creating database migrations, both for the test database
+    (where they’re applied automatically) and for the real database (where we have
+    to apply them manually).
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'We’ve used our first couple of Django template tags: `{% csrf_token %}` and
+    the `{% for ... endfor %}` loop.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'And we’ve used two different FT debugging techniques: `time.sleep`s, and improving
+    the error messages.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: But we’ve got a couple of items on our own to-do list, namely getting the FT
+    to clean up after itself, and perhaps more critically, adding support for more
+    than one list.
+  prefs: []
+  type: TYPE_NORMAL
+- en: I mean, we *could* ship the site as it is, but people might find it strange
+    that the entire human population has to share a single to-do list. I suppose it
+    might get people to stop and think about how connected we all are to one another,
+    how we all share a common destiny here on Spaceship Earth, and how we must all
+    work together to solve the global problems that we face.
+  prefs: []
+  type: TYPE_NORMAL
+- en: But in practical terms, the site wouldn’t be very useful.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Ah well.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([1](ch05.xhtml#id285-marker)) “Geepaw” Hill, another one of the TDD OGs, has
+    [a series of blog posts](https://www.geepawhill.org/2021/09/29/many-more-much-smaller-steps-first-sketch/)
+    advocating for taking “Many More Much Smaller Steps (MMMSS)”. In this chapter
+    I’m being unrealistically *short-sighted* for effect, so don’t do that! But Geepaw
+    argues that in the real world, when you slice your work into tiny increments,
+    not only do you get there in the end, but you end up delivering business value
+    *faster*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([2](ch05.xhtml#id287-marker)) Did you know that you don’t need a button to
+    make a form submit? I can’t remember when I learned that, but readers have mentioned
+    that it’s unusual so I thought I’d draw your attention to it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([3](ch05.xhtml#id293-marker)) Another common technique for debugging tests
+    is to use `breakpoint()` to drop into a debugger like `pdb`. This is more useful
+    for *unit* tests rather than FTs though, because in an FT you usually can’t step
+    into actual application code. Personally I only find debuggers useful for really
+    fiddly algorithms, which we won’t see in this book.)
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([4](ch05.xhtml#id305-marker)) But we *did* learn about `request.method` and
+    `request.POST` right? I know it might seem that I’m overdoing it, but doing things
+    in tiny little really does have a lot of advantages, and one of them is that you
+    can really think about (or in this case, learn) one thing at a time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([5](ch05.xhtml#id319-marker)) If you’ve not come across the concept, a “code
+    smell” is something about a piece of code that makes you want to rewrite it. Jeff
+    Atwood has [a compilation on his blog Coding Horror](https://blog.codinghorror.com/code-smells/).
+    The more experience you gain as a programmer, the more fine-tuned your nose becomes
+    to code smells…​
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([6](ch05.xhtml#id328-marker)) If you’ve done a bit of Django before, you may
+    be wondering about when we’re going to run “migrate” as well as “makemigrations”?
+    Read on; that’s coming up later in the chapter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([7](ch05.xhtml#id329-marker)) Database tables usually have a special column
+    called a “primary key”, which is the unique identifier for each row in the table.
+    It’s worth brushing up on a *tiny* bit of relational database theory, if you’re
+    not familiar with the concept or why it’s useful. The top three articles I found
+    when searching for “introduction to databases” all seemed pretty good, at the
+    time of writing.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([8](ch05.xhtml#id351-marker)) If you get a different error at this point,
+    try restarting your dev server—​it may have gotten confused by the changes to
+    the database happening under its feet.
+  prefs: []
+  type: TYPE_NORMAL

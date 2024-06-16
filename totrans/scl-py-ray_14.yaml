@@ -1,0 +1,318 @@
+- en: 'Appendix A. Space Beaver Case Study: Actors, Kubernetes, and More'
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The [Space Beaver project](https://oreil.ly/IDSzc) (from Pigs Can Fly Labs)
+    uses satellite service from Swarm and Simple Mail Transfer Protocol (SMTP) to
+    provide what is politely called value-conscious (aka cheap) off-grid messaging.^([1](app01.html#idm45354760655264))
+    The initial draft of Space Beaver’s core architecture was built using Scala and
+    Akka, but then we switched to using Ray. By using Ray with Python instead of Akka
+    with Scala, we were able to reuse the object relational mapping (ORM) from the
+    website and simplify the deployment.
+  prefs: []
+  type: TYPE_NORMAL
+- en: While it is possible to deploy Akka applications on Kubernetes, it is (in Holden’s
+    opinion) substantially more complicated than accomplishing the same task with
+    Ray.^([2](app01.html#idm45354760653232)) In this appendix, we will walk through
+    the general design of the Space Beaver backend, the code for the various actors,
+    and show how to deploy it (and similar applications).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: The code for this case study can be found in the [Pigs Can Fly Labs GitHub repo](https://oreil.ly/cyuw4).
+  prefs: []
+  type: TYPE_NORMAL
+- en: High-Level Design
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Space Beaver’s core requirement is to serve as a bridge between email (through
+    SMTP), SMS (through Twilio), and the Swarm satellite APIs. Most of these involve
+    some amount of state, such as running an SMTP server, but the outbound mail messages
+    can be implemented without any state. [Figure A-1](#actor_layout) shows a rough
+    outline of the design.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![spwr aa01](assets/spwr_aa01.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure A-1\. Actor layout
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Implementation
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Now that you’ve seen a rough design, it’s time to explore how the patterns you’ve
+    learned throughout the book are applied to bring this all together.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Outbound Mail Client
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The outbound mail client is the one stateless piece of code, since it establishes
+    a connection for each outbound message. Since it’s stateless, we implemented this
+    as a regular remote function, which is created for every incoming request. Ray
+    can then scale up or down as needed, depending on the amount of incoming requests.
+    Being able to scale the number of instances of the remote function containing
+    the email client is useful since the client may end up blocking on external hosts.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Scheduling each remote function invocation requires some overhead. In our case,
+    the expected message rate is not that high. If you have a good idea of the desired
+    concurrency, you should consider using Ray’s `multiprocessing.Pool` to avoid function
+    creation overhead.
+  prefs: []
+  type: TYPE_NORMAL
+- en: However, we want to serialize some settings, like in a settings class, so we
+    wrap the outbound mail client function with a special method to pass through a
+    self-reference, despite not being an actor, as shown in [Example A-1](#ray_outbound_mail_client).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example A-1\. [Mail client](https://oreil.ly/9zM1N)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: Another reasonable approach would be to make this stateful and maintain a connection
+    across messages.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Shared Actor Patterns and Utilities
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The remaining components of our system are stateful, either in the context of
+    long-lived network connections or database connections. Since the user actor needs
+    to talk to all the other actors (and vice versa), to simplify discovering the
+    other actors running in the system, we added a `LazyNamedActorPool`, which combines
+    the concept of named actors along with actor pools ([Example A-2](#lazypool)).^([3](app01.html#idm45354760421728))
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example A-2\. [Lazy named actor pool](https://oreil.ly/pNolb)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: The other shared pattern we use is *graceful shutdown*, where we ask the actors
+    to stop processing new messages. Once the actors stop accepting new messages,
+    the existing messages in the queue will drain out—either to the satellite network
+    or SMTP network as needed. Then the actors can be deleted without having to persist
+    and recover the messages the actor was processing. In the mail server, which we
+    will look at next, this pattern is implemented as shown in [Example A-3](#prepare_for_shutdown).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example A-3\. [Stop for upgrade](https://oreil.ly/0PAD1)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: Mail Server Actor
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The mail server actor is responsible for accepting new inbound messages and
+    passing them along to the user actor. This is implemented as an aiosmtpd server
+    handler, as shown in [Example A-4](#handle_data).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example A-4\. [Mail server message handling](https://oreil.ly/0PAD1)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: An important part of having a mail server is that external users can make connections
+    to the server. For HTTP services, like the inference server, you can use Ray Serve
+    to expose your service. However, the mail server uses SMTP, which cannot currently
+    be exposed with Ray Serve. So, to allow Kubernetes to route requests to the correct
+    hosts, the mail actor tags itself as shown in [Example A-5](#update_label).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example A-5\. [Mail server Kubernetes labeling](https://oreil.ly/0PAD1)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: Satellite Actor
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The *satellite actor* is similar to the mail server actor, except instead of
+    accepting inbound requests, it gets new messages by polling, and we also send
+    messages through it. Polling is like driving with a six-year-old in the car who
+    keeps asking, “Are we there yet?” Except in our case, the question is “Do you
+    have any new messages?” In Ray, async actors are the best option to implement
+    polling, as the polling loop runs forever, but you still want to be able to process
+    other messages. [Example A-6](#poll_for_msgs) shows the satellite actors’ polling
+    implementation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example A-6\. [Satellite actor polling](https://oreil.ly/kqkxU)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: This polling loop delegates most of the logic to `check_msgs`, as shown in [Example A-7](#check_msgs).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example A-7\. [Satellite check for messages](https://oreil.ly/kqkxU)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: Another interesting pattern we used in the satellite actor is to expose serializable
+    results for testing, but keep the data in the more efficient async representation
+    in the normal flow. This pattern is shown in the way messages are decoded in [Example A-8](#process_msgs).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example A-8\. [Satellite process message](https://oreil.ly/kqkxU)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: User Actor
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: While the other actors are all async, allowing parallelism within the actor,
+    the user actors are synchronous since the ORM does not yet handle async execution.
+    The user actor code is shown relatively completely in [Example A-9](#user_actor),
+    so you can see the shared patterns (which were used in the other actors but skipped
+    for brevity).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example A-9\. [User actor](https://oreil.ly/oym1M)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Django is a popular Python web development framework that includes many components,
+    including the ORM we are using.
+  prefs: []
+  type: TYPE_NORMAL
+- en: SMS Actor and Serve Implementation
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: In addition to the actors for satellite and email gateways, Space Beaver also
+    uses Ray Serve to expose `phone-api`, as shown in [Example A-10](#phone_serve).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example A-10\. [Using Ray Serve to handle inbound SMS](https://oreil.ly/BkdmL)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: Testing
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: To facilitate testing, the actor code was broken into a base class and then
+    extended into an actor class. This allowed for testing the mail server independently
+    from its deployment on Ray, as shown in [Example A-11](#standalone_mail_test).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example A-11\. [Standalone mail test](https://oreil.ly/7RwYR)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: While these standalone tests can run with less overhead, it’s a good idea to
+    have some full-actor tests. You can often speed them up by reusing the Ray context
+    across tests (although when it goes wrong, the debugging is painful), as in [Example A-12](#full_mail_test).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example A-12\. [Full-actor test](https://oreil.ly/VOvbo)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: Deployment
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: While Ray handles most of the deployment, we need to create a Kubernetes service
+    to make our SMTP and SMS services reachable. On our test cluster, we do this by
+    exposing a load balancer service, as shown in [Example A-13](#smtp_service).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example A-13\. [SMTP and SMS services](https://oreil.ly/3pGrx)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: As shown, the SMTP and SMS services use different node selectors to route the
+    requests to the correct pods.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Conclusion
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The Ray port of the Space Beaver messaging backend substantially reduces deployment
+    and packaging complexity while increasing code reuse. Some of this comes from
+    the broad Python ecosystem (popular frontend tools and backend tools), but much
+    of the rest comes from Ray’s serverless nature. The equivalent system in Akka
+    requires user intention around scheduling actors, whereas with Ray, we can leave
+    that up to the scheduler. Of course, Akka carries many benefits, like the powerful
+    JVM ecosystem, but hopefully, this case study has shown you some interesting ways
+    you can use Ray.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([1](app01.html#idm45354760655264-marker)) Holden Karau is the managing partner
+    of Pigs Can Fly Labs, and while she really hopes you will buy the off-the-grid
+    messaging device, she realizes the intersection of people reading programming
+    books and people needing low-cost open source satellite email messaging is pretty
+    small. Also, in practice, [Garmin inReach Mini2](https://oreil.ly/M7DEs) or Apple
+    are probably better for many consumer use cases.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([2](app01.html#idm45354760653232-marker)) In Akka on Kubernetes, the user
+    is responsible for scheduling the actors on separate containers manually and restarting
+    actors, whereas Ray can handle this for us.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([3](app01.html#idm45354760421728-marker)) An alternate solution is to have
+    the main or launching program call the actors with the references as they are
+    created.
+  prefs: []
+  type: TYPE_NORMAL
