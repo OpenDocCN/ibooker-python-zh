@@ -1,3 +1,4 @@
++   [Ray 学习指南（早期发布）](README.md)
 +   [第一章：Ray 概述](lrn-ray_0.md)
 +   [第二章：开始使用 Ray Core](lrn-ray_1.md)
 +   [第三章：构建你的第一个分布式应用程序](lrn-ray_2.md)

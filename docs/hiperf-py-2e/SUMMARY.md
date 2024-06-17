@@ -1,3 +1,4 @@
++   [Python 高性能编程第二版](README.md)
 +   [序言](hiperf-py-2e_00.md)
 +   [第一章：理解高性能 Python](hiperf-py-2e_01.md)
 +   [第二章：找出瓶颈的性能分析](hiperf-py-2e_02.md)

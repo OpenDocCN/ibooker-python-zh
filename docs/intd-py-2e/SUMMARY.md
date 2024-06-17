@@ -1,5 +1,6 @@
++   [Python 入门指南第二版](README.md)
 +   [前言](intd-py-2e_00.md)
-+   [第一章：Part I. Python Basics](intd-py-2e_01.md)
++   [第一部分：Python 基础](intd-py-2e_01.md)
 +   [第一章：Python 的一点味道](intd-py-2e_02.md)
 +   [第二章：数据：类型、值、变量和名称](intd-py-2e_03.md)
 +   [第三章：数字](intd-py-2e_04.md)

@@ -1,3 +1,4 @@
++   [Python DevOps 指南](README.md)
 +   [序言](py-dop_00.md)
 +   [第一章：DevOps 的 Python 基础知识](py-dop_01.md)
 +   [第二章：自动化文件和文件系统](py-dop_02.md)

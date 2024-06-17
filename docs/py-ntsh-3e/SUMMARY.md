@@ -1,3 +1,4 @@
++   [Python 技术手册第三版](README.md)
 +   [前言](py-ntsh-3e_00.md)
 +   [第一章：介绍 Python](py-ntsh-3e_01.md)
 +   [第二章：Python 解释器](py-ntsh-3e_02.md)
