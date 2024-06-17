@@ -1,4 +1,4 @@
-# 第五章 管理使用 Poetry 的项目
+# 第五章：管理使用 Poetry 的项目
 
 前几章介绍了发布高质量 Python 包的基础模块。到目前为止，你为项目编写了一个*pyproject.toml*；创建了一个环境，并使用 uv、pip 或 pip-tools 安装了依赖；并使用`build`和 Twine 构建并发布了软件包。
 

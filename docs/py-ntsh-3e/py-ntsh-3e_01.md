@@ -1,4 +1,4 @@
-# 第一章 介绍 Python
+# 第一章：介绍 Python
 
 Python 是一种经过良好建立的通用编程语言，由其创始人 Guido van Rossum 于 1991 年首次发布。这种稳定成熟的高级动态面向对象的跨平台语言具有非常吸引人的特性。Python 可以运行在 macOS、包括 Linux、Windows 在内的大多数当前 Unix 变体，以及经过一些调整后的移动平台。¹
 

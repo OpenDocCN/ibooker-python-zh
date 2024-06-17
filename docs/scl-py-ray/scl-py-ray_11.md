@@ -1,4 +1,4 @@
-# 第十章。Ray 如何驱动机器学习
+# 第十章：Ray 如何驱动机器学习
 
 现在您已经牢固掌握了 Ray 中为准备数据以训练 ML 模型所需的一切。在本章中，您将学习如何使用流行的 Ray 库[scikit-learn](https://oreil.ly/2a56M)、[XGBoost](https://oreil.ly/TAofd)和[PyTorch](https://oreil.ly/ziXhR)。本章不旨在介绍这些库，因此如果您对其中任何一个不熟悉，建议首先选择一个（我们建议选择 scikit-learn）进行阅读。即使对这些库熟悉的人也可以通过查阅自己喜欢的工具文档来刷新记忆。本章关注的是 Ray 如何用于驱动 ML，而不是 ML 的教程。
 

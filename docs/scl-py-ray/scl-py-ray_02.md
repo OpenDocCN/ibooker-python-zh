@@ -1,4 +1,4 @@
-# 第一章 什么是 Ray，它在哪里？
+# 第一章：什么是 Ray，它在哪里？
 
 *Ray* 主要是一个用于快速和简单分布式计算的 Python 工具。Ray 由加州大学伯克利分校的[RISELab](https://oreil.ly/aGtp8)创建。该实验室的早期版本创建了最初的软件，最终成为 Apache Spark。RISELab 的研究人员成立了 Anyscale 公司，继续开发和提供围绕 Ray 的产品和服务。
 

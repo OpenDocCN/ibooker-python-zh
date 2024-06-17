@@ -1,4 +1,4 @@
-# 第一章。理解 Dask DataFrames 的架构
+# 第一章：理解 Dask DataFrames 的架构
 
 Dask DataFrames 允许您扩展您的 pandas 工作流。Dask DataFrames 克服了 pandas 的两个关键限制：
 

@@ -1,4 +1,4 @@
-# 第六章。高级任务调度：Futures 和 Friends
+# 第六章：高级任务调度：Futures 和 Friends
 
 Dask 的计算流程遵循这四个主要逻辑步骤，每个任务可以并发和递归地进行：
 

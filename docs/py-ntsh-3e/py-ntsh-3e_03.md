@@ -1,4 +1,4 @@
-# 第三章。Python 语言
+# 第三章：Python 语言
 
 本章是 Python 语言的指南。如果您想从头开始学习 Python，我们建议您从[在线文档](https://oreil.ly/lVDFK)中选择合适的链接，并参考“非程序员的 Python 文档”中提到的资源。如果您已经很熟悉至少一种其他编程语言，只是想了解 Python 的具体信息，那么本章适合您。但是，我们不打算教授 Python：我们在相当快的速度下涵盖了大量内容。我们专注于规则，只是次要地指出最佳实践和风格；作为您的 Python 风格指南，请使用[PEP 8](https://oreil.ly/biw1p)（可以加上额外的指导，如[“Python 之旅”](https://oreil.ly/gKFLA)、[CKAN](https://oreil.ly/0nj5h)和[Google](https://oreil.ly/q9_k_)的指导）。
 

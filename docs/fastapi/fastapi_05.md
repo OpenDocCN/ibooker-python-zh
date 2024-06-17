@@ -1,4 +1,4 @@
-# 第三章 FastAPI 指南
+# 第三章：FastAPI 指南
 
 > FastAPI 是一个现代的、快速（高性能）的 Web 框架，用于使用 Python 3.6+ 标准的类型提示构建 API。
 > 

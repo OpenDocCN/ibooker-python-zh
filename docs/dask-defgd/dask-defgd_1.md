@@ -1,4 +1,4 @@
-# 第二章。如何使用 Dask DataFrames
+# 第二章：如何使用 Dask DataFrames
 
 在上一章中，我们解释了 Dask DataFrames 的架构以及它们是如何构建在 pandas DataFrames 上的。我们看到 pandas 无法扩展到大于内存的数据集，以及 Dask 如何克服这种扩展限制。现在是时候深入研究我们在处理 Dask DataFrames 时需要掌握的具体策略了。
 

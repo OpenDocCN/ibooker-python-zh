@@ -1,4 +1,4 @@
-# 第四章 Dask DataFrame
+# 第四章：Dask DataFrame
 
 虽然 Pandas DataFrame 非常流行，但随着数据规模的增长，它们很快会遇到内存限制，因为它们将整个数据存储在内存中。Pandas DataFrame 具有强大的 API，用于各种数据操作，并且经常是许多分析和机器学习项目的起点。虽然 Pandas 本身没有内置机器学习功能，但数据科学家们经常在新项目的探索阶段的数据和特征准备中使用它。因此，将 Pandas DataFrame 扩展到能够处理大型数据集对许多数据科学家至关重要。大多数数据科学家已经熟悉 Pandas 库，而 Dask 的 DataFrame 实现了大部分 Pandas API，并且增加了扩展能力。
 

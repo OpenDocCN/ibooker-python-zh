@@ -1,4 +1,4 @@
-# 第四章。异步、并发和 Starlette 之旅
+# 第四章：异步、并发和 Starlette 之旅
 
 > Starlette 是一个轻量级的 ASGI 框架/工具包，非常适合在 Python 中构建异步 Web 服务。
 > 

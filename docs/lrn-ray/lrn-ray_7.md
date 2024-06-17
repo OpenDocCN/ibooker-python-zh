@@ -1,4 +1,4 @@
-# 第八章。使用 Ray Serve 进行在线推断
+# 第八章：使用 Ray Serve 进行在线推断
 
 Edward Oakes
 

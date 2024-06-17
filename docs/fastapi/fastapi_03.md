@@ -1,4 +1,4 @@
-# 第二章。现代 Python
+# 第二章：现代 Python
 
 > 这都是 Confuse-a-Cat 每天的工作内容。
 > 
