@@ -7,6 +7,7 @@
 +   [Python 高性能编程第二版](docs/hiperf-py-2e/README.md)
 +   [Python 超现代工具指南（早期发布）](docs/hpmdn-py-tl/README.md)
 +   [Python 入门指南第二版](docs/intd-py-2e/README.md)
++   [AI 辅助 Python 编程学习指南第二版](docs/lrn-ai-ass-py-prog-2e/README.md)
 +   [Ray 学习指南（早期发布）](docs/lrn-ray/README.md)
 +   [Python DevOps 指南](docs/py-dop/README.md)
 +   [Python 技术手册第三版](docs/py-ntsh-3e/README.md)
