@@ -1,6 +1,6 @@
-# 13\. 文件与数据库#
+# 13\. 文件与数据库
 
-> 原文：[https://allendowney.github.io/ThinkPython/chap13.html](https://allendowney.github.io/ThinkPython/chap13.html)
+> 原文：[`allendowney.github.io/ThinkPython/chap13.html`](https://allendowney.github.io/ThinkPython/chap13.html)
 
 我们迄今为止看到的大多数程序都是**临时的**，因为它们运行时间很短，生成输出，但当它们结束时，它们的数据会消失。每次运行临时程序时，它都会从一个干净的状态开始。
 
@@ -10,7 +10,7 @@
 
 在本章中，我们将编写读取和写入文本文件及数据库的程序，并且作为一个练习，你将编写一个程序，搜索照片集中的重复文件。但在你可以操作文件之前，首先要找到它，因此我们将从文件名、路径和目录开始。
 
-## 13.1\. 文件名和路径[#](#filenames-and-paths "Link to this heading")
+## 13.1\. 文件名和路径
 
 文件被组织成**目录**，也叫做“文件夹”。每个正在运行的程序都有一个**当前工作目录**，这是大多数操作的默认目录。例如，当你打开一个文件时，Python 会在当前工作目录中查找它。
 
@@ -119,7 +119,7 @@ os.path.join('photos', 'jan-2023', 'photo1.jpg')
 
 在本章稍后，我们将使用这些函数来搜索一组目录并找到所有图像文件。
 
-## 13.2\. f-strings[#](#f-strings "Link to this heading")
+## 13.2\. f-strings
 
 程序存储数据的一种方式是将其写入文本文件。例如，假设你是一个骆驼观察员，想要记录在一段观察期内看到的骆驼数量。假设在一年半的时间里，你已经观察到`23`只骆驼。你在骆驼观察本中的数据可能看起来是这样的。
 
@@ -128,7 +128,7 @@ num_years = 1.5
 num_camels = 23 
 ```
 
-要将这些数据写入文件，可以使用`write`方法，我们在第8章中见过。`write`的参数必须是一个字符串，因此如果我们想将其他值放入文件中，就必须将它们转换为字符串。最简单的方式是使用内置函数`str`。
+要将这些数据写入文件，可以使用`write`方法，我们在第八章中见过。`write`的参数必须是一个字符串，因此如果我们想将其他值放入文件中，就必须将它们转换为字符串。最简单的方式是使用内置函数`str`。
 
 这看起来是这样的：
 
@@ -217,7 +217,7 @@ f'Here is a list {t} and a dictionary {d}'
 "Here is a list [1, 2, 3] and a dictionary {'one': 1}" 
 ```
 
-## 13.3\. YAML[#](#yaml "Link to this heading")
+## 13.3\. YAML
 
 程序读取和写入文件的原因之一是存储**配置信息**，这是一种指定程序应该做什么以及如何做的数据信息。
 
@@ -233,11 +233,11 @@ config = {
 } 
 ```
 
-为了将这些数据写入文本文件，我们可以像上一节那样使用f-string。但使用一个名为`yaml`的模块会更方便，它专为处理这类事情而设计。
+为了将这些数据写入文本文件，我们可以像上一节那样使用 f-string。但使用一个名为`yaml`的模块会更方便，它专为处理这类事情而设计。
 
-`yaml`模块提供了用于处理YAML文件的函数，YAML文件是格式化为便于人类*和*程序阅读和写入的文本文件。
+`yaml`模块提供了用于处理 YAML 文件的函数，YAML 文件是格式化为便于人类*和*程序阅读和写入的文本文件。
 
-这里有一个示例，使用`dump`函数将`config`字典写入YAML文件。
+这里有一个示例，使用`dump`函数将`config`字典写入 YAML 文件。
 
 ```py
 import yaml
@@ -248,7 +248,7 @@ yaml.dump(config, writer)
 writer.close() 
 ```
 
-如果我们读取文件的内容，我们可以看到YAML格式的样子。
+如果我们读取文件的内容，我们可以看到 YAML 格式的样子。
 
 ```py
 readback = open(config_filename).read()
@@ -263,7 +263,7 @@ extensions:
 photo_dir: photos 
 ```
 
-现在，我们可以使用`safe_load`来读取回YAML文件。
+现在，我们可以使用`safe_load`来读取回 YAML 文件。
 
 ```py
 reader = open(config_filename)
@@ -289,11 +289,11 @@ False
 
 将字典之类的对象转换为字符串称为**序列化**。将字符串转换回对象称为**反序列化**。如果你先序列化再反序列化一个对象，结果应该与原始对象等效。
 
-## 13.4\. Shelve[#](#shelve "Link to this heading")
+## 13.4\. Shelve
 
 到目前为止，我们一直在读取和写入文本文件——现在让我们来考虑数据库。**数据库**是一个用于存储数据的组织化文件。有些数据库像表格一样，包含行和列的信息。其他的则像字典一样，通过键映射到值，它们有时被称为**键值存储**。
 
-`shelve`模块提供了创建和更新称为“shelf”的键值存储的功能。作为示例，我们将创建一个shelf来存储`photos`目录中图片的标题。我们将使用`config`字典来获取应该放置shelf的目录名称。
+`shelve`模块提供了创建和更新称为“shelf”的键值存储的功能。作为示例，我们将创建一个 shelf 来存储`photos`目录中图片的标题。我们将使用`config`字典来获取应该放置 shelf 的目录名称。
 
 ```py
 config['data_dir'] 
@@ -309,7 +309,7 @@ config['data_dir']
 os.makedirs(config['data_dir'], exist_ok=True) 
 ```
 
-以及使用`os.path.join`来创建一个包含目录名称和shelf文件名称`captions`的路径。
+以及使用`os.path.join`来创建一个包含目录名称和 shelf 文件名称`captions`的路径。
 
 ```py
 db_file = os.path.join(config['data_dir'], 'captions')
@@ -320,7 +320,7 @@ db_file
 'photo_info/captions' 
 ```
 
-现在我们可以使用`shelve.open`打开shelf文件。参数`c`表示如果文件不存在，则创建该文件。
+现在我们可以使用`shelve.open`打开 shelf 文件。参数`c`表示如果文件不存在，则创建该文件。
 
 ```py
 import shelve
@@ -333,9 +333,9 @@ db
 <shelve.DbfilenameShelf at 0x7fcc902cc430> 
 ```
 
-返回值官方称为`DbfilenameShelf`对象，更通俗地称为shelf对象。
+返回值官方称为`DbfilenameShelf`对象，更通俗地称为 shelf 对象。
 
-shelf对象在许多方面像字典。例如，我们可以使用括号操作符添加一个条目，它是一个从键到值的映射。
+shelf 对象在许多方面像字典。例如，我们可以使用括号操作符添加一个条目，它是一个从键到值的映射。
 
 ```py
 key = 'jan-2023/photo1.jpg' 
@@ -366,7 +366,7 @@ db[key]
 'Close up view of a cat nose' 
 ```
 
-一些字典方法，如`keys`、`values`和`items`，也适用于shelf对象。
+一些字典方法，如`keys`、`values`和`items`，也适用于 shelf 对象。
 
 ```py
 list(db.keys()) 
@@ -384,7 +384,7 @@ list(db.values())
 ['Close up view of a cat nose'] 
 ```
 
-我们可以使用`in`操作符检查一个键是否出现在shelf中。
+我们可以使用`in`操作符检查一个键是否出现在 shelf 中。
 
 ```py
 key in db 
@@ -423,11 +423,11 @@ os.listdir(config['data_dir'])
 
 `captions.dat`包含我们刚刚存储的数据。`captions.dir`包含有关数据库组织的信息，这使得访问更高效。后缀`dir`代表“目录”，但它与我们之前处理的包含文件的目录无关。
 
-## 13.5\. 存储数据结构[#](#storing-data-structures "Link to this heading")
+## 13.5\. 存储数据结构
 
 在之前的例子中，架子中的键和值是字符串。但我们也可以使用架子来存储像列表和字典这样的数据结构。
 
-作为例子，让我们重新回顾一下[第11章](chap11.html#section-exercise-11)练习中的字谜例子。回想一下，我们创建了一个字典，它将字母的排序字符串映射到可以用这些字母拼写出来的单词列表。例如，键`'opst'`映射到列表`['opts', 'post', 'pots', 'spot', 'stop', 'tops']`。
+作为例子，让我们重新回顾一下第十一章练习中的字谜例子。回想一下，我们创建了一个字典，它将字母的排序字符串映射到可以用这些字母拼写出来的单词列表。例如，键`'opst'`映射到列表`['opts', 'post', 'pots', 'spot', 'stop', 'tops']`。
 
 我们将使用以下函数来排序一个单词中的字母。
 
@@ -513,7 +513,7 @@ db[key]
 ['pots', 'tops'] 
 ```
 
-作为练习，你可以通过读取单词列表并将所有的字谜存储到一个架子中来完成这个例子。## 13.6\. 检查等效文件[#](#checking-for-equivalent-files "Link to this heading")
+作为练习，你可以通过读取单词列表并将所有的字谜存储到一个架子中来完成这个例子。## 13.6\. 检查等效文件
 
 现在让我们回到本章的目标：搜索包含相同数据的不同文件。检查的一种方法是读取两个文件的内容并进行比较。
 
@@ -579,7 +579,7 @@ _hashlib.HASH
 md5_hash.update(data1) 
 ```
 
-现在我们可以使用`hexdigest`来获取摘要，作为一个十六进制数字的字符串，表示一个基数为16的整数。
+现在我们可以使用`hexdigest`来获取摘要，作为一个十六进制数字的字符串，表示一个基数为 16 的整数。
 
 ```py
 digest = md5_hash.hexdigest()
@@ -612,7 +612,7 @@ md5_digest(filename2)
 '6a501b11b01f89af9c3f6591d7f02c49' 
 ```
 
-现在我们几乎拥有了找到等效文件所需的所有内容。最后一步是搜索一个目录并找到所有的图片文件。 ## 13.7\. 遍历目录[#](#walking-directories "Link to this heading")
+现在我们几乎拥有了找到等效文件所需的所有内容。最后一步是搜索一个目录并找到所有的图片文件。 ## 13.7\. 遍历目录
 
 以下函数以我们想要搜索的目录作为参数。它使用`listdir`循环遍历目录的内容。当它找到一个文件时，它打印出完整路径。当它找到一个目录时，它递归调用自己以搜索子目录。
 
@@ -650,7 +650,7 @@ photos/feb-2023/photo1.jpg
 
 结果的顺序取决于操作系统的具体细节。
 
-## 13.8\. 调试[#](#debugging "Link to this heading")
+## 13.8\. 调试
 
 当你在读取和写入文件时，可能会遇到空白字符的问题。这些错误可能很难调试，因为空白字符通常是不可见的。例如，这里有一个包含空格、由序列`\t`表示的制表符和由序列`\n`表示的新行的字符串。当我们打印它时，看不见空白字符。
 
@@ -678,9 +678,9 @@ print(repr(s))
 
 另一个你可能遇到的问题是，不同的系统使用不同的字符来表示行结束。有些系统使用换行符，表示为`\n`。其他系统使用回车符，表示为`\r`。有些系统同时使用这两者。如果你在不同系统之间移动文件，这些不一致可能会导致问题。
 
-文件名大小写是你在处理不同操作系统时可能遇到的另一个问题。在macOS和UNIX中，文件名可以包含小写字母、大写字母、数字和大多数符号。但是许多Windows应用程序忽略大小写字母之间的区别，而且在macOS和UNIX中允许的几个符号在Windows中不允许。
+文件名大小写是你在处理不同操作系统时可能遇到的另一个问题。在 macOS 和 UNIX 中，文件名可以包含小写字母、大写字母、数字和大多数符号。但是许多 Windows 应用程序忽略大小写字母之间的区别，而且在 macOS 和 UNIX 中允许的几个符号在 Windows 中不允许。
 
-## 13.9\. 术语表[#](#glossary "链接到这个标题")
+## 13.9\. 术语表
 
 **短暂的：** 短暂程序通常运行一段时间，结束时，其数据会丢失。
 
@@ -714,7 +714,7 @@ print(repr(s))
 
 **摘要：** 哈希函数的结果，尤其是在用来检查两个对象是否相同时。
 
-## 13.10\. 练习[#](#exercises "链接到这个标题")
+## 13.10\. 练习
 
 ```py
 # This cell tells Jupyter to provide detailed debugging information
@@ -727,7 +727,7 @@ print(repr(s))
 Exception reporting mode: Verbose 
 ```
 
-### 13.10.1\. 向虚拟助手提问[#](#ask-a-virtual-assistant "链接到这个标题")
+### 13.10.1\. 向虚拟助手提问
 
 本章中出现了几个我没有详细解释的主题。以下是一些你可以向虚拟助手提问的问题，获取更多信息。
 
@@ -739,7 +739,7 @@ Exception reporting mode: Verbose
 
 +   “为什么`yaml`模块有名为`load`和`safe_load`的函数？”
 
-+   “当我写一个Python shelf时，`dat`和`dir`后缀的文件是什么？”
++   “当我写一个 Python shelf 时，`dat`和`dir`后缀的文件是什么？”
 
 +   “除了键值存储，还有哪些类型的数据库？”
 
@@ -749,11 +749,11 @@ Exception reporting mode: Verbose
 
 +   “什么是哈希函数？”
 
-+   “什么是MD5摘要？”
++   “什么是 MD5 摘要？”
 
 和往常一样，如果你在以下练习中遇到困难，可以考虑向虚拟助手求助。除了提问之外，你可能还想粘贴本章中的相关函数。
 
-### 13.10.2\. 练习[#](#exercise "链接到这个标题")
+### 13.10.2\. 练习
 
 编写一个名为`replace_all`的函数，该函数接受一个模式字符串、一个替换字符串和两个文件名作为参数。它应该读取第一个文件，并将内容写入第二个文件（如果需要，创建它）。如果模式字符串出现在内容中的任何位置，它应被替换为替换字符串。
 
@@ -771,21 +771,21 @@ def replace_all(old, new, source_path, dest_path):
 
 为了测试你的函数，读取文件`photos/notes.txt`，将`'photos'`替换为`'images'`，并将结果写入文件`photos/new_notes.txt`。
 
-### 13.10.3\. 练习[#](#id1 "跳转到此标题")
+### 13.10.3\. 练习
 
-在[前一节](#section-storing-data-structure)中，我们使用了`shelve`模块创建了一个键值存储，将排序后的字母字符串映射到一个变位词的列表。为了完成示例，编写一个名为`add_word`的函数，该函数接受一个字符串和一个架子对象作为参数。
+在前一节中，我们使用了`shelve`模块创建了一个键值存储，将排序后的字母字符串映射到一个变位词的列表。为了完成示例，编写一个名为`add_word`的函数，该函数接受一个字符串和一个架子对象作为参数。
 
 它应该对单词的字母进行排序以生成一个键，然后检查该键是否已存在于架子中。如果不存在，它应该创建一个包含新单词的列表并将其添加到架子中。如果存在，它应该将新单词附加到现有值的列表中。
 
-### 13.10.4\. 练习[#](#id2 "跳转到此标题")
+### 13.10.4\. 练习
 
 在一个大型文件集合中，可能存在多个相同文件的副本，存储在不同的目录或使用不同的文件名。这个练习的目标是搜索重复文件。作为示例，我们将处理`photos`目录中的图像文件。
 
 下面是它的工作原理：
 
-+   我们将使用来自[遍历目录](#section-walking-directories)的`walk`函数来搜索该目录中的文件，这些文件扩展名与`config['extensions']`中的某个扩展名匹配。
++   我们将使用来自遍历目录的`walk`函数来搜索该目录中的文件，这些文件扩展名与`config['extensions']`中的某个扩展名匹配。
 
-+   对于每个文件，我们将使用来自[检查等效文件](#section-md5-digest)的`md5_digest`来计算内容的摘要。
++   对于每个文件，我们将使用来自检查等效文件的`md5_digest`来计算内容的摘要。
 
 +   使用架子，我们将从每个摘要映射到包含该摘要的路径列表。
 
@@ -814,7 +814,7 @@ for digest, paths in db.items():
 
 你应该找到一对具有相同摘要的文件。使用`same_contents`来检查它们是否包含相同的数据。
 
-[Think Python: 第3版](https://allendowney.github.io/ThinkPython/index.html)
+[Think Python: 第 3 版](https://allendowney.github.io/ThinkPython/index.html)
 
 版权 2024 [Allen B. Downey](https://allendowney.com)
 

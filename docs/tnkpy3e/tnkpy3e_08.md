@@ -1,16 +1,16 @@
-# 6. 返回值#
+# 6. 返回值
 
-> 原文：[https://allendowney.github.io/ThinkPython/chap06.html](https://allendowney.github.io/ThinkPython/chap06.html)
+> 原文：[`allendowney.github.io/ThinkPython/chap06.html`](https://allendowney.github.io/ThinkPython/chap06.html)
 
 在前面的章节中，我们使用了内置函数——如`abs`和`round`——以及数学模块中的函数——如`sqrt`和`pow`。当你调用这些函数中的一个时，它返回一个值，你可以将其赋值给一个变量或作为表达式的一部分使用。
 
-迄今为止我们编写的函数是不同的。有些使用`print`函数显示值，有些使用turtle函数绘制图形。但它们没有返回我们赋值给变量或在表达式中使用的值。
+迄今为止我们编写的函数是不同的。有些使用`print`函数显示值，有些使用 turtle 函数绘制图形。但它们没有返回我们赋值给变量或在表达式中使用的值。
 
 在本章中，我们将看到如何编写返回值的函数。
 
-## 6.1. 有些函数有返回值[#](#some-functions-have-return-values "Link to this heading")
+## 6.1. 有些函数有返回值
 
-当你像调用`math.sqrt`这样的函数时，结果被称为**返回值**。如果函数调用出现在单元格的末尾，Jupyter会立即显示返回值。
+当你像调用`math.sqrt`这样的函数时，结果被称为**返回值**。如果函数调用出现在单元格的末尾，Jupyter 会立即显示返回值。
 
 ```py
 import math
@@ -60,7 +60,7 @@ def circle_area(radius):
 
 最后一行是一个`return`语句，它返回`area`的值。
 
-如果我们像这样调用函数，Jupyter会显示返回值。
+如果我们像这样调用函数，Jupyter 会显示返回值。
 
 ```py
 circle_area(radius) 
@@ -108,9 +108,9 @@ NameError: name 'area' is not defined
 
 `area`是函数中的局部变量，因此我们无法从函数外部访问它。
 
-## 6.2. 有些函数返回None[#](#and-some-have-none "Link to this heading")
+## 6.2. 有些函数返回 None
 
-如果一个函数没有`return`语句，它会返回`None`，这是一个特殊的值，类似于`True`和`False`。例如，这里是第3章中的`repeat`函数。
+如果一个函数没有`return`语句，它会返回`None`，这是一个特殊的值，类似于`True`和`False`。例如，这里是第三章中的`repeat`函数。
 
 ```py
 def repeat(word, n):
@@ -143,7 +143,7 @@ Finland, Finland, Finland,
 result 
 ```
 
-`result`实际上有一个值，但Jupyter不会显示它。不过我们可以像这样显示它。
+`result`实际上有一个值，但 Jupyter 不会显示它。不过我们可以像这样显示它。
 
 ```py
 print(result) 
@@ -182,9 +182,9 @@ line
 
 这样的函数被称为**纯函数**，因为它不会显示任何内容或产生任何其他效果——除了返回一个值。
 
-## 6.3. 返回值与条件语句[#](#return-values-and-conditionals "Link to this heading")
+## 6.3. 返回值与条件语句
 
-如果Python没有提供`abs`，我们可以像这样编写它。
+如果 Python 没有提供`abs`，我们可以像这样编写它。
 
 ```py
 def absolute_value(x):
@@ -212,7 +212,7 @@ def absolute_value_wrong(x):
 absolute_value_wrong(0) 
 ```
 
-什么都没有得到！问题在于：当`x`为`0`时，两个条件都不成立，函数结束而没有执行`return`语句，这意味着返回值是`None`，因此Jupyter不会显示任何内容。
+什么都没有得到！问题在于：当`x`为`0`时，两个条件都不成立，函数结束而没有执行`return`语句，这意味着返回值是`None`，因此 Jupyter 不会显示任何内容。
 
 另一个例子，这是一个带有额外`return`语句的`absolute_value`版本。
 
@@ -230,15 +230,15 @@ def absolute_value_extra_return(x):
 
 不能运行的代码叫做**死代码**。通常情况下，死代码不会造成任何危害，但它通常表明存在误解，并且可能会让试图理解程序的人感到困惑。
 
-## 6.4\. 增量开发[#](#incremental-development "Link to this heading")
+## 6.4\. 增量开发
 
 当你编写更大的函数时，可能会发现你花费更多时间在调试上。为了应对越来越复杂的程序，你可能会想尝试**增量开发**，这是一种每次只添加和测试少量代码的方式。
 
 举个例子，假设你想找出由坐标\((x_1, y_1)\)和\((x_2, y_2)\)表示的两点之间的距离。根据毕达哥拉斯定理，距离是：
 
-\[\mathrm{distance} = \sqrt{(x_2 - x_1)^2 + (y_2 - y_1)^2}\]
+\[\mathrm{distance} = \sqrt{(x_2 - x_1)² + (y_2 - y_1)²}\]
 
-第一步是考虑一个`distance`函数在Python中应该是什么样子的——也就是说，输入（参数）是什么，输出（返回值）是什么？
+第一步是考虑一个`distance`函数在 Python 中应该是什么样子的——也就是说，输入（参数）是什么，输出（返回值）是什么？
 
 对于这个函数，输入是点的坐标。返回值是距离。你可以立即写出函数的大纲：
 
@@ -374,7 +374,7 @@ d = distance(1, 2, 4, 6)
 
 在任何时候，如果出现错误，你应该有一个清晰的方向去找出问题。渐进式开发可以节省大量的调试时间。
 
-## 6.5\. 布尔函数[#](#boolean-functions "Link to this heading")
+## 6.5\. 布尔函数
 
 函数可以返回布尔值`True`和`False`，这通常方便将复杂的测试封装在函数中。例如，`is_divisible`检查`x`是否能被`y`整除且没有余数。
 
@@ -435,13 +435,13 @@ divisible
 
 但是比较是没有必要的。
 
-## 6.6\. 带返回值的递归[#](#recursion-with-return-values "Link to this heading")
+## 6.6\. 带返回值的递归
 
 现在我们可以编写具有返回值的函数，我们也可以编写具有返回值的递归函数，有了这个能力，我们已经跨越了一个重要的门槛——我们现在拥有的 Python 子集是**图灵完备**的，这意味着我们可以执行任何可以通过算法描述的计算。
 
 为了演示带返回值的递归，我们将评估几个递归定义的数学函数。递归定义类似于循环定义，定义中会引用正在定义的事物。真正的循环定义并不十分有用：
 
-> vorpal：用于描述某物是vorpal的形容词。
+> vorpal：用于描述某物是 vorpal 的形容词。
 
 如果你在字典里看到了这个定义，可能会觉得很烦恼。另一方面，如果你查阅阶乘函数的定义，用符号\(!\)表示，可能会得到如下内容：
 
@@ -449,7 +449,7 @@ divisible
 
 这个定义表示，\(0\)的阶乘是\(1\)，而任何其他值\(n\)的阶乘是\(n\)与\(n-1\)的阶乘相乘。
 
-如果你能写出某个东西的递归定义，你就能写一个Python程序来计算它。按照增量开发的过程，我们首先从一个接受`n`作为参数并总是返回`0`的函数开始。
+如果你能写出某个东西的递归定义，你就能写一个 Python 程序来计算它。按照增量开发的过程，我们首先从一个接受`n`作为参数并总是返回`0`的函数开始。
 
 ```py
 def factorial(n):
@@ -477,7 +477,7 @@ def factorial(n):
         return n * recurse 
 ```
 
-这个程序的执行流程类似于第5章中的`countdown`流程。如果我们用值`3`调用`factorial`：
+这个程序的执行流程类似于第五章中的`countdown`流程。如果我们用值`3`调用`factorial`：
 
 由于`3`不等于`0`，我们采取第二个分支并计算`n-1`的阶乘。…
 
@@ -495,13 +495,13 @@ def factorial(n):
 
 下图展示了这个函数调用序列的栈图。
 
-![_images/726efd741b2b10a7e5f8789b876a18d14f2818ebbdfc92ab4c41430c6422fcfc.png](../Images/b37eb9da251407831430919397bc7f9a.png)
+![_images/726efd741b2b10a7e5f8789b876a18d14f2818ebbdfc92ab4c41430c6422fcfc.png](img/b37eb9da251407831430919397bc7f9a.png)
 
 返回值被显示为从栈中返回。在每一帧中，返回值是`n`与`recurse`的乘积。
 
 在最后一帧中，本地变量`recurse`不存在，因为创建它的分支没有执行。
 
-## 6.7\. 信念的飞跃[#](#leap-of-faith "Link to this heading")
+## 6.7\. 信念的飞跃
 
 跟踪执行流程是阅读程序的一种方式，但它很快就会变得让人不堪重负。另一种方法是我所称的“信念的飞跃”。当你遇到一个函数调用时，与你跟踪执行流程不同，你可以*假设*该函数正确工作并返回正确的结果。
 
@@ -513,13 +513,13 @@ def factorial(n):
 
 当然，假设一个函数在你还没写完的时候就能正确工作，这有点奇怪，但这就是为什么它被称为信任的跳跃！
 
-## 6.8\. 斐波那契[#](#fibonacci "Link to this heading")
+## 6.8\. 斐波那契
 
 在`factorial`之后，最常见的递归函数示例是`fibonacci`，它有如下定义：
 
 \[\begin{split}\begin{aligned} \mathrm{fibonacci}(0) &= 0 \\ \mathrm{fibonacci}(1) &= 1 \\ \mathrm{fibonacci}(n) &= \mathrm{fibonacci}(n-1) + \mathrm{fibonacci}(n-2) \end{aligned}\end{split}\]
 
-将其翻译为Python代码，像这样：
+将其翻译为 Python 代码，像这样：
 
 ```py
 def fibonacci(n):
@@ -533,9 +533,9 @@ def fibonacci(n):
 
 如果你尝试跟踪这里的执行流程，即使是对于较小的\(n\)值，你也会感到头晕目眩。但根据信任的跳跃法则，如果你假设两个递归调用是正确的，你就可以确信最后的`return`语句是正确的。
 
-顺便提一下，这种计算斐波那契数的方法效率非常低。在[第10章](chap10.html#section-memos)中，我会解释为什么，并提出一种改进方法。
+顺便提一下，这种计算斐波那契数的方法效率非常低。在第十章中，我会解释为什么，并提出一种改进方法。
 
-## 6.9\. 检查类型[#](#checking-types "Link to this heading")
+## 6.9\. 检查类型
 
 如果我们调用`factorial`并将`1.5`作为参数传递，会发生什么呢？
 
@@ -607,7 +607,7 @@ factorial is not defined for negative numbers.
 
 如果我们通过了两个检查，我们就知道`n`是一个非负整数，因此可以确信递归会终止。检查函数的参数以确保它们具有正确的类型和值，称为**输入验证**。
 
-## 6.10\. 调试[#](#debugging "Link to this heading")
+## 6.10\. 调试
 
 将一个大型程序分解成更小的函数会创建自然的调试检查点。如果某个函数无法正常工作，可以考虑三种可能性：
 
@@ -662,7 +662,7 @@ factorial(3)
 
 如果你对执行流程感到困惑，这种输出可能会很有帮助。开发有效的脚手架代码需要一些时间，但少量的脚手架代码可以节省大量调试时间。
 
-## 6.11\. 术语表[#](#glossary "Link to this heading")
+## 6.11\. 术语表
 
 **返回值：** 函数的结果。如果函数调用作为表达式使用，则返回值是该表达式的值。
 
@@ -678,7 +678,7 @@ factorial(3)
 
 **输入验证：** 检查函数的参数，确保它们具有正确的类型和值。
 
-## 6.12\. 练习[#](#exercises "Link to this heading")
+## 6.12\. 练习
 
 ```py
 # This cell tells Jupyter to provide detailed debugging information
@@ -691,7 +691,7 @@ factorial(3)
 Exception reporting mode: Verbose 
 ```
 
-### 6.12.1\. 向虚拟助手询问[#](#ask-a-virtual-assistant "Link to this heading")
+### 6.12.1\. 向虚拟助手询问
 
 在本章中，我们看到一个不正确的函数，它可能在没有返回值的情况下结束。
 
@@ -729,7 +729,7 @@ def is_divisible(x, y):
 
 然后问：“编写一个函数，接受两点的坐标并计算它们之间的距离。”看看结果是否与我们在本章中编写的`distance`函数类似。
 
-### 6.12.2\. 练习[#](#exercise "链接到此标题")
+### 6.12.2\. 练习
 
 使用增量开发编写一个名为`hypot`的函数，给定直角三角形的其他两个边的长度作为参数，返回斜边的长度。
 
@@ -737,11 +737,11 @@ def is_divisible(x, y):
 
 即使你第一次就能正确编写该函数，还是从一个始终返回`0`的函数开始，并练习逐步修改，边修改边测试。完成后，该函数应仅返回一个值——不应输出任何内容。
 
-### 6.12.3\. 练习[#](#id1 "链接到此标题")
+### 6.12.3\. 练习
 
 编写一个布尔函数`is_between(x, y, z)`，如果\(x < y < z\)或者\(z < y < x\)，则返回`True`，否则返回`False`。
 
-### 6.12.4\. 练习[#](#id2 "链接到此标题")
+### 6.12.4\. 练习
 
 阿克曼函数\(A(m, n)\)定义如下：
 
@@ -749,18 +749,18 @@ def is_divisible(x, y):
 
 编写一个名为`ackermann`的函数来计算阿克曼函数。当你调用`ackermann(5, 5)`时，会发生什么？
 
-### 6.12.5\. 练习[#](#id3 "链接到此标题")
+### 6.12.5\. 练习
 
 \(a\)和\(b\)的最大公约数（GCD）是能够整除它们两者且没有余数的最大数。
 
-找到两个数的GCD的一种方法是基于以下观察：如果\(r\)是将\(a\)除以\(b\)后的余数，那么\(gcd(a, b) = gcd(b, r)\)。作为基础情况，我们可以使用\(gcd(a, 0) = a\)。
+找到两个数的 GCD 的一种方法是基于以下观察：如果\(r\)是将\(a\)除以\(b\)后的余数，那么\(gcd(a, b) = gcd(b, r)\)。作为基础情况，我们可以使用\(gcd(a, 0) = a\)。
 
 编写一个名为`gcd`的函数，接受参数`a`和`b`，并返回它们的最大公约数。
 
-[Think Python: 第3版](https://allendowney.github.io/ThinkPython/index.html)
+[Think Python: 第 3 版](https://allendowney.github.io/ThinkPython/index.html)
 
 版权 2024 [Allen B. Downey](https://allendowney.com)
 
-代码许可证：[MIT许可证](https://mit-license.org/)
+代码许可证：[MIT 许可证](https://mit-license.org/)
 
 文本许可证：[创意共享署名-非商业性使用-相同方式共享 4.0 国际版](https://creativecommons.org/licenses/by-nc-sa/4.0/)

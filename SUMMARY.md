@@ -16,5 +16,6 @@
 +   [Python 鲁棒编程](docs/rbs-py/README.md)
 +   [Python Dask 扩展指南（早期发布）](docs/scl-py-dask/README.md)
 +   [Python Ray 扩展指南](docs/scl-py-ray/README.md)
++   [Python 编程思维第三版](docs/tnkpy3e/README.md)
 +   [Python 测试驱动开发第三版（早期发布）](docs/tstdvn-dev-py-3e/README.md)
 +   [Python 网络爬取第三版](docs/web-scp-py-3e/README.md)

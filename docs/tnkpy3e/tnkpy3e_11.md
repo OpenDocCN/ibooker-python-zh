@@ -1,12 +1,12 @@
-# 9\. 列表#
+# 9\. 列表
 
-> 原文：[https://allendowney.github.io/ThinkPython/chap09.html](https://allendowney.github.io/ThinkPython/chap09.html)
+> 原文：[`allendowney.github.io/ThinkPython/chap09.html`](https://allendowney.github.io/ThinkPython/chap09.html)
 
-本章介绍了Python最有用的内建类型之一——列表。你还将学习更多关于对象的知识，以及当多个变量指向同一对象时会发生什么。
+本章介绍了 Python 最有用的内建类型之一——列表。你还将学习更多关于对象的知识，以及当多个变量指向同一对象时会发生什么。
 
 在本章末的练习中，我们将创建一个单词列表，并用它来查找特殊单词，如回文和变位词。
 
-## 9.1\. 列表是一个序列[#](#a-list-is-a-sequence "Link to this heading")
+## 9.1\. 列表是一个序列
 
 像字符串一样，**列表**是值的序列。在字符串中，值是字符；在列表中，它们可以是任何类型。列表中的值称为**元素**。
 
@@ -50,11 +50,11 @@ len(cheeses)
 
 以下图显示了`cheeses`、`numbers`和`empty`的状态图。
 
-![_images/957063a97a11b84c82fcc4b0a736a796b5d1a3da6dc4f71db1409a9e25d1a570.png](../Images/7a76c4015360d2c859efe99a405dc889.png)
+![_images/957063a97a11b84c82fcc4b0a736a796b5d1a3da6dc4f71db1409a9e25d1a570.png](img/7a76c4015360d2c859efe99a405dc889.png)
 
 列表用带有“list”字样的盒子表示，列表的编号元素位于其中。
 
-## 9.2\. 列表是可变的[#](#lists-are-mutable "Link to this heading")
+## 9.2\. 列表是可变的
 
 要读取列表的一个元素，我们可以使用括号运算符。第一个元素的索引是`0`。
 
@@ -126,7 +126,7 @@ len(t)
 False 
 ```
 
-## 9.3\. 列表切片[#](#list-slices "Link to this heading")
+## 9.3\. 列表切片
 
 切片运算符作用于列表的方式与它在字符串上作用的方式相同。以下示例选择了四个字母列表中的第二和第三个元素。
 
@@ -181,7 +181,7 @@ list(letters)
 
 由于 `list` 是一个内置函数的名称，你应该避免将它用作变量名。
 
-## 9.4\. 列表操作[#](#list-operations "链接到此标题")
+## 9.4\. 列表操作
 
 `+` 运算符用于连接列表。
 
@@ -233,7 +233,7 @@ max(t2)
 4 
 ```
 
-## 9.5\. 列表方法[#](#list-methods "链接到此标题")
+## 9.5\. 列表方法
 
 Python 提供了对列表操作的方法。例如，`append` 会将一个新元素添加到列表的末尾：
 
@@ -305,7 +305,7 @@ t.remove('d')
 ValueError: list.remove(x): x not in list 
 ```
 
-## 9.6\. 列表和字符串[#](#lists-and-strings "链接到此标题")
+## 9.6\. 列表和字符串
 
 字符串是字符的序列，而列表是值的序列，但字符列表和字符串并不相同。要将字符串转换为字符列表，可以使用 `list` 函数。
 
@@ -358,7 +358,7 @@ s
 
 在这个例子中，分隔符是空格字符，所以 `join` 会在单词之间加上空格。要将字符串连接在一起而不添加空格，可以使用空字符串 `''` 作为分隔符。
 
-## 9.7\. 遍历列表[#](#looping-through-a-list "链接到此标题")
+## 9.7\. 遍历列表
 
 你可以使用 `for` 语句遍历列表中的元素。
 
@@ -396,7 +396,7 @@ for x in []:
     print('This never happens.') 
 ```
 
-## 9.8\. 排序列表[#](#sorting-lists "链接到此标题")
+## 9.8\. 排序列表
 
 Python 提供了一个内置函数 `sorted`，用于对列表的元素进行排序。
 
@@ -441,7 +441,7 @@ sorted('letters')
 
 使用空字符串作为分隔符时，列表中的元素将被连接在一起，中间没有任何分隔符。
 
-## 9.9\. 对象和值[#](#objects-and-values "链接到此标题")
+## 9.9\. 对象和值
 
 如果我们运行这些赋值语句：
 
@@ -452,7 +452,7 @@ b = 'banana'
 
 我们知道 `a` 和 `b` 都指向一个字符串，但我们不知道它们是否指向*同一个*字符串。有两种可能的状态，如下图所示。
 
-![_images/2e5ee2dabd4af114f59b1130cfa488eb144238c577461e791df9db8984a2de95.png](../Images/d47075b35980a553f7e01bc56e1e6c1f.png)
+![_images/2e5ee2dabd4af114f59b1130cfa488eb144238c577461e791df9db8984a2de95.png](img/d47075b35980a553f7e01bc56e1e6c1f.png)
 
 在左侧的图表中，`a` 和 `b` 引用两个具有相同值的不同对象。在右侧的图表中，它们引用同一个对象。要检查两个变量是否引用同一个对象，可以使用 `is` 运算符。
 
@@ -480,11 +480,11 @@ False
 
 所以状态图看起来是这样的。
 
-![_images/c8cfa39ca5b7bb5dc02b5731f4e053972e409045852e63845c82d4f14657fb77.png](../Images/32a99d0796e7c6eb18f5b3038069d04e.png)
+![_images/c8cfa39ca5b7bb5dc02b5731f4e053972e409045852e63845c82d4f14657fb77.png](img/32a99d0796e7c6eb18f5b3038069d04e.png)
 
 在这种情况下，我们会说这两个列表是**等价**的，因为它们有相同的元素，但不是**相同**的，因为它们不是同一个对象。如果两个对象是相同的，则它们也是等价的，但如果它们是等价的，则它们不一定是相同的。
 
-## 9.10\. 别名[#](#aliasing "Link to this heading")
+## 9.10\. 别名
 
 如果 `a` 引用一个对象，然后你赋值 `b = a`，那么两个变量都引用同一个对象。
 
@@ -500,7 +500,7 @@ True
 
 所以状态图看起来是这样的。
 
-![_images/bdf2f2d164766afae1abfc341924bf22fd6235f7db44edc4d5ab322d1a5323a1.png](../Images/90be22db2df1a3c8bf4e0ef5ba93a2a5.png)
+![_images/bdf2f2d164766afae1abfc341924bf22fd6235f7db44edc4d5ab322d1a5323a1.png](img/90be22db2df1a3c8bf4e0ef5ba93a2a5.png)
 
 将变量与对象的关联称为**引用**。在这个例子中，有两个对同一对象的引用。
 
@@ -526,7 +526,7 @@ b = 'banana'
 
 是否 `a` 和 `b` 引用同一个字符串几乎没有影响。
 
-## 9.11\. 列表参数[#](#list-arguments "Link to this heading")
+## 9.11\. 列表参数
 
 当你将列表传递给函数时，函数会得到对列表的引用。如果函数修改了列表，则调用者会看到更改。例如，`pop_first` 使用列表方法 `pop` 来删除列表中的第一个元素。
 
@@ -562,11 +562,11 @@ letters
 [2.04, 1.24, 1.06, 0.85] 
 ```
 
-![_images/afbc48196f8175d6ba5fc8d3b6406623158939478a7457ea70ae7c0aab651eb8.png](../Images/7f7d1aba33d53ebfe1703790b81777d2.png)
+![_images/afbc48196f8175d6ba5fc8d3b6406623158939478a7457ea70ae7c0aab651eb8.png](img/7f7d1aba33d53ebfe1703790b81777d2.png)
 
 将对象的引用作为参数传递给函数会创建一种别名形式。如果函数修改了该对象，这些更改将在函数结束后持续存在。
 
-## 9.12\. 创建单词列表[#](#making-a-word-list "Link to this heading")
+## 9.12\. 创建单词列表
 
 在上一章中，我们读取了 `words.txt` 文件并搜索了具有特定属性的单词，比如使用字母 `e`。但是我们多次读取整个文件，这样效率不高。更好的做法是只读取一次文件，并将单词存入列表。以下循环展示了如何操作。
 
@@ -630,7 +630,7 @@ False
 
 我得说，我对它感到有点麻木。
 
-## 9.13\. 调试[#](#debugging "Link to this heading")
+## 9.13\. 调试
 
 请注意，大多数列表方法修改参数并返回 `None`。这与字符串方法相反，后者返回一个新字符串，并且不修改原始字符串。
 
@@ -667,7 +667,7 @@ AttributeError: 'NoneType' object has no attribute 'remove'
 
 如果你看到这样的错误信息，应该向后检查程序，看看你是否错误地调用了列表方法。
 
-## 9.14\. 术语表[#](#glossary "Link to this heading")
+## 9.14\. 术语表
 
 **列表:** 一种包含一系列值的对象。
 
@@ -687,7 +687,7 @@ AttributeError: 'NoneType' object has no attribute 'remove'
 
 **属性:** 与对象关联的命名值之一。
 
-## 9.15\. 练习[#](#exercises "Link to this heading")
+## 9.15\. 练习
 
 ```py
 # This cell tells Jupyter to provide detailed debugging information
@@ -696,19 +696,19 @@ AttributeError: 'NoneType' object has no attribute 'remove'
 %xmode Verbose 
 ```
 
-### 9.15.1\. 向虚拟助手提问[#](#ask-a-virtual-assistant "Link to this heading")
+### 9.15.1\. 向虚拟助手提问
 
-在本章中，我使用了“contrafibularities”和“anaspeptic”这两个词，但它们实际上并不是英语单词。它们出现在英国电视节目*黑爵士*第3季第2集“墨水与无能”中。
+在本章中，我使用了“contrafibularities”和“anaspeptic”这两个词，但它们实际上并不是英语单词。它们出现在英国电视节目*黑爵士*第 3 季第 2 集“墨水与无能”中。
 
-然而，当我询问ChatGPT 3.5（2023年8月3日版本）这些单词的来源时，它最初声称这些单词来自《蒙提·派森》，后来又声称它们来自汤姆·斯托帕德的剧作*《罗斯恩·克兰茨与吉尔登斯特恩死了》*。
+然而，当我询问 ChatGPT 3.5（2023 年 8 月 3 日版本）这些单词的来源时，它最初声称这些单词来自《蒙提·派森》，后来又声称它们来自汤姆·斯托帕德的剧作*《罗斯恩·克兰茨与吉尔登斯特恩死了》*。
 
 如果你现在提问，你可能会得到不同的结果。但这个例子提醒我们，虚拟助手并不总是准确的，因此你应该检查结果是否正确。随着经验的积累，你会对哪些问题虚拟助手能够可靠回答有一个直觉。在这个例子中，常规的网络搜索可以迅速识别这些单词的来源。
 
 如果在本章的任何练习中遇到困难，可以考虑向虚拟助手寻求帮助。如果你得到的结果使用了我们还没有学过的功能，你可以为虚拟助手分配一个“角色”。
 
-例如，在你提问之前，尝试输入“Role: Basic Python Programming Instructor”。之后，你得到的回答应该仅使用基本功能。如果你仍然看到我们还没有学过的功能，你可以跟进询问：“能否只用基本的Python功能编写那个？”
+例如，在你提问之前，尝试输入“Role: Basic Python Programming Instructor”。之后，你得到的回答应该仅使用基本功能。如果你仍然看到我们还没有学过的功能，你可以跟进询问：“能否只用基本的 Python 功能编写那个？”
 
-### 9.15.2\. 练习[#](#exercise "链接到此标题")
+### 9.15.2\. 练习
 
 如果两个单词的字母可以重新排列使其拼写为另一个单词，则这两个单词是字谜。例如，`tops`是`stop`的字谜。
 
@@ -718,9 +718,9 @@ AttributeError: 'NoneType' object has no attribute 'remove'
 
 使用你的函数和单词列表，找到`takes`的所有字谜。
 
-### 9.15.3\. 练习[#](#id1 "链接到此标题")
+### 9.15.3\. 练习
 
-Python提供了一个名为`reversed`的内置函数，它接受一个序列（如列表或字符串）作为参数，并返回一个`reversed`对象，其中包含按相反顺序排列的元素。
+Python 提供了一个名为`reversed`的内置函数，它接受一个序列（如列表或字符串）作为参数，并返回一个`reversed`对象，其中包含按相反顺序排列的元素。
 
 ```py
 reversed('parrot') 
@@ -759,7 +759,7 @@ def reverse_word(word):
 
 回文是指正着读和反着读都一样的单词，如“noon”和“rotator”。编写一个名为`is_palindrome`的函数，该函数接受一个字符串作为参数，如果它是回文，返回`True`，否则返回`False`。
 
-你可以使用以下循环查找单词列表中至少包含7个字母的所有回文。
+你可以使用以下循环查找单词列表中至少包含 7 个字母的所有回文。
 
 ```py
 for word in word_list:
@@ -767,13 +767,13 @@ for word in word_list:
         print(word) 
 ```
 
-### 9.15.4\. 练习[#](#id2 "链接到此标题")
+### 9.15.4\. 练习
 
 编写一个名为`reverse_sentence`的函数，该函数接受一个字符串作为参数，该字符串包含由空格分隔的若干单词。它应该返回一个新的字符串，其中包含按相反顺序排列的单词。例如，如果参数是“Reverse this sentence”，结果应该是“Sentence this reverse”。
 
 提示：你可以使用`capitalize`方法将第一个单词首字母大写，并将其他单词转换为小写。
 
-### 9.15.5\. 练习[#](#id3 "链接到此标题")
+### 9.15.5\. 练习
 
 编写一个名为`total_length`的函数，接受一个字符串列表，并返回这些字符串的总长度。`word_list`中单词的总长度应该是\(902{,}728\)。
 

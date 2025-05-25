@@ -1,6 +1,6 @@
-# 16\. 类和对象#
+# 16\. 类和对象
 
-> 原文：[https://allendowney.github.io/ThinkPython/chap16.html](https://allendowney.github.io/ThinkPython/chap16.html)
+> 原文：[`allendowney.github.io/ThinkPython/chap16.html`](https://allendowney.github.io/ThinkPython/chap16.html)
 
 到目前为止，我们已经定义了类，并创建了表示一天中的时间和一年中的某一天的对象。我们还定义了可以创建、修改以及进行计算的这些对象的方法。
 
@@ -8,7 +8,7 @@
 
 我将使用这些类来演示面向对象编程（OOP）主题，包括对象身份与等价性、浅拷贝与深拷贝、多态等。
 
-## 16.1\. 创建一个点[#](#creating-a-point "Link to this heading")
+## 16.1\. 创建一个点
 
 在计算机图形学中，屏幕上的位置通常通过一对坐标在 `x`-`y` 平面中表示。按照惯例，点 `(0, 0)` 通常表示屏幕的左上角，而 `(x, y)` 表示从原点出发，向右移动 `x` 单位，向下移动 `y` 单位的点。与数学课上可能见过的笛卡尔坐标系相比，`y` 轴是上下颠倒的。
 
@@ -49,7 +49,7 @@ Point(0, 0)
 
 以下图显示了新对象的状态。
 
-![_images/6e851969c74483fc4efb36d87b6fcdd9ee1479e2274f2efebc840e7f3520ce6f.png](../Images/48dbb9e8e1d723217cd7f02dafdf41bb.png)
+![_images/6e851969c74483fc4efb36d87b6fcdd9ee1479e2274f2efebc840e7f3520ce6f.png](img/48dbb9e8e1d723217cd7f02dafdf41bb.png)
 
 像往常一样，程序员定义的类型由一个外部有类型名称、内部有属性的框表示。
 
@@ -103,7 +103,7 @@ Point(0, 150)
 
 在下一节中，我们将使用这些点来定义并绘制一条线。
 
-## 16.2\. 创建一个Line[#](#creating-a-line "Link to this heading")
+## 16.2\. 创建一个 Line
 
 现在让我们定义一个表示两个点之间线段的类。像往常一样，我们将从`__init__`方法和`__str__`方法开始。
 
@@ -128,19 +128,19 @@ print(line1)
 Line(Point(0, 0), Point(300, 0)) 
 ```
 
-当我们调用`print`并传入`line`作为参数时，`print`会在`line`上调用`__str__`方法。`__str__`方法使用f-string来创建`line`的字符串表示。
+当我们调用`print`并传入`line`作为参数时，`print`会在`line`上调用`__str__`方法。`__str__`方法使用 f-string 来创建`line`的字符串表示。
 
-f-string包含了两个大括号中的表达式`self.p1`和`self.p2`。当这些表达式被求值时，结果是`Point`对象。然后，当它们被转换为字符串时，会调用`Point`类中的`__str__`方法。
+f-string 包含了两个大括号中的表达式`self.p1`和`self.p2`。当这些表达式被求值时，结果是`Point`对象。然后，当它们被转换为字符串时，会调用`Point`类中的`__str__`方法。
 
 这就是为什么，当我们显示一个`Line`时，结果包含了`Point`对象的字符串表示。
 
 以下对象图展示了这个`Line`对象的状态。
 
-![_images/4aaaffd556f4fee05dc8c25d40d9a66f559504d4c1b89fbe148c631e206580b0.png](../Images/0516eb6de9935e024c0b540a33ccc2f5.png)
+![_images/4aaaffd556f4fee05dc8c25d40d9a66f559504d4c1b89fbe148c631e206580b0.png](img/0516eb6de9935e024c0b540a33ccc2f5.png)
 
 字符串表示和对象图对于调试很有用，但这个示例的重点是生成图形，而不是文本！所以我们将使用`jupyturtle`模块在屏幕上绘制线条。
 
-正如我们在[第4章](chap04.html#section-turtle-module)中所做的那样，我们将使用`make_turtle`来创建一个`Turtle`对象以及一个可以绘制的画布。为了绘制线条，我们将使用`jupyturtle`模块中的两个新函数：
+正如我们在第四章中所做的那样，我们将使用`make_turtle`来创建一个`Turtle`对象以及一个可以绘制的画布。为了绘制线条，我们将使用`jupyturtle`模块中的两个新函数：
 
 +   `jumpto`，它接受两个坐标并将`Turtle`移动到给定位置，而不绘制线条，和
 
@@ -183,7 +183,7 @@ line2.draw()
 
 随着我们定义并绘制更多对象，我们将再次使用这些线条。但首先，让我们来讨论对象的等价性和标识。
 
-## 16.3\. 等价性和标识[#](#equivalence-and-identity "Link to this heading")
+## 16.3\. 等价性和标识
 
 假设我们创建了两个坐标相同的点。
 
@@ -233,7 +233,7 @@ False
 
 不可能重载 `is` 运算符 —— 它始终检查对象是否相同。但对于程序员定义的类型，你可以重载 `==` 运算符，以便它检查对象是否等价。并且你可以定义什么是“等价”。
 
-## 16.4\. 创建一个矩形[#](#creating-a-rectangle "跳转到该标题")
+## 16.4\. 创建一个矩形
 
 现在让我们定义一个类来表示和绘制矩形。为了简化起见，我们假设矩形要么是垂直的，要么是水平的，而不是倾斜的。你认为我们应该使用什么属性来指定矩形的位置和大小？
 
@@ -274,7 +274,7 @@ Rectangle(100, 50, Point(30, 20))
 
 以下图展示了该对象的状态。
 
-![_images/93ab30dffba5edf8630e6bc3afd2c786600c5a1461f0695f96fd869a561a08c7.png](../Images/fcebfc419783d3fbf78fbf7d44c4e86e.png)
+![_images/93ab30dffba5edf8630e6bc3afd2c786600c5a1461f0695f96fd869a561a08c7.png](img/fcebfc419783d3fbf78fbf7d44c4e86e.png)
 
 为了绘制一个矩形，我们将使用以下方法来创建四个 `Point` 对象，表示矩形的四个角。
 
@@ -321,7 +321,7 @@ box1.draw()
 
 图中包含两条线来表示坐标轴。
 
-## 16.5\. 修改矩形[#](#changing-rectangles "跳转到该标题")
+## 16.5\. 修改矩形
 
 现在让我们考虑两种修改矩形的方法，`grow` 和 `translate`。我们将看到 `grow` 按预期工作，但 `translate` 存在一个细微的 bug。在我解释之前，看看你能否先找出这个问题。
 
@@ -389,7 +389,7 @@ box2.draw()
 
 看起来两个矩形都移动了，这并不是我们想要的结果！下一节将解释出了什么问题。
 
-## 16.6\. 深拷贝[#](#deep-copy "跳转到该标题")
+## 16.6\. 深拷贝
 
 当我们使用 `copy` 来复制 `box1` 时，它复制了 `Rectangle` 对象，但没有复制其中包含的 `Point` 对象。所以 `box1` 和 `box2` 是不同的对象，这正是我们想要的效果。
 
@@ -413,7 +413,7 @@ True
 
 以下图展示了这些对象的状态。
 
-![_images/351c7b94fa9021934acda94ae1dd3d5b3af81e1fc228a8aaee3ea80575486ff0.png](../Images/fa9acdcb0f0d6c848961d6dd6343293a.png)
+![_images/351c7b94fa9021934acda94ae1dd3d5b3af81e1fc228a8aaee3ea80575486ff0.png](img/fa9acdcb0f0d6c848961d6dd6343293a.png)
 
 `copy`所做的操作称为**浅拷贝**，因为它复制了对象本身，而不是对象内部包含的其他对象。因此，改变一个`Rectangle`的`width`或`height`不会影响另一个`Rectangle`，但改变共享的`Point`属性会影响两个对象！这种行为容易导致混淆和错误。
 
@@ -466,7 +466,7 @@ box3.draw()
 box4.draw() 
 ```
 
-## 16.7\. 多态性[#](#polymorphism "链接到这个标题")
+## 16.7\. 多态性
 
 在前面的例子中，我们对两个`Line`对象和两个`Rectangle`对象调用了`draw`方法。我们可以通过将对象列表化来更简洁地做同样的事情。
 
@@ -491,9 +491,9 @@ for shape in shapes:
 
 作为本章末尾的练习，你将定义一个新的类，表示一个圆形并提供一个`draw`方法。然后，你可以利用多态性来绘制线条、矩形和圆形。
 
-## 16.8\. 调试[#](#debugging "链接到这个标题")
+## 16.8\. 调试
 
-在本章中，我们遇到了一个微妙的bug，因为我们创建了一个`Point`对象，它被两个`Rectangle`对象共享，然后我们修改了这个`Point`。通常，有两种方法可以避免此类问题：要么避免共享对象，要么避免修改对象。
+在本章中，我们遇到了一个微妙的 bug，因为我们创建了一个`Point`对象，它被两个`Rectangle`对象共享，然后我们修改了这个`Point`。通常，有两种方法可以避免此类问题：要么避免共享对象，要么避免修改对象。
 
 为了避免共享对象，我们可以使用深拷贝，正如我们在本章中所做的那样。
 
@@ -506,11 +506,11 @@ for shape in shapes:
         return Point(x, y) 
 ```
 
-Python提供的功能使得避免修改对象变得更容易。虽然这些功能超出了本书的范围，但如果你感兴趣，可以询问虚拟助手：“如何让一个Python对象变为不可变？”
+Python 提供的功能使得避免修改对象变得更容易。虽然这些功能超出了本书的范围，但如果你感兴趣，可以询问虚拟助手：“如何让一个 Python 对象变为不可变？”
 
 创建一个新对象比修改现有对象花费更多时间，但在实际应用中，这种差异通常并不重要。避免共享对象和不纯函数的程序通常更容易开发、测试和调试——而最好的调试方式是你不需要进行调试。
 
-## 16.9\. 词汇表[#](#glossary "链接到此标题")
+## 16.9\. 词汇表
 
 **浅拷贝：** 一种拷贝操作，不会拷贝嵌套对象。
 
@@ -518,7 +518,7 @@ Python提供的功能使得避免修改对象变得更容易。虽然这些功�
 
 **多态：** 方法或运算符能够与多种类型的对象一起工作。
 
-## 16.10\. 练习[#](#exercises "链接到此标题")
+## 16.10\. 练习
 
 ```py
 # This cell tells Jupyter to provide detailed debugging information
@@ -527,11 +527,11 @@ Python提供的功能使得避免修改对象变得更容易。虽然这些功�
 %xmode Verbose 
 ```
 
-### 16.10.1\. 请求虚拟助手[#](#ask-a-virtual-assistant "链接到此标题")
+### 16.10.1\. 请求虚拟助手
 
 对于以下所有练习，可以考虑请求虚拟助手的帮助。如果这样做，你需要将`Point`、`Line`和`Rectangle`类的定义作为提示的一部分提供——否则虚拟助手会猜测它们的属性和方法，生成的代码将无法正常工作。
 
-### 16.10.2\. 练习[#](#exercise "链接到此标题")
+### 16.10.2\. 练习
 
 为`Line`类编写一个`__eq__`方法，如果`Line`对象引用的`Point`对象是相等的（无论顺序如何），则返回`True`。
 
@@ -594,7 +594,7 @@ line_a == line_d    # should be False
 False 
 ```
 
-### 16.10.3\. 练习[#](#id1 "链接到此标题")
+### 16.10.3\. 练习
 
 编写一个名为`midpoint`的`Line`方法，该方法计算线段的中点并将结果作为`Point`对象返回。
 
@@ -646,7 +646,7 @@ for shape in [line1, line2, line3]:
     shape.draw() 
 ```
 
-### 16.10.4\. 练习[#](#id2 "链接到此标题")
+### 16.10.4\. 练习
 
 编写一个名为`midpoint`的`Rectangle`方法，该方法找到矩形中心的点并将结果作为`Point`对象返回。
 
@@ -686,7 +686,7 @@ for shape in [line1, line2, rectangle, diagonal]:
     shape.draw() 
 ```
 
-### 16.10.5\. 练习[#](#id3 "链接到此标题")
+### 16.10.5\. 练习
 
 编写一个名为`make_cross`的`Rectangle`方法，该方法：
 
@@ -724,11 +724,11 @@ for line in lines:
     line.draw() 
 ```
 
-### 16.10.6\. 练习[#](#id4 "链接到此标题")
+### 16.10.6\. 练习
 
-编写一个名为`Circle`的类的定义，具有属性`center`和`radius`，其中`center`是一个Point对象，`radius`是一个数字。包括特殊方法`__init__`和`__str__`，以及一个名为`draw`的方法，使用`jupyturtle`函数绘制圆形。
+编写一个名为`Circle`的类的定义，具有属性`center`和`radius`，其中`center`是一个 Point 对象，`radius`是一个数字。包括特殊方法`__init__`和`__str__`，以及一个名为`draw`的方法，使用`jupyturtle`函数绘制圆形。
 
-你可以使用以下函数，这是我们在第4章中编写的`circle`函数的版本。
+你可以使用以下函数，这是我们在第四章中编写的`circle`函数的版本。
 
 ```py
 from jupyturtle import make_turtle, forward, left, right
@@ -775,10 +775,10 @@ rectangle.draw()
 circle.draw() 
 ```
 
-[Think Python: 第3版](https://allendowney.github.io/ThinkPython/index.html)
+[Think Python: 第 3 版](https://allendowney.github.io/ThinkPython/index.html)
 
 版权所有 2024 [Allen B. Downey](https://allendowney.com)
 
-代码许可证：[MIT许可证](https://mit-license.org/)
+代码许可证：[MIT 许可证](https://mit-license.org/)
 
 文本许可证：[知识共享署名-非商业性使用-相同方式共享 4.0 国际版](https://creativecommons.org/licenses/by-nc-sa/4.0/)

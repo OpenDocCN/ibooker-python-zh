@@ -1,6 +1,6 @@
-# 19. 最后的思考#
+# 19. 最后的思考
 
-> 原文：[https://allendowney.github.io/ThinkPython/chap19.html](https://allendowney.github.io/ThinkPython/chap19.html)
+> 原文：[`allendowney.github.io/ThinkPython/chap19.html`](https://allendowney.github.io/ThinkPython/chap19.html)
 
 学习编程并不容易，但如果你已经走到了这一步，你已经打下了一个良好的基础。现在，我有一些建议，可以帮助你继续学习并应用所学的知识。
 
@@ -8,31 +8,31 @@
 
 如果你对数据科学感兴趣，我有三本书你可能会喜欢：
 
-+   *Think Stats: Exploratory Data Analysis*，O'Reilly Media，2014年。
++   *Think Stats: Exploratory Data Analysis*，O'Reilly Media，2014 年。
 
-+   *Think Bayes: Bayesian Statistics in Python*，O'Reilly Media，2021年。
++   *Think Bayes: Bayesian Statistics in Python*，O'Reilly Media，2021 年。
 
-+   *Think DSP: Digital Signal Processing in Python*，O'Reilly Media，2016年。
++   *Think DSP: Digital Signal Processing in Python*，O'Reilly Media，2016 年。
 
 如果你对物理建模和复杂系统感兴趣，你可能会喜欢：
 
-+   *Modeling and Simulation in Python: An Introduction for Scientists and Engineers*，No Starch Press，2023年。
++   *Modeling and Simulation in Python: An Introduction for Scientists and Engineers*，No Starch Press，2023 年。
 
-+   *Think Complexity: Complexity Science and Computational Modeling*，O'Reilly Media，2018年。
++   *Think Complexity: Complexity Science and Computational Modeling*，O'Reilly Media，2018 年。
 
-这些书籍使用了NumPy、SciPy、pandas以及其他用于数据科学和科学计算的Python库。
+这些书籍使用了 NumPy、SciPy、pandas 以及其他用于数据科学和科学计算的 Python 库。
 
-本书试图在编程的通用原则和Python的细节之间找到平衡。因此，它并没有涵盖Python语言的所有特性。关于Python的更多内容以及使用它的良好建议，我推荐由Luciano Ramalho编写的*Fluent Python: Clear, Concise, and Effective Programming*，第二版，O'Reilly Media，2022年。
+本书试图在编程的通用原则和 Python 的细节之间找到平衡。因此，它并没有涵盖 Python 语言的所有特性。关于 Python 的更多内容以及使用它的良好建议，我推荐由 Luciano Ramalho 编写的*Fluent Python: Clear, Concise, and Effective Programming*，第二版，O'Reilly Media，2022 年。
 
-在学习编程之后，一个常见的下一步是学习数据结构和算法。我目前正在进行相关工作，名为*Data Structures and Information Retrieval in Python*。该书的免费电子版可以在Green Tea Press网站上获得：[https://greenteapress.com](https://greenteapress.com)。
+在学习编程之后，一个常见的下一步是学习数据结构和算法。我目前正在进行相关工作，名为*Data Structures and Information Retrieval in Python*。该书的免费电子版可以在 Green Tea Press 网站上获得：[`greenteapress.com`](https://greenteapress.com)。
 
-当你处理更复杂的程序时，你将会遇到新的挑战。你可能会觉得回顾本书中关于调试的章节很有帮助。特别是，记住[第12章](chap12.html#section-debugging-12)中的调试六个R法则：阅读、运行、反思、橡皮鸭调试、撤退和休息。
+当你处理更复杂的程序时，你将会遇到新的挑战。你可能会觉得回顾本书中关于调试的章节很有帮助。特别是，记住第十二章中的调试六个 R 法则：阅读、运行、反思、橡皮鸭调试、撤退和休息。
 
-本书建议了一些调试工具，包括`print`和`repr`函数，[第11章](chap11.html#section-debugging-11)中的`structshape`函数，以及[第14章](chap14.html#section-debugging-14)中的内建函数`isinstance`、`hasattr`和`vars`。
+本书建议了一些调试工具，包括`print`和`repr`函数，第十一章中的`structshape`函数，以及第十四章中的内建函数`isinstance`、`hasattr`和`vars`。
 
 它还建议了一些用于测试程序的工具，包括`assert`语句、`doctest`模块和`unittest`模块。在程序中加入测试是预防和发现错误、节省调试时间的最佳方法之一。
 
-但最好的调试方式是你根本不需要调试。如果你按照[第6章](chap06.html#section-incremental)中描述的增量开发过程进行开发，并且在过程中不断进行测试，你将会犯更少的错误，并且在出错时能更快找到它们。另外，记得[第4章](chap04.html#section-encapsulation)中提到的封装和泛化，尤其是在你在 Jupyter notebooks 中开发代码时特别有用。
+但最好的调试方式是你根本不需要调试。如果你按照第六章中描述的增量开发过程进行开发，并且在过程中不断进行测试，你将会犯更少的错误，并且在出错时能更快找到它们。另外，记得第四章中提到的封装和泛化，尤其是在你在 Jupyter notebooks 中开发代码时特别有用。
 
 在本书中，我提到了一些使用虚拟助手帮助你学习、编程和调试的方法。我希望这些工具对你有帮助。
 
@@ -48,7 +48,7 @@
 
 祝你好运！
 
-[Think Python: 第3版](https://allendowney.github.io/ThinkPython/index.html)
+[Think Python: 第 3 版](https://allendowney.github.io/ThinkPython/index.html)
 
 版权所有 2024 [Allen B. Downey](https://allendowney.com)
 

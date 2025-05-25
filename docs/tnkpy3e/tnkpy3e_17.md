@@ -1,6 +1,6 @@
-# 15\. 类与方法#
+# 15\. 类与方法
 
-> 原文：[https://allendowney.github.io/ThinkPython/chap15.html](https://allendowney.github.io/ThinkPython/chap15.html)
+> 原文：[`allendowney.github.io/ThinkPython/chap15.html`](https://allendowney.github.io/ThinkPython/chap15.html)
 
 Python 是一种**面向对象的语言**——也就是说，它提供支持面向对象编程的特性，具有以下这些定义性特征：
 
@@ -12,7 +12,7 @@ Python 是一种**面向对象的语言**——也就是说，它提供支持面
 
 例如，在上一章中我们定义了一个`Time`类，它对应了人们记录时间的方式，并且我们定义了对应于人们与时间交互的功能。但`Time`类的定义和接下来的函数定义之间没有明确的联系。我们可以通过将函数重写为**方法**来明确这种联系，方法是在类定义内部定义的。
 
-## 15.1\. 定义方法[#](#defining-methods "Link to this heading")
+## 15.1\. 定义方法
 
 在上一章中，我们定义了一个名为`Time`的类，并编写了一个名为`print_time`的函数，用于显示一天中的时间。
 
@@ -79,7 +79,7 @@ start.print_time()
 
 不管语法如何，该方法的行为是相同的。接收者被赋值为第一个参数，因此在方法内部，`self`指向与`start`相同的对象。
 
-## 15.2\. 另一种方法[#](#another-method "Link to this heading")
+## 15.2\. 另一种方法
 
 这里是上一章的`time_to_int`函数。
 
@@ -101,7 +101,7 @@ def time_to_int(time):
         return seconds 
 ```
 
-第一行使用了特殊命令`add_method_to`，它将方法添加到先前定义的类中。此命令在Jupyter笔记本中有效，但它不是Python的一部分，因此在其他环境中无法使用。通常，类的所有方法都在类定义内部，这样它们与类一起定义。但是为了本书的方便，我们一次定义一个方法。
+第一行使用了特殊命令`add_method_to`，它将方法添加到先前定义的类中。此命令在 Jupyter 笔记本中有效，但它不是 Python 的一部分，因此在其他环境中无法使用。通常，类的所有方法都在类定义内部，这样它们与类一起定义。但是为了本书的方便，我们一次定义一个方法。
 
 如同前一个示例，方法定义是缩进的，参数名是`self`。除此之外，方法与函数是相同的。下面是我们如何调用它。
 
@@ -115,7 +115,7 @@ start.time_to_int()
 
 通常我们说“调用”一个函数和“调用”一个方法，但它们的意思是一样的。
 
-## 15.3\. 静态方法[#](#static-methods "链接到此标题")
+## 15.3\. 静态方法
 
 作为另一个示例，假设我们考虑`int_to_time`函数。下面是上一章中的版本。
 
@@ -145,7 +145,7 @@ def int_to_time(seconds):
 start = Time.int_to_time(34800) 
 ```
 
-结果是一个新对象，表示9:40。
+结果是一个新对象，表示 9:40。
 
 ```py
 start.print_time() 
@@ -186,7 +186,7 @@ print_time(end)
 11:12:00 
 ```
 
-## 15.4\. 比较时间对象[#](#comparing-time-objects "链接到此标题")
+## 15.4\. 比较时间对象
 
 作为另一个示例，假设我们将`is_after`写成一个方法。下面是`is_after`函数，这是上一章练习的一个解答。
 
@@ -216,9 +216,9 @@ True
 
 这个语法的一个优点是，它几乎像在问一个问题：“`end` 在 `start` 之后吗？”
 
-## 15.5\. `__str__`方法[#](#the-str-method "链接到此标题")
+## 15.5\. `__str__`方法
 
-当你编写方法时，你几乎可以选择任何你想要的名字。然而，某些名字有特殊的含义。例如，如果一个对象有一个名为`__str__`的方法，Python会使用这个方法将对象转换为字符串。例如，下面是一个时间对象的`__str__`方法。
+当你编写方法时，你几乎可以选择任何你想要的名字。然而，某些名字有特殊的含义。例如，如果一个对象有一个名为`__str__`的方法，Python 会使用这个方法将对象转换为字符串。例如，下面是一个时间对象的`__str__`方法。
 
 ```py
 %%add_method_to Time
@@ -240,7 +240,7 @@ end.__str__()
 '11:12:00' 
 ```
 
-但Python也可以为你调用它。如果你使用内置函数`str`将一个`Time`对象转换为字符串，Python会使用`Time`类中的`__str__`方法。
+但 Python 也可以为你调用它。如果你使用内置函数`str`将一个`Time`对象转换为字符串，Python 会使用`Time`类中的`__str__`方法。
 
 ```py
 str(end) 
@@ -262,7 +262,7 @@ print(end)
 
 像`__str__`这样的函数被称为**特殊方法**。你可以通过它们的名字来识别它们，因为它们的名称前后都有两个下划线。
 
-## 15.6\. **init**方法[#](#the-init-method "链接到此标题")
+## 15.6\. **init**方法
 
 最特殊的特殊方法是`__init__`，之所以如此称呼，是因为它初始化了新对象的属性。`Time`类的一个`__init__`方法可能是这样的：
 
@@ -275,7 +275,7 @@ print(end)
         self.second = second 
 ```
 
-现在，当我们实例化一个`Time`对象时，Python会调用`__init__`并传递参数。因此，我们可以在创建对象的同时初始化属性。
+现在，当我们实例化一个`Time`对象时，Python 会调用`__init__`并传递参数。因此，我们可以在创建对象的同时初始化属性。
 
 ```py
 time = Time(9, 40, 0)
@@ -323,7 +323,7 @@ print(time)
 
 当我编写一个新的类时，我几乎总是从编写`__init__`开始，这使得创建对象变得更容易，以及`__str__`，它对于调试非常有用。
 
-## 15.7\. 运算符重载[#](#operator-overloading "Link to this heading")
+## 15.7\. 运算符重载
 
 通过定义其他特殊方法，你可以指定运算符在程序员定义类型上的行为。例如，如果你为`Time`类定义一个名为`__add__`的方法，你就可以在`Time`对象上使用`+`运算符。
 
@@ -359,7 +359,7 @@ print(end)
 
 改变运算符的行为，使其与程序员定义的类型一起工作，这被称为**运算符重载**。对于每个运算符，比如`+`，都有一个相应的特殊方法，如`__add__`。
 
-## 15.8\. 调试[#](#debugging "Link to this heading")
+## 15.8\. 调试
 
 如果`minute`和`second`的值在`0`到`60`之间（包括`0`但不包括`60`），并且`hour`是正数，则`Time`对象是有效的。此外，`hour`和`minute`应该是整数，但我们可能允许`second`有小数部分。像这样的要求被称为**不变量**，因为它们应该始终为真。换句话说，如果它们不为真，那就意味着出了问题。
 
@@ -412,7 +412,7 @@ AssertionError: self is not a valid Time
 
 `assert`语句很有用，因为它们区分了处理正常情况的代码和检查错误的代码。
 
-## 15.9\. 词汇表[#](#glossary "Link to this heading")
+## 15.9\. 词汇表
 
 **面向对象语言：** 一种提供支持面向对象编程特性的语言，特别是用户定义类型。
 
@@ -430,7 +430,7 @@ AssertionError: self is not a valid Time
 
 **不变式（invariant）：** 程序执行过程中始终应该为真的条件。
 
-## 15.10\. 练习[#](#exercises "Link to this heading")
+## 15.10\. 练习
 
 ```py
 # This cell tells Jupyter to provide detailed debugging information
@@ -439,7 +439,7 @@ AssertionError: self is not a valid Time
 %xmode Verbose 
 ```
 
-### 15.10.1\. 向虚拟助手提问[#](#ask-a-virtual-assistant "Link to this heading")
+### 15.10.1\. 向虚拟助手提问
 
 想了解更多关于静态方法的信息，可以向虚拟助手询问：
 
@@ -456,24 +456,24 @@ def subtract_time(t1, t2):
     return time_to_int(t1) - time_to_int(t2) 
 ```
 
-### 15.10.2\. 练习[#](#exercise "Link to this heading")
+### 15.10.2\. 练习
 
 在上一章中，一系列练习要求你编写一个`Date`类和一些与`Date`对象一起使用的函数。现在，让我们练习将这些函数重写为方法。
 
 1.  编写一个`Date`类的定义，用于表示一个日期——即一个年份、月份和日期。
 
-1.  编写一个`__init__`方法，接受`year`、`month`和`day`作为参数，并将这些参数赋值给属性。创建一个表示1933年6月22日的对象。
+1.  编写一个`__init__`方法，接受`year`、`month`和`day`作为参数，并将这些参数赋值给属性。创建一个表示 1933 年 6 月 22 日的对象。
 
-1.  编写`__str__`方法，使用f-string格式化属性并返回结果。如果你用你创建的`Date`对象进行测试，结果应该是`1933-06-22`。
+1.  编写`__str__`方法，使用 f-string 格式化属性并返回结果。如果你用你创建的`Date`对象进行测试，结果应该是`1933-06-22`。
 
-1.  编写一个名为`is_after`的方法，接受两个`Date`对象，如果第一个对象的日期晚于第二个对象，则返回`True`。创建一个表示1933年9月17日的第二个对象，并检查它是否晚于第一个对象。
+1.  编写一个名为`is_after`的方法，接受两个`Date`对象，如果第一个对象的日期晚于第二个对象，则返回`True`。创建一个表示 1933 年 9 月 17 日的第二个对象，并检查它是否晚于第一个对象。
 
 提示：你可能会发现编写一个名为`to_tuple`的方法很有用，它返回一个包含`Date`对象属性（以年-月-日顺序）的元组。
 
-[Think Python: 第3版](https://allendowney.github.io/ThinkPython/index.html)
+[Think Python: 第 3 版](https://allendowney.github.io/ThinkPython/index.html)
 
 版权所有 2024 [Allen B. Downey](https://allendowney.com)
 
-代码许可证：[MIT许可证](https://mit-license.org/)
+代码许可证：[MIT 许可证](https://mit-license.org/)
 
 文字许可证：[创作共用许可证 署名-非商业性使用-相同方式共享 4.0 国际](https://creativecommons.org/licenses/by-nc-sa/4.0/)

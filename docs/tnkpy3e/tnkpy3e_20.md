@@ -1,12 +1,12 @@
-# 18\. Python 附加功能#
+# 18\. Python 附加功能
 
-> 原文：[https://allendowney.github.io/ThinkPython/chap18.html](https://allendowney.github.io/ThinkPython/chap18.html)
+> 原文：[`allendowney.github.io/ThinkPython/chap18.html`](https://allendowney.github.io/ThinkPython/chap18.html)
 
 本书的目标之一是尽量少教你 Python。当有两种方法可以做某事时，我选择了一种并避免提到另一种。有时，我会将第二种方法放进练习中。
 
 现在我想回过头去补充一些被遗忘的好点子。Python 提供了一些不是真正必要的功能——你可以不使用它们写出好的代码——但使用它们，你可以写出更简洁、可读或高效的代码，有时甚至是三者兼具。
 
-## 18.1\. 集合[#](#sets "跳转到此标题")
+## 18.1\. 集合
 
 Python 提供了一个名为`set`的类，用于表示一组唯一的元素。要创建一个空集合，我们可以像使用函数一样使用类对象。
 
@@ -63,7 +63,7 @@ set('banana')
 {'a', 'b', 'n'} 
 ```
 
-本书中的一些练习可以通过集合高效简洁地完成。例如，以下是第 11 章中的一个练习解决方案，使用字典来检查序列中是否存在重复元素。
+本书中的一些练习可以通过集合高效简洁地完成。例如，以下是第十一章中的一个练习解决方案，使用字典来检查序列中是否存在重复元素。
 
 ```py
 def has_duplicates(t):
@@ -103,7 +103,7 @@ s1 - s2
 {'b'} 
 ```
 
-在[第 12 章](chap12.html#section-dictionary-subtraction)中，我们使用字典查找文档中出现但不在单词列表中的单词。我们使用了以下函数，它接收两个字典，并返回一个仅包含第一个字典中不出现在第二个字典中的键的新字典。
+在第十二章中，我们使用字典查找文档中出现但不在单词列表中的单词。我们使用了以下函数，它接收两个字典，并返回一个仅包含第一个字典中不出现在第二个字典中的键的新字典。
 
 ```py
 def subtract(d1, d2):
@@ -132,7 +132,7 @@ set('ab') <= set('abc')
 True 
 ```
 
-使用这些运算符，我们可以利用集合来完成第7章的一些练习。例如，下面是一个使用循环的 `uses_only` 版本。
+使用这些运算符，我们可以利用集合来完成第七章的一些练习。例如，下面是一个使用循环的 `uses_only` 版本。
 
 ```py
 def uses_only(word, available):
@@ -151,7 +151,7 @@ def uses_only(word, available):
 
 如果 `word` 中的字母是 `available` 中字母的子集，那么意味着 `word` 只使用了 `available` 中的字母。
 
-## 18.2\. Counters[#](#counters "跳转到该标题")
+## 18.2\. Counters
 
 `Counter` 类似于集合，但如果一个元素出现多次，`Counter` 会记录该元素出现的次数。如果你熟悉数学中的“多重集”概念，那么 `Counter` 就是表示多重集的自然方式。
 
@@ -192,7 +192,7 @@ counter['d']
 0 
 ```
 
-我们可以使用 `Counter` 对象来解决第10章的一个练习，该练习要求编写一个函数，接受两个单词并检查它们是否是字母异位词——即，一个单词的字母是否可以重新排列成另一个单词。
+我们可以使用 `Counter` 对象来解决第十章的一个练习，该练习要求编写一个函数，接受两个单词并检查它们是否是字母异位词——即，一个单词的字母是否可以重新排列成另一个单词。
 
 这是使用 `Counter` 对象的一个解决方案。
 
@@ -228,7 +228,7 @@ Counter({1: 3, 2: 2, 3: 1, 'b': 1, 'a': 1, 'n': 1, 's': 1})
 
 你将有机会在本章末的练习中探索其他 `Counter` 操作。
 
-## 18.3\. defaultdict[#](#defaultdict "跳转到该标题")
+## 18.3\. defaultdict
 
 `collections` 模块还提供了 `defaultdict`，它类似于字典，但如果访问一个不存在的键，它会自动生成一个新值。
 
@@ -271,7 +271,7 @@ d['new key']
 
 如果你正在创建一个包含列表的字典，通常可以使用`defaultdict`编写更简洁的代码。
 
-在[第 11 章](chap11.html#chapter-tuples)的一个练习中，我创建了一个字典，将已排序的字母字符串映射到可以用这些字母拼写的单词列表。例如，字符串 `'opst'` 映射到列表 `['opts', 'post', 'pots', 'spot', 'stop', 'tops']`。这是原始代码。
+在第十一章的一个练习中，我创建了一个字典，将已排序的字母字符串映射到可以用这些字母拼写的单词列表。例如，字符串 `'opst'` 映射到列表 `['opts', 'post', 'pots', 'spot', 'stop', 'tops']`。这是原始代码。
 
 ```py
 def all_anagrams(filename):
@@ -313,7 +313,7 @@ d[key]
 ['woods'] 
 ```
 
-## 18.4\. 条件表达式[#](#conditional-expressions "链接到此标题")
+## 18.4\. 条件表达式
 
 条件语句通常用于选择两个值中的一个，例如这样：
 
@@ -372,7 +372,7 @@ def __init__(self, name, contents=None):
 
 一般来说，如果两个分支都包含单一的表达式且没有语句，可以用条件表达式替代条件语句。
 
-## 18.5\. 列表推导式[#](#list-comprehensions "链接到此标题")
+## 18.5\. 列表推导式
 
 在前几章中，我们已经看到一些例子，我们从一个空列表开始，并通过 `append` 方法逐个添加元素。例如，假设我们有一个包含电影标题的字符串，我们想要将所有单词的大写字母进行转换。
 
@@ -410,7 +410,7 @@ t = [word.capitalize() for word in title.split()]
 
 列表推导式的语法可能看起来很奇怪，因为循环变量—在这个例子中是 `word`—出现在表达式中，而我们还没有看到它的定义。但你会习惯的。
 
-另一个例子是，在[第 9 章](chap09.html#section-word-list)中，我们使用这个循环从文件中读取单词并将它们追加到列表中。
+另一个例子是，在第九章中，我们使用这个循环从文件中读取单词并将它们追加到列表中。
 
 ```py
 word_list = []
@@ -426,7 +426,7 @@ for line in open('words.txt'):
 word_list = [line.strip() for line in open('words.txt')] 
 ```
 
-列表推导式也可以包含一个`if`子句，用来决定哪些元素会被包含在列表中。例如，这里是我们在[第10章](chap10.html#section-palindrome-list)中使用的一个`for`循环，用于生成`word_list`中所有回文单词的列表。
+列表推导式也可以包含一个`if`子句，用来决定哪些元素会被包含在列表中。例如，这里是我们在第十章中使用的一个`for`循环，用于生成`word_list`中所有回文单词的列表。
 
 ```py
 palindromes = []
@@ -442,7 +442,7 @@ for word in word_list:
 palindromes = [word for word in word_list if is_palindrome(word)] 
 ```
 
-当列表推导式作为函数的参数时，我们通常可以省略括号。例如，假设我们想要将\(1 / 2^n\)的值加总，其中\(n\)从0到9。我们可以像这样使用列表推导式。
+当列表推导式作为函数的参数时，我们通常可以省略括号。例如，假设我们想要将\(1 / 2^n\)的值加总，其中\(n\)从 0 到 9。我们可以像这样使用列表推导式。
 
 ```py
 sum([1/2**n for n in range(10)]) 
@@ -468,9 +468,9 @@ sum(1/2**n for n in range(10))
 
 但为了我的辩护，列表推导式更难调试，因为你不能在循环内部放置`print`语句。我建议你仅在计算足够简单、你很可能第一次就能写对的情况下使用它们。或者考虑先编写并调试一个`for`循环，再将其转换为列表推导式。
 
-## 18.6\. `any`和`all`[#](#any-and-all "Link to this heading")
+## 18.6\. `any`和`all`
 
-Python提供了一个内置函数`any`，它接受一个布尔值序列，并在其中任何一个值为`True`时返回`True`。
+Python 提供了一个内置函数`any`，它接受一个布尔值序列，并在其中任何一个值为`True`时返回`True`。
 
 ```py
 any([False, False, True]) 
@@ -490,7 +490,7 @@ any(letter == 't' for letter in 'monty')
 True 
 ```
 
-这个例子并不是很有用，因为它与`in`运算符做的事情相同。但我们可以使用`any`来为[第7章](chap07.html#chapter-search)中的一些练习写出简洁的解法。例如，我们可以像这样编写`uses_none`。
+这个例子并不是很有用，因为它与`in`运算符做的事情相同。但我们可以使用`any`来为第七章中的一些练习写出简洁的解法。例如，我们可以像这样编写`uses_none`。
 
 ```py
 def uses_none(word, forbidden):
@@ -500,7 +500,7 @@ def uses_none(word, forbidden):
 
 这个函数循环遍历`word`中的字母，检查其中是否有字母在`forbidden`中。使用`any`和生成器表达式的结合是高效的，因为一旦找到了`True`值，它就会立即停止，而不必遍历整个序列。
 
-Python提供了另一个内置函数`all`，它会在序列中的每个元素都为`True`时返回`True`。我们可以使用它来编写`uses_all`的简洁版本。
+Python 提供了另一个内置函数`all`，它会在序列中的每个元素都为`True`时返回`True`。我们可以使用它来编写`uses_all`的简洁版本。
 
 ```py
 def uses_all(word, required):
@@ -510,9 +510,9 @@ def uses_all(word, required):
 
 使用`any`和`all`表达式可以简洁、高效且易于阅读。
 
-## 18.7\. 命名元组[#](#named-tuples "Link to this heading")
+## 18.7\. 命名元组
 
-`collections`模块提供了一个名为`namedtuple`的函数，可以用来创建简单的类。例如，[第16章](chap16.html#section-create-point)中的`Point`对象只有两个属性，`x`和`y`。以下是我们如何定义它的。
+`collections`模块提供了一个名为`namedtuple`的函数，可以用来创建简单的类。例如，第十六章中的`Point`对象只有两个属性，`x`和`y`。以下是我们如何定义它的。
 
 ```py
 class Point:
@@ -613,9 +613,9 @@ class Pointier(Point):
 
 或者到那时你可以切换到常规的类定义。
 
-## 18.8\. 打包关键字参数[#](#packing-keyword-arguments "Link to this heading")
+## 18.8\. 打包关键字参数
 
-在[第11章](chap11.html#section-argument-pack)中，我们写了一个函数，将它的参数打包成一个元组。
+在第十一章中，我们写了一个函数，将它的参数打包成一个元组。
 
 ```py
 def mean(*args):
@@ -718,7 +718,7 @@ pack_and_print(a=1, b=2)
 {'a': 1, 'b': 2} 
 ```
 
-## 18.9\. 调试[#](#debugging "Link to this heading")
+## 18.9\. 调试
 
 在前面的章节中，我们使用`doctest`来测试函数。例如，这里有一个名为`add`的函数，它接受两个数字并返回它们的和。它包含一个`doctest`，检查`2 + 2`是否等于`4`。
 
@@ -749,7 +749,7 @@ run_doctests(add)
 
 没有输出，这意味着所有的测试都通过了。
 
-Python提供了另一种用于运行自动化测试的工具，称为`unittest`。它的使用稍微复杂一些，但这里有一个例子。
+Python 提供了另一种用于运行自动化测试的工具，称为`unittest`。它的使用稍微复杂一些，但这里有一个例子。
 
 ```py
 from unittest import TestCase
@@ -826,7 +826,7 @@ FAILED (failures=1)
 
 在下面的练习中，我将建议一些提示，您可以用它们向虚拟助手询问关于`unittest`的更多信息。
 
-## 18.10\. 术语表[#](#glossary "Link to this heading")
+## 18.10\. 术语表
 
 **工厂：** 用于创建对象的函数，通常作为参数传递给其他函数。
 
@@ -838,7 +838,7 @@ FAILED (failures=1)
 
 **测试发现：** 一种用于查找和运行测试的过程。
 
-## 18.11\. 练习[#](#exercises "Link to this heading")
+## 18.11\. 练习
 
 ```py
 # This cell tells Jupyter to provide detailed debugging information
@@ -847,17 +847,17 @@ FAILED (failures=1)
 %xmode Verbose 
 ```
 
-### 18.11.1\. 向虚拟助手提问[#](#ask-a-virtual-assistant "Link to this heading")
+### 18.11.1\. 向虚拟助手提问
 
 本章有一些话题可能您会想了解。
 
-+   “Python的set类有哪些方法和操作符？”
++   “Python 的 set 类有哪些方法和操作符？”
 
-+   “Python的Counter类有哪些方法和操作符？”
++   “Python 的 Counter 类有哪些方法和操作符？”
 
-+   “Python的列表推导式和生成器表达式有什么区别？”
++   “Python 的列表推导式和生成器表达式有什么区别？”
 
-+   “什么时候应该使用Python的`namedtuple`而不是定义一个新类？”
++   “什么时候应该使用 Python 的`namedtuple`而不是定义一个新类？”
 
 +   “打包和解包关键字参数有什么用途？”
 
@@ -869,9 +869,9 @@ FAILED (failures=1)
 
 对于以下练习，考虑请求虚拟助手的帮助，但如同往常一样，请记得测试结果。
 
-### 18.11.2\. 练习[#](#exercise "链接到此标题")
+### 18.11.2\. 练习
 
-第7章中的一个练习要求编写一个名为`uses_none`的函数，它接受一个单词和一串禁用字母，如果单词中不使用任何禁用字母，则返回`True`。以下是一个解决方案。
+第七章中的一个练习要求编写一个名为`uses_none`的函数，它接受一个单词和一串禁用字母，如果单词中不使用任何禁用字母，则返回`True`。以下是一个解决方案。
 
 ```py
 def uses_none(word, forbidden):
@@ -881,17 +881,17 @@ def uses_none(word, forbidden):
     return True 
 ```
 
-编写这个函数的版本，使用`set`操作代替`for`循环。提示：询问虚拟助手，“如何计算Python集合的交集？”
+编写这个函数的版本，使用`set`操作代替`for`循环。提示：询问虚拟助手，“如何计算 Python 集合的交集？”
 
-### 18.11.3\. 练习[#](#id1 "链接到此标题")
+### 18.11.3\. 练习
 
 拼字游戏是一种棋盘游戏，目标是使用字母瓦片拼写单词。例如，如果我们有字母瓦片`T`、`A`、`B`、`L`、`E`，我们可以拼出`BELT`和`LATE`，但是我们无法拼出`BEET`，因为我们没有两个`E`。
 
 编写一个函数，接受一个字母字符串和一个单词，检查这些字母是否能拼出该单词，考虑每个字母出现的次数。
 
-### 18.11.4\. 练习[#](#id2 "链接到此标题")
+### 18.11.4\. 练习
 
-在[第17章](chap17.html#chapter-inheritance)中的一个练习中，我对`has_straightflush`的解决方案使用了以下方法，它将`PokerHand`分成一个包含四手牌的列表，每手牌都包含相同花色的卡牌。
+在第十七章中的一个练习中，我对`has_straightflush`的解决方案使用了以下方法，它将`PokerHand`分成一个包含四手牌的列表，每手牌都包含相同花色的卡牌。
 
 ```py
  def partition(self):
@@ -908,9 +908,9 @@ def uses_none(word, forbidden):
 
 编写这个函数的简化版本，使用`defaultdict`。
 
-### 18.11.5\. 练习[#](#id3 "链接到此标题")
+### 18.11.5\. 练习
 
-这是来自第11章的一个计算斐波那契数的函数。
+这是来自第十一章的一个计算斐波那契数的函数。
 
 ```py
 def fibonacci(n):
@@ -925,7 +925,7 @@ def fibonacci(n):
 
 编写这个函数的版本，使用单个返回语句，使用两个条件表达式，其中一个嵌套在另一个内部。
 
-### 18.11.6\. 练习[#](#id4 "链接到此标题")
+### 18.11.6\. 练习
 
 以下是一个递归计算二项式系数的函数。
 
@@ -949,7 +949,7 @@ def binomial_coeff(n, k):
 
 使用嵌套条件表达式重写函数主体。
 
-这个函数的效率不高，因为它会不断计算相同的值。通过如[第10章](chap10.html#section-memos)所述的记忆化方法，使其更高效。
+这个函数的效率不高，因为它会不断计算相同的值。通过如第十章所述的记忆化方法，使其更高效。
 
 ```py
 binomial_coeff(10, 4)    # should be 210 
@@ -959,9 +959,9 @@ binomial_coeff(10, 4)    # should be 210
 210 
 ```
 
-### 18.11.7\. 练习[#](#id5 "链接到此标题")
+### 18.11.7\. 练习
 
-这是来自[第17章](chap17.html#section-print-deck)中`Deck`类的`__str__`方法。
+这是来自第十七章中`Deck`类的`__str__`方法。
 
 ```py
 %%add_method_to Deck
@@ -975,10 +975,10 @@ binomial_coeff(10, 4)    # should be 210
 
 使用列表推导或生成器表达式编写这个方法的更简洁版本。
 
-[Think Python: 第3版](https://allendowney.github.io/ThinkPython/index.html)
+[Think Python: 第 3 版](https://allendowney.github.io/ThinkPython/index.html)
 
 版权所有 2024 [Allen B. Downey](https://allendowney.com)
 
-代码许可证：[MIT许可证](https://mit-license.org/)
+代码许可证：[MIT 许可证](https://mit-license.org/)
 
 文本许可证：[知识共享署名-非商业性使用-相同方式共享 4.0 国际](https://creativecommons.org/licenses/by-nc-sa/4.0/)
